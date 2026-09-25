@@ -1,0 +1,19 @@
+<manifest version="1.0" type="device">
+    <!-- BayLibre source advertises core v3 and includes Bluetooth. Override it
+         with the modules in our policy. This checkout's frozen AIDL core is v4. -->
+    <hal format="aidl" override="true">
+        <name>android.hardware.audio.core</name>
+        <version>4</version>
+        <interface>
+            <name>IConfig</name>
+            <instance>default</instance>
+        </interface>
+        <interface>
+            <name>IModule</name>
+            <instance>default</instance>
+            <instance>r_submix</instance>
+            <instance>usb</instance>
+            <instance>stub</instance>
+        </interface>
+    </hal>
+</manifest>

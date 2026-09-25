@@ -1,0 +1,16 @@
+--- a/src/pipewire/thread.c
++++ b/src/pipewire/thread.c
+@@ -79,6 +79,13 @@
+ static int thread_setaffinity(pthread_t thread, const char *affinity)
+ {
++#if defined(__BIONIC__)
++	/* Optional realtime tuning; affinity APIs are absent from bionic. */
++	(void)thread;
++	(void)affinity;
++	return 0;
++#else
+ 	cpu_set_t set;
+ 	parse_affinity(affinity, &set);
+ 	return -pthread_setaffinity_np(thread, sizeof(set), &set);
++#endif
+ }

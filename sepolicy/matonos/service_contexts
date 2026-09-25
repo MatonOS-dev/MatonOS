@@ -1,0 +1,6 @@
+vendor.matonos.channel.IChannel/sleep u:object_r:matonos_channel_service:s0
+vendor.matonos.channel.IChannel/wifi u:object_r:matonos_channel_service:s0
+vendor.matonos.channel.IChannel/bluetooth u:object_r:matonos_channel_service:s0
+vendor.matonos.channel.IChannel/input u:object_r:matonos_channel_service:s0
+vendor.matonos.channel.IChannel/audio u:object_r:matonos_channel_service:s0
+vendor.matonos.channel.IChannel/camera u:object_r:matonos_channel_service:s0

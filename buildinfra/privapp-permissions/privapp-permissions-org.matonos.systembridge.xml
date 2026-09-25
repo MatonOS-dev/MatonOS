@@ -1,0 +1,14 @@
+<permissions>
+    <privapp-permissions package="org.matonos.systembridge">
+        <permission name="android.permission.GRANT_RUNTIME_PERMISSIONS" />
+        <permission name="android.permission.WRITE_SECURE_SETTINGS" />
+        <permission name="android.permission.WRITE_SETTINGS" />
+        <permission name="android.permission.WRITE_SETTINGS" />
+        <permission name="android.permission.INJECT_EVENTS" />
+        <permission name="android.permission.MANAGE_APP_OPS_MODES" />
+        <permission name="android.permission.MANAGE_ACTIVITY_TASKS" />
+        <permission name="android.permission.REORDER_TASKS" />
+        <permission name="android.permission.REAL_GET_TASKS" />
+        <permission name="android.permission.REMOVE_TASKS" />
+    </privapp-permissions>
+</permissions>

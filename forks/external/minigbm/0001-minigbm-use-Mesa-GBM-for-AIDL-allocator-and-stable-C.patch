@@ -1,0 +1,247 @@
+From ad5e09a4c8a3d66fd3fcf22ba41ce69760cb7d83 Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Thu, 24 Sep 2026 23:19:38 +0200
+Subject: [PATCH] minigbm: use Mesa GBM for AIDL allocator and stable C mapper
+
+---
+ Android.bp                             | 16 ++++++++----
+ cros_gralloc/aidl/Allocator.cpp        | 13 +++++++++-
+ cros_gralloc/aidl/Allocator.h          |  6 +++++
+ cros_gralloc/aidl/Android.bp           |  9 ++++---
+ cros_gralloc/aidl/allocator.xml        |  2 +-
+ cros_gralloc/mapper_stablec/Android.bp | 11 ++++++--
+ gbm_mesa_driver/Android.mk             | 35 --------------------------
+ gbm_mesa_driver/gbm_mesa_internals.cpp |  3 +++
+ 8 files changed, 48 insertions(+), 47 deletions(-)
+ delete mode 100644 gbm_mesa_driver/Android.mk
+
+diff --git a/Android.bp b/Android.bp
+index ecf62a5..2a70246 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -114,7 +114,9 @@ cc_defaults {
+         "minigbm_headers",
+     ],
+ 
+-    static_libs: ["libarect", "libhbm_minigbm"],
++    // libhbm_minigbm (ChromeOS HBM allocator) is not in AOSP; only needed
++    // with -DDRV_HBM_HELPER, which pc_x86_64 does not use.
++    static_libs: ["libarect"],
+ 
+     vendor: true,
+ 
+@@ -125,7 +127,7 @@ cc_defaults {
+         "libnativewindow",
+         "libsync",
+         "liblog",
+-        "android.hardware.graphics.common-V5-ndk",
++        "android.hardware.graphics.common-V7-ndk",
+     ],
+ }
+ 
+@@ -154,6 +156,7 @@ cc_defaults {
+ 
+ cc_library {
+     name: "libgbm",
++    min_sdk_version: "apex_inherit",
+     defaults: ["minigbm_defaults"],
+     host_supported: true,
+ 
+@@ -196,6 +199,7 @@ cc_library {
+ rust_bindgen {
+     name: "libgbm_sys",
+     crate_name: "gbm_sys",
++    min_sdk_version: "34",
+     wrapper_src: "rust/gbm_wrapper.h",
+     source_stem: "bindings",
+     bindgen_flags: [
+@@ -216,6 +220,7 @@ rust_bindgen {
+     visibility: [
+         "//external/rust/android-crates-io/crates/gbm",
+         "//system/cros-codecs",
++        "//system/desktop/cros-codecs",
+     ],
+ }
+ 
+@@ -224,11 +229,10 @@ cc_library_shared {
+     name: "libminigbm_gralloc",
+     defaults: ["minigbm_cros_gralloc_library_defaults"],
+     include_dirs: ["external/libdrm/amdgpu",
+-                    "external/mesa/include",
+-                    "external/mesa/src/gallium/drivers/svga/include"],
++                    "external/mesa3d/include",
++                    "external/mesa3d/src/gallium/drivers/svga/include"],
+     cflags: ["-DHAS_DMABUF_SYSTEM_HEAP",
+                   "-DDRV_AMDGPU",
+-                  "-DDRV_HBM_HELPER",
+                   "-DDRV_VMWGFX",
+                   "-DDRV_I915",
+                   "-DDRV_XE",],
+@@ -247,6 +251,8 @@ cc_library_headers {
+     export_include_dirs: ["cros_gralloc"],
+     visibility: [
+         "//device/generic/goldfish-opengl/system/hwc3:__subpackages__",
++        // Current AOSP location of the emulator HWC3 (as in AOSP's minigbm)
++        "//device/generic/goldfish/hals/hwc3:__subpackages__",
+     ],
+ }
+ 
+diff --git a/cros_gralloc/aidl/Allocator.cpp b/cros_gralloc/aidl/Allocator.cpp
+index 5760643..49ae52a 100644
+--- a/cros_gralloc/aidl/Allocator.cpp
++++ b/cros_gralloc/aidl/Allocator.cpp
+@@ -208,4 +208,15 @@ ndk::ScopedAStatus Allocator::getIMapperLibrarySuffix(std::string* outResult) {
+     return binder;
+ }
+ 
+-}  // namespace aidl::android::hardware::graphics::allocator::impl
+\ No newline at end of file
++ndk::ScopedAStatus Allocator::isMultiViewSupported(const std::vector<BufferDescriptorInfo>& descriptor,
++                                                   int32_t baseViewIndex, bool* outResult) {
++    *outResult = false;
++    return ndk::ScopedAStatus::ok();
++}
++
++ndk::ScopedAStatus Allocator::allocateMultiView(const std::vector<BufferDescriptorInfo>& descriptor,
++                                                int32_t baseViewIndex, allocator::AllocationResult* outResult) {
++    return ToBinderStatus(AllocationError::UNSUPPORTED);
++}
++
++}  // namespace aidl::android::hardware::graphics::allocator::impl
+diff --git a/cros_gralloc/aidl/Allocator.h b/cros_gralloc/aidl/Allocator.h
+index d5bb946..bdb4680 100644
+--- a/cros_gralloc/aidl/Allocator.h
++++ b/cros_gralloc/aidl/Allocator.h
+@@ -31,6 +31,12 @@ class Allocator : public BnAllocator {
+     ndk::ScopedAStatus isSupported(const BufferDescriptorInfo& descriptor,
+                                 bool* outResult) override;
+ 
++    ndk::ScopedAStatus isMultiViewSupported(const std::vector<BufferDescriptorInfo>& descriptor,
++                                            int32_t baseViewIndex, bool* outResult) override;
++
++    ndk::ScopedAStatus allocateMultiView(const std::vector<BufferDescriptorInfo>& descriptor,
++                                         int32_t baseViewIndex, allocator::AllocationResult* outResult) override;
++
+     ndk::ScopedAStatus getIMapperLibrarySuffix(std::string* outResult) override;
+ 
+   protected:
+diff --git a/cros_gralloc/aidl/Android.bp b/cros_gralloc/aidl/Android.bp
+index b52f806..c73eb45 100644
+--- a/cros_gralloc/aidl/Android.bp
++++ b/cros_gralloc/aidl/Android.bp
+@@ -31,16 +31,19 @@ cc_binary {
+     vintf_fragments: ["allocator.xml"],
+     vendor: true,
+     shared_libs: [
+-        "android.hardware.graphics.allocator-V2-ndk",
++        "android.hardware.graphics.allocator-V3-ndk",
+         "android.hardware.graphics.mapper@4.0",
+         "libbase",
+         "libbinder_ndk",
+         "libgralloctypes",
+         "libhidlbase",
+         "liblog",
+-        "libminigbm_gralloc",
+         "libminigbm_gralloc4_utils",
+-    ],
++    ] + select(soong_config_variable("minigbm", "backend"), {
++        // Allocate through Mesa's GBM (gbm_mesa_driver/) for any Mesa GPU.
++        "gbm_mesa": ["libminigbm_gralloc_gbm_mesa"],
++        default: ["libminigbm_gralloc"],
++    }),
+     static_libs: [
+         "libaidlcommonsupport",
+     ],
+diff --git a/cros_gralloc/aidl/allocator.xml b/cros_gralloc/aidl/allocator.xml
+index 74ed382..f9b05a4 100644
+--- a/cros_gralloc/aidl/allocator.xml
++++ b/cros_gralloc/aidl/allocator.xml
+@@ -1,7 +1,7 @@
+ <manifest version="1.0" type="device">
+     <hal format="aidl">
+         <name>android.hardware.graphics.allocator</name>
+-        <version>2</version>
++        <version>3</version>
+         <interface>
+             <name>IAllocator</name>
+             <instance>default</instance>
+diff --git a/cros_gralloc/mapper_stablec/Android.bp b/cros_gralloc/mapper_stablec/Android.bp
+index 401c177..6f54116 100644
+--- a/cros_gralloc/mapper_stablec/Android.bp
++++ b/cros_gralloc/mapper_stablec/Android.bp
+@@ -29,8 +29,15 @@ cc_library_shared {
+     vintf_fragments: ["mapper.minigbm.xml"],
+     shared_libs: [
+         "android.hardware.graphics.allocator-V2-ndk",
+-        "libminigbm_gralloc",
+-    ],
++    ] + select(soong_config_variable("minigbm", "backend"), {
++        // Allocate through Mesa's GBM (gbm_mesa_driver/) for any Mesa GPU.
++        "gbm_mesa": ["libminigbm_gralloc_gbm_mesa"],
++        default: ["libminigbm_gralloc"],
++    }),
++    cflags: select(soong_config_variable("minigbm", "backend"), {
++        "gbm_mesa": ["-DDRV_EXTERNAL"],
++        default: [],
++    }),
+     header_libs: [
+         "libbase_headers",
+         "libimapper_stablec",
+diff --git a/gbm_mesa_driver/Android.mk b/gbm_mesa_driver/Android.mk
+deleted file mode 100644
+index 3e6b5a7..0000000
+--- a/gbm_mesa_driver/Android.mk
++++ /dev/null
+@@ -1,35 +0,0 @@
+-# Permission is hereby granted, free of charge, to any person obtaining a
+-# copy of this software and associated documentation files (the "Software"),
+-# to deal in the Software without restriction, including without limitation
+-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
+-# and/or sell copies of the Software, and to permit persons to whom the
+-# Software is furnished to do so, subject to the following conditions:
+-#
+-# The above copyright notice and this permission notice shall be included
+-# in all copies or substantial portions of the Software.
+-#
+-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+-# DEALINGS IN THE SOFTWARE.
+-
+-LOCAL_PATH := $(call my-dir)
+-
+-include $(CLEAR_VARS)
+-
+-LOCAL_SRC_FILES := \
+-    gbm_mesa_wrapper.c    \
+-
+-LOCAL_SHARED_LIBRARIES := \
+-    libdrm                \
+-    libgbm_mesa           \
+-    liblog                \
+-
+-LOCAL_MODULE := libgbm_mesa_wrapper
+-LOCAL_MODULE_TAGS := optional
+-LOCAL_VENDOR_MODULE := true
+-
+-include $(BUILD_SHARED_LIBRARY)
+diff --git a/gbm_mesa_driver/gbm_mesa_internals.cpp b/gbm_mesa_driver/gbm_mesa_internals.cpp
+index 38cc624..3a08d02 100644
+--- a/gbm_mesa_driver/gbm_mesa_internals.cpp
++++ b/gbm_mesa_driver/gbm_mesa_internals.cpp
+@@ -16,6 +16,9 @@
+ 
+ #define LOG_TAG "GBM-MESA-GRALLOC"
+ 
++#include <assert.h>
++#include <functional>
++
+ extern "C" {
+ #include "drv_helpers.h"
+ }
+-- 
+2.53.0
+

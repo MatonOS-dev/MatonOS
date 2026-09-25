@@ -1,0 +1,65 @@
+diff --git a/drivers/gpu/drm/virtio/virtgpu_display.c b/drivers/gpu/drm/virtio/virtgpu_display.c
+index 85ea252c6..970abaf29 100644
+--- a/drivers/gpu/drm/virtio/virtgpu_display.c
++++ b/drivers/gpu/drm/virtio/virtgpu_display.c
+@@ -325,8 +325,13 @@ virtio_gpu_user_framebuffer_create(struct drm_device *dev,
+ 	struct virtio_gpu_framebuffer *virtio_gpu_fb;
+ 	int ret;
+ 
++	struct virtio_gpu_device *vgdev = dev->dev_private;
++	bool rgba_ok = vgdev->has_virgl_3d &&
++		(mode_cmd->pixel_format == DRM_FORMAT_ABGR8888 ||
++		 mode_cmd->pixel_format == DRM_FORMAT_XBGR8888);
++
+ 	if (mode_cmd->pixel_format != DRM_FORMAT_HOST_XRGB8888 &&
+-	    mode_cmd->pixel_format != DRM_FORMAT_HOST_ARGB8888)
++	    mode_cmd->pixel_format != DRM_FORMAT_HOST_ARGB8888 && !rgba_ok)
+ 		return ERR_PTR(-ENOENT);
+ 
+ 	/* lookup object associated with res handle */
+diff --git a/drivers/gpu/drm/virtio/virtgpu_plane.c b/drivers/gpu/drm/virtio/virtgpu_plane.c
+index 1d1b27ece..c0b58cf37 100644
+--- a/drivers/gpu/drm/virtio/virtgpu_plane.c
++++ b/drivers/gpu/drm/virtio/virtgpu_plane.c
+@@ -38,6 +38,17 @@ static const uint32_t virtio_gpu_formats[] = {
+ 	DRM_FORMAT_HOST_XRGB8888,
+ };
+ 
++/*
++ * With virgl the host displays a 3D resource using the resource's own
++ * format, so RGBA-ordered framebuffers (what Android's SurfaceFlinger
++ * always uses for physical displays) can be scanned out as well.
++ */
++static const uint32_t virtio_gpu_formats_3d[] = {
++	DRM_FORMAT_HOST_XRGB8888,
++	DRM_FORMAT_ABGR8888,
++	DRM_FORMAT_XBGR8888,
++};
++
+ static const uint32_t virtio_gpu_cursor_formats[] = {
+ 	DRM_FORMAT_HOST_ARGB8888,
+ };
+@@ -59,6 +70,12 @@ uint32_t virtio_gpu_translate_format(uint32_t drm_fourcc)
+ 	case DRM_FORMAT_BGRA8888:
+ 		format = VIRTIO_GPU_FORMAT_A8R8G8B8_UNORM;
+ 		break;
++	case DRM_FORMAT_ABGR8888:
++		format = VIRTIO_GPU_FORMAT_R8G8B8A8_UNORM;
++		break;
++	case DRM_FORMAT_XBGR8888:
++		format = VIRTIO_GPU_FORMAT_R8G8B8X8_UNORM;
++		break;
+ 	default:
+ 		/*
+ 		 * This should not happen, we handle everything listed
+@@ -593,6 +610,10 @@ struct drm_plane *virtio_gpu_plane_init(struct virtio_gpu_device *vgdev,
+ 		formats = virtio_gpu_cursor_formats;
+ 		nformats = ARRAY_SIZE(virtio_gpu_cursor_formats);
+ 		funcs = &virtio_gpu_cursor_helper_funcs;
++	} else if (vgdev->has_virgl_3d) {
++		formats = virtio_gpu_formats_3d;
++		nformats = ARRAY_SIZE(virtio_gpu_formats_3d);
++		funcs = &virtio_gpu_primary_helper_funcs;
+ 	} else {
+ 		formats = virtio_gpu_formats;
+ 		nformats = ARRAY_SIZE(virtio_gpu_formats);

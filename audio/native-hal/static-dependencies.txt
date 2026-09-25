@@ -1,0 +1,18 @@
+# Required static closure for the trimmed standalone HAL. Each row is emitted
+# as deps/lib64/libNAME.a by native-hal/CMakeLists.txt from the pinned subset.
+libfmt.a                  # libbase formatting/logging helpers
+libbase.a                 # AOSP base utility subset
+libutils_binder.a         # String16/8, RefBase, VectorImpl subset
+libcutils.a               # native_handle, ashmem compatibility and multiuser
+libutils.a                # core utility subset
+libfmq.a                  # EventFlag and FMQ internal helpers
+libaudioaidlcommon.a      # AOSP audio common StreamWorker
+
+# Not part of this product's source/link closure: XML parsing/config conversion
+# (configuration is compiled in MatonConfig), libaudioutils (no-op SoundDose
+# stub and clock_gettime replacement), libmedia_helper and AIDL legacy
+# conversion (HAL speaks frozen AIDL only), TinyALSA/ALSA (PipeWire driver),
+# offload, NBAIO, effects implementation (stock effects service retained),
+# Bluetooth Audio transport (Android Bluetooth stack owns it), and libxml2.
+# These were referenced by AOSP's full example service but are unreachable in
+# this PC HAL configuration and intentionally omitted.

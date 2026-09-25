@@ -1,0 +1,19 @@
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/desktopmode/desktopfirst/DesktopDisplayModeController.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/desktopmode/desktopfirst/DesktopDisplayModeController.kt
+index c5580da846e7..c13cd2f40bc4 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/desktopmode/desktopfirst/DesktopDisplayModeController.kt
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/desktopmode/desktopfirst/DesktopDisplayModeController.kt
+@@ -317,10 +317,13 @@ class DesktopDisplayModeController(
+     private fun hasExternalDisplay() =
+         rootTaskDisplayAreaOrganizer.getDisplayIds().any { it != DEFAULT_DISPLAY }
+ 
++    // A mouse counts like a touchpad: keyboard + mouse is a desktop PC, which should start on
++    // the desktop just like a laptop (keyboard + touchpad).
+     private fun hasAnyTouchpadDevice() =
+         inputManager.inputDeviceIds.any { deviceId ->
+             inputManager.getInputDevice(deviceId)?.let { device ->
+-                device.supportsSource(InputDevice.SOURCE_TOUCHPAD) && device.isEnabled()
++                (device.supportsSource(InputDevice.SOURCE_TOUCHPAD) ||
++                    device.supportsSource(InputDevice.SOURCE_MOUSE)) && device.isEnabled()
+             } ?: false
+         }
+ 

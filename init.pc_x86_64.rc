@@ -1,0 +1,33 @@
+# Vendor init for pc_x86_64. Installed as /vendor/etc/init/hw/init.pc_x86_64.rc
+# (ro.hardware comes from androidboot.hardware=pc_x86_64 on the cmdline).
+#
+# Kernel modules (GPU, NIC, ...) in /vendor/lib/modules are loaded by ueventd
+# via modalias matching (see ueventd.rc); storage drivers are built in.
+
+on fs
+    # Mount everything that does not require fsck
+    mount_all --early
+
+on late-fs
+    # Mount RW partitions which need fsck (userdata)
+    mount_all --late
+
+on post-fs-data
+    mkdir /data/vendor/var 0755 root root
+
+on property:ro.debuggable=1
+    # adb over TCP for VM / headless bring-up. PCs have no USB gadget, so
+    # nothing else starts adbd; authentication stays on (ro.adb.secure).
+    setprop service.adb.tcp.port 5555
+    start adbd
+
+# Keyboards (and the USB path above them) as s2idle wake sources.
+service vendor.pc-wakeup /vendor/bin/pc-wakeup.sh
+    class core
+    user root
+    group root
+    oneshot
+    disabled
+
+on boot
+    start vendor.pc-wakeup

@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+// Vendor RRO for framework-res (package "android").
+runtime_resource_overlay {
+    name: "matonos_overlay_frameworks_base_core",
+    soc_specific: true,
+    sdk_version: "current",
+}

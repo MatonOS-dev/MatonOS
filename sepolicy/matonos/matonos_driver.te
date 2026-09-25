@@ -1,0 +1,117 @@
+# Shared SELinux identity for MatonOS hardware and platform glue daemons/HALs.
+# This fixed policy set trades isolation between our drivers for faster Soong
+# analysis; Android and the system bridge remain outside this domain.
+type matonos_driver, domain;
+type matonos_driver_exec, exec_type, vendor_file_type, file_type;
+type matonos_driver_helper, domain;
+type matonos_driver_helper_exec, exec_type, vendor_file_type, file_type;
+type matonos_driver_data_file, file_type, data_file_type;
+type matonos_channel_service, protected_service, hal_service_type, service_manager_type;
+
+init_daemon_domain(matonos_driver)
+
+# HAL servers cannot execute helpers without a domain transition. PipeWire's
+# proxy starts pw-cat; matonos-btd execs itself for its VHCI emulator child.
+# The latter uses the existing driver executable label but always transitions
+# to this non-HAL helper domain when launched by a driver process.
+domain_auto_trans(matonos_driver, matonos_driver_helper_exec, matonos_driver_helper)
+domain_auto_trans(matonos_driver, matonos_driver_exec, matonos_driver_helper)
+allow matonos_driver matonos_driver_helper:process signal;
+
+# Narrow helper permissions: pw-cat reaches PipeWire's private socket, while
+# the VHCI child uses /dev/vhci and publishes the selected virtual HCI index.
+allow matonos_driver_helper matonos_driver_data_file:dir search;
+allow matonos_driver_helper matonos_driver_data_file:sock_file write;
+allow matonos_driver_helper matonos_driver:unix_stream_socket connectto;
+allow matonos_driver_helper matonos_vhci_device:chr_file rw_file_perms;
+set_prop(matonos_driver_helper, vendor_maton_prop)
+get_prop(matonos_driver_helper, vendor_maton_prop)
+allow matonos_driver_helper vendor_file:dir r_dir_perms;
+allow matonos_driver_helper vendor_file:file { getattr map open read };
+
+# Our Bluetooth controller HAL is a server for the platform Bluetooth HAL API.
+hal_server_domain(matonos_driver, hal_bluetooth)
+# (No audio HAL of ours: BayLibre generic AIDL HAL runs as hal_audio_default.)
+
+
+# PipeWire stack and proxy.
+allow matonos_driver proc_asound:dir r_dir_perms;
+allow matonos_driver proc_asound:file r_file_perms;
+allow matonos_driver self:capability { setuid setgid sys_nice };
+allow matonos_driver self:process { fork sigchld setsched };
+allow matonos_driver matonos_driver_data_file:dir create_dir_perms;
+allow matonos_driver matonos_driver_data_file:sock_file create_file_perms;
+# Sockets are the process's own objects; the socket FILE lives in
+# matonos_driver_data_file (/data/vendor/maton-audio).
+allow matonos_driver self:unix_stream_socket create_stream_socket_perms;
+allow matonos_driver matonos_driver_data_file:dir rw_dir_perms;
+allow matonos_driver matonos_driver_data_file:file create_file_perms;
+allow matonos_driver self:unix_stream_socket connectto;
+# The stock audio HAL may connect to the PipeWire proxy socket.
+allow hal_audio_default matonos_driver_data_file:dir search;
+allow hal_audio_default matonos_driver_data_file:file r_file_perms;
+allow hal_audio_default matonos_driver_data_file:sock_file write;
+allow hal_audio_default matonos_driver:unix_stream_socket connectto;
+
+# USB, HCI, rfkill and hotplug discovery used by Bluetooth and Wi-Fi drivers.
+type matonos_rfkill_device, dev_type;
+type matonos_vhci_device, dev_type;
+allow matonos_driver matonos_rfkill_device:chr_file rw_file_perms;
+allow hal_bluetooth_default matonos_rfkill_device:chr_file rw_file_perms;
+allow matonos_driver matonos_vhci_device:chr_file rw_file_perms;
+allow matonos_driver self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
+allow matonos_driver sysfs:dir r_dir_perms;
+allow matonos_driver sysfs:file r_file_perms;
+allow matonos_driver sysfs:lnk_file r_file_perms;
+r_dir_file(matonos_driver, sysfs_net)
+r_dir_file(matonos_driver, sysfs_type)
+allow matonos_driver self:udp_socket create_socket_perms;
+allowxperm matonos_driver self:udp_socket ioctl { SIOCGIFFLAGS SIOCSIFFLAGS SIOCSIFNAME };
+allow matonos_driver self:capability net_admin;
+
+# Input merger and sleep manager.
+allow matonos_driver input_device:dir r_dir_perms;
+allow matonos_driver input_device:chr_file rw_file_perms;
+allow matonos_driver uhid_device:chr_file { getattr open read write ioctl };
+allow matonos_driver sysfs_power:file rw_file_perms;
+
+# Stable Binder channel is the only cross-partition control path.
+# Only the driver may register instances. The system bridge is the only client
+# granted service-manager find access in matonos_bridge.te.
+allow matonos_driver matonos_channel_service:service_manager add;
+neverallow { domain -matonos_driver } matonos_channel_service:service_manager add;
+binder_call(matonos_driver, matonos_system_bridge)
+
+# Read and execute vendor binaries/configuration (including sibling tools).
+allow matonos_driver vendor_file:dir r_dir_perms;
+allow matonos_driver vendor_file:file { getattr map open read };
+allow matonos_driver vendor_configs_file:dir r_dir_perms;
+allow matonos_driver vendor_configs_file:file r_file_perms;
+allow matonos_driver matonos_driver_exec:file { execute getattr map open read };
+
+# Boot audio selector (odm/bin/maton-audio-select.sh): its own small domain,
+# NOT a HAL server (HAL servers may neither touch audio_device nor run system
+# binaries without a transition; matonos_driver is the Bluetooth HAL server).
+# It reads /proc/asound, runs AOSP's system tinymix to max/unmute playback
+# controls, and sets vendor.maton.audio.*. Async oneshot; failure is benign.
+type matonos_audio_select, domain;
+type matonos_audio_select_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(matonos_audio_select)
+typeattribute matonos_audio_select vendor_executes_system_violators;
+allow matonos_audio_select { shell_exec vendor_shell_exec }:file rx_file_perms;
+allow matonos_audio_select vendor_toolbox_exec:file rx_file_perms;
+allow matonos_audio_select system_file:file { execute execute_no_trans getattr map open read };
+allow matonos_audio_select audio_device:dir r_dir_perms;
+allow matonos_audio_select audio_device:chr_file rw_file_perms;
+allow matonos_audio_select proc_asound:dir r_dir_perms;
+allow matonos_audio_select proc_asound:file r_file_perms;
+set_prop(matonos_audio_select, vendor_maton_prop)
+
+# Every vendor.maton.* property has one type. The driver owns writes; platform
+# readers are explicitly listed to keep the cross-partition boundary narrow.
+set_prop(matonos_driver, vendor_maton_prop)
+get_prop(matonos_driver, vendor_maton_prop)
+get_prop(system_server, vendor_maton_prop)
+get_prop(hal_audio_default, vendor_maton_prop)
+get_prop(hal_bluetooth_default, vendor_maton_prop)
+get_prop(matonos_system_bridge, vendor_maton_prop)

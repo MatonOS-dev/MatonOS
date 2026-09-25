@@ -1,0 +1,3 @@
+# MatonOS default bridge deny list; one package [optional signing SHA-256] per line.
+# Package-only entries survive app signing-key rotations. Ship point-update changes
+# through the ODM bundle; user preferences can explicitly unblock a package.

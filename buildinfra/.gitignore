@@ -1,0 +1,8 @@
+/apps-built/
+/native-built/
+/apps/MatonOSSettings/.gradle/
+/apps/MatonOSSettings/app/build/
+/apps/MatonOSSettings/local.properties
+/client/.gradle/
+/client/build/
+/apps/MatonOSSettings/app/libs/framework-stubs.jar

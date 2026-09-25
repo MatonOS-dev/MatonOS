@@ -1,0 +1,9 @@
+# MatonOS defaults applied after boot (matonos-setup.sh).
+service matonos-setup /system_ext/bin/matonos-setup.sh
+    user system
+    group system
+    oneshot
+    disabled
+
+on property:sys.boot_completed=1
+    start matonos-setup

@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.22)
+project(matonos_inputd C)
+add_executable(matonos-inputd matonos-inputd.c)
+target_include_directories(matonos-inputd PRIVATE "${MATON_IPC_INCLUDE_DIR}")
+target_compile_options(matonos-inputd PRIVATE -Wall -Wextra -Werror -O2 -fPIE)
+target_link_options(matonos-inputd PRIVATE -pie)
+target_link_libraries(matonos-inputd PRIVATE log "${MATON_IPC_LIBRARY}")
+install(TARGETS matonos-inputd RUNTIME DESTINATION .)

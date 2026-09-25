@@ -1,0 +1,4 @@
+# Public: declaration only (vendor policy in sepolicy/matonos references it).
+# app_domain() emits type transitions, which public policy may not contain;
+# it lives in ../private/matonos_system_bridge.te.
+type matonos_system_bridge, domain;

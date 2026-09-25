@@ -1,0 +1,34 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'org.matonos.settings'
+    compileSdk 35
+    buildToolsVersion '36.0.0'
+
+    defaultConfig {
+        applicationId 'org.matonos.settings'
+        minSdk 32
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+    
+    signingConfigs {
+        release {
+            storeFile file(System.getenv('MATON_SIGNING_STORE_FILE'))
+            storePassword System.getenv('MATON_SIGNING_STORE_PASSWORD')
+            keyAlias System.getenv('MATON_SIGNING_KEY_ALIAS')
+            keyPassword System.getenv('MATON_SIGNING_KEY_PASSWORD')
+        }
+    }
+    buildTypes { release { signingConfig signingConfigs.release; minifyEnabled false } }
+}
+
+dependencies { implementation project(':matonos-client') }
+
+
+// Area apps may opt into a refreshed AOSP hidden/system stub jar at build time.
+def matonFrameworkStub = System.getenv('MATON_FRAMEWORK_STUB_JAR')
+if (matonFrameworkStub && file(matonFrameworkStub).exists()) {
+    dependencies { compileOnly files(matonFrameworkStub) }
+}

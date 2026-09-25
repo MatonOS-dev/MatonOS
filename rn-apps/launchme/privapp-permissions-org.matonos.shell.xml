@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<permissions>
+    <privapp-permissions package="org.matonos.shell">
+        <permission name="org.matonos.permission.SYSTEM_BRIDGE" />
+    </privapp-permissions>
+</permissions>

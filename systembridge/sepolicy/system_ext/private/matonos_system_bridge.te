@@ -1,0 +1,9 @@
+typeattribute matonos_system_bridge coredomain;
+app_domain(matonos_system_bridge)
+
+# Binder access is restricted to the stable vendor channel; target and app
+# authorization is enforced by SystemBridgeService before each method call.
+allow matonos_system_bridge input_service:service_manager find;
+binder_call(matonos_system_bridge, system_server)
+allow matonos_system_bridge vendor_configs_file:dir search;
+allow matonos_system_bridge vendor_configs_file:file r_file_perms;

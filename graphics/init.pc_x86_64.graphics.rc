@@ -1,0 +1,6 @@
+# Graphics setup for pc_x86_64 (installed to /vendor/etc/init/).
+
+on early-init
+    # Choose the Vulkan HAL from the primary GPU's PCI IDs before anything
+    # graphics-related starts (ro.hardware.vulkan can only be set once).
+    exec -- /vendor/bin/pc-gpu-detect.sh

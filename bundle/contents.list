@@ -1,0 +1,55 @@
+# Bundle rows: file <source> <destination>, tree <source-dir> <destination-dir>,
+# or prop <name>=<value>. Paths are relative to the device tree and bundle root.
+# Add each new daemon/configuration here; tools/build-bundle.sh owns the format.
+
+file buildinfra/native-built/libmatonos-ipc.so lib64/libmatonos-ipc.so
+file buildinfra/native-built/matonos-sleepd bin/matonos-sleepd
+file buildinfra/native-built/matonos-wifid bin/matonos-wifid
+file buildinfra/native-built/matonos-btd bin/matonos-btd
+file buildinfra/native-built/matonos-inputd bin/matonos-inputd
+file buildinfra/native-built/matonos-bluetooth-service bin/matonos-bluetooth-service
+# PipeWire, custom-HAL, detector, and snd-aloop files remain in the tree only;
+# the shipped implementation is BayLibre's generic AIDL audio APEX.
+
+file buildinfra/init/matonos-sleepd.rc etc/init/matonos-sleepd.rc
+file wifi/matonos-wifid.rc etc/init/matonos-wifid.rc
+file bluetooth/matonos-btd.rc etc/init/matonos-btd.rc
+file bluetooth/matonos-bluetooth-service.rc etc/init/matonos-bluetooth-service.rc
+file input/matonos-inputd.rc etc/init/matonos-inputd.rc
+file audio/maton-audio-select.rc etc/init/maton-audio-select.rc
+file audio/maton-audio-select.sh bin/maton-audio-select.sh
+
+file bluetooth/matonos-bluetooth-service.xml etc/vintf/manifest/matonos-bluetooth-service.xml
+file bundle/matonos-channel.xml etc/vintf/manifest/matonos-channel.xml
+file buildinfra/bridge-banlist.txt etc/matonos/bridge-banlist.txt
+file permissions/matonos_unavailable_features.xml etc/permissions/matonos_unavailable_features.xml
+file bluetooth/permissions/bluetooth_features.xml etc/permissions/matonos_bluetooth_features.xml
+
+# Vendor-owned defaults formerly injected into vendor build.prop by Make.
+prop ro.hardware.gralloc=minigbm_gbm_mesa
+prop ro.hardware.egl=mesa
+prop ro.hardware.hwcomposer=drm
+prop vendor.maton.bluetooth.present=0
+prop vendor.maton.bluetooth.available=0
+prop vendor.maton.bluetooth.vhci_index=-1
+prop vendor.maton.bluetooth.rfkill_index=-1
+prop wifi.interface=wlan0
+prop vendor.maton.wifi.present=0
+prop vendor.maton.wifi.hwsim.test_ready=0
+prop vendor.maton.wifi.hwsim.radios=1
+prop vendor.maton.wifi.hwsim.load=0
+prop ro.soc.manufacturer=MatonOS
+prop ro.soc.model=pc_x86_64
+# Audio policy (ODM copy, read before /vendor/etc). Bluetooth audio policy is
+# intentionally omitted; the bundle config enables primary, r_submix, USB,
+# and stub modules only.
+file audio/config-odm/audio_policy_configuration.xml etc/audio_policy_configuration.xml
+file audio/config-odm/primary_audio_policy_configuration.xml etc/primary_audio_policy_configuration.xml
+file audio/config-odm/r_submix_audio_policy_configuration.xml etc/r_submix_audio_policy_configuration.xml
+file audio/config-odm/usb_audio_policy_configuration.xml etc/usb_audio_policy_configuration.xml
+file audio/config-odm/stub_audio_policy_configuration.xml etc/stub_audio_policy_configuration.xml
+file audio/config-odm/mixer_controls.xml etc/mixer_controls.xml
+file audio/config-odm/audio_core_manifest.xml etc/vintf/manifest/matonos-audio-core.xml
+file audio/config-odm/audio_policy_volumes.xml etc/audio_policy_volumes.xml
+file audio/config-odm/default_volume_tables.xml etc/default_volume_tables.xml
+file audio/config-odm/surround_sound_configuration_5_0.xml etc/surround_sound_configuration_5_0.xml

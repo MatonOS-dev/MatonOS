@@ -1,0 +1,53 @@
+From 0d3a5e86f21a29fb627deb0a92a20415d6d38de6 Mon Sep 17 00:00:00 2001
+From: hanro50 <hlareman2@gmail.com>
+Date: Fri, 25 Sep 2026 21:53:38 +0200
+Subject: [PATCH 1/2] audio: implement IModule V4 getFlushFromFrameSupport
+ (unsupported, as AOSP reference)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ Module.cpp                 | 8 ++++++++
+ include/core-impl/Module.h | 3 +++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/Module.cpp b/Module.cpp
+index aa624ff..b44ca83 100644
+--- a/Module.cpp
++++ b/Module.cpp
+@@ -58,6 +58,7 @@ using aidl::android::media::audio::common::AudioOffloadInfo;
+ using aidl::android::media::audio::common::AudioOutputFlags;
+ using aidl::android::media::audio::common::AudioPort;
+ using aidl::android::media::audio::common::AudioPortConfig;
++using aidl::android::media::audio::common::FlushFromFrameSupport;
+ using aidl::android::media::audio::common::AudioPortExt;
+ using aidl::android::media::audio::common::AudioProfile;
+ using aidl::android::media::audio::common::Boolean;
+@@ -1838,4 +1839,11 @@ ndk::ScopedAStatus Module::bluetoothParametersUpdated() {
+     return mStreams.bluetoothParametersUpdated();
+ }
+ 
++ndk::ScopedAStatus Module::getFlushFromFrameSupport(const AudioPortConfig& in_config __unused,
++                                                    FlushFromFrameSupport* _aidl_return __unused) {
++    // IModule V4 (AOSP 17); same as the AOSP reference HAL.
++    LOG(VERBOSE) << __func__ << ": " << mType;
++    return ndk::ScopedAStatus::fromExceptionCode(EX_UNSUPPORTED_OPERATION);
++}
++
+ }  // namespace aidl::android::hardware::audio::core
+diff --git a/include/core-impl/Module.h b/include/core-impl/Module.h
+index 379264d..6e03075 100644
+--- a/include/core-impl/Module.h
++++ b/include/core-impl/Module.h
+@@ -142,6 +142,9 @@ class Module : public BnModule {
+     ndk::ScopedAStatus supportsVariableLatency(bool* _aidl_return) override;
+     ndk::ScopedAStatus getAAudioMixerBurstCount(int32_t* _aidl_return) override;
+     ndk::ScopedAStatus getAAudioHardwareBurstMinUsec(int32_t* _aidl_return) override;
++    ndk::ScopedAStatus getFlushFromFrameSupport(
++            const ::aidl::android::media::audio::common::AudioPortConfig& in_config,
++            ::aidl::android::media::audio::common::FlushFromFrameSupport* _aidl_return) override;
+ 
+     // The maximum stream buffer size is 1 GiB = 2 ** 30 bytes;
+     static constexpr int32_t kMaximumStreamBufferSizeBytes = 1 << 30;
+-- 
+2.53.0
+

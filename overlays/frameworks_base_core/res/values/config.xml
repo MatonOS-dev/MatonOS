@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<resources>
+    <!-- MatonOS Shell (Gradle app, no Quickstep service) draws the only bar:
+         its shelf has Back/Drawer/tasks/Recents via the system bridge. So no
+         recents provider for SystemUI to bind, and no SystemUI navigation
+         bar (AOSP default false) — otherwise two bars. Zero-patch config. -->
+    <string name="config_recentsComponentName" translatable="false">org.matonos.shell/.RecentsComponentAnchor</string>
+    <bool name="config_showNavigationBar">false</bool>
+
+    <!-- Desktop windowing (ChromeOS-like desktop: resizable, captioned app
+         windows and Launcher3's persistent taskbar). The aconfig flags that
+         gate it are on in this release; these device configs are the rest.
+         WM Shell starts the display "desktop-first" when a keyboard and a
+         touchpad or (patches/frameworks/base 0002) a mouse are connected,
+         and touch-first otherwise (e.g. a tablet without its keyboard). -->
+    <bool name="config_isDesktopModeSupported">true</bool>
+    <bool name="config_canInternalDisplayHostDesktops">true</bool>
+    <bool name="config_isDesktopModeDevOptionSupported">true</bool>
+    <bool name="config_enterDesktopByDefaultOnFreeformDisplay">true</bool>
+
+    <!-- No screen-off fade: its screenshot of the display fails on some GPU
+         paths (virgl: "ColorFade: Failed to take screenshot"), the display
+         never finishes turning off, and the PC stays in Dozing holding a
+         suspend blocker instead of sleeping (s2idle). -->
+    <bool name="config_displayColorFadeDisabled">true</bool>
+
+
+    <!-- MatonOS owns sleep (power/matonos-sleepd.c): Android never suspends
+         the system and never turns the screen off. The power button's short
+         press is the sleep daemon's; a long press stays the power menu. -->
+    <bool name="config_useAutoSuspend">false</bool>
+    <integer name="config_shortPressOnPowerBehavior">0</integer>
+</resources>

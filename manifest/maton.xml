@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  pc_x86_64 local manifest. Install with:
+    cp device/maton/pc_x86_64/manifest/maton.xml .repo/local_manifests/
+-->
+<manifest>
+  <remote name="android-generic" fetch="https://github.com/android-generic" />
+  <remote name="baylibre" fetch="https://github.com/BayLibre" />
+
+  <!-- These revisions are local branches in the project checkouts. Create
+       the branches before syncing a fresh checkout. -->
+  <extend-project name="platform/external/drm_hwcomposer"
+                  revision="refs/heads/matonos/v1.2" />
+
+  <remove-project name="platform/external/minigbm" />
+  <project path="external/minigbm" name="external_minigbm" remote="android-generic"
+           revision="refs/heads/matonos/v1.2" />
+
+  <!-- Audio HAL (user, 2026-09-25; local branch matonos/v1.2 = upstream a3abeb7 + IModule V4 fix): BayLibre's generic AIDL HAL, a configurable
+       AOSP-reference derivative (card/device via persist.vendor.audio.*). -->
+  <project path="hardware/baylibre/audio" name="android_hardware_baylibre_audio"
+           remote="baylibre" revision="refs/heads/matonos/v1.2"
+           upstream="main" />
+</manifest>

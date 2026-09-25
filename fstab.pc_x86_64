@@ -1,0 +1,29 @@
+# fstab for pc_x86_64.
+#
+# Installed both into the vendor ramdisk (first-stage mount) and /vendor/etc.
+# Block device names come from GPT partition names created by
+# tools/installer.sh; /dev/block/by-name/* links are created for the disk
+# matching androidboot.boot_devices (also set by installer.sh).
+#
+# Mainline-kernel constraints (see NOTES.md):
+#  - no avb flags (AVB disabled)
+#  - no keydirectory= (metadata encryption needs dm-default-key, ACK-only)
+#  - no checkpoint=block (needs dm-bow, ACK-only)
+#  - no inlinecrypt (PCs have no inline crypto engine)
+#
+#<src>                     <mnt_point>  <type> <mnt_flags>                         <fs_mgr_flags>
+system                     /system      erofs  ro                                  wait,logical,first_stage_mount
+system_ext                 /system_ext  erofs  ro                                  wait,logical,first_stage_mount
+product                    /product     erofs  ro                                  wait,logical,first_stage_mount
+vendor                     /vendor      erofs  ro                                  wait,logical,first_stage_mount
+odm                        /odm         erofs  ro                                  wait,logical,first_stage_mount
+
+/dev/block/by-name/metadata /metadata   ext4   nodev,noatime,nosuid                wait,check,formattable,first_stage_mount
+/dev/block/by-name/userdata /data       ext4   nodev,noatime,nosuid,errors=panic   latemount,wait,check,quota,formattable,reservedsize=128M,fileencryption=aes-256-xts:aes-256-cts:v2
+/dev/block/by-name/misc    /misc        emmc   defaults                            defaults
+
+/dev/block/zram0           none         swap   defaults                            zramsize=50%
+
+# Removable storage
+/devices/*/usb*/*          auto         auto   defaults                            voldmanaged=usb:auto
+/devices/*/mmc_host/*      auto         auto   defaults                            voldmanaged=sdcard1:auto

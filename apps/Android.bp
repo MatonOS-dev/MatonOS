@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// MatonOS preinstalled apps, straight from F-Droid's main repo.
+// The keyboard stays AOSP's LatinIME: HeliBoard only declares a
+// locale-less subtype until first launch, so the framework never enables it
+// as the default IME on a fresh device.
+//
+// APKs come from tools/fetch-apps.sh (pinned in apps.lock, hash- and
+// signer-checked) into apks/ (git-ignored). Requirement: F-Droid must be
+// able to update every one of them, so each APK is installed byte for byte
+// with its F-Droid/developer signature: preprocessed (no zipalign, no JNI
+// or dex uncompression), presigned, no dexpreopt. Everything goes to the
+// product partition; only the Privileged Extension is privileged.
+// `overrides` drops the AOSP app each one replaces.
+
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+// android_app_import has no defaults module type, so each module repeats
+// product_specific, preprocessed and dex_preopt { enabled: false }.
+// skip_preprocessed_apk_checks: only on APKs that fail Soong's checks
+// (compressed JNI libraries; for priv-apps also compressed dex), since Soong
+// rejects it elsewhere; tools/fetch-apps.sh checks it matches.
+
+android_app_import {
+    name: "MatonFDroid",
+    apk: "apks/MatonFDroid.apk",
+    product_specific: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    required: ["MatonFDroidPrivilegedExtension"],
+}
+
+// Lets F-Droid install and update apps without a prompt for each one. It
+// only serves callers signed with F-Droid's key.
+android_app_import {
+    name: "MatonFDroidPrivilegedExtension",
+    apk: "apks/MatonFDroidPrivilegedExtension.apk",
+    product_specific: true,
+    privileged: true,
+    preprocessed: true,
+    skip_preprocessed_apk_checks: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    required: ["privapp-permissions-org.fdroid.fdroid.privileged.xml"],
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-org.fdroid.fdroid.privileged.xml",
+    src: "privapp-permissions-org.fdroid.fdroid.privileged.xml",
+    sub_dir: "permissions",
+    product_specific: true,
+}
+
+android_app_import {
+    name: "MatonFennec",
+    apk: "apks/MatonFennec.apk",
+    product_specific: true,
+    preprocessed: true,
+    skip_preprocessed_apk_checks: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    // QuickSearchBox (web search widget) goes with the AOSP browser.
+    overrides: [
+        "Browser2",
+        "QuickSearchBox",
+    ],
+}
+
+android_app_import {
+    name: "MatonFossifyGallery",
+    apk: "apks/MatonFossifyGallery.apk",
+    product_specific: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    overrides: ["Gallery2"],
+}
+
+android_app_import {
+    name: "MatonFossifyCalendar",
+    apk: "apks/MatonFossifyCalendar.apk",
+    product_specific: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    overrides: ["Calendar"],
+}
+
+// Also drops the phone apps: PCs have no modem (Dialer, Messaging).
+android_app_import {
+    name: "MatonFossifyContacts",
+    apk: "apks/MatonFossifyContacts.apk",
+    product_specific: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    overrides: [
+        "Contacts",
+        "Dialer",
+        "messaging",
+    ],
+}
+
+android_app_import {
+    name: "MatonFossifyClock",
+    apk: "apks/MatonFossifyClock.apk",
+    product_specific: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    overrides: ["DeskClock"],
+}
+
+android_app_import {
+    name: "MatonFossifyNotes",
+    apk: "apks/MatonFossifyNotes.apk",
+    product_specific: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+android_app_import {
+    name: "MatonFossifyCalculator",
+    apk: "apks/MatonFossifyCalculator.apk",
+    product_specific: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+}
+
+android_app_import {
+    name: "MatonFossifyMusicPlayer",
+    apk: "apks/MatonFossifyMusicPlayer.apk",
+    product_specific: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    overrides: ["Music"],
+}
+
+android_app_import {
+    name: "MatonOpenCamera",
+    apk: "apks/MatonOpenCamera.apk",
+    product_specific: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    overrides: ["Camera2"],
+}

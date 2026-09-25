@@ -1,0 +1,29 @@
+/dev/block/by-name/misc         u:object_r:misc_block_device:s0
+/dev/block/by-name/metadata     u:object_r:metadata_block_device:s0
+/dev/block/by-name/super        u:object_r:super_block_device:s0
+/dev/block/by-name/userdata     u:object_r:userdata_block_device:s0
+/dev/block/zram0                u:object_r:swap_block_device:s0
+
+# Graphics HALs (minigbm allocator, drm_hwcomposer): without these labels
+# init refuses to start them ("incorrect label or no domain transition"),
+# even in permissive mode, and SurfaceFlinger waits for the composer forever.
+/vendor/bin/hw/android\.hardware\.composer\.hwc3-service\.drm          u:object_r:hal_graphics_composer_default_exec:s0
+/vendor/bin/hw/android\.hardware\.graphics\.allocator-service\.minigbm u:object_r:hal_graphics_allocator_default_exec:s0
+
+# Same-process HALs loaded into app/system processes: gralloc mapper +
+# gralloc0 module (Mesa's u_gralloc), and Mesa itself.
+/vendor/lib64/hw/mapper\.minigbm\.so                  u:object_r:same_process_hal_file:s0
+/vendor/lib64/hw/gralloc\.minigbm_gbm_mesa\.so        u:object_r:same_process_hal_file:s0
+/vendor/lib64/hw/vulkan\.(intel|radeon|virtio)\.so    u:object_r:same_process_hal_file:s0
+/vendor/lib64/egl(/.*)?                               u:object_r:same_process_hal_file:s0
+/vendor/lib64/gbm(/.*)?                               u:object_r:same_process_hal_file:s0
+/vendor/lib64/libgallium_dri\.so                      u:object_r:same_process_hal_file:s0
+/vendor/lib64/libgbm_mesa(_wrapper)?\.so              u:object_r:same_process_hal_file:s0
+/vendor/lib64/libelf\.so                              u:object_r:same_process_hal_file:s0
+/vendor/lib64/libminigbm_gralloc(_gbm_mesa)?\.so      u:object_r:same_process_hal_file:s0
+
+# Pre-boot hardware configuration script (graphics/pc-gpu-detect.sh)
+/vendor/bin/pc-gpu-detect\.sh                         u:object_r:pc_gpu_detect_exec:s0
+
+# Input wake sources for s2idle (power/pc-wakeup.sh)
+/vendor/bin/pc-wakeup\.sh                             u:object_r:pc_wakeup_exec:s0

@@ -1,0 +1,161 @@
+diff --git a/services/inputflinger/reader/EventHub.cpp b/services/inputflinger/reader/EventHub.cpp
+index ca79fc5ef2..7028a45f18 100644
+--- a/services/inputflinger/reader/EventHub.cpp
++++ b/services/inputflinger/reader/EventHub.cpp
+@@ -2596,6 +2596,15 @@ void EventHub::openDeviceLocked(const std::string& devicePath) {
+     if (device->keyBitmask.test(BTN_MOUSE) && device->relBitmask.test(REL_X) &&
+         device->relBitmask.test(REL_Y)) {
+         device->classes |= InputDeviceClass::CURSOR;
++    } else if (device->keyBitmask.test(BTN_MOUSE) && device->absBitmask.test(ABS_X) &&
++               device->absBitmask.test(ABS_Y) && !device->keyBitmask.test(BTN_TOUCH) &&
++               !device->keyBitmask.test(BTN_TOOL_PEN) &&
++               !device->absBitmask.test(ABS_MT_POSITION_X) && !haveGamepadButtons &&
++               !haveStylusButtons) {
++        // An absolute mouse: mouse buttons and absolute X/Y but no touch contact, e.g. the
++        // tablets QEMU, VirtualBox and VMware give their guests. CursorInputMapper places the
++        // pointer at the reported position instead of moving it by relative deltas.
++        device->classes |= InputDeviceClass::CURSOR;
+     }
+ 
+     // See if the device is specially configured to be of a certain type.
+diff --git a/services/inputflinger/reader/mapper/CursorInputMapper.cpp b/services/inputflinger/reader/mapper/CursorInputMapper.cpp
+index da0901b2a2..4443c40848 100644
+--- a/services/inputflinger/reader/mapper/CursorInputMapper.cpp
++++ b/services/inputflinger/reader/mapper/CursorInputMapper.cpp
+@@ -20,6 +20,7 @@
+ 
+ #include "CursorInputMapper.h"
+ 
++#include <algorithm>
+ #include <optional>
+ 
+ #include <com_android_input_flags.h>
+@@ -244,6 +245,15 @@ std::list<NotifyArgs> CursorInputMapper::reset(nsecs_t when) {
+ 
+ std::list<NotifyArgs> CursorInputMapper::process(const RawEvent& rawEvent) {
+     std::list<NotifyArgs> out;
++    if (mAbsolute && rawEvent.type == EV_ABS) {
++        if (rawEvent.code == ABS_X) {
++            mAbsX = rawEvent.value;
++            mAbsMoved = true;
++        } else if (rawEvent.code == ABS_Y) {
++            mAbsY = rawEvent.value;
++            mAbsMoved = true;
++        }
++    }
+     mCursorButtonAccumulator.process(rawEvent);
+     mCursorMotionAccumulator.process(rawEvent);
+     mCursorScrollAccumulator.process(rawEvent);
+@@ -311,11 +321,24 @@ std::list<NotifyArgs> CursorInputMapper::sync(nsecs_t when, nsecs_t readTime) {
+     mWheelYVelocityControl.move(when, nullptr, &vscroll);
+     mWheelXVelocityControl.move(when, &hscroll, nullptr);
+ 
+-    mPointerVelocityControl.move(when, &deltaX, &deltaY);
+-
+     float xCursorPosition = AMOTION_EVENT_INVALID_CURSOR_POSITION;
+     float yCursorPosition = AMOTION_EVENT_INVALID_CURSOR_POSITION;
+ 
++    if (mAbsolute) {
++        // No relative motion: PointerChoreographer moves the cursor to xCursorPosition/
++        // yCursorPosition (its "absolute mouse device" path) and derives the deltas itself.
++        deltaX = deltaY = 0;
++        moved = mAbsMoved;
++        mAbsMoved = false;
++        const std::optional<vec2> position = absolutePosition();
++        if (position) {
++            xCursorPosition = position->x;
++            yCursorPosition = position->y;
++        }
++    } else {
++        mPointerVelocityControl.move(when, &deltaX, &deltaY);
++    }
++
+     // Moving an external trackball or mouse should wake the device.
+     // We don't do this for internal cursor devices to prevent them from waking up
+     // the device in your pocket.
+@@ -346,6 +369,10 @@ std::list<NotifyArgs> CursorInputMapper::sync(nsecs_t when, nsecs_t readTime) {
+         }
+ 
+         moveCoords.setAxisValue(AMOTION_EVENT_AXIS_PRESSURE, wasDown ? 1.0f : 0.0f);
++        if (MotionEvent::isValidCursorPosition(xCursorPosition, yCursorPosition)) {
++            moveCoords.setAxisValue(AMOTION_EVENT_AXIS_X, xCursorPosition);
++            moveCoords.setAxisValue(AMOTION_EVENT_AXIS_Y, yCursorPosition);
++        }
+ 
+         out.push_back(NotifyMotionArgs(getContext()->getNextId(), when, readTime, getDeviceId(),
+                                        mSource, *mDisplayId, policyFlags, action, 0, 0, metaState,
+@@ -367,6 +394,10 @@ std::list<NotifyArgs> CursorInputMapper::sync(nsecs_t when, nsecs_t readTime) {
+         PointerCoords pointerCoords;
+         pointerCoords.clear();
+         pointerCoords.setAxisValue(AMOTION_EVENT_AXIS_PRESSURE, down ? 1.0f : 0.0f);
++        if (MotionEvent::isValidCursorPosition(xCursorPosition, yCursorPosition)) {
++            pointerCoords.setAxisValue(AMOTION_EVENT_AXIS_X, xCursorPosition);
++            pointerCoords.setAxisValue(AMOTION_EVENT_AXIS_Y, yCursorPosition);
++        }
+ 
+         if (buttonsReleased) {
+             BitSet32 released(buttonsReleased);
+@@ -455,6 +486,22 @@ int32_t CursorInputMapper::getScanCodeState(uint32_t sourceMask, int32_t scanCod
+     }
+ }
+ 
++std::optional<vec2> CursorInputMapper::absolutePosition() const {
++    if (!mAbsolute || !mAbsX || !mAbsY || mSource != AINPUT_SOURCE_MOUSE) {
++        return std::nullopt;
++    }
++    const FloatRect& b = mBoundsInLogicalDisplay;
++    if (b.right <= b.left || b.bottom <= b.top) {
++        return std::nullopt;
++    }
++    const auto scale = [](int32_t value, const RawAbsoluteAxisInfo& info, float lo, float hi) {
++        const float clamped = std::clamp(value, info.minValue, info.maxValue);
++        return lo + (clamped - info.minValue) * (hi - lo) / (info.maxValue - info.minValue);
++    };
++    return vec2{scale(*mAbsX, *mAbsXInfo, b.left, b.right),
++                scale(*mAbsY, *mAbsYInfo, b.top, b.bottom)};
++}
++
+ std::optional<ui::LogicalDisplayId> CursorInputMapper::getAssociatedDisplayId() const {
+     return mDisplayId;
+ }
+@@ -465,6 +512,14 @@ void CursorInputMapper::configureBasicParams() {
+     // Configure basic parameters.
+     mParameters = computeParameters(getDeviceContext());
+ 
++    // Absolute mouse: see EventHub's device classification.
++    const InputDeviceContext& context = getDeviceContext();
++    mAbsXInfo = context.getAbsoluteAxisInfo(ABS_X);
++    mAbsYInfo = context.getAbsoluteAxisInfo(ABS_Y);
++    mAbsolute = !context.hasRelativeAxis(REL_X) && mAbsXInfo && mAbsYInfo &&
++            mAbsXInfo->maxValue > mAbsXInfo->minValue &&
++            mAbsYInfo->maxValue > mAbsYInfo->minValue;
++
+     // Configure device mode.
+     switch (mParameters.mode) {
+         case Parameters::Mode::POINTER_RELATIVE:
+diff --git a/services/inputflinger/reader/mapper/CursorInputMapper.h b/services/inputflinger/reader/mapper/CursorInputMapper.h
+index 7215403de2..597501eb0b 100644
+--- a/services/inputflinger/reader/mapper/CursorInputMapper.h
++++ b/services/inputflinger/reader/mapper/CursorInputMapper.h
+@@ -126,10 +126,21 @@ private:
+ 
+     bool mMouseReverseVerticalScrolling = false;
+ 
++    // Absolute mouse (ABS_X/ABS_Y instead of REL_X/REL_Y, see EventHub): the raw position is
++    // scaled to the display and sent as the cursor position, without acceleration.
++    bool mAbsolute = false;
++    std::optional<RawAbsoluteAxisInfo> mAbsXInfo;
++    std::optional<RawAbsoluteAxisInfo> mAbsYInfo;
++    std::optional<int32_t> mAbsX;
++    std::optional<int32_t> mAbsY;
++    bool mAbsMoved = false;
++
+     explicit CursorInputMapper(InputDeviceContext& deviceContext,
+                                const InputReaderConfiguration& readerConfig);
+     void dumpParameters(std::string& dump);
+     void configureBasicParams();
++    // Cursor position of an absolute mouse in logical display coordinates, if known.
++    std::optional<vec2> absolutePosition() const;
+     void configureOnPointerCapture(const InputReaderConfiguration& config);
+     void configureOnChangePointerSpeed(const InputReaderConfiguration& config);
+     void configureOnChangeDisplayInfo(const InputReaderConfiguration& config);

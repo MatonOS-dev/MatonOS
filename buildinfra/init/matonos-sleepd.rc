@@ -1,0 +1,9 @@
+
+service vendor.matonos-sleepd /odm/bin/matonos-sleepd
+    class core
+    setenv LD_LIBRARY_PATH /odm/lib64
+    user system
+    group system input
+
+on property:sys.boot_completed=1
+    start vendor.matonos-sleepd

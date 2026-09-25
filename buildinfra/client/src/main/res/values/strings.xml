@@ -1,0 +1,12 @@
+<resources>
+    <string name="matonos_bridge_required_title">MatonOS required</string>
+    <string name="matonos_needs_matonos">This app needs MatonOS. Install MatonOS, then reopen this app.</string>
+    <string name="matonos_update_matonos">MatonOS is too old for this app. Update MatonOS and reopen this app.</string>
+    <string name="matonos_permission_missing">This app needs the MatonOS bridge permission. Reinstall it through MatonOS or trust its developer build.</string>
+    <string name="matonos_developer_not_trusted">Developer build not trusted. Run: adb shell content call --uri content://org.matonos.systembridge.shell --method trust --arg %1$s --extra targets:s:%2$s</string>
+    <string name="matonos_channel_missing">The MatonOS %1$s service is unavailable. Connect or enable that device, then reopen this app.</string>
+    <string name="matonos_bridge_unavailable">The MatonOS bridge could not be reached. Restart MatonOS and reopen this app.</string>
+    <string name="matonos_trust_disabled">Trust requests are disabled in Developer options. Enable the option on the Trusted developer apps screen, or use adb shell content call on the bridge trust provider.</string>
+    <string name="matonos_trust_this_app">Trust this app…</string>
+    <string name="matonos_exit">Exit</string>
+</resources>

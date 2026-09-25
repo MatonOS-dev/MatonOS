@@ -1,0 +1,17 @@
+From: MatonOS audio team
+Subject: [PATCH] spa: build ALSA plugin for Android Linux kernels
+
+The NDK cross file reports the target OS as Android, although MatonOS runs
+on the Linux kernel and uses ALSA/libudev for hardware discovery. Include
+Android in the ALSA SPA plugin condition so WirePlumber can enumerate cards.
+
+--- a/spa/plugins/meson.build
++++ b/spa/plugins/meson.build
+@@ -1,3 +1,5 @@
+-if alsa_dep.found() and host_machine.system() == 'linux'
++# Android userspace still uses the Linux ALSA kernel interface. Meson reports
++# the NDK target as "android", so include it when building the ALSA SPA plugin.
++if alsa_dep.found() and host_machine.system() in ['linux', 'android']
+   subdir('alsa')
+ endif
+*** End Patch

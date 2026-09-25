@@ -1,0 +1,18 @@
+# Keep the stock AIDL HAL's ALSA endpoint stable, independent of physical cards.
+# This service is asynchronous and non-critical: failure to load snd-aloop must
+# never gate boot or audio HAL registration (the stock HAL retains its stub).
+on post-fs
+    start vendor.maton-audio-loopback
+
+on property:vendor.maton.audio.loopback_ready=0
+    # Select AOSP's paced fallback drivers if the fixed PCM could not load.
+    # These properties are consulted when primary streams are created.
+    setprop ro.boot.audio.tinyalsa.ignore_output true
+    setprop ro.boot.audio.tinyalsa.simulate_input true
+
+service vendor.maton-audio-loopback /system/bin/sh /odm/bin/maton-audio-loopback.sh
+    class core
+    user root
+    group root
+    oneshot
+    disabled

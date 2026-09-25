@@ -1,0 +1,14 @@
+# Vendor ueventd config for pc_x86_64 (installed as /vendor/etc/ueventd.rc).
+# /dev/dri/*, input, etc. are already covered by the platform ueventd.rc.
+
+# PC hardware varies: load modules from /vendor/lib/modules by modalias as
+# devices appear, instead of a fixed modules.load list.
+modalias_handling enabled
+
+# linux-firmware is staged into /vendor/firmware by build-kernel.sh
+firmware_directories /vendor/firmware/
+
+/dev/rtc0                 0664   system     system
+
+# bluetooth: the HCI HAL toggles its selected controller through rfkill.
+/dev/rfkill               0660   bluetooth  bluetooth

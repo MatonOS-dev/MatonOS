@@ -1,0 +1,6 @@
+# Proposed additions to the existing fixed sepolicy/matonos files only.
+# matonos_driver.te
+allow matonos_driver logd:unix_dgram_socket sendto;
+get_prop(matonos_driver, vendor_maton_prop)
+# property_contexts already labels vendor.maton.* as vendor_maton_prop.
+# No new types or policy files are required by this prototype.

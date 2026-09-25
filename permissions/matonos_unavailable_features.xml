@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0
+
+     Features AOSP's pc_core_hardware.xml declares that v1 can't back on every
+     PC. SystemConfig drops <unavailable-feature>s after reading all files.
+
+     Bluetooth features stay declared because the VHCI fallback supplies a
+     controller when no physical Bluetooth hardware is present. -->
+<permissions>
+</permissions>

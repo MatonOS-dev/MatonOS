@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<resources>
+    <!-- Android never turns the screen off: MatonOS's sleep daemon
+         (power/matonos-sleepd.c) decides when the PC sleeps. -->
+    <integer name="def_screen_off_timeout">2147483647</integer>
+</resources>

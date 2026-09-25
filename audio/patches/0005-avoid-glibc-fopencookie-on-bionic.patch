@@ -1,0 +1,40 @@
+From: MatonOS audio team
+Subject: [PATCH] spa: avoid glibc fopencookie on Android
+
+Bionic does not provide fopencookie/cookie_io_functions_t. The ALSA backend
+uses this stream only for optional ALSA diagnostic dumps; route those dumps to
+/dev/null on Android, keeping the upstream logging path on Linux.
+
+diff --git a/spa/plugins/alsa/alsa-pcm.c b/spa/plugins/alsa/alsa-pcm.c
+index 16e69d71c..46ae8183d 100644
+--- a/spa/plugins/alsa/alsa-pcm.c
++++ b/spa/plugins/alsa/alsa-pcm.c
+@@ -717,6 +717,7 @@ int spa_alsa_parse_prop_params(struct state *state, struct spa_pod *params)
+ }
+ 
+ 
++#ifndef __ANDROID__
+ static ssize_t log_write(void *cookie, const char *buf, size_t size)
+ {
+ 	struct state *state = cookie;
+@@ -742,6 +743,8 @@ static const cookie_io_functions_t io_funcs = {
+ 	.write = log_write,
+ };
+ 
++#endif
++
+ static void silence_error_handler(const char *file, int line,
+ 		const char *function, int err, const char *fmt, ...)
+ {
+@@ -1059,7 +1062,11 @@ int spa_alsa_init(struct state *state, const struct spa_dict *info)
+ 
+ 	state->card = ensure_card(state->card_index, state->open_ucm, state->is_split_parent);
+ 
++#ifdef __ANDROID__
++	state->log_file = fopen("/dev/null", "w");
++#else
+ 	state->log_file = fopencookie(state, "w", io_funcs);
++#endif
+ 	if (state->log_file == NULL) {
+ 		spa_log_error(state->log, "can't create log file");
+ 		return -errno;

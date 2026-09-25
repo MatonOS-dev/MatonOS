@@ -1,0 +1,8 @@
+
+service vendor.matonos-sleepd /vendor/bin/matonos-sleepd
+    class core
+    user system
+    group system input
+
+on property:sys.boot_completed=1
+    start vendor.matonos-sleepd

@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+// Vendor RRO for SettingsProvider's defaults (package com.android.providers.settings).
+runtime_resource_overlay {
+    name: "matonos_overlay_settings_provider",
+    soc_specific: true,
+    sdk_version: "current",
+}

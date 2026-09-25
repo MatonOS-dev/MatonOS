@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The spoofed VHCI backend keeps Bluetooth available without hardware. -->
+<permissions>
+    <feature name="android.hardware.bluetooth" />
+    <feature name="android.hardware.bluetooth_le" />
+</permissions>

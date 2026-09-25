@@ -1,0 +1,23 @@
+// The bridge is the only MatonOS app built inside Soong: it needs platform
+// APIs and the platform certificate. Keep its source/API file set stable.
+android_app {
+    name: "MatonSystemBridge",
+    manifest: "AndroidManifest.xml",
+    srcs: [
+        "src/**/*.java",
+        "aidl/**/*.aidl",
+    ],
+    resource_dirs: ["res"],
+    aidl: {
+        local_include_dirs: ["aidl"],
+    },
+    platform_apis: true,
+    static_libs: ["vendor.matonos.channel-V1-java"],
+    certificate: "platform",
+    privileged: true,
+    system_ext_specific: true,
+    required: ["privapp-permissions-org.matonos.systembridge"],
+    dex_preopt: {
+        enabled: false,
+    },
+}

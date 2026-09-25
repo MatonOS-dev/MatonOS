@@ -1,0 +1,5 @@
+09-25 19:02:00.000 I audioserver: Found IModule/default in device VINTF manifest
+09-25 19:02:00.001 E audioserver: could not be found, trying to start it as a lazy AIDL service
+09-25 19:02:00.002 E init: Could not find 'aidl/vendor.hardware.audio.core.IModule/default' for ctl.interface_start
+09-25 19:02:01.002 I init: Service audioserver restarting
+09-25 19:02:04.002 I init: Service audioserver restarting

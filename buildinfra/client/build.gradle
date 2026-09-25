@@ -1,0 +1,15 @@
+plugins { id 'com.android.library' }
+
+// Settings and external Gradle apps share these sources, but each project
+// needs an isolated output tree when build-apps.sh builds them in sequence.
+layout.buildDirectory.set(rootProject.layout.buildDirectory.dir('matonos-client'))
+
+android {
+    namespace 'org.matonos.client'
+    compileSdk 35
+    buildToolsVersion '36.0.0'
+    defaultConfig { minSdk 32 }
+    sourceSets.main.aidl.srcDirs += [file('../../systembridge/aidl')]
+}
+
+android { buildFeatures { aidl true } }

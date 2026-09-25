@@ -1,0 +1,8 @@
+android.hardware.audio.core	4	android.hardware.audio.core/4
+android.hardware.audio.common	5	android.hardware.audio.common/5
+android.hardware.audio.core.sounddose	4	android.hardware.audio.core.sounddose/4
+android.hardware.audio.effect	4	android.hardware.audio.effect/4
+android.hardware.common	2	android.hardware.common/2
+android.hardware.common.fmq	1	android.hardware.common.fmq/1
+android.media.audio.common.types	5	android.media.audio.common.types/5
+android.media.audio.eraser.types	2	android.media.audio.eraser.types/2

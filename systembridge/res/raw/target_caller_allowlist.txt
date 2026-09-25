@@ -1,0 +1,8 @@
+# One target and exact package per line. A caller must also pass the certificate allowlist.
+status org.matonos.settings
+input org.matonos.settings
+sleep org.matonos.settings
+wifi org.matonos.settings
+bluetooth org.matonos.settings
+launcher org.matonos.shell
+input org.matonos.shell

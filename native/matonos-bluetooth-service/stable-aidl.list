@@ -1,0 +1,2 @@
+# package<TAB>frozen version<TAB>AOSP source root; match versions_with_info.
+android.hardware.bluetooth	1	hardware/interfaces/bluetooth/aidl

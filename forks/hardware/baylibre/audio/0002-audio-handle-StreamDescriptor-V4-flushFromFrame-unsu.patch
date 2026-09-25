@@ -1,0 +1,40 @@
+From c01d78049e5bf9cc3ce7c88c43fa4c18412fbe81 Mon Sep 17 00:00:00 2001
+From: hanro50 <hlareman2@gmail.com>
+Date: Fri, 25 Sep 2026 21:57:47 +0200
+Subject: [PATCH 2/2] audio: handle StreamDescriptor V4 flushFromFrame
+ (unsupported)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ Stream.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/Stream.cpp b/Stream.cpp
+index 197d718..288460b 100644
+--- a/Stream.cpp
++++ b/Stream.cpp
+@@ -222,6 +222,10 @@ StreamInWorkerLogic::Status StreamInWorkerLogic::cycle() {
+     StreamDescriptor::Reply reply{};
+     reply.status = STATUS_BAD_VALUE;
+     switch (command.getTag()) {
++        case Tag::flushFromFrame:
++            // IStreamCommon V4 (AOSP 17): only for PCM offload, which we don't offer.
++            LOG(ERROR) << __func__ << ": flushFromFrame is not supported";
++            break;
+         case Tag::halReservedExit: {
+             const int32_t cookie = command.get<Tag::halReservedExit>();
+             StreamInWorkerLogic::Status status = Status::CONTINUE;
+@@ -501,6 +505,10 @@ StreamOutWorkerLogic::Status StreamOutWorkerLogic::cycle() {
+     reply.status = STATUS_BAD_VALUE;
+     using Tag = StreamDescriptor::Command::Tag;
+     switch (command.getTag()) {
++        case Tag::flushFromFrame:
++            // IStreamCommon V4 (AOSP 17): only for PCM offload, which we don't offer.
++            LOG(ERROR) << __func__ << ": flushFromFrame is not supported";
++            break;
+         case Tag::halReservedExit: {
+             const int32_t cookie = command.get<Tag::halReservedExit>();
+             StreamOutWorkerLogic::Status status = Status::CONTINUE;
+-- 
+2.53.0
+

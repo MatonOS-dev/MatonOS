@@ -1,0 +1,7 @@
+# System Bridge may discover and call the fixed vendor channel service.
+allow matonos_system_bridge matonos_channel_service:service_manager find;
+binder_call(matonos_system_bridge, matonos_driver)
+get_prop(matonos_system_bridge, vendor_maton_prop)
+# Input proxy dimensions are computed from Android's active display mode.
+# Treble neverallow: coredomain may not set vendor props. Display dimensions
+# are sent to matonos-inputd over the existing IChannel.

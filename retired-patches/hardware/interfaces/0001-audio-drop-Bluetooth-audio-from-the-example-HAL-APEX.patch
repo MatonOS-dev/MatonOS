@@ -1,0 +1,28 @@
+diff --git a/audio/aidl/default/android.hardware.audio.service-aidl.xml b/audio/aidl/default/android.hardware.audio.service-aidl.xml
+index fda4af68eb..59175e47c4 100644
+--- a/audio/aidl/default/android.hardware.audio.service-aidl.xml
++++ b/audio/aidl/default/android.hardware.audio.service-aidl.xml
+@@ -9,11 +9,6 @@
+     <version>4</version>
+     <fqname>IModule/r_submix</fqname>
+   </hal>
+-  <hal format="aidl">
+-    <name>android.hardware.audio.core</name>
+-    <version>4</version>
+-    <fqname>IModule/bluetooth</fqname>
+-  </hal>
+   <hal format="aidl">
+     <name>android.hardware.audio.core</name>
+     <version>4</version>
+diff --git a/audio/aidl/default/apex/com.android.hardware.audio/Android.bp b/audio/aidl/default/apex/com.android.hardware.audio/Android.bp
+index 510fee5f84..e1353e3361 100644
+--- a/audio/aidl/default/apex/com.android.hardware.audio/Android.bp
++++ b/audio/aidl/default/apex/com.android.hardware.audio/Android.bp
+@@ -47,7 +47,6 @@ apex {
+     prebuilts: [
+         "android.hardware.audio.service-aidl.example.rc",
+         "android.hardware.audio.service-aidl.xml",
+-        "android.hardware.bluetooth.audio.xml",
+         "audio_eraser_classifier_model",
+         "audio_eraser_separator_model",
+     ],

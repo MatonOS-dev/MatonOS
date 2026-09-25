@@ -1,0 +1,3 @@
+# The local bare repos are private checkout state; never add them to the
+# MatonOS source repository. The source and commit IDs are documented here.
+/repos/

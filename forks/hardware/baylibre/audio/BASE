@@ -1,0 +1,4 @@
+project: hardware/baylibre/audio
+upstream: https://github.com/BayLibre/android_hardware_baylibre_audio branch main
+base: a3abeb7 (audio: Drop vendor API version guard in APEX path resolution)
+branch: matonos/v1.2

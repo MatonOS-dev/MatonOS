@@ -1,0 +1,13 @@
+--- a/src/pipewire/data-loop.c
++++ b/src/pipewire/data-loop.c
+@@ -283,6 +283,10 @@ int pw_data_loop_stop(struct pw_data_loop *loop)
+ 		if (loop->cancel) {
+ 			pw_log_debug("%p cancel", loop);
++#if defined(__BIONIC__)
++			pw_loop_invoke(loop->loop, do_stop, 1, NULL, 0, false, loop);
++#else
+ 			pthread_cancel(loop->thread);
++#endif
+ 		} else {
+ 			pw_log_debug("%p signal", loop);
+ 			pw_loop_invoke(loop->loop, do_stop, 1, NULL, 0, false, loop);

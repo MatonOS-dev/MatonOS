@@ -1,0 +1,21 @@
+# matonos-setup.sh (setup/): sets MatonOS defaults Android has no config for
+# (F-Droid's install app-op, battery icon on battery-less PCs) via cmd/settings
+# after boot.
+type matonos_setup, domain, coredomain;
+type matonos_setup_exec, system_file_type, exec_type, file_type;
+
+init_daemon_domain(matonos_setup)
+
+allow matonos_setup shell_exec:file rx_file_perms;
+allow matonos_setup toolbox_exec:file rx_file_perms;
+allow matonos_setup system_file:file rx_file_perms;
+
+binder_use(matonos_setup)
+binder_call(matonos_setup, system_server)
+allow matonos_setup { appops_service settings_service }:service_manager find;
+
+# Test audio clips: read them from /product and hand them to MediaProvider
+# with the `content` tool (app_process: needs the ART runtime and AM).
+allow matonos_setup system_file:file r_file_perms;
+allow matonos_setup { activity_service content_capture_service }:service_manager find;
+binder_call(matonos_setup, mediaprovider_app)

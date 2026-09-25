@@ -1,0 +1,31 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'org.matonos.audiotest'
+    compileSdk = 35
+    buildToolsVersion = '36.0.0'
+    defaultConfig {
+        applicationId 'org.matonos.audiotest'
+        minSdk = 29
+        targetSdk = 35
+        versionCode = 1
+        versionName = '1.0'
+    }
+    def signingStore = System.getenv('MATON_SIGNING_STORE_FILE')
+    if (signingStore) {
+        signingConfigs {
+            release {
+                storeFile file(signingStore)
+                storePassword System.getenv('MATON_SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('MATON_SIGNING_KEY_ALIAS')
+                keyPassword System.getenv('MATON_SIGNING_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (signingStore) signingConfig signingConfigs.release
+            minifyEnabled = false
+        }
+    }
+}

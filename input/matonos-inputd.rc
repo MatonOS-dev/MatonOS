@@ -1,0 +1,6 @@
+
+service matonos-inputd /odm/bin/matonos-inputd
+    class core
+    user root
+    setenv LD_LIBRARY_PATH /odm/lib64
+    group root input

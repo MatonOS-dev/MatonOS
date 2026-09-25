@@ -1,0 +1,10 @@
+# Proposal only. Imported from the ODM debug bundle after coordinator review.
+service vendor.matonos-bootwatch /odm/bin/matonos-bootwatch
+    class late_start
+    user system
+    group log
+    disabled
+    oneshot
+
+on property:ro.boot.matonos.debug=1
+    start vendor.matonos-bootwatch

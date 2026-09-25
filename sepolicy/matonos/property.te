@@ -1,0 +1,2 @@
+# Unified MatonOS vendor property namespace for all drivers and their readers.
+vendor_restricted_prop(vendor_maton_prop)

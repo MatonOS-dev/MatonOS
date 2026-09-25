@@ -1,0 +1,28 @@
+# Shared changes requested
+
+- Update `CLAUDE.md` generic channel guidance to specify the frozen v1 stable
+  `vendor.matonos.channel` VINTF AIDL service, NDK helper registration, and
+  Binder listener callbacks. Remove the stale generic Unix-socket transport
+  description while keeping unrelated audio PCM sockets documented separately.
+- The channel policy adds the one fixed `sepolicy/matonos/service_contexts`
+  mapping for `vendor.matonos.channel.IChannel/{sleep,wifi,bluetooth,input,audio,camera}`.
+- The ODM bundle registry includes `bundle/matonos-channel.xml`; add later
+  targets there and register them in the same VINTF package.
+
+- Update `wifi/README.md`, `bluetooth/README.md`, and `input/README.md` to
+  describe their `IChannel/<area>` service and remove the stale
+  `/dev/socket/matonos/<area>` path. Their init rc socket declarations and
+  symlink lines have already been removed as part of this transport change.
+
+- Update `sepolicy/README.md` to remove its stale claim that the bridge connects
+  to `/dev/socket/matonos/*`; describe the fixed `vendor_service_contexts`
+  Binder channel mapping instead.
+- Update `NOTES.md` bridge trust description: trust is enabled on all builds
+  when Developer options are enabled; no persistent notification is required;
+  the in-app request switch is off by default. Document `MatonOS.requestTrust`
+  and REQUIRED/OPTIONAL library modes alongside the bridge design.
+- Shell administration uses the bridge ContentProvider at
+  `content://org.matonos.systembridge.shell`; only shell/root Binder UIDs may
+  call it. No servicemanager service label or shell-facing SELinux rule is
+  needed. The fixed `service_contexts` file remains for future platform
+  services but has no MatonOS shell-command entry.

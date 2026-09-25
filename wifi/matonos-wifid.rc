@@ -1,0 +1,20 @@
+service vendor.matonos-wifid /odm/bin/matonos-wifid
+    class core
+    setenv LD_LIBRARY_PATH /odm/lib64
+    user root
+    group system
+    capabilities NET_ADMIN
+    priority -10
+
+on post-fs-data
+    start vendor.matonos-wifid
+
+# Let init load the trusted, staged kernel modules. Dependencies must precede
+# mac80211_hwsim; this keeps CAP_SYS_MODULE out of the long-running daemon.
+on property:vendor.maton.wifi.hwsim.load=1
+    insmod /vendor/lib/modules/rfkill.ko
+    insmod /vendor/lib/modules/cfg80211.ko
+    insmod /vendor/lib/modules/libarc4.ko
+    insmod /vendor/lib/modules/mac80211.ko
+    insmod /vendor/lib/modules/mac80211_hwsim.ko radios=${vendor.maton.wifi.hwsim.radios}
+    setprop vendor.maton.wifi.hwsim.load 0

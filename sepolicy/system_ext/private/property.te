@@ -1,0 +1,7 @@
+# MatonOS build-time settings (ro.matonos.*), read by platform components
+# (patches/frameworks/base): SystemUI (classic_navbar, maximize_fullscreen),
+# window manager (maximize_fullscreen).
+system_internal_prop(matonos_config_prop)
+get_prop(platform_app, matonos_config_prop)
+get_prop(system_server, matonos_config_prop)
+

@@ -1,0 +1,8 @@
+<!--
+  Device (vendor) VINTF manifest for pc_x86_64. HAL APEXes and HAL modules
+  contribute their own manifest fragments; only the target FCM level lives here.
+  target-level matches the current compatibility matrix in
+  hardware/interfaces/compatibility_matrices (same as cuttlefish).
+-->
+<manifest version="1.0" type="device" target-level="202604">
+</manifest>

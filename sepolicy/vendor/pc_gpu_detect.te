@@ -1,0 +1,13 @@
+# pc-gpu-detect.sh: runs once at early-init (graphics/init.pc_x86_64.graphics.rc)
+# to pick the Vulkan HAL from the primary GPU's PCI IDs. Minimal domain so
+# init can exec it; the device is permissive for bring-up, the full rule set
+# (sysfs PCI reads, setting ro.hardware.vulkan / vendor.pc.*) comes with
+# enforcing mode.
+type pc_gpu_detect, domain;
+type pc_gpu_detect_exec, exec_type, vendor_file_type, file_type;
+
+init_daemon_domain(pc_gpu_detect)
+
+allow pc_gpu_detect vendor_shell_exec:file rx_file_perms;
+allow pc_gpu_detect vendor_toolbox_exec:file rx_file_perms;
+r_dir_file(pc_gpu_detect, sysfs)

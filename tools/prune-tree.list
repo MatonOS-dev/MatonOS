@@ -1,0 +1,55 @@
+# AOSP projects hidden from Soong/Kati (tools/prune-tree.sh). MatonOS never
+# builds them; hiding them cuts ~4.5k of ~15.6k Android.bp files from every
+# analysis (RAM and time). Paths relative to the AOSP root, one per line.
+# Keep tools/rootcanal + tools/netsim (virtual Bluetooth controller for tests).
+# Never prune a directory holding a Soong plugin (bootstrap_go_package with
+# pluginFor: ["soong_build"]): its module types are used across the tree and
+# analysis fails with "unrecognized module type" (test/app_compat: csuite_test;
+# device/google/cuttlefish/build). Check: grep -rl pluginFor <dir>.
+# Same for team modules (`team {}`, trendy_team_*) and Trusty dirgroups
+# (trusty_dirgroup_*: device/generic/trusty, test/vts-testcase) referenced elsewhere.
+# Not prunable (real product deps, found via ALLOW_MISSING_DEPENDENCIES
+# ninja errors): platform_testing (SystemUI PlatformMotionTestingComposeValues,
+# AdServices profile-proto-def), hardware/google (libapf for the network
+# stack, hardware.google.bluetooth.* for the Bluetooth APEX).
+# Also needed (2026-09-25): cts/libs+common (jsonlib for protologtool),
+# packages/services/Car (android.car stubs for PermissionController-lib,
+# sdk jars), device/google/cuttlefish/apex (keys of the keymint/gatekeeper/
+# strongbox APEXes), device/generic/goldfish (otatools).
+# Check after changes: grep "missing dependencies" in out/soong/build.*.ninja.
+
+# Test suites
+# cts: only the test dirs (libs/common/root define jsonlib, cts_defaults used by tools)
+cts/hostsidetests
+cts/tests
+test/cts-root
+test/vts
+test/catbox
+test/suite_harness
+tools/tradefederation
+# Automotive
+system/software_defined_vehicle
+packages/services/display_safety
+device/generic/car
+device/google/sdv
+device/google/trout
+hardware/sdv
+# Other devices / emulators
+# cuttlefish minus build/ (Soong plugin with module types used elsewhere)
+device/google/cuttlefish/common
+device/google/cuttlefish/custom_partition
+device/google/cuttlefish/guest
+device/google/cuttlefish/host
+device/google/cuttlefish/recovery
+device/google/cuttlefish/shared
+device/google/cuttlefish/tests
+device/google/cuttlefish/tools
+
+device/google/atv
+device/google/contexthub
+device/linaro
+device/sample
+# Other vendors' hardware
+hardware/nxp
+hardware/st
+hardware/qcom

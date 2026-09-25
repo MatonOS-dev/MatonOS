@@ -1,0 +1,16 @@
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+sh_binary {
+    name: "pc-gpu-detect.sh",
+    src: "pc-gpu-detect.sh",
+    vendor: true,
+}
+
+prebuilt_etc {
+    name: "init.pc_x86_64.graphics.rc",
+    src: "init.pc_x86_64.graphics.rc",
+    relative_install_path: "init",
+    vendor: true,
+}

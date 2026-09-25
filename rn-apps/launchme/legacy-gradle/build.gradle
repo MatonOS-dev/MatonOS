@@ -1,0 +1,71 @@
+plugins {
+    id 'com.android.application' version '9.2.0'
+    id 'com.android.library' version '9.2.0' apply false
+    id 'com.facebook.react' version '0.87.1'
+}
+
+def signingStorePath = System.getenv('MATON_SIGNING_STORE_FILE')
+def hasSigningKey = signingStorePath != null && !signingStorePath.isEmpty()
+
+android {
+    namespace 'org.matonos.shell'
+    compileSdk 35
+    buildToolsVersion '36.0.0'
+
+    defaultConfig {
+        applicationId 'org.matonos.shell'
+        minSdk 32
+        targetSdk 35
+        versionCode 2
+        versionName '1.2'
+        buildConfigField 'boolean', 'RN_SHELL_UI_ENABLED',
+                project.findProperty('matonRnShellUi')?.toString()?.toBoolean()?.toString() ?: 'true'
+    }
+
+    buildFeatures { buildConfig true }
+
+    if (hasSigningKey) {
+        signingConfigs {
+            matonosDevelopment {
+                storeFile file(signingStorePath)
+                storePassword System.getenv('MATON_SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('MATON_SIGNING_KEY_ALIAS')
+                keyPassword System.getenv('MATON_SIGNING_KEY_PASSWORD')
+            }
+        }
+        buildTypes {
+            // The development APK must update the preinstalled system app so
+            // its bridge grants remain intact; use the exact image signing key.
+            debug { signingConfig signingConfigs.matonosDevelopment }
+            release { signingConfig signingConfigs.matonosDevelopment }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+}
+
+react {
+    root = file('.')
+    reactNativeDir = file('node_modules/react-native')
+    codegenDir = file('node_modules/@react-native/codegen')
+    cliFile = file('node_modules/react-native/cli.js')
+    entryFile = file('index.js')
+    autolinkLibrariesWithApp()
+}
+
+dependencies {
+    implementation project(':matonos-client')
+    implementation 'com.facebook.react:react-android'
+    implementation 'com.facebook.react:hermes-android'
+    implementation 'com.google.android.material:material:1.13.0'
+}
+
+// React Native's app codegen does not include TurboModule-only codegen specs
+// owned by a local library dependency. Generate that shared spec before the
+// application's Java and native compilation tasks.
+tasks.named('preBuild') {
+    dependsOn(':matonos_rn-common:generateCodegenArtifactsFromSchema')
+}

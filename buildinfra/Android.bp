@@ -1,0 +1,87 @@
+// Fixed stable Binder contract shared by the system bridge and vendor NDK daemons.
+aidl_interface {
+    name: "vendor.matonos.channel",
+    vendor_available: true,
+    srcs: ["channel/aidl/**/*.aidl"],
+    local_include_dir: "channel/aidl",
+    stability: "vintf",
+    backend: {
+        java: {
+            platform_apis: true,
+        },
+        ndk: {
+            enabled: true,
+        },
+        cpp: {
+            enabled: false,
+        },
+        rust: {
+            enabled: false,
+        },
+    },
+    versions_with_info: [
+        {
+            version: "1",
+            imports: [],
+        },
+    ],
+    frozen: true,
+}
+
+// Driver executables and libmatonos-ipc live in the ODM image built outside
+// Soong by tools/build-bundle.sh. Apps below remain fixed Soong imports.
+
+android_app_import {
+    name: "MatonOSSettings",
+    apk: "apps-built/Settings.apk",
+    system_ext_specific: true,
+    privileged: true,
+    // Byte-for-byte (own key from build-apps.sh): implicitly presigned. Our
+    // Gradle APKs have stored dex and are aligned, so no skip flag needed.
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    required: ["privapp-permissions-org.matonos.settings"],
+}
+
+android_app_import {
+    name: "MatonOSShell",
+    apk: "apps-built/MatonOSShell.apk",
+    system_ext_specific: true,
+    privileged: true,
+    // Byte-for-byte (own key from build-apps.sh): implicitly presigned. Our
+    // Gradle APKs have stored dex and are aligned, so no skip flag needed.
+    preprocessed: true,
+    overrides: [
+        "Home",
+        "Launcher2",
+        "Launcher3",
+        "Launcher3QuickStep",
+    ],
+    dex_preopt: {
+        enabled: false,
+    },
+    required: ["privapp-permissions-org.matonos.shell"],
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-org.matonos.settings",
+    src: "privapp-permissions/privapp-permissions-org.matonos.settings.xml",
+    sub_dir: "permissions",
+    system_ext_specific: true,
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-org.matonos.shell",
+    src: "privapp-permissions/privapp-permissions-org.matonos.shell.xml",
+    sub_dir: "permissions",
+    system_ext_specific: true,
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-org.matonos.systembridge",
+    src: "privapp-permissions/privapp-permissions-org.matonos.systembridge.xml",
+    sub_dir: "permissions",
+    system_ext_specific: true,
+}
