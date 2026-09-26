@@ -39,7 +39,6 @@ export interface Spec extends TurboModule {
   setShelfExpanded(expanded: boolean): void;
   openPanel(panel: string): void;
   goHome(): void;
-  injectBackKey(): Promise<boolean>;
   reportSurfaceFailure(surfaceName: string, error: string): void;
   addListener(eventName: string): void;
   removeListeners(count: number): void;

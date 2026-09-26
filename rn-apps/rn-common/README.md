@@ -1,12 +1,12 @@
 # `@matonos/rn-common`
 
-Shared UI and typed MatonOS client for MatonOS React Native apps (Shell and the planned Settings app). Keep React 19.2.3, React Native 0.87.1, React Native Paper 5.15.3, and Material Color Utilities 0.4.0 aligned with each app's pinned dependencies.
+Shared UI and typed MatonOS client for Shell, Shelf, Recents, and the planned Settings app. Current apps pin Expo SDK 57, React 19.2.3, React Native 0.86.3, React Native Paper 5.15.3, and Material Color Utilities 0.4.0. Keep those versions aligned in all consumers.
 
 ## Public API
 
 - `matonTheme.ts` creates Material 3 light/dark themes seeded from wallpaper colors, with system theme selection.
 - `MatonButton` is the shared Paper-based button used by app surfaces.
-- `MatonOS.ts` and `useMatonOS` expose typed promise calls, startup/availability state, and topic event subscriptions.
+- `MatonOS.ts` and `useMatonOS` expose typed promise calls, startup/availability state, topic event subscriptions, recent-task operations, wallpaper color, thumbnails, and scoped `back`/`home`/`recents` navigation. Navigation calls are authorized by the platform bridge for the Shelf package only; apps have no `INJECT_EVENTS` permission.
 - `useBridgeAvailable` listens for bridge availability changes.
 - `native-specs/NativeMatonOS.ts` is the Codegen TurboModule contract. Its Android implementation wraps the shared `buildinfra/client` Java client; do not reimplement or fork that client here.
 

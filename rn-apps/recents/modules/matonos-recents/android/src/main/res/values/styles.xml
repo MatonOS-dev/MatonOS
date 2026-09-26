@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.MatonRecents" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar">
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
+</resources>

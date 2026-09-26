@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.MatonShell" parent="Theme.Material3.DynamicColors.DayNight.NoActionBar">
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <!-- Ask WindowManager to compose the user's wallpaper behind HOME. -->
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+    </style>
+</resources>

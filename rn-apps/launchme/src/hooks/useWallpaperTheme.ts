@@ -1,7 +1,7 @@
 import {useEffect, useMemo, useState} from 'react';
 import {useColorScheme} from 'react-native';
 import {createMatonTheme} from '@matonos/rn-common';
-import {ShellNative} from '../MatonShellNative';
+import {MatonShell} from '../MatonShellNative';
 
 const FALLBACK_WALLPAPER_SEED = 0xff365d96;
 
@@ -12,16 +12,14 @@ export function useWallpaperTheme() {
   useEffect(() => {
     let mounted = true;
     const refresh = () => {
-      void ShellNative.getWallpaperSeedColor()
+      void MatonShell.getWallpaperSeedColor()
         .then((color) => {
           if (mounted && color !== 0) setSeedColor(color);
         })
         .catch(() => undefined);
     };
     refresh();
-    const subscription = ShellNative.onShelfState((event) => {
-      if (event.type === 'wallpaperChanged') refresh();
-    });
+    const subscription = MatonShell.onWallpaperChanged(refresh);
     return () => {
       mounted = false;
       subscription.remove();

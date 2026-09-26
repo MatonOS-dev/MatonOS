@@ -34,6 +34,9 @@ if (dexFiles.length === 0) throw new Error('Release APK has no DEX files');
 const dexBytes = execFileSync('unzip', ['-p', apk, ...dexFiles], {maxBuffer: 64 * 1024 * 1024});
 for (const className of [
   'com/th3rdwave/safeareacontext/SafeAreaContextPackage',
+  'androidx/appcompat/app/AppCompatActivity',
+  'org/matonos/shell/HomeActivity',
+  'org/matonos/shell/DrawerActivity',
   'RNCSafeAreaProvider',
 ]) {
   if (!dexBytes.includes(Buffer.from(className))) {

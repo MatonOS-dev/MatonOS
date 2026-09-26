@@ -16,7 +16,7 @@ boolean moveTaskToFront(int taskId); // only a task visible in getRecentTasks
 boolean setTaskFullscreen(int taskId); // only a task visible in getRecentTasks; use WM Shell/task APIs
 ```
 
-`ensureShellOverlayAccess()` should grant the verified shell package the `SYSTEM_ALERT_WINDOW` app-op needed by the public `TYPE_APPLICATION_OVERLAY` shelf. The existing `injectBackKey()` bridge method is used for the Back button; add `input org.matonos.shell` to the exact target allowlist as its current authorization target. Please bump the bridge API version/hash and update the Gradle client AIDL output by rebuilding the app.
+`ensureShellOverlayAccess()` should grant the verified shelf package the `SYSTEM_ALERT_WINDOW` app-op needed by the public `TYPE_APPLICATION_OVERLAY` window. The old `injectBackKey()`/`input` authorization is retired for navigation; use the narrow audited `nav.*` methods in the final section below. Please bump the bridge API version/hash and regenerate the Gradle client AIDL output.
 
 The app currently binds to System Bridge using its explicit component and the existing `SYSTEM_BRIDGE` permission. No private framework stubs are used by the app.
 
@@ -74,3 +74,50 @@ I verified the generated wrapper with Expo SDK 57 / RN 0.86.3: `:app:assembleRel
 The RN APK in the image from 18:31 crashed because `RNCSafeAreaProvider` was absent. The old `legacy-gradle/react-native.config.js` disabled Android autolinking for `react-native-safe-area-context`; it is no longer disabled, and the dependency is now pinned directly in the app. A clean Expo prebuild generates a `PackageList.java` entry for `SafeAreaContextPackage`; the signed release DEX includes that package and `RNCSafeAreaProvider`, and `lib/x86_64/libreact_codegen_safeareacontext.so` is present. `npm run check:release-linkage` verifies these after release assembly. Current corrected output is `android/app/build/outputs/apk/release/app-release.apk` (60,565,954 bytes, existing 07522fac… signer).
 
 The native module also now renders a Java Home app grid if the React Home surface or host lifecycle setup fails; the service retains and uses its Java shelf fallback on RN surface startup failure. After staging/building the fresh image, run `apps/launchme/scripts/smoke-image.sh <adb-serial> out/pc-logs/launcher/<run-name>`; it starts Home, checks the activity and crash buffer, and saves `home.png` plus logs. Please review the screenshot before marking the boot check passed. Device verification remains pending because adb 5555 was offline at this handoff.
+
+## Separate MatonOS Shelf app (2026-09-25)
+
+Please integrate the new Expo CNG project `apps/shelf` as a separate privileged prebuilt:
+
+1. Add `matonos-shelf<TAB>../../../apps/shelf<TAB>expo<TAB>MatonOSShelf.apk` to `buildinfra/apps/apps.list`. `tools/build-apps.sh` must create and persist a distinct `matonos-shelf` signing key (do not reuse the Shell key), supply it to CNG through the `MATON_SIGNING_*` variables, and stage `apps/shelf/android/app/src/main/assets/privapp-permissions-org.matonos.shelf.xml` beside the APK. The project Gradle alias `expo` depends on `assembleRelease`.
+2. Import the APK as `MatonOSShelf` under `/system_ext/priv-app`, `system_ext_specific: true`, `privileged: true`, `certificate: "PRESIGNED"`, and include a `prebuilt_etc` requirement for its permissions XML. Add `MatonOSShelf` to `PRODUCT_PACKAGES` alongside `MatonOSShell`; leave the existing shell/filter lines until this import is active. The XML grants only `org.matonos.permission.SYSTEM_BRIDGE` to `org.matonos.shelf`.
+3. Add exact target caller allowlist entry `launcher org.matonos.shelf`. Do not add `input org.matonos.shelf`; navigation must use the scoped `nav.*` operations requested below. Generate the matching `caller_cert_allowlist.txt` digest from the Shelf-specific signing key. Preserve the existing Shell target entries.
+4. Make the Shelf app eligible to start its exported `BootReceiver` at boot (the receiver starts its non-exported `ShelfService`) and retain the manifest's explicit systembridge permission. Keep overlay permission ownership with Shelf; Shell no longer declares `SYSTEM_ALERT_WINDOW` or `RECEIVE_BOOT_COMPLETED`.
+5. Update the launcher decision in `device/maton/pc_x86_64/NOTES.md` to: "MatonOS Shell and MatonOS Shelf are separate Expo SDK 57 CNG apps. Shell contains fullscreen Home, Drawer and Recents as separate registered React roots. Shelf owns the persistent overlay service/window, its RN surface and Java fallback, compact/expanded shelf UI and boot receiver. Both consume apps/rn-common for theme, shared components and the MatonOS client wrapper. They use independent app keys, Metro ports 8081/8082 and Hermes runtimes."
+6. Ensure the app build SDK installer provisions `platforms;android-36` and `build-tools;36.0.0`; Expo SDK 57 generates compile/target SDK 36 projects. Keep the generated `android/` trees ignored and use each project’s pinned Gradle wrapper (9.3.1 / AGP 8.12.0).
+7. The Shelf JS uses the typed `MatonOS` wrapper from `apps/rn-common` for recent tasks, switch/close/fullscreen and Back. Please add these methods to `MatonosClient` in `buildinfra/client`, returning its existing `MatonosClient.Result<Boolean>` and preserving bridge-unavailable reasons: `moveTaskToFront(int taskId)` and `setTaskFullscreen(int taskId)`. Both already exist in the systembridge AIDL and are authorized for the exact `launcher` caller. The JS TurboModule currently routes them through the client's bound bridge interface; moving them behind typed client methods keeps all bridge access in the shared client. Add `ensureShellOverlayAccess()` as `Result<Boolean>` too, so Shelf's native service can use the shared client for overlay setup. `prepareShellOverlay(WindowManager.LayoutParams)` already exists on MatonosClient. The apps must not call hidden framework APIs directly.
+
+I will queue a full image build request after both generated Android projects pass local release assembly and linkage checks. Fresh-image VM screenshots, APK sizes and combined Shell+Shelf PSS remain required before this split is verified.
+
+## Recents app, AppCompat lifecycle fix, and shelf navigation (2026-09-25)
+
+This final section supersedes the earlier two-app decision text above: Recents is its own Expo app, and the overlay component must resolve to the Recents app's anchor.
+
+The 22:31 image crash-looped because Expo's React lifecycle requires `AppCompatActivity`. Shell `HomeActivity` and `DrawerActivity` now extend `androidx.appcompat.app.AppCompatActivity`; Shelf hosts RN from a `Service` only; the new Recents `RecentsActivity` also extends `AppCompatActivity`. I added crash-buffer matching for `Current Activity is of incorrect class` and `AppContext.onHostResume` to `scripts/smoke-image.sh`, and expanded `scripts/smoke-split.sh` to boot Home, Drawer, Recents, Settings+Shelf, collect crash logs and all three process memory dumps.
+
+Please integrate `apps/recents` as a third Expo SDK 57 / RN 0.86.3 CNG APK:
+
+1. Add `matonos-recents<TAB>../../../apps/recents<TAB>expo<TAB>MatonOSRecents.apk` to `buildinfra/apps/apps.list`; create a distinct persistent signing key `matonos-recents` and generated cert digest. Add/import module `MatonOSRecents` in the prebuilt Android.bp and `PRODUCT_PACKAGES`, plus its privileged-permission XML (only `org.matonos.permission.SYSTEM_BRIDGE`). Stage the XML generated from `apps/recents/android/app/src/main/assets/privapp-permissions-org.matonos.recents.xml`.
+2. Add exact caller allowlist entries `launcher org.matonos.recents` and `launcher org.matonos.shelf` for recent task listing, moving tasks, closing tasks and task thumbnails. Preserve any existing Shell entry. The Recents APK is x86_64-only and uses the same Expo/RN/Hermes versions as Shell and Shelf, but its own app key.
+3. Keep `config_recentsComponentName` non-empty, and change it to `org.matonos.recents/.RecentsComponentAnchor`. The alias is exported and targets `org.matonos.recents.RecentsActivity`, which extends `AppCompatActivity`. It must not point at Shell. This avoids the SystemUI null-component failure while transferring Recents ownership to the Recents package.
+4. Update `device/maton/pc_x86_64/NOTES.md` to record three separate updateable Expo apps: Shell owns Home+Drawer; Shelf owns the persistent overlay UI/window and its Java fallback; Recents owns the recent-task React screen and its task anchor. All three use `apps/rn-common` and pinned versions Expo 57 / RN 0.86.3 / React 19.2.3 / Hermes. Metro ports are 8081, 8082, 8083. Each app has a distinct key and Hermes runtime.
+5. Update the build helper to provision `platforms;android-36`, run the Recents CNG prebuild with its Gradle wrapper, stage `MatonOSRecents.apk` and its permission XML, and generate the certificate digest before building the bridge. The Recents `dev.sh` uses port 8083 and its own development key.
+
+### Scoped navigation and thumbnails in System Bridge
+
+Please add these platform-bridge operations and typed wrappers to `buildinfra/client/MatonosClient`; apps call them only through the `apps/rn-common` wrapper. Audit every action and authorize exact package/target pairs. Bump the API version/hash and regenerate client AIDL:
+
+```aidl
+boolean navigateBack(boolean longPress); // target nav.back; only org.matonos.shelf
+boolean navigateHome();                  // target nav.home; only org.matonos.shelf
+boolean navigateRecents();               // target nav.recents; only org.matonos.shelf
+byte[] getRecentTaskThumbnail(int taskId); // target launcher; Shell/Shelf/Recents exact callers
+```
+
+Add only `nav.back org.matonos.shelf`, `nav.home org.matonos.shelf`, and `nav.recents org.matonos.shelf` to the exact caller allowlist (plus their Shelf certificate digest). Do not authorize `input` for Shelf and do not grant `INJECT_EVENTS` to any app. The platform-signed bridge performs Back key down/up (hold for the `longPress` path so Android's normal back dispatcher/predictive-back path receives the event), starts the HOME intent for Home, and opens the configured Recents component for App Switch. If Recents is already foreground, a repeated/double Recents action returns to the previous current-user task, matching stock App Switch. The Recents thumbnail method must confirm the task is still a current-user app task, exclude Shell/SystemUI/Recents, bound output size, and return a PNG byte array; bridge task list/switch/close remains MRU and task-ID validated.
+
+Please add `Result<Boolean> moveTaskToFront(int taskId)` and `Result<Boolean> setTaskFullscreen(int taskId)` to `MatonosClient` alongside the existing typed `getRecentTasks` and `removeRecentTask` methods. The `apps/rn-common` TurboModule delegates these calls through the typed client; its navigation and thumbnail adapters likewise invoke the corresponding client methods. Do not expose `bridgeInterface` to the app module for these operations. Return the client availability/reason unchanged when the bridge or capability is unavailable.
+
+Stock keyboard mappings (Esc/Alt+Left, Meta/Home, Alt+Tab/App Switch) should remain in force; please verify them on the fresh image before adding any key interception. Shelf's default layout remains Back | Apps/tasks | Recents; its Shelf Settings menu toggles persistent 3-button mode (Back/Home/Recents with live task icons alongside). Home from an app returns to Shell Home; Home while Home is visible opens Drawer; Home while Drawer is open returns to Home. The same behavior applies to the shelf button and Apps long-press.
+
+A full image request is queued after the three local APK builds. Fresh-image screenshots, bridge-audit evidence, crash-free boot, navigation semantics and total PSS across `org.matonos.shell`, `org.matonos.shelf`, and `org.matonos.recents` remain pending.

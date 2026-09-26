@@ -59,6 +59,18 @@ implementation has previously been observed to fill capture with
 pseudo-random data; do not claim the no-card mic produces zero samples until
 verified or replaced.
 
+## HDA codec driver preload
+
+The image can discover `snd_hda_intel` by PCI modalias before the HDA bus
+codec modules have registered. An asynchronous `post-fs` init action runs
+`/system/bin/modprobe` against `/vendor/lib/modules/modules.dep` for each
+shipped `snd-hda-codec-*.ko`, using depmod's dependency ordering. It then
+tries to remove and reload `snd_hda_intel`, prompting the controller to
+enumerate codecs with their drivers present. Failures to load optional codecs
+or reload the controller are ignored; audio service and boot startup never
+wait for this action. Without an HDA controller, the selector and HAL retain
+their no-card fallback.
+
 ## Upstream differences and limitations
 
 We make no changes to `hardware/baylibre/audio`. The upstream APEX name and

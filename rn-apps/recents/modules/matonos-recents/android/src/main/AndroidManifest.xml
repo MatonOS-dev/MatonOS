@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />
+    <application android:resizeableActivity="true" android:supportsRtl="true">
+        <activity android:name="org.matonos.recents.RecentsActivity" android:exported="true"
+            android:launchMode="singleTask" android:excludeFromRecents="true"
+            android:theme="@style/Theme.MatonRecents" />
+        <activity-alias android:name="org.matonos.recents.RecentsComponentAnchor"
+            android:targetActivity="org.matonos.recents.RecentsActivity"
+            android:enabled="true" android:exported="true" />
+    </application>
+</manifest>

@@ -1,42 +1,58 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {FlatList, Image, StyleSheet, Text, useWindowDimensions} from 'react-native';
 import {Appbar, Button, Card, IconButton, Surface, useTheme} from 'react-native-paper';
-import {MatonShell, type RecentTask} from '../MatonShellNative';
+import {MatonOS, type RecentTask} from '@matonos/rn-common';
+import {MatonRecents} from '../RecentsNative';
 
 export function RecentsScreen(): React.JSX.Element {
   const theme = useTheme();
   const [tasks, setTasks] = useState<RecentTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const requestedThumbnails = useRef(new Set<number>());
   const columns = Math.max(2, Math.floor(useWindowDimensions().width / 300));
-  const refresh = useCallback(() => {
-    setLoading(true);
-    void MatonShell.getRecentTasks()
-      .then(setTasks)
+  const loadTasks = useCallback(() => {
+    void MatonOS.getRecentTasks()
+      .then(async (items) => {
+        const visible = items.filter(
+          (task) =>
+            task.packageName !== 'org.matonos.recents' &&
+            task.packageName !== 'org.matonos.shell' &&
+            task.packageName !== 'com.android.systemui' &&
+            task.packageName !== 'android',
+        );
+        const enriched = await Promise.all(
+          visible.map(async (task) => {
+            if (task.thumbnailUri || requestedThumbnails.current.has(task.taskId)) return task;
+            requestedThumbnails.current.add(task.taskId);
+            const thumbnailUri = await MatonOS.getRecentTaskThumbnail(task.taskId);
+            return thumbnailUri ? {...task, thumbnailUri} : task;
+          }),
+        );
+        setTasks(enriched);
+      })
       .catch(() => setTasks([]))
       .finally(() => setLoading(false));
   }, []);
   useEffect(() => {
-    let live = true;
-    void MatonShell.getRecentTasks()
-      .then((items) => {
-        if (live) setTasks(items);
-      })
-      .catch(() => {
-        if (live) setTasks([]);
-      })
-      .finally(() => {
-        if (live) setLoading(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
+    loadTasks();
+    const timer = setInterval(loadTasks, 4000);
+    return () => clearInterval(timer);
+  }, [loadTasks]);
+  const refresh = useCallback(() => {
+    setLoading(true);
+    loadTasks();
+  }, [loadTasks]);
+  const goHome = (): void => {
+    void MatonOS.navigate('home').then((ok) => {
+      if (!ok) MatonRecents.goHome();
+    });
+  };
   return (
     <Surface style={[styles.panel, {backgroundColor: theme.colors.surface}]}>
       <Appbar.Header>
         <Appbar.Content title="Recent apps" />
         <IconButton icon="refresh" accessibilityLabel="Refresh" onPress={refresh} />
-        <IconButton icon="home" accessibilityLabel="Home" onPress={MatonShell.goHome} />
+        <IconButton icon="home" accessibilityLabel="Home" onPress={goHome} />
       </Appbar.Header>
       <FlatList
         data={tasks}
@@ -47,7 +63,7 @@ export function RecentsScreen(): React.JSX.Element {
         renderItem={({item}) => (
           <Card
             style={[styles.card, {backgroundColor: theme.colors.surfaceVariant}]}
-            onPress={() => void MatonShell.moveTaskToFront(item.taskId)}
+            onPress={() => void MatonOS.moveTaskToFront(item.taskId)}
           >
             {!!item.thumbnailUri && (
               <Image
@@ -57,7 +73,7 @@ export function RecentsScreen(): React.JSX.Element {
               />
             )}
             <Card.Title
-              title={item.label}
+              title={item.label || item.packageName}
               subtitle={item.packageName}
               left={() =>
                 item.iconUri ? <Image source={{uri: item.iconUri}} style={styles.icon} /> : null
@@ -67,9 +83,9 @@ export function RecentsScreen(): React.JSX.Element {
               <Button
                 compact
                 onPress={() => {
-                  void MatonShell.setTaskFullscreen(item.taskId)
-                    .then(() => MatonShell.moveTaskToFront(item.taskId))
-                    .catch(() => false);
+                  void MatonOS.setTaskFullscreen(item.taskId).then(() =>
+                    MatonOS.moveTaskToFront(item.taskId),
+                  );
                 }}
               >
                 Fullscreen
@@ -77,7 +93,7 @@ export function RecentsScreen(): React.JSX.Element {
               <Button
                 compact
                 onPress={() => {
-                  void MatonShell.closeRecentTask(item.taskId).then(refresh);
+                  void MatonOS.removeRecentTask(item.taskId).then(refresh);
                 }}
               >
                 Close
@@ -86,7 +102,9 @@ export function RecentsScreen(): React.JSX.Element {
           </Card>
         )}
         ListEmptyComponent={
-          <Text style={styles.empty}>{loading ? 'Loading recent apps…' : 'No recent apps'}</Text>
+          <Text style={[styles.empty, {color: theme.colors.onSurfaceVariant}]}>
+            {loading ? 'Loading recent apps…' : 'No recent apps'}
+          </Text>
         }
       />
     </Surface>
@@ -94,10 +112,10 @@ export function RecentsScreen(): React.JSX.Element {
 }
 
 const styles = StyleSheet.create({
-  panel: {flex: 1, backgroundColor: 'rgba(24,28,34,0.96)'},
+  panel: {flex: 1},
   grid: {padding: 18, gap: 12},
   card: {flex: 1, minWidth: 220, margin: 8, overflow: 'hidden'},
   thumbnail: {height: 180},
   icon: {width: 38, height: 38, marginLeft: 12},
-  empty: {color: 'white', textAlign: 'center', padding: 36},
+  empty: {textAlign: 'center', padding: 36},
 });

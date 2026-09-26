@@ -9,7 +9,7 @@
     "android": {
       "package": "org.matonos.shell",
       "versionCode": 3,
-      "permissions": ["QUERY_ALL_PACKAGES", "SYSTEM_ALERT_WINDOW", "RECEIVE_BOOT_COMPLETED", "org.matonos.permission.SYSTEM_BRIDGE"]
+      "permissions": ["QUERY_ALL_PACKAGES", "org.matonos.permission.SYSTEM_BRIDGE"]
     },
     "plugins": ["./plugins/withMatonShell"],
     "experiments": {"autolinkingModuleResolution": true},

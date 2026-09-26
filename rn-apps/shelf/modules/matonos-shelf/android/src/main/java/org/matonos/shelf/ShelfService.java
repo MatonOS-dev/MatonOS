@@ -1,0 +1,223 @@
+package org.matonos.shelf;
+
+import android.app.ActivityOptions;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.graphics.PixelFormat;
+import android.os.Bundle;
+import android.os.IBinder;
+import android.provider.Settings;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
+
+import com.facebook.react.ReactHost;
+import com.facebook.react.ReactApplication;
+import org.matonos.systembridge.ISystemBridge;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
+/** Owns the shelf overlay window and mounts its RN content on the application's shared host. */
+public final class ShelfService extends Service {
+    static final String ACTION_HOME_VISIBLE = "org.matonos.shelf.HOME_VISIBILITY";
+    static final String ACTION_TOGGLE_PIN = "org.matonos.shelf.TOGGLE_PIN";
+    static final String EXTRA_HOME_VISIBLE = "visible";
+    private static volatile ShelfService active;
+    private WindowManager wm;
+    private View content;
+    private android.widget.FrameLayout shelfRoot;
+    private ShelfView javaFallback;
+    private ShellReactSurface rnSurface;
+    private WindowManager.LayoutParams params;
+    private ShellBridge bridge;
+    private boolean added, homeVisible, expanded = true, rnFailed;
+    private String panel = "";
+    private static final String PREFS = "shelf";
+    private static final String PINS = "pinned";
+    private static final String THREE_BUTTON = "three_button_mode";
+    @Override public void onCreate() {
+        super.onCreate(); active = this;
+        wm = getSystemService(WindowManager.class);
+        javaFallback = new ShelfView(this);
+        try { host().onHostResume((android.app.Activity) null); }
+        catch (RuntimeException | LinkageError failure) {
+            rnFailed = true;
+            android.util.Log.e("MatonOSShelf", "React host could not enter service lifecycle; using Java shelf", failure);
+        }
+        params = new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, dp(56),
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT);
+        params.gravity = Gravity.BOTTOM; params.setFitInsetsTypes(0); params.setTitle("MatonOS shelf");
+        bridge = new ShellBridge(this, connected -> installShelf(connected)); bridge.connect();
+        if (Settings.canDrawOverlays(this)) installShelf(bridge.get());
+    }
+
+    private void installShelf(ISystemBridge connected) {
+        if (added) return;
+        if (!Settings.canDrawOverlays(this)) {
+            if (connected != null) try { connected.ensureShellOverlayAccess(); } catch (Exception ignored) { }
+            if (!Settings.canDrawOverlays(this)) return;
+        }
+        if (connected != null) params = prepareSystemOverlayParams(connected, params);
+        if (!rnFailed) {
+            try {
+                Bundle props = new Bundle(); props.putString("surface", "shelf");
+                props.putString("component", "MatonShelf");
+                shelfRoot = new android.widget.FrameLayout(this);
+                rnSurface = ShellReactSurface.mount(this, host(), "MatonShelf", props,
+                        shelfRoot, () -> switchToJavaShelf("surface start failed"));
+                content = shelfRoot;
+            } catch (RuntimeException | LinkageError failure) { switchToJavaShelf(failure.toString()); }
+        }
+        if (content == null) content = javaFallback;
+        try { wm.addView(content, params); added = true; }
+        catch (WindowManager.BadTokenException | SecurityException error) {
+            android.util.Log.e("MatonOSShell", "Cannot attach shelf overlay", error);
+        }
+    }
+
+    void refreshOverlayAccess(ISystemBridge connected) {
+        if (!added) installShelf(connected);
+    }
+
+    private ReactHost host() { return ((ReactApplication) getApplication()).getReactHost(); }
+    private void switchToJavaShelf(String reason) {
+        android.util.Log.e("MatonOSShell", "RN shelf failed; switching to Java fallback: " + reason);
+        rnFailed = true;
+        if (rnSurface != null) {
+            try { rnSurface.stop(); }
+            catch (RuntimeException error) { android.util.Log.w("MatonOSShell", "Could not stop failed React shelf", error); }
+            rnSurface = null;
+        }
+        if (added && content != null) try { wm.removeView(content); } catch (RuntimeException ignored) { }
+        if (shelfRoot != null) shelfRoot.removeAllViews();
+        content = javaFallback; added = false;
+        if (content != null && Settings.canDrawOverlays(this)) try { wm.addView(content, params); added = true; }
+        catch (RuntimeException error) { android.util.Log.e("MatonOSShell", "Java shelf fallback attach failed", error); }
+    }
+
+    static void fallbackToJavaShelf(String reason) { ShelfService service = active; if (service != null) service.switchToJavaShelf(reason); }
+    static void dispatchLaunch(Context context, Intent intent) { ShelfService service = active; if (service != null) service.startShellActivity(intent); else context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
+    static void openPanel(Context context, String target) {
+        ShelfService service = active;
+        if (service != null && target.equals(service.panel)) {
+            service.panel = "";
+            goHome(context);
+            MatonShelfExpoModule.notifyShelfState();
+            return;
+        }
+        if (service != null) { service.panel = target; MatonShelfExpoModule.notifyShelfState(); }
+        android.content.ComponentName component = "recents".equals(target)
+                ? new android.content.ComponentName("org.matonos.recents", "org.matonos.recents.RecentsActivity")
+                : new android.content.ComponentName("org.matonos.shell", "org.matonos.shell.DrawerActivity");
+        Intent intent = new Intent().setComponent(component);
+        if (service != null) service.startShellActivity(intent); else context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+    }
+    static void goHome(Context context) {
+        ShelfService service = active;
+        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addCategory(Intent.CATEGORY_DEFAULT);
+        if (service != null) service.startShellActivity(home); else context.startActivity(home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+    }
+    static boolean isShelfExpanded() { return active != null && active.expanded; }
+    static boolean isHomeVisible() { return active != null && active.homeVisible; }
+    static String getActivePanel() { return active == null ? "" : active.panel; }
+    static boolean isThreeButtonMode(Context context) {
+        return context.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(THREE_BUTTON, false);
+    }
+    static void setThreeButtonMode(Context context, boolean enabled) {
+        context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(THREE_BUTTON, enabled).apply();
+        if (active != null) active.refreshJavaFallback();
+        MatonShelfExpoModule.notifyShelfState();
+    }
+    private void refreshJavaFallback() {
+        boolean fallbackVisible = content == javaFallback;
+        if (fallbackVisible && added) try { wm.removeView(content); } catch (RuntimeException ignored) { }
+        boolean oldExpanded = expanded;
+        javaFallback = new ShelfView(this);
+        javaFallback.setHomeVisible(homeVisible);
+        javaFallback.setExpanded(oldExpanded);
+        if (fallbackVisible && Settings.canDrawOverlays(this)) try {
+            content = javaFallback;
+            wm.addView(content, params);
+            added = true;
+        } catch (RuntimeException error) { android.util.Log.e("MatonOSShelf", "Could not refresh Java shelf", error); }
+    }
+
+    boolean navigate(String action) {
+        return bridge != null && bridge.navigate(action);
+    }
+    boolean navigate(String action, boolean longPress) {
+        return bridge != null && bridge.navigate(action, longPress);
+    }
+    static Set<String> getPinnedApps(Context context) { return new LinkedHashSet<>(context.getSharedPreferences(PREFS, MODE_PRIVATE).getStringSet(PINS, Collections.emptySet())); }
+    static boolean togglePinnedApp(Context context, String pkg) {
+        Set<String> pins = getPinnedApps(context); boolean nowPinned = pins.add(pkg); if (!nowPinned) pins.remove(pkg);
+        context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putStringSet(PINS, pins).apply();
+        return nowPinned;
+    }
+    static void setShelfExpanded(boolean value) { if (active != null) { active.expanded = value; active.updateShelfHeight(active.dp(value || active.homeVisible ? 56 : 28)); MatonShelfExpoModule.notifyShelfState(); } }
+    static ISystemBridge getBridge() { return active == null || active.bridge == null ? null : active.bridge.get(); }
+
+    private void updateHomeVisibility(boolean visible) {
+        homeVisible = visible;
+        if (visible) panel = "";
+        expanded = visible;
+        updateShelfHeight(dp(visible ? 56 : 28));
+        if (javaFallback != null) javaFallback.setHomeVisible(visible);
+        MatonShelfExpoModule.notifyShelfState();
+    }
+
+    void expandShelfTemporarily() { expanded = true; updateShelfHeight(dp(56)); if (javaFallback != null) javaFallback.setExpanded(true); }
+    void collapseShelfTemporarily() { if (!homeVisible) { expanded = false; updateShelfHeight(dp(28)); if (javaFallback != null) javaFallback.setExpanded(false); } }
+    void startShellActivity(Intent intent) {
+        try {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+            PendingIntent pending = PendingIntent.getActivity(this, intent.filterHashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            ActivityOptions options = ActivityOptions.makeBasic().setPendingIntentBackgroundActivityStartMode(4);
+            pending.send(this, 0, null, null, null, null, options.toBundle());
+        } catch (PendingIntent.CanceledException | RuntimeException error) { android.util.Log.w("MatonOSShell", "Shelf activity launch rejected", error); }
+    }
+    private void updateShelfHeight(int height) {
+        if (!added || params == null || content == null || params.height == height) return;
+        params.height = height; try { wm.updateViewLayout(content, params); } catch (RuntimeException ignored) { }
+    }
+    private WindowManager.LayoutParams prepareSystemOverlayParams(ISystemBridge connected, WindowManager.LayoutParams requested) {
+        try {
+            Bundle request = new Bundle(); request.putParcelable("windowParams", requested);
+            Method prepare = ISystemBridge.class.getMethod("prepareShellOverlay", Bundle.class);
+            Bundle response = (Bundle) prepare.invoke(connected, request);
+            WindowManager.LayoutParams adjusted = response == null ? null : response.getParcelable("windowParams", WindowManager.LayoutParams.class);
+            if (adjusted != null) return adjusted;
+        } catch (ReflectiveOperationException | RuntimeException error) { android.util.Log.w("MatonOSShell", "Using standard application overlay", error); }
+        return requested;
+    }
+    @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && ACTION_HOME_VISIBLE.equals(intent.getAction()))
+            updateHomeVisibility(intent.getBooleanExtra(EXTRA_HOME_VISIBLE, false));
+        if (intent != null && ACTION_TOGGLE_PIN.equals(intent.getAction())) {
+            String packageName = intent.getStringExtra("packageName");
+            if (packageName != null) togglePinnedApp(this, packageName);
+            MatonShelfExpoModule.notifyShelfState();
+        }
+        if (!added && bridge != null) installShelf(bridge.get());
+        return START_STICKY;
+    }
+    int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density + .5f); }
+    ISystemBridge systemBridge() { return bridge == null ? null : bridge.get(); }
+    @Override public void onDestroy() {
+        if (added && content != null) wm.removeView(content);
+        if (rnSurface != null) rnSurface.stop(); if (bridge != null) bridge.close(); active = null;
+        try { host().onHostPause((android.app.Activity) null); }
+        catch (RuntimeException | LinkageError error) { android.util.Log.w("MatonOSShelf", "React host pause failed", error); }
+        super.onDestroy();
+    }
+    @Override public IBinder onBind(Intent intent) { return null; }
+}

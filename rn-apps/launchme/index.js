@@ -1,8 +1,8 @@
 import 'expo/src/Expo.fx';
 import {AppRegistry} from 'react-native';
-import App from './src/App';
+import HomeApp from './src/HomeApp';
+import DrawerApp from './src/DrawerApp';
 
-AppRegistry.registerComponent('MatonShell', () => App);
-AppRegistry.registerComponent('MatonPanel', () => App);
-AppRegistry.registerComponent('MatonShelf', () => App);
-AppRegistry.registerComponent('main', () => App);
+AppRegistry.registerComponent('MatonHome', () => HomeApp);
+AppRegistry.registerComponent('MatonDrawer', () => DrawerApp);
+AppRegistry.registerComponent('main', () => HomeApp);

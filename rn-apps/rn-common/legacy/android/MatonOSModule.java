@@ -88,15 +88,6 @@ public final class MatonOSModule extends NativeMatonOSSpec {
         promise.resolve(client.unsubscribe(parts[0], parts[1], listener).available);
     }
 
-    @Override public void injectBackKey(Promise promise) {
-        MatonosClient.Result<Boolean> result = client.injectBackKey();
-        WritableMap value = Arguments.createMap();
-        value.putBoolean("available", result.available);
-        value.putString("value", result.available && Boolean.TRUE.equals(result.value) ? "true" : "false");
-        value.putString("reason", result.available || result.reason == null ? "" : result.reason);
-        promise.resolve(value);
-    }
-
     @Override public void addListener(String eventName) { }
     @Override public void removeListeners(double count) { }
 

@@ -209,12 +209,6 @@ public final class MatonShellModule extends NativeMatonShellSpec {
     @Override public void openPanel(String panel) { ShelfService.openPanel(context, panel); }
     @Override public void goHome() { ShelfService.goHome(context); }
 
-    @Override public void injectBackKey(Promise promise) {
-        ISystemBridge api = bridge.get();
-        try { promise.resolve(api != null && api.injectBackKey()); }
-        catch (Exception error) { promise.reject("BACK_UNAVAILABLE", error); }
-    }
-
     @Override public void reportSurfaceFailure(String surfaceName, String error) {
         if ("shelf".equals(surfaceName)) ShelfService.fallbackToJavaShelf(error);
         else {

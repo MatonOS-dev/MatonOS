@@ -19,15 +19,17 @@ When the owner next edits that shared file, replace the stale block with:
 # policy and vendor fallback, and omits Bluetooth/LE audio.
 ```
 
-## Required product package filter
+## Product package filter contingency
 
-The 21:16 full-image VINTF check found both
+The 22:16 full-image VINTF check found both
 `/apex/com.android.hardware.audio` and
 `/apex/com.android.hardware.audio.generic` in the assembled device manifest,
 so the early filter in `audio/audio.mk` does not remove the stock APEX after
-all inherited product packages are combined. Apply this one-line final filter
-in `pc_x86_64.mk`, immediately after its `device.mk` inherit and before
-`PRODUCT_NAME`:
+all inherited product packages are combined. The coordinator reports that
+the 22:31 image build passed, and its VINTF staging directory now contains
+only the generic APEX. If the stock APEX returns in a later image, apply this
+one-line final filter in `pc_x86_64.mk`, immediately after its `device.mk`
+inherit and before `PRODUCT_NAME`:
 
 ```diff
  $(call inherit-product, device/maton/pc_x86_64/device.mk)

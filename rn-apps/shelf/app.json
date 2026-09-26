@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "MatonOS Shelf",
+    "slug": "matonos-shelf",
+    "version": "1.0.0",
+    "orientation": "landscape",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "org.matonos.shelf",
+      "versionCode": 1,
+      "permissions": ["QUERY_ALL_PACKAGES", "SYSTEM_ALERT_WINDOW", "RECEIVE_BOOT_COMPLETED", "org.matonos.permission.SYSTEM_BRIDGE"]
+    },
+    "plugins": ["./plugins/withMatonShelf"],
+    "experiments": {"autolinkingModuleResolution": true},
+    "autolinking": {"nativeModulesDir": "./modules"}
+  }
+}

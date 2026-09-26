@@ -1,0 +1,5 @@
+# The HDA controller may arrive by PCI modalias before codec drivers. Preload
+# every shipped HDA codec and then reprobe snd_hda_intel. This is asynchronous:
+# failures are benign and the audio HAL keeps its configured silent fallback.
+on post-fs
+    exec_background -- /system/bin/sh /odm/bin/maton-audio-codecs.sh
