@@ -113,6 +113,9 @@ fi
 # before SurfaceFlinger picks its boot-time display size. zoom-to-fit keeps the
 # EDID-selected guest mode independent from later host window resizes.
 gtk_gl="gtk,gl=on,zoom-to-fit=on,full-screen=on" gtk_plain="gtk,full-screen=on"
+# MATON_QEMU_HEADLESS=1: no window (unattended runs; a GTK GL window stalls
+# the guest while the host display is off or locked).
+[[ ${MATON_QEMU_HEADLESS:-0} == 1 ]] && gtk_gl=egl-headless gtk_plain=none
 pid=$$; while [[ $pid -gt 1 ]]; do
   if [[ $(ps -o comm= -p "$pid") == codex* ]]; then
     gtk_gl=egl-headless gtk_plain=none
