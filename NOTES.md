@@ -265,7 +265,10 @@ Feature work continues, but in this shape from now on.
   both: make-live.sh repacks only the _a partitions and passes
   androidboot.slot_suffix=_a. v1 stays non-A/B; installer.sh/make-payload.sh
   become legacy once the v2 app replaces them.
-- **v3: microG (moved up from v4, user 2026-09-26)**: GMS replacement via
+- **v3: microG (moved up from v4, user 2026-09-26)**: shipped PREINSTALLED
+  for app compatibility (many apps need GMS APIs / a Play Store package) —
+  a deliberate exception to v4's "sockets, not shipped binaries" (microG is
+  not Google software; real Google stays user-supplied). GMS replacement via
   the system bridge — an interface to install such
   packages privileged, grant their declared permissions, register them as
   providers. **Signature spoofing (decided 2026-09-25): the ONE allowed AOSP
