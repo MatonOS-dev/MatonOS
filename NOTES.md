@@ -265,6 +265,39 @@ Feature work continues, but in this shape from now on.
   both: make-live.sh repacks only the _a partitions and passes
   androidboot.slot_suffix=_a. v1 stays non-A/B; installer.sh/make-payload.sh
   become legacy once the v2 app replaces them.
+- **v3: microG (moved up from v4, user 2026-09-26)**: GMS replacement via
+  the system bridge — an interface to install such
+  packages privileged, grant their declared permissions, register them as
+  providers. **Signature spoofing (decided 2026-09-25): the ONE allowed AOSP
+  patch** — a minimal (~40-line) hook in PackageManagerService that only
+  asks the system bridge "may this app claim this certificate?"; all
+  policy, consent, UI and revocation live in the bridge; inactive unless
+  the user enables a GMS-replacement package through the bridge.
+  (Taking over PMS from the bridge is impossible: PMS lives inside
+  system_server and the framework calls it in-process.)
+  **microG → real Google upgrade path (user, 2026-09-26):**
+  - microG GmsCore + microG Companion (`com.android.vending`, the Play Store
+    stand-in apps check for: presence, LVL licensing, partial billing) are
+    preinstalled privileged, as one bundle.
+  - ONE combined "GMS-replacement support" PMS patch (counts as the single
+    budgeted exception together with the signature-spoofing hook):
+    1. spoofing hook: asks the bridge whether an app may claim a cert; the
+       bridge allowlist holds exact package/cert pairs (gms, vending,
+       optionally gsf), no wildcards;
+    2. pinned update exception: a static table `{package, installed cert
+       SHA-256, incoming cert SHA-256}` lets Google's real Play Store
+       (Google cert) install as an UPDATE over microG Companion (microG
+       cert), and real Play Services over microG GmsCore. Everything else
+       keeps the normal signature check. Hard-coded in the patch, never
+       decided by the bridge (update verification is too security-critical
+       for runtime policy). Pin Google's lineage if Play's key rotates.
+    Spoofing must never influence update verification.
+  - Result: user sideloads the real Play/GMS APK → installs as an update of
+    a system app → keeps privileged status (INSTALL_PACKAGES works, no add-on
+    slot needed for Play). "Uninstall updates" rolls back to microG for free.
+    Remove the vending (and gms) spoof pairs while real Google is active.
+  - Data dir carries over (offer "clear data" after switching). Key rotation
+    can't do this without Google's private key, hence the patch.
 - **v5 (user, 2026-09-25): Bluetooth audio (classic + LE audio) via OUR Bluetooth HAL** — it provides the Bluetooth audio provider behind the stable virtual controller, and only then does the audio policy gain the bluetooth module. Until v5: no Bluetooth audio anywhere in the shipped policy (it blocked boot).
 - **v5 (far future, user 2026-09-25): cellular for PCs with built-in modems**
   (WWAN M.2 LTE/5G, MBIM/QMI). Likely our own Radio HAL (IRadio AIDL →
@@ -288,42 +321,12 @@ Feature work continues, but in this shape from now on.
      companion lib set complete. Installed as an add-on, enabled
      (`ro.dalvik.vm.native.bridge` etc.) on next boot. Open: add-on storage
      zygote may load from + setting the props without Soong.
-  2. **GMS replacement (microG etc.)**: an interface to install such
-     packages privileged, grant their declared permissions, register them as
-     providers. **Signature spoofing (decided 2026-09-25, v4): the ONE allowed AOSP
-     patch** — a minimal (~40-line) hook in PackageManagerService that only
-     asks the system bridge "may this app claim this certificate?"; all
-     policy, consent, UI and revocation live in the bridge; inactive unless
-     the user enables a GMS-replacement package through the bridge.
-     (Taking over PMS from the bridge is impossible: PMS lives inside
-     system_server and the framework calls it in-process.)
+  2. **GMS replacement (microG)**: moved to **v3** (user, 2026-09-26), see
+     there.
 - **v4**: Google Play via the add-on slot (stub/overlay), maybe the Linux
   sandbox, and turning it into a real little distro. Also: libcamera
   (MIPI/IPU cameras) and Aurora Store (optional, e.g. offered via the same
   add-on/first-boot choice as Play).
-  **microG → real Google upgrade path (user, 2026-09-26; design only):**
-  - microG GmsCore + microG Companion (`com.android.vending`, the Play Store
-    stand-in apps check for: presence, LVL licensing, partial billing) are
-    preinstalled privileged, as one bundle.
-  - ONE combined "GMS-replacement support" PMS patch (counts as the single
-    budgeted exception together with the signature-spoofing hook):
-    1. spoofing hook: asks the bridge whether an app may claim a cert; the
-       bridge allowlist holds exact package/cert pairs (gms, vending,
-       optionally gsf), no wildcards;
-    2. pinned update exception: a static table `{package, installed cert
-       SHA-256, incoming cert SHA-256}` lets Google's real Play Store
-       (Google cert) install as an UPDATE over microG Companion (microG
-       cert), and real Play Services over microG GmsCore. Everything else
-       keeps the normal signature check. Hard-coded in the patch, never
-       decided by the bridge (update verification is too security-critical
-       for runtime policy). Pin Google's lineage if Play's key rotates.
-    Spoofing must never influence update verification.
-  - Result: user sideloads the real Play/GMS APK → installs as an update of
-    a system app → keeps privileged status (INSTALL_PACKAGES works, no add-on
-    slot needed for Play). "Uninstall updates" rolls back to microG for free.
-    Remove the vending (and gms) spoof pairs while real Google is active.
-  - Data dir carries over (offer "clear data" after switching). Key rotation
-    can't do this without Google's private key, hence the patch.
   Linux sandbox sketch: native `linuxd` service (own SELinux domain) mounts
   a distro rootfs from /data, sets up namespaces/cgroups, runs Linux
   processes in a confined domain (render node, own files, no binder).

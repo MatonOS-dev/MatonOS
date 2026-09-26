@@ -26,7 +26,7 @@ provide it ourselves instead.
 
 **Rule (user, 2026-09-24): if something can't be done without patching AOSP,
 give that feature up for the time being** — no fallback patch. **The one
-exception (user, 2026-09-25, v4):** a minimal signature-spoofing hook in
+exception (user, 2026-09-25; microG moved to v3 on 2026-09-26):** a minimal signature-spoofing hook in
 PackageManagerService that defers every decision to the system bridge (for
 microG-style GMS replacements); patch budget = 1. Record it as
 a known gap in NOTES.md ("Dropped for zero patches") with what it would need. **Also allowed (user,
