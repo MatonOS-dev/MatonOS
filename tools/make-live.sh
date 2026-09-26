@@ -117,6 +117,20 @@ mcopy -i "$esp" "$KERNEL" ::/android/bzImage
 mcopy -i "$esp" "$PRODUCT_OUT/vendor_ramdisk.img" ::/android/vendor_ramdisk.img
 mcopy -i "$esp" "$PRODUCT_OUT/ramdisk.img" ::/android/ramdisk.img
 
+# The final initrd overlays a tiny pre-init shim on top of the two stock
+# ramdisks. It immediately execs the saved Android /init on normal boots.
+stage="$work/ventoy-initrd"
+mkdir -p "$stage"
+gzip -dc "$PRODUCT_OUT/ramdisk.img" | cpio -i --quiet --to-stdout init > "$stage/init.android"
+[[ -s $stage/init.android ]] || die "could not extract Android /init from ramdisk.img"
+mkdir -p "$stage/ventoy/modules"
+cp "$DEVICE_DIR/prebuilt/modules/nls_utf8.ko" "$DEVICE_DIR/prebuilt/modules/exfat.ko" \
+  "$DEVICE_DIR/prebuilt/modules/ntfs3.ko" "$stage/ventoy/modules/"
+bash "$DEVICE_DIR/ventoyboot/build.sh" "$stage/init" \
+  || die "failed to build static NDK Ventoy pre-init"
+chmod 0755 "$stage/init" "$stage/init.android"
+(cd "$stage" && find . -print0 | cpio --null -o -H newc --quiet | gzip -9 > "$work/ventoy-initrd.img")
+
 cat > "$work/loader.conf" <<EOF
 default matonos-live.conf
 timeout 3
@@ -132,10 +146,12 @@ title   $title
 linux   /android/bzImage
 initrd  /android/vendor_ramdisk.img
 initrd  /android/ramdisk.img
+initrd  /android/ventoy-initrd.img
 options $opts
 EOF
-  mcopy -i "$esp" "$work/matonos-$entry.conf" ::/loader/entries/
+mcopy -i "$esp" "$work/matonos-$entry.conf" ::/loader/entries/
 done
+mcopy -i "$esp" "$work/ventoy-initrd.img" ::/android/ventoy-initrd.img
 mcopy -i "$esp" "$work/loader.conf" ::/loader/loader.conf
 
 # ---------------------------------------------------------------- disk

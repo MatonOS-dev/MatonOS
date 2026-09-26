@@ -30,8 +30,10 @@ the selector reported `vendor.maton.audio.selector_result=no_card`, and the
 kernel logged `snd_hda_intel ... Cannot probe codecs, giving up`. The controller
 and HDA core modules were loaded, but no `snd_hda_codec_*` modules were
 present. The captured WAV was 0 bytes; no playback was proven. The no-display
-`-g none` attempts remained ADB-offline, so they do not count as no-card
-boot verification.
+`-g none` attempts remained ADB-offline. A later no-card boot using `-g virgl`
+and no HDA device also remained at the UEFI handoff with ADB offline for over
+three minutes; it was stopped as my own VM. Neither attempt counts as successful
+no-card boot verification.
 
 The prior preload used `/system/bin/modprobe` and ran via `exec_background`.
 I changed it to an asynchronous init oneshot service and `/vendor/bin/modprobe`
@@ -48,3 +50,54 @@ snd-hda-codec modules through modules.dep, then re-probe snd_hda_intel; run the
 helper in vendor_modprobe via the driver-domain transition; verify HDA card,
 selector and WAV playback plus no-card boot`. Pending coordinator image and
 fresh-boot verification. No peak measurement is available.
+
+
+## Controller/codec-link investigation (coordinator finding)
+
+Coordinator confirmed the same `Cannot probe codecs, giving up` result with
+QEMU `intel-hda` and `ich9-intel-hda`; this points to HDA controller/codec
+communication rather than a missing codec driver. The kernel config includes
+`CONFIG_SND_HDA_INTEL=m`, `CONFIG_SND_HDA=m`, generic and HDMI codec modules,
+and modules are staged for ueventd modalias loading. The `snd_hda_intel`
+module exposes `enable_msi`, `single_cmd`, `probe_mask`, `position_fix`, and
+`model` parameters.
+
+The previous `audio/modules.options` file only contained `snd_aloop` options
+and was not wired into the kernel-module image, so it had no runtime effect.
+I updated `audio/BoardConfig.mk` to install that file as
+`/vendor/lib/modules/modules.options`, and changed it to `options snd_hda_intel
+enable_msi=0`. This is a scoped first diagnostic: disabling MSI can help
+controller interrupt compatibility while preserving codec address discovery.
+I did not set `probe_mask=1`, which could suppress other codecs on generic
+PCs. If the next image still has no codec, test `single_cmd=1` separately and
+check the QEMU HDA model/codec through its monitor; `position_fix` is not an
+initial codec-probe remedy.
+
+At the time of this initial note, the option had not yet been tested. The
+subsequent 10:06 image and coordinator report below confirm HDA enumeration
+with the option enabled. No kernel rebuild was required; the relevant
+controller, codec, and core options are already enabled as modules.
+
+
+## 10:06 image — MSI option restores HDA enumeration (coordinator report)
+
+The module options packaging change is in the 10:06 image: the generated
+`/vendor/lib/modules/modules.options` contains `options snd_hda_intel enable_msi=0`. Coordinator tested its windowed QEMU VM with HDA and reports
+that `/proc/asound/cards` now contains the card, the selector result is
+`found`, and AudioFlinger has a speaker output thread. This confirms that the combined controller-option and preload change restored
+enumeration. Read-only inspection of that VM reports
+`vendor.maton.audio.codec_preload=done`, `enable_msi=0`, the generic analog
+card with playback and capture PCM 00-00, all shipped HDA codec drivers in
+`lsmod`, and selector card/device `0`/`0`. Since both changes landed in the
+same image, this does not isolate whether MSI disable or the successful
+preload/reprobe was decisive. The preload remains best-effort and never gates
+boot. No kernel rebuild was needed; controller and codec
+modules/configuration were already present.
+
+My private headless QEMU runs on the same image did not reach ADB after the
+UEFI boot handoff, both with HDA and without an audio device. The
+`hda-duplex` + WAV run also printed `Could not create a backend for voice adc`;
+changing to QEMU's output-only `hda-output` removed that ADC warning
+but did not change the ADB-offline boot. Those WAV files remained empty, so I
+have not independently verified audible playback or measured its peak. A
+no-card boot and WAV playback still need a successful private fresh boot.

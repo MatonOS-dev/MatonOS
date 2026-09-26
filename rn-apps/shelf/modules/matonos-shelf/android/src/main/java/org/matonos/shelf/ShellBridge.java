@@ -1,6 +1,10 @@
 package org.matonos.shelf;
 
 import android.content.Context;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.WindowManager;
 
 import org.matonos.systembridge.ISystemBridge;
 import org.matonos.client.BridgeMode;
@@ -9,11 +13,12 @@ import org.matonos.client.MatonosClient;
 
 /** Typed access to the small set of privileged operations owned by System Bridge. */
 final class ShellBridge implements AutoCloseable {
-    interface Listener { void onBridgeChanged(ISystemBridge bridge); }
+    interface Listener { void onBridgeChanged(boolean available); }
 
     private final Listener listener;
     private final MatonosClient client;
     private final MatonosClient.AvailabilityListener availability;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
     ShellBridge(Context context, Listener listener) {
         Context appContext = context.getApplicationContext();
@@ -23,7 +28,9 @@ final class ShellBridge implements AutoCloseable {
     }
 
     private void onAvailabilityChanged(boolean ready, String reason) {
-        listener.onBridgeChanged(ready ? client.getBridgeInterface() : null);
+        // Availability checks complete on matonos-bridge-check. WindowManager and
+        // ShelfService lifecycle work must always run on the main thread.
+        mainHandler.post(() -> listener.onBridgeChanged(ready));
     }
 
     void connect() {
@@ -32,27 +39,25 @@ final class ShellBridge implements AutoCloseable {
 
     ISystemBridge get() { return client.isAvailable() ? client.getBridgeInterface() : null; }
 
+    MatonosClient.Result<Boolean> ensureShellOverlayAccess() {
+        return client.ensureShellOverlayAccess();
+    }
+
+    MatonosClient.Result<Bundle> prepareShellOverlay(WindowManager.LayoutParams params) {
+        return client.prepareShellOverlay(params);
+    }
+
     boolean navigate(String action) { return navigate(action, false); }
 
     boolean navigate(String action, boolean longPress) {
-        String method = switch (action) {
-            case "back" -> "navigateBack";
-            case "home" -> "navigateHome";
-            case "recents" -> "navigateRecents";
-            default -> "";
+        MatonosClient.Result<Boolean> result = switch (action) {
+            case "back" -> client.navigateBack(longPress);
+            case "home" -> client.navigateHome();
+            case "recents" -> client.navigateRecents();
+            default -> MatonosClient.Result.unavailable("UNKNOWN_NAVIGATION_ACTION");
         };
-        if (method.isEmpty()) return false;
-        try {
-            Object result = "back".equals(action)
-                    ? MatonosClient.class.getMethod(method, boolean.class).invoke(client, longPress)
-                    : MatonosClient.class.getMethod(method).invoke(client);
-            java.lang.reflect.Field available = result.getClass().getField("available");
-            java.lang.reflect.Field value = result.getClass().getField("value");
-            return available.getBoolean(result) && Boolean.TRUE.equals(value.get(result));
-        } catch (ReflectiveOperationException | RuntimeException error) {
-            android.util.Log.w("MatonOSShelf", "Navigation capability unavailable: " + action, error);
-            return false;
-        }
+        if (!result.available) android.util.Log.w("MatonOSShelf", "Navigation capability unavailable: " + action + ": " + result.reason);
+        return result.available && Boolean.TRUE.equals(result.value);
     }
 
     @Override public void close() {

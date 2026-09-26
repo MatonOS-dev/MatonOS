@@ -10,6 +10,8 @@ import android.content.IntentFilter;
 import android.graphics.PixelFormat;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
@@ -18,7 +20,6 @@ import android.view.WindowManager;
 import com.facebook.react.ReactHost;
 import com.facebook.react.ReactApplication;
 import org.matonos.systembridge.ISystemBridge;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -37,6 +38,7 @@ public final class ShelfService extends Service {
     private ShellReactSurface rnSurface;
     private WindowManager.LayoutParams params;
     private ShellBridge bridge;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean added, homeVisible, expanded = true, rnFailed;
     private String panel = "";
     private static final String PREFS = "shelf";
@@ -56,17 +58,25 @@ public final class ShelfService extends Service {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.BOTTOM; params.setFitInsetsTypes(0); params.setTitle("MatonOS shelf");
-        bridge = new ShellBridge(this, connected -> installShelf(connected)); bridge.connect();
-        if (Settings.canDrawOverlays(this)) installShelf(bridge.get());
+        bridge = new ShellBridge(this, available -> installShelf()); bridge.connect();
+        if (Settings.canDrawOverlays(this)) installShelf();
     }
 
-    private void installShelf(ISystemBridge connected) {
+    private void installShelf() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            mainHandler.post(this::installShelf);
+            return;
+        }
         if (added) return;
         if (!Settings.canDrawOverlays(this)) {
-            if (connected != null) try { connected.ensureShellOverlayAccess(); } catch (Exception ignored) { }
+            if (bridge != null) {
+                org.matonos.client.MatonosClient.Result<Boolean> result = bridge.ensureShellOverlayAccess();
+                if (!result.available || !Boolean.TRUE.equals(result.value))
+                    android.util.Log.w("MatonOSShelf", "Bridge could not prepare overlay access: " + result.reason);
+            }
             if (!Settings.canDrawOverlays(this)) return;
         }
-        if (connected != null) params = prepareSystemOverlayParams(connected, params);
+        if (bridge != null) params = prepareSystemOverlayParams(params);
         if (!rnFailed) {
             try {
                 Bundle props = new Bundle(); props.putString("surface", "shelf");
@@ -84,8 +94,8 @@ public final class ShelfService extends Service {
         }
     }
 
-    void refreshOverlayAccess(ISystemBridge connected) {
-        if (!added) installShelf(connected);
+    void refreshOverlayAccess() {
+        if (!added) installShelf();
     }
 
     private ReactHost host() { return ((ReactApplication) getApplication()).getReactHost(); }
@@ -189,14 +199,17 @@ public final class ShelfService extends Service {
         if (!added || params == null || content == null || params.height == height) return;
         params.height = height; try { wm.updateViewLayout(content, params); } catch (RuntimeException ignored) { }
     }
-    private WindowManager.LayoutParams prepareSystemOverlayParams(ISystemBridge connected, WindowManager.LayoutParams requested) {
+    private WindowManager.LayoutParams prepareSystemOverlayParams(WindowManager.LayoutParams requested) {
         try {
-            Bundle request = new Bundle(); request.putParcelable("windowParams", requested);
-            Method prepare = ISystemBridge.class.getMethod("prepareShellOverlay", Bundle.class);
-            Bundle response = (Bundle) prepare.invoke(connected, request);
+            org.matonos.client.MatonosClient.Result<Bundle> result = bridge.prepareShellOverlay(requested);
+            if (!result.available || result.value == null) {
+                android.util.Log.w("MatonOSShell", "Using standard application overlay: " + result.reason);
+                return requested;
+            }
+            Bundle response = result.value;
             WindowManager.LayoutParams adjusted = response == null ? null : response.getParcelable("windowParams", WindowManager.LayoutParams.class);
             if (adjusted != null) return adjusted;
-        } catch (ReflectiveOperationException | RuntimeException error) { android.util.Log.w("MatonOSShell", "Using standard application overlay", error); }
+        } catch (RuntimeException error) { android.util.Log.w("MatonOSShell", "Using standard application overlay", error); }
         return requested;
     }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -207,7 +220,7 @@ public final class ShelfService extends Service {
             if (packageName != null) togglePinnedApp(this, packageName);
             MatonShelfExpoModule.notifyShelfState();
         }
-        if (!added && bridge != null) installShelf(bridge.get());
+        if (!added && bridge != null) installShelf();
         return START_STICKY;
     }
     int dp(int value) { return (int) (value * getResources().getDisplayMetrics().density + .5f); }

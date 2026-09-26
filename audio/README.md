@@ -59,19 +59,32 @@ implementation has previously been observed to fill capture with
 pseudo-random data; do not claim the no-card mic produces zero samples until
 verified or replaced.
 
-## HDA codec driver preload
+## HDA controller options and codec driver preload
 
-The image can discover `snd_hda_intel` by PCI modalias before the HDA bus
-codec modules have registered. An asynchronous `post-fs` init service runs `/vendor/bin/modprobe` against
-`/vendor/lib/modules/modules.dep` for each shipped `snd-hda-codec-*.ko`, using
-depmod's dependency ordering. The service runs in `matonos_driver`; the
+The 09:15 image loaded `snd_hda_intel`, but QEMU reported `Cannot probe
+codecs, giving up`; loading generic codec modules later could not fix the
+controller/codec communication failure. The `audio/modules.options` draft was
+not connected to kernel module packaging, so it never appeared under
+`/vendor/lib/modules` and could not affect ueventd's initial controller
+probe. `audio/BoardConfig.mk` now sets `BOARD_VENDOR_KERNEL_MODULES_OPTIONS_FILE`, which installs this file as
+`/vendor/lib/modules/modules.options`. It starts with `options snd_hda_intel
+enable_msi=0`, a diagnostic compatibility setting for QEMU/PC interrupt
+routing. It deliberately does not force `probe_mask=1`, which could hide
+additional codec addresses on physical PCs. On the 10:06 image, the coordinator confirmed a QEMU HDA card appears, the
+selector reports `found`, and AudioFlinger opens its speaker output. This image includes `enable_msi=0`, which is consistent with the interrupt-mode
+workaround restoring codec detection. If this result is not reproducible on a
+fresh private boot or physical PCs, test `single_cmd=1` as a separate
+follow-up; `position_fix` and `model` affect DMA/board setup rather than the
+controller's initial codec response.
+
+An asynchronous `post-fs` init service also runs `/vendor/bin/modprobe` for
+each shipped `snd-hda-codec-*.ko`, using `/vendor/lib/modules/modules.dep`,
+then tries to reload `snd_hda_intel`. The service runs in `matonos_driver`; the
 `vendor_toolbox_exec` transition sends modprobe into Android's narrow
-`vendor_modprobe` domain so module loading uses its intended SELinux grants. It
-then tries to remove and reload `snd_hda_intel`, prompting the controller to
-enumerate codecs with their drivers present. Failures to load optional codecs
-or reload the controller are ignored; audio service and boot startup never
-wait for this action. Without an HDA controller, the selector and HAL retain
-their no-card fallback.
+`vendor_modprobe` domain. This can retry detection after codec bus drivers are
+registered, but it cannot fix a controller that cannot communicate with any
+codec. Failures remain non-fatal and never gate HAL startup or boot. Without
+an HDA controller, the selector and HAL retain their no-card fallback.
 
 ## Upstream differences and limitations
 
@@ -116,7 +129,7 @@ intent, and capture the QEMU WAV using:
 ```sh
 bash tools/run-qemu-live.sh -g none -m 4096 -a 5556 \
   -s "$HOME/Documents/aosp/out/pc-logs/audio/hda-serial.log" \
-  -x "-audiodev wav,id=snd0,path=$HOME/Documents/aosp/out/pc-logs/audio/ovmuz.wav -device intel-hda -device hda-duplex,audiodev=snd0"
+  -x "-audiodev wav,id=snd0,path=$HOME/Documents/aosp/out/pc-logs/audio/ovmuz.wav -device ich9-intel-hda -device hda-output,audiodev=snd0"
 ```
 
 Check nonzero WAV samples and confirm playback position reaches the end.
