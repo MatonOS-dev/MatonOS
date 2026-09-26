@@ -2,7 +2,6 @@ import React, {useEffect, useState} from 'react';
 import {Image, Pressable, StyleSheet, Text, View} from 'react-native';
 import {useTheme} from 'react-native-paper';
 import {MatonShell, type LauncherApp} from '../MatonShellNative';
-import {Host, Switch} from '@expo/ui/jetpack-compose';
 
 export function HomeScreen(): React.JSX.Element {
   const theme = useTheme();
@@ -55,9 +54,6 @@ export function HomeScreen(): React.JSX.Element {
           </Pressable>
         ))}
       </View>
-      <Host style={styles.composeDemo} colorScheme={theme.dark ? 'dark' : 'light'}>
-        <Switch value={false} onCheckedChange={() => {}} />
-      </Host>
     </View>
   );
 }
@@ -78,5 +74,4 @@ const styles = StyleSheet.create({
   pressed: {opacity: 0.8},
   icon: {width: 48, height: 48},
   label: {fontSize: 12},
-  composeDemo: {width: 64, height: 48, marginTop: 20},
 });

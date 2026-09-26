@@ -476,7 +476,8 @@ Each entry: what, why no non-patch way, what it would need.
       0.29.4 (Mesa 26.2 needs rustc >= 1.85, bindgen >= 0.71).
 - [ ] Host needs for Mesa: meson ninja-build glslang-tools python3-mako
       python3-yaml spirv-tools clang-21 llvm-21-dev libclang-21-dev
-      libclang-cpp21-dev libclc-21-dev libllvmspirvlib-21-dev libpolly-21-dev.
+      libclang-cpp21-dev libclc-21-dev libpolly-21-dev; SPIRV-LLVM-Translator 21 is not in apt.llvm.org:
+      build llvm_release_210 from source, set MATON_SPIRV_PREFIX in matonos.local.env.
 
 ## Base: AOSP (decided)
 

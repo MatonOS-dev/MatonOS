@@ -44,6 +44,7 @@ public final class ShelfService extends Service {
     private static final String PREFS = "shelf";
     private static final String PINS = "pinned";
     private static final String THREE_BUTTON = "three_button_mode";
+    private static final String THREE_BUTTON_OVERRIDE = "three_button_mode_override";
     @Override public void onCreate() {
         super.onCreate(); active = this;
         wm = getSystemService(WindowManager.class);
@@ -140,10 +141,16 @@ public final class ShelfService extends Service {
     static boolean isHomeVisible() { return active != null && active.homeVisible; }
     static String getActivePanel() { return active == null ? "" : active.panel; }
     static boolean isThreeButtonMode(Context context) {
-        return context.getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(THREE_BUTTON, false);
+        android.content.SharedPreferences preferences = context.getSharedPreferences(PREFS, MODE_PRIVATE);
+        if (preferences.getBoolean(THREE_BUTTON_OVERRIDE, false))
+            return preferences.getBoolean(THREE_BUTTON, false);
+        // Match the classic shelf controls to AOSP's selected navigation mode
+        // until the user explicitly chooses a Shelf layout in Shelf Settings.
+        return Settings.Secure.getInt(context.getContentResolver(), "navigation_mode", 2) == 0;
     }
     static void setThreeButtonMode(Context context, boolean enabled) {
-        context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(THREE_BUTTON, enabled).apply();
+        context.getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                .putBoolean(THREE_BUTTON, enabled).putBoolean(THREE_BUTTON_OVERRIDE, true).apply();
         if (active != null) active.refreshJavaFallback();
         MatonShelfExpoModule.notifyShelfState();
     }

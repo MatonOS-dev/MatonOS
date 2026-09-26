@@ -2,6 +2,7 @@ import React, {useEffect, useMemo, useState} from 'react';
 import {FlatList, Image, Pressable, StyleSheet, Text, useWindowDimensions} from 'react-native';
 import {Appbar, IconButton, Searchbar, Surface, useTheme} from 'react-native-paper';
 import {MatonShell, type LauncherApp} from '../MatonShellNative';
+import {ComposeUiPreview} from '../components/ComposeUiPreview';
 
 export function AppDrawerScreen(): React.JSX.Element {
   const theme = useTheme();
@@ -46,6 +47,7 @@ export function AppDrawerScreen(): React.JSX.Element {
         onChangeText={setQuery}
         style={styles.search}
       />
+      {__DEV__ && <ComposeUiPreview />}
       <FlatList
         data={filtered}
         key={columns}

@@ -2,6 +2,7 @@
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 AOSP=$(cd "$HERE/../../../../" && pwd)
+. "$(dirname -- "$(readlink -f -- "$0")")/../tools/local-env.sh"
 NDK=${ANDROID_NDK:-$HOME/Documents/android-ndk-r30}
 CMAKE=${MATON_CMAKE:-$AOSP/prebuilts/cmake/linux-x86/bin/cmake}
 NINJA=${MATON_NINJA:-$(command -v ninja)}

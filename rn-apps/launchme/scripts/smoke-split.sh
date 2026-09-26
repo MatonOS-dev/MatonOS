@@ -5,7 +5,8 @@ usage() { echo "Usage: $0 <adb-serial> <evidence-directory>" >&2; exit 2; }
 [[ $# == 2 ]] || usage
 SERIAL=$1
 EVIDENCE=$2
-ADB=${ADB:-$HOME/Documents/aosp/out/host/linux-x86/bin/adb}
+. "$(dirname -- "$(readlink -f -- "$0")")/../../../device/maton/pc_x86_64/tools/local-env.sh"
+ADB=${ADB:-$MATON_ROOT/out/host/linux-x86/bin/adb}
 SHELL_PACKAGE=org.matonos.shell
 SHELF_PACKAGE=org.matonos.shelf
 RECENTS_PACKAGE=org.matonos.recents
@@ -13,7 +14,13 @@ RECENTS_PACKAGE=org.matonos.recents
 [[ -x $ADB ]] || { echo "adb not executable: $ADB" >&2; exit 1; }
 mkdir -p "$EVIDENCE"
 adb_shell() { "$ADB" -s "$SERIAL" shell "$@"; }
-capture() { "$ADB" -s "$SERIAL" exec-out screencap -p > "$EVIDENCE/$1.png"; }
+capture() {
+  adb_shell svc power stayon true
+  adb_shell input keyevent KEYCODE_WAKEUP
+  adb_shell wm dismiss-keyguard
+  sleep 1
+  "$ADB" -s "$SERIAL" exec-out screencap -p > "$EVIDENCE/$1.png"
+}
 
 "$ADB" -s "$SERIAL" wait-for-device
 for _ in {1..120}; do
@@ -25,7 +32,10 @@ done
   exit 1
 }
 adb_shell setprop persist.vendor.maton.sleep_idle_s 0
+adb_shell svc power stayon true
 adb_shell wm dismiss-keyguard
+adb_shell input keyevent KEYCODE_WAKEUP
+sleep 2
 
 adb_shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME -f 0x10000000 > "$EVIDENCE/home-start.txt"
 sleep 12
@@ -51,9 +61,26 @@ capture recents
 adb_shell am start -W -a android.settings.SETTINGS > "$EVIDENCE/settings-start.txt"
 sleep 8
 adb_shell dumpsys window windows > "$EVIDENCE/settings-windows.txt"
-grep -Fq 'MatonOS shelf' "$EVIDENCE/settings-windows.txt" || {
-  echo "Shelf overlay window is absent over Settings" >&2; exit 1;
-}
+python3 - "$EVIDENCE/settings-windows.txt" "$EVIDENCE/settings-shelf-window.txt" <<'PY'
+import pathlib
+import re
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text(errors="replace")
+match = re.search(
+    r"^\s*Window #\d+ Window\{[^\n]*MatonOS shelf[^\n]*\}:(.*?)(?=^\s*Window #\d+ Window\{|\Z)",
+    source,
+    re.MULTILINE | re.DOTALL,
+)
+if match is None:
+    raise SystemExit("Shelf overlay window is absent over Settings")
+block = match.group(0)
+pathlib.Path(sys.argv[2]).write_text(block)
+if not re.search(r"^\s*isVisible=true\s*$", block, re.MULTILINE):
+    raise SystemExit("Shelf window exists over Settings but isVisible is not true")
+if re.search(r"mIsForceHiddenNonSystemOverlayWindow=true", block):
+    raise SystemExit("Settings is force-hiding the Shelf as a non-system overlay")
+PY
 capture settings-shelf
 
 adb_shell dumpsys meminfo "$SHELL_PACKAGE" > "$EVIDENCE/shell-meminfo.txt"

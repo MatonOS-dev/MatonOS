@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 [[ $# == 1 ]] || { echo "usage: $0 <output binary>" >&2; exit 2; }
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
+. "$(dirname -- "$(readlink -f -- "$0")")/../tools/local-env.sh"
 NDK=${ANDROID_NDK:-$HOME/Documents/android-ndk-r30}
 API=${MATON_NDK_API:-35}
 TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64

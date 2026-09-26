@@ -28,7 +28,7 @@ Expo generates the native Android project; local Expo modules own Home and Drawe
 
 ## Using Expo UI (Jetpack Compose)
 
-`@expo/ui` is the target UI kit; React Native Paper remains during migration. The Home screen includes a small real Compose `Switch` inside a `Host` so the Android rendering path is exercised:
+`@expo/ui` is the target UI kit; React Native Paper remains during migration. The development app drawer includes a Compose `Switch` inside a `Host` so you can check the Android rendering path without placing a demo control on the production Home screen:
 
 ```tsx
 import {Host, Switch} from '@expo/ui/jetpack-compose';

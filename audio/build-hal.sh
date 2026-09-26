@@ -4,6 +4,7 @@ set -Eeuo pipefail
 die() { echo "ERROR: $*" >&2; exit 1; }
 DEVICE_DIR=$(cd "$(dirname "$0")/.." && pwd)
 AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+. "$(dirname -- "$(readlink -f -- "$0")")/../tools/local-env.sh"
 NDK=${ANDROID_NDK:-$HOME/Documents/android-ndk-r30}
 CMAKE=${MATON_CMAKE:-$AOSP/prebuilts/cmake/linux-x86/bin/cmake}
 NINJA=${MATON_NINJA:-$(command -v ninja || true)}

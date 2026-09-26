@@ -5,8 +5,10 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <linux/loop.h>
+#include <poll.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,10 +19,12 @@
 #include <sys/sysmacros.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
 #define WAIT_MS 9000
+#define SCAN_BUDGET_MS 8000
 #define MAX_DEPTH 3
 #define MAX_GPT_ENTRIES 256
 #define GPT_ENTRY_MAX 4096
@@ -28,6 +32,7 @@
 
 static char boot_uuid[37];
 static int logfd = -1;
+extern char **environ;
 
 static void logmsg(const char *fmt, ...) {
     char msg[768];
@@ -118,14 +123,10 @@ static int module_load(const char *path) {
     if (fd < 0) return -1;
     struct stat st;
     if (fstat(fd, &st) || st.st_size <= 0 || st.st_size > 64 * 1024 * 1024) { close(fd); return -1; }
-    void *buf = malloc((size_t)st.st_size);
-    if (!buf) { close(fd); return -1; }
-    ssize_t got = read(fd, buf, (size_t)st.st_size);
-    close(fd);
-    if (got != st.st_size) { free(buf); return -1; }
-    int rc = syscall(__NR_init_module, buf, (size_t)st.st_size, "");
+    if (lseek(fd, 0, SEEK_SET) < 0) { close(fd); return -1; }
+    int rc = syscall(__NR_finit_module, fd, "", 0);
     int saved = errno;
-    free(buf);
+    close(fd);
     if (rc && saved != EEXIST) { errno = saved; return -1; }
     return 0;
 }
@@ -155,6 +156,10 @@ static int image_has_uuid(const char *path) {
     uint32_t size = (uint32_t)hdr[84] | (uint32_t)hdr[85] << 8 | (uint32_t)hdr[86] << 16 | (uint32_t)hdr[87] << 24;
     if (!count || count > MAX_GPT_ENTRIES || size < 128 || size > GPT_ENTRY_MAX || entries_lba > (uint64_t)st.st_size / 512) { close(fd); return 0; }
     int match = 0, has_super = 0;
+    static const unsigned char efi_system_type[16] = {
+        0x28,0x73,0x2a,0xc1,0x1f,0xf8,0xd2,0x11,
+        0xba,0x4b,0x00,0xa0,0xc9,0x3e,0xc9,0x3b
+    };
     unsigned char entry[GPT_ENTRY_MAX];
     for (uint32_t i = 0; i < count; ++i) {
         off_t off = (off_t)(entries_lba * 512 + (uint64_t)i * size);
@@ -162,7 +167,7 @@ static int image_has_uuid(const char *path) {
         if (entry[0] == 0 && entry[1] == 0) continue;
         char uuid[37];
         uuid_from_gpt(entry + 16, uuid);
-        if (!strcmp(uuid, boot_uuid)) match = 1;
+        if (!strcmp(uuid, boot_uuid) && !memcmp(entry, efi_system_type, sizeof(efi_system_type))) match = 1;
         char name[37] = {0};
         for (int j = 0; j < 36; ++j) {
             unsigned c = entry[56 + j * 2] | (unsigned)entry[57 + j * 2] << 8;
@@ -203,7 +208,7 @@ static int mount_candidates(void) {
         mkdir(mnt, 0700);
         const char *types[] = { "exfat", "ntfs3", "vfat" };
         for (size_t i = 0; i < sizeof(types)/sizeof(types[0]); ++i) {
-            if (!mount(dev, mnt, types[i], MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, "uid=0,gid=0,umask=0077")) {
+            if (!mount(dev, mnt, types[i], MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL)) {
                 mounted++;
                 break;
             }
@@ -282,10 +287,60 @@ static void start_android(void) {
     (void)umount2("/sys", MNT_DETACH);
     (void)umount2("/proc", MNT_DETACH);
     char *argv[] = { "/init", NULL };
-    char *envp[] = { "PATH=/system/bin:/system/xbin:/vendor/bin", NULL };
-    execve("/init.android", argv, envp);
+    execve("/init.android", argv, environ);
     logmsg("could not exec saved Android init: %s", strerror(errno));
     _exit(127);
+}
+
+static int ventoy_work(void) {
+    if (module_load("/ventoy/modules/nls_utf8.ko") && errno != EEXIST) logmsg("UTF-8 NLS module unavailable: %s", strerror(errno));
+    if (module_load("/ventoy/modules/exfat.ko") && errno != EEXIST) logmsg("exFAT module unavailable: %s", strerror(errno));
+    if (module_load("/ventoy/modules/ntfs3.ko") && errno != EEXIST) logmsg("NTFS3 module unavailable: %s", strerror(errno));
+
+    int mounted = mount_candidates();
+    char image[PATH_MAX] = {0};
+    if (mounted <= 0 || !locate_image(image, sizeof(image))) {
+        logmsg("no mounted Ventoy data partition contains a GPT image with requested PARTUUID");
+        return 0;
+    }
+
+    logmsg("matched Ventoy image by embedded ESP PARTUUID: %s", image);
+    int loop = activate_image(image);
+    if (loop < 0) {
+        logmsg("loop setup failed: %s", strerror(errno));
+        return 0;
+    }
+    logmsg("attached image to /dev/loop%d with read-only partition scan", loop);
+    uint64_t wait_for_part = monotonic_ms() + 3000;
+    while (monotonic_ms() < wait_for_part && !sysfs_has_boot_uuid()) sleep_ms(100);
+    if (sysfs_has_boot_uuid()) {
+        logmsg("embedded boot PARTUUID appeared; continuing Android first-stage init");
+        return 1;
+    }
+    DIR *d = opendir("/sys/class/block");
+    if (d) {
+        struct dirent *e;
+        while ((e = readdir(d)) != NULL) {
+            if (strncmp(e->d_name, "loop", 4)) continue;
+            char path[PATH_MAX];
+            snprintf(path, sizeof(path), "/sys/class/block/%s/uevent", e->d_name);
+            FILE *f = fopen(path, "re");
+            if (!f) continue;
+            char line[256];
+            char details[512] = {0};
+            while (fgets(line, sizeof(line), f)) {
+                if (!strncmp(line, "PARTUUID=", 9) || !strncmp(line, "PARTNAME=", 9) || !strncmp(line, "DEVTYPE=", 8)) {
+                    size_t used = strlen(details);
+                    snprintf(details + used, sizeof(details) - used, "%s", line);
+                }
+            }
+            fclose(f);
+            if (details[0]) logmsg("%s uevent: %s", e->d_name, details);
+        }
+        closedir(d);
+    }
+    logmsg("loop partition scan did not expose requested PARTUUID; continuing Android init for fallback");
+    return 0;
 }
 
 int main(void) {
@@ -305,29 +360,37 @@ int main(void) {
     if (sysfs_has_boot_uuid()) start_android();
 
     logmsg("boot PARTUUID %s absent after %d ms; probing Ventoy data partitions", boot_uuid, WAIT_MS);
-    if (module_load("/ventoy/modules/nls_utf8.ko") && errno != EEXIST) logmsg("UTF-8 NLS module unavailable: %s", strerror(errno));
-    if (module_load("/ventoy/modules/exfat.ko") && errno != EEXIST) logmsg("exFAT module unavailable: %s", strerror(errno));
-    if (module_load("/ventoy/modules/ntfs3.ko") && errno != EEXIST) logmsg("NTFS3 module unavailable: %s", strerror(errno));
-
-    int mounted = mount_candidates();
-    char image[PATH_MAX] = {0};
-    if (mounted > 0 && locate_image(image, sizeof(image))) {
-        logmsg("matched Ventoy image by embedded ESP PARTUUID: %s", image);
-        int loop = activate_image(image);
-        if (loop >= 0) {
-            logmsg("attached image to /dev/loop%d with read-only partition scan", loop);
-            uint64_t wait_for_part = monotonic_ms() + 3000;
-            while (monotonic_ms() < wait_for_part && !sysfs_has_boot_uuid()) sleep_ms(100);
-            if (sysfs_has_boot_uuid()) {
-                logmsg("embedded boot PARTUUID appeared; continuing Android first-stage init");
-            } else {
-                logmsg("loop partition scan did not expose requested PARTUUID; continuing Android init for fallback");
-            }
-        } else {
-            logmsg("loop setup failed: %s; continuing Android init", strerror(errno));
-        }
-    } else {
-        logmsg("no mounted Ventoy data partition contains a GPT image with requested PARTUUID; continuing Android init");
+    int result_pipe[2];
+    if (pipe2(result_pipe, O_CLOEXEC)) {
+        logmsg("could not start bounded Ventoy scan: %s", strerror(errno));
+        start_android();
     }
+    pid_t worker = fork();
+    if (worker == 0) {
+        close(result_pipe[0]);
+        int result = ventoy_work();
+        (void)write(result_pipe[1], &result, sizeof(result));
+        _exit(0);
+    }
+    close(result_pipe[1]);
+    if (worker < 0) {
+        close(result_pipe[0]);
+        logmsg("could not fork bounded Ventoy scan: %s", strerror(errno));
+        start_android();
+    }
+    struct pollfd pfd = { .fd = result_pipe[0], .events = POLLIN };
+    int wait_ms = (int)SCAN_BUDGET_MS;
+    int rc;
+    do { rc = poll(&pfd, 1, wait_ms); } while (rc < 0 && errno == EINTR);
+    int result = 0;
+    ssize_t got = rc > 0 ? read(result_pipe[0], &result, sizeof(result)) : -1;
+    close(result_pipe[0]);
+    if (got != sizeof(result)) {
+        (void)kill(worker, SIGKILL);
+        logmsg("Ventoy scan exceeded %d ms or failed; continuing Android init", SCAN_BUDGET_MS);
+    } else if (result) {
+        logmsg("Ventoy image attached; starting Android first-stage init");
+    }
+    (void)waitpid(worker, NULL, WNOHANG);
     start_android();
 }

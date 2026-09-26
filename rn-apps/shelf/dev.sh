@@ -4,10 +4,11 @@ set -Eeuo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PACKAGE=org.matonos.shelf
 DEVICE=${MATON_ADB_DEVICE:-127.0.0.1:5555}
-ADB=${ADB:-$HOME/Documents/aosp/out/host/linux-x86/bin/adb}
+. "$(dirname -- "$(readlink -f -- "$0")")/../../device/maton/pc_x86_64/tools/local-env.sh"
+ADB=${ADB:-$MATON_ROOT/out/host/linux-x86/bin/adb}
 SDK=${MATON_ANDROID_SDK:-$HOME/Documents/matonos-android-sdk}
 KEY_DIR=${MATON_KEY_DIR:-$HOME/.config/matonos-keys}
-JAVA_HOME=${JAVA_HOME:-$HOME/Documents/aosp/prebuilts/jdk/jdk21/linux-x86}
+JAVA_HOME=${JAVA_HOME:-$MATON_ROOT/prebuilts/jdk/jdk21/linux-x86}
 METRO_PORT=8082
 METRO_PID=$ROOT/.metro.pid
 METRO_LOG=$ROOT/.metro.log

@@ -35,6 +35,7 @@ info() { echo "==> $*"; }
 
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
 AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+. "$(dirname -- "$(readlink -f -- "$0")")/local-env.sh"
 MESA=${MESA_DIR:-$HOME/Documents/mesa-26.2.3}
 NDK=${ANDROID_NDK:-$HOME/Documents/android-ndk-r30}
 OUT=""
@@ -80,7 +81,22 @@ if [[ $STAGE_ONLY == 0 ]]; then
 # ---------------------------------------------------------------- 1. host tools
 HOST_BUILD=$OUT/host
 HOST_INSTALL=$OUT/host-install
-if [[ ! -x $HOST_INSTALL/bin/mesa_clc || ! -x $HOST_INSTALL/bin/vtn_bindgen2 ]]; then
+# SPIRV-LLVM-Translator outside the system prefix (apt.llvm.org doesn't ship
+# it): MATON_SPIRV_PREFIX=<install prefix> in matonos.local.env.
+host_link_args=
+if [[ -n ${MATON_SPIRV_PREFIX:-} ]]; then
+  export PKG_CONFIG_PATH=$MATON_SPIRV_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}
+  host_link_args=-Wl,-rpath,$MATON_SPIRV_PREFIX/lib
+fi
+# Rebuild when missing or when a host library they link went away (LLVM upgrade).
+host_tools_ok() {
+  local t
+  for t in mesa_clc vtn_bindgen2; do
+    [[ -x $HOST_INSTALL/bin/$t ]] || return 1
+    ! ldd "$HOST_INSTALL/bin/$t" | grep -q 'not found' || return 1
+  done
+}
+if ! host_tools_ok; then
   info "Building host tools (mesa_clc, vtn_bindgen2) with LLVM $LLVM_VERSION"
   cat > "$OUT/host.ini" <<EOF
 [binaries]
@@ -96,12 +112,12 @@ EOF
     -Dgles1=disabled -Dgles2=disabled \
     -Dllvm=enabled -Dmesa-clc=enabled -Dinstall-mesa-clc=true \
     -Dvalgrind=disabled -Dlibunwind=disabled -Dxmlconfig=disabled \
-    -Dzstd=disabled -Dbuild-tests=false
+    -Dzstd=disabled -Dbuild-tests=false \
+    ${host_link_args:+-Dc_link_args=$host_link_args -Dcpp_link_args=$host_link_args}
   ninja -C "$HOST_BUILD" -j"$JOBS"
   ninja -C "$HOST_BUILD" install >/dev/null
 fi
-[[ -x $HOST_INSTALL/bin/mesa_clc && -x $HOST_INSTALL/bin/vtn_bindgen2 ]] ||
-  die "host tools not installed in $HOST_INSTALL/bin"
+host_tools_ok || die "host tools not installed or not runnable in $HOST_INSTALL/bin"
 export PATH=$HOST_INSTALL/bin:$PATH
 
 PKGCONFIG_DIR=$OUT/pkgconfig
