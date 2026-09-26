@@ -554,9 +554,17 @@ Privileged Extension) are still reused where useful.
    gbm_mesa), Realtek r8169 Ethernet, Intel 7265 Wi-Fi.
 3. Spare: han-mc-server (HP ProDesk 600 G1, i5-4690, HD 4600 Haswell).
 
+- **Mesa driver set = host distro parity (user, 2026-09-26)**: every x86 PC
+  driver the host's Mesa ships, minus LLVM-only (llvmpipe/lavapipe) and
+  non-PC (d3d12/WSL, asahi, gfxstream). GL: iris crocus i915 radeonsi r600
+  r300 nouveau virgl svga zink softpipe. Vulkan: anv hasvk radv NVK venus.
+  Intel anv/hasvk/none picked per PCI ID from a table generated out of Mesa's
+  pci_ids (vendor/etc/intel_vulkan_pci_ids.txt); NVIDIA -> NVK. nouveau GSP
+  firmware already staged by build-kernel.sh.
+
 Priorities from the test devices:
 - **v1 must-have**: crocus + hasvk, Intel generation check in
-  pc-gpu-detect.sh; automatic display density from EDID (physical size) in
+  pc-gpu-detect.sh (implemented 2026-09-26, untested on hardware); automatic display density from EDID (physical size) in
   the pre-boot script (fixed 160 dpi is unusable on the Surface).
 - **v1.x**: Wi-Fi HAL + wpa_supplicant (Surface has no Ethernet); ALSA-backed
   audio HAL (current AIDL example HAL has no real sound).

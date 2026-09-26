@@ -21,7 +21,8 @@ PRODUCT_PACKAGES += \
 #   lib64/egl/lib{EGL,GLESv1_CM,GLESv2}_mesa.so, lib64/libgallium-*.so,
 #   lib64/libgbm_mesa.so + lib64/libgbm_mesa_wrapper.so (minigbm's gbm_mesa
 #   backend dlopens the wrapper),
-#   lib64/hw/vulkan.{intel,radeon,virtio}.so
+#   lib64/hw/vulkan.{intel,intel_hasvk,radeon,nouveau,virtio}.so,
+#   etc/intel_vulkan_pci_ids.txt (Intel anv/hasvk split for pc-gpu-detect.sh)
 PRODUCT_COPY_FILES += \
     $(foreach f,$(shell test -d $(PC_MESA_PREBUILT) && cd $(PC_MESA_PREBUILT) && find . -type f -printf '%P\n'),\
         $(PC_MESA_PREBUILT)/$(f):$(TARGET_COPY_OUT_VENDOR)/$(f))

@@ -11,3 +11,5 @@ init_daemon_domain(pc_gpu_detect)
 allow pc_gpu_detect vendor_shell_exec:file rx_file_perms;
 allow pc_gpu_detect vendor_toolbox_exec:file rx_file_perms;
 r_dir_file(pc_gpu_detect, sysfs)
+# /vendor/etc/intel_vulkan_pci_ids.txt
+r_dir_file(pc_gpu_detect, vendor_configs_file)
