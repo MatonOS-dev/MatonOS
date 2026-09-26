@@ -17,17 +17,6 @@ if op_is_default "$fdroid" REQUEST_INSTALL_PACKAGES; then
     cmd appops set --user 0 "$fdroid" REQUEST_INSTALL_PACKAGES allow
 fi
 
-# Hide the battery icon only when Android reports no battery. This uses the
-# battery service instead of reading sysfs directly (forbidden to this domain).
-if ! dumpsys battery 2>/dev/null | grep -q 'present: true'; then
-    hide=$(settings get secure icon_blacklist)
-    [ "$hide" = null ] && hide=rotate,headset
-    case ",$hide," in
-        *,battery,*) ;;
-        *) settings put secure icon_blacklist "$hide,battery" ;;
-    esac
-fi
-
 # Test audio clips (media/test-audio in the device tree, shipped in
 # /product/media/matonos/test-audio) go into Music once, through MediaProvider
 # so they're owned and indexed correctly. Deleting them later sticks.

@@ -29,7 +29,10 @@ give that feature up for the time being** — no fallback patch. **The one
 exception (user, 2026-09-25, v4):** a minimal signature-spoofing hook in
 PackageManagerService that defers every decision to the system bridge (for
 microG-style GMS replacements); patch budget = 1. Record it as
-a known gap in NOTES.md ("Dropped for zero patches") with what it would need.
+a known gap in NOTES.md ("Dropped for zero patches") with what it would need. **Also allowed (user,
+2026-09-26): small, upstreamable fixes for obvious AOSP bugs** — currently
+`patches/frameworks/base/0001` (unified battery icon hidden when no battery
+is detected; the Compose icon ignores the icon hide list).
 
 Target: stock AOSP framework and mainline modules, unpatched; MatonOS lives
 in configuration, our own components (daemons, HALs, apps) and the one
@@ -148,7 +151,7 @@ present Android with a simple, stable device through its normal HALs/APIs:
   - **Static, known at boot** (detected once in early boot, then fixed
     config/properties for the HALs; no runtime switching): sensors
     (accelerometer/gyro/ALS on convertibles), battery, lid, and similar
-    platform features (e.g. `pc-gpu-detect.sh`, the battery-icon setup).
+    platform features (e.g. `pc-gpu-detect.sh`).
 
 ## Rule: our own apps and daemons are built outside Soong (decided 2026-09-24)
 

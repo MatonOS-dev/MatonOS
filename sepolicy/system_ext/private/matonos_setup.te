@@ -1,5 +1,5 @@
 # matonos-setup.sh (setup/): sets MatonOS defaults Android has no config for
-# (F-Droid's install app-op, battery icon on battery-less PCs) via cmd/settings
+# (F-Droid's install app-op, test media) via cmd/settings
 # after boot.
 type matonos_setup, domain, coredomain;
 type matonos_setup_exec, system_file_type, exec_type, file_type;

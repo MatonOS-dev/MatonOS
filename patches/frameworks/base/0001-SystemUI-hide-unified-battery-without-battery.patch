@@ -1,0 +1,41 @@
+SystemUI: hide the unified battery icon when no battery is detected
+
+The Compose "unified battery" (flag new_status_bar_icons) is added to the
+status bar unconditionally and, unlike the legacy BatteryMeterView, ignores
+the icon hide list. On hardware without a battery (desktop PCs, VMs) the
+health HAL reports no battery, BatteryRepository.isStateUnknown is true, and
+the icon shows a permanent "?" glyph. Don't draw it in that state. Devices
+with a battery are unaffected. Upstreamable.
+
+MatonOS: user-approved exception to the patch budget (2026-09-26).
+
+diff -ru a/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/battery/ui/composable/UnifiedBattery.kt b/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/battery/ui/composable/UnifiedBattery.kt
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/battery/ui/composable/UnifiedBattery.kt	2026-09-26 20:24:56.828955781 +0200
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/battery/ui/composable/UnifiedBattery.kt	2026-09-26 20:24:56.852813226 +0200
+@@ -167,6 +167,9 @@
+     isDarkProvider: () -> IsAreaDark,
+     modifier: Modifier,
+ ) {
++    // Battery-less hardware: show no battery rather than a permanent "?" glyph.
++    if (!viewModel.isBatteryDetected) return
++
+     var bounds by remember { mutableStateOf(Rect()) }
+ 
+     val colorProvider = {
+diff -ru a/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/battery/ui/viewmodel/BatteryViewModel.kt b/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/battery/ui/viewmodel/BatteryViewModel.kt
+--- a/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/battery/ui/viewmodel/BatteryViewModel.kt	2026-09-26 20:24:56.830206960 +0200
++++ b/packages/SystemUI/src/com/android/systemui/statusbar/pipeline/battery/ui/viewmodel/BatteryViewModel.kt	2026-09-26 20:24:56.852669637 +0200
+@@ -51,6 +51,13 @@
+     @Application context: Context,
+ ) : HydratedActivatable() {
+ 
++    /**
++     * False when no battery can be detected at all (e.g. desktop PCs): there is nothing to
++     * report, so the battery icon is hidden instead of showing the "unknown" glyph forever.
++     */
++    val isBatteryDetected by
++        interactor.isStateUnknown.map { !it }.hydratedStateOf(initialValue = true)
++
+     val level by interactor.level.hydratedStateOf(initialValue = 0)
+ 
+     val isFull by interactor.isFull.hydratedStateOf(initialValue = false)
