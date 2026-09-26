@@ -201,12 +201,20 @@ def check_fixed_sepolicy_files() -> None:
             error(path, f"new file violates the fixed sepolicy/matonos file set (allowed: {', '.join(sorted(allowed))})")
 
 
+# User-approved exceptions to the zero-patches rule (CLAUDE.md), by path
+# relative to patches/. Each needs an explicit user decision.
+APPROVED_PATCHES = {
+    # 2026-09-26: small upstreamable fix for an obvious AOSP bug.
+    "frameworks/base/0001-SystemUI-hide-unified-battery-without-battery.patch",
+}
+
+
 def check_patches() -> None:
     root = DEVICE / "patches"
     if root.exists():
         for path in root.rglob("*"):
-            if path.is_file():
-                error(path, "AOSP patches are disabled by the zero-patches rule; retire or move this file out of patches/")
+            if path.is_file() and str(path.relative_to(root)) not in APPROVED_PATCHES:
+                error(path, "AOSP patches are disabled by the zero-patches rule; retire or move this file out of patches/ (or record a user-approved exception in APPROVED_PATCHES)")
 
 
 def check_bpfmt() -> None:
