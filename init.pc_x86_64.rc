@@ -15,7 +15,7 @@ on late-fs
 on post-fs-data
     mkdir /data/vendor/var 0755 root root
 
-# zram swap (zramsize in the fstab, 80% of RAM; user, 2026-09-26). lz4 over
+# zram swap (zramsize in the fstab, 50% of RAM; user, 2026-09-26). lz4 over
 # the kernel default: far cheaper to compress on old CPUs (Surface Pro 3).
 # Enabled after boot completes so it never delays boot.
 on property:sys.boot_completed=1
