@@ -21,7 +21,7 @@
 #   2b. LLVM for Android (static, X86) for llvmpipe/lavapipe
 #   3. android: every x86 PC driver the host distro's Mesa ships (user,
 #      2026-09-26) minus non-PC ones (d3d12/WSL, asahi, gfxstream):
-#      EGL/GLES (iris, crocus, i915, radeonsi, r600, r300, nouveau, virgl,
+#      EGL/GLES (iris, crocus, radeonsi, r600, r300, nouveau, virgl,
 #      svga, zink, llvmpipe, softpipe), Vulkan (anv, hasvk, radv, NVK, venus,
 #      lavapipe) and GBM (libgbm_mesa + dri_gbm), cross-
 #      compiled with the NDK. radeonsi uses ACO (no LLVM on the target);
@@ -258,7 +258,7 @@ meson setup "$AND_BUILD" "$MESA" \
   -Dlibdrm:default_library=static -Dzlib:default_library=static -Dexpat:default_library=static \
   -Dplatforms=android -Dandroid-stub=true -Dandroid-libbacktrace=disabled \
   -Dplatform-sdk-version=$API \
-  -Dgallium-drivers=iris,crocus,i915,radeonsi,r600,r300,nouveau,virgl,svga,zink,llvmpipe,softpipe \
+  -Dgallium-drivers=iris,crocus,radeonsi,r600,r300,nouveau,virgl,svga,zink,llvmpipe,softpipe \
   -Dvulkan-drivers=intel,intel_hasvk,amd,nouveau,virtio,swrast \
   -Degl=enabled -Dgles1=enabled -Dgles2=enabled -Dopengl=true \
   -Degl-lib-suffix=_mesa -Dgles-lib-suffix=_mesa \

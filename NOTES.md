@@ -586,9 +586,11 @@ Privileged Extension) are still reused where useful.
 3. Spare: han-mc-server (HP ProDesk 600 G1, i5-4690, HD 4600 Haswell).
 
 - **Mesa driver set = host distro parity (user, 2026-09-26)**: every x86 PC
-  driver the host's Mesa ships, minus LLVM-only (llvmpipe/lavapipe) and
-  non-PC (d3d12/WSL, asahi, gfxstream). GL: iris crocus i915 radeonsi r600
-  r300 nouveau virgl svga zink softpipe. Vulkan: anv hasvk radv NVK venus.
+  driver the host's Mesa ships, minus non-PC ones (d3d12/WSL, asahi,
+  gfxstream) and i915 (Gen3 GMA: GLES 2 only, too little for Android's UI;
+  needs libpciaccess; llvmpipe covers it). GL: iris crocus radeonsi r600 r300
+  nouveau virgl svga zink llvmpipe softpipe. Vulkan: anv hasvk radv NVK venus
+  lavapipe.
   Intel anv/hasvk/none picked per PCI ID from a table generated out of Mesa's
   pci_ids (vendor/etc/intel_vulkan_pci_ids.txt); NVIDIA -> NVK. nouveau GSP
   firmware already staged by build-kernel.sh.
