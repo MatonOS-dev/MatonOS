@@ -20,7 +20,7 @@ odm                /odm         erofs  ro                                  wait,
 /dev/block/ram1    /metadata    ext4   nodev,noatime,nosuid                wait,formattable
 /dev/block/ram0    /data        ext4   nodev,noatime,nosuid,errors=panic   latemount,wait,quota,formattable,reservedsize=64M,fileencryption=aes-256-xts:aes-256-cts:v2
 
-/dev/block/zram0   none         swap   defaults                            zramsize=50%
+/dev/block/zram0   none         swap   defaults                            zramsize=80%
 
 # Removable storage
 /devices/*/usb*/*  auto         auto   defaults                            voldmanaged=usb:auto
