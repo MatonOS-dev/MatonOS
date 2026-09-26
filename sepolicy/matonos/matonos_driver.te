@@ -89,6 +89,10 @@ allow matonos_driver vendor_configs_file:dir r_dir_perms;
 allow matonos_driver vendor_configs_file:file r_file_perms;
 allow matonos_driver matonos_driver_exec:file { execute getattr map open read };
 
+# Run the Android kernel-module helper in its narrow privileged module loader
+# domain. Audio uses it to preload optional HDA codec modules from /vendor.
+domain_auto_trans(matonos_driver, vendor_toolbox_exec, vendor_modprobe)
+
 # Boot audio selector (odm/bin/maton-audio-select.sh): its own small domain,
 # NOT a HAL server (HAL servers may neither touch audio_device nor run system
 # binaries without a transition; matonos_driver is the Bluetooth HAL server).

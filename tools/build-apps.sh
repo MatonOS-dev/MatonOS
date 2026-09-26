@@ -22,7 +22,9 @@ for tool in java keytool curl unzip openssl sha256sum; do
   command -v "$tool" >/dev/null || die "$tool is required"
 done
 [[ $APP_JOBS =~ ^[1-4]$ ]] || die "MATON_BUILD_JOBS must be between 1 and 4"
-[[ -f $AOSP/prebuilts/sdk/35/public/android.jar ]] || die "AOSP API 35 public SDK stubs are missing"
+for api in 35 36; do
+  [[ -f $AOSP/prebuilts/sdk/$api/public/android.jar ]] || die "AOSP API $api public SDK stubs are missing"
+done
 [[ -s $APP_LIST ]] || die "no app registry at $APP_LIST"
 
 # Use a user-local SDK. SDK Manager supplies the complete Android platform
@@ -41,24 +43,26 @@ if [[ ! -x $SDKMANAGER ]]; then
   rm -rf "$tmp"
   trap - EXIT
 fi
-if [[ -d $SDK/platforms/android-35 &&
-      ( ! -f $SDK/platforms/android-35/build.prop || ! -d $SDK/platforms/android-35/data/res ) ]]; then
-  python3 - "$SDK/platforms/android-35" <<'PY_CLEAN'
+for api in 35 36; do
+if [[ -d $SDK/platforms/android-$api &&
+      ( ! -f $SDK/platforms/android-$api/build.prop || ! -d $SDK/platforms/android-$api/data/res ) ]]; then
+  python3 - "$SDK/platforms/android-$api" <<'PY_CLEAN'
 import pathlib, shutil, sys
 p = pathlib.Path(sys.argv[1])
 if p.is_dir(): shutil.rmtree(p)
 PY_CLEAN
 fi
-if [[ ! -f $SDK/platforms/android-35/build.prop ||
+done
+if [[ ! -f $SDK/platforms/android-35/build.prop || ! -f $SDK/platforms/android-36/build.prop ||
       ! -x $SDK/build-tools/36.0.0/zipalign || ! -x $SDK/build-tools/36.0.0/apksigner ]]; then
   set +o pipefail
   yes | "$SDKMANAGER" --sdk_root="$SDK" --licenses >/dev/null
   sdkmanager_status=${PIPESTATUS[1]}
   set -o pipefail
   (( sdkmanager_status == 0 )) || die "SDK license acceptance failed"
-  "$SDKMANAGER" --sdk_root="$SDK" --install 'platforms;android-35' 'build-tools;36.0.0' >/dev/null
+  "$SDKMANAGER" --sdk_root="$SDK" --install 'platforms;android-35' 'platforms;android-36' 'build-tools;36.0.0' >/dev/null
 fi
-cp "$AOSP/prebuilts/sdk/35/public/android.jar" "$SDK/platforms/android-35/android.jar"
+for api in 35 36; do cp "$AOSP/prebuilts/sdk/$api/public/android.jar" "$SDK/platforms/android-$api/android.jar"; done
 
 if [[ -x $GRADLE_HOME/bin/gradle ]]; then
   GRADLE=$GRADLE_HOME/bin/gradle
@@ -123,7 +127,8 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
     framework_stub=
   fi
 
-  info "Building $key_id ($project_rel) with Gradle 9.4.1 / AGP 9.2.0"
+  if [[ $expo == 1 ]]; then info "Building $key_id with the Expo project's pinned Gradle wrapper"
+  else info "Building $key_id ($project_rel) with Gradle 9.4.1 / AGP 9.2.0"; fi
   (
     cd "$project"
     export ANDROID_HOME=$SDK ANDROID_SDK_ROOT=$SDK
@@ -132,6 +137,7 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
     export MATON_FRAMEWORK_STUB_JAR=$framework_stub
     if [[ $expo == 1 ]]; then
       CI=1 npx expo prebuild --platform android --clean --no-install
+      [[ -x android/gradlew ]] || die "Expo prebuild did not generate android/gradlew for $key_id"
       ./android/gradlew -p android --no-daemon --max-workers "$APP_JOBS" --stacktrace "$task"
     elif [[ -n $GRADLE ]]; then "$GRADLE" --no-daemon --max-workers "$APP_JOBS" --stacktrace "$task"
     else "$project/gradlew" --no-daemon --max-workers "$APP_JOBS" --stacktrace "$task"
@@ -140,6 +146,17 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   apk_root=$project; if [[ $expo == 1 ]]; then apk_root=$project/android/app; fi
   apk=$(find "$apk_root" -type f -path '*/build/outputs/apk/release/*.apk' -print -quit)
   [[ -n $apk && -s $apk ]] || die "Gradle did not produce a release APK for $key_id"
+  if [[ $expo == 1 ]]; then
+    (cd "$project" && npm run check:release-linkage) || die "release linkage check failed for $key_id"
+    app_id=${key_id#matonos-}
+    permission_xml=$project/android/app/src/main/assets/privapp-permissions-org.matonos.$app_id.xml
+    [[ -s $permission_xml ]] || permission_xml=$project/privapp-permissions-org.matonos.$app_id.xml
+    [[ -s $permission_xml ]] || die "Expo project did not generate its privileged permission XML: $key_id"
+    install -m 0644 "$permission_xml" "$DEVICE_DIR/buildinfra/privapp-permissions/privapp-permissions-org.matonos.$app_id.xml"
+  fi
+  apk_cert=$($SDK/build-tools/36.0.0/apksigner verify --print-certs "$apk" \
+    | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]' | head -n1)
+  [[ -n $apk_cert && $apk_cert == "$cert_sha" ]] || die "APK signer does not match persistent key for $key_id"
   cp "$apk" "$DEVICE_DIR/prebuilt/apps-built/$apk_name"
   cp "$apk" "$DEVICE_DIR/buildinfra/apps-built/$apk_name"
   info "Staged $DEVICE_DIR/prebuilt/apps-built/$apk_name (certificate SHA-256 $cert_sha)"

@@ -4,11 +4,13 @@
 # each codec's dependencies. Keep failures non-fatal and reload the controller
 # after registering codecs so it enumerates the codec(s) again.
 
-MODPROBE=/system/bin/modprobe
+MODPROBE=/vendor/bin/modprobe
 MODULE_DIR=/vendor/lib/modules
 
 [ -x "$MODPROBE" ] || exit 0
 [ -r "$MODULE_DIR/modules.dep" ] || exit 0
+
+setprop vendor.maton.audio.codec_preload running
 
 for module in "$MODULE_DIR"/snd-hda-codec-*.ko; do
     [ -f "$module" ] || continue
@@ -21,4 +23,5 @@ done
 # fails, leave the existing driver alone; loading it again remains harmless.
 "$MODPROBE" -d "$MODULE_DIR" -r snd_hda_intel >/dev/null 2>&1 || :
 "$MODPROBE" -d "$MODULE_DIR" snd_hda_intel >/dev/null 2>&1 || :
+setprop vendor.maton.audio.codec_preload done
 exit 0

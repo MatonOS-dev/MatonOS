@@ -1,4 +1,6 @@
 # key-id<TAB>project-path-from-device-tree<TAB>gradle-task<TAB>staged-apk-name
 matonos-settings	buildinfra/apps/MatonOSSettings	:app:assembleRelease	Settings.apk
 matonos-shell	../../../apps/launchme	expo	MatonOSShell.apk
+matonos-shelf	../../../apps/shelf	expo	MatonOSShelf.apk
+matonos-recents	../../../apps/recents	expo	MatonOSRecents.apk
 matonos-audio-tone-test	audio/testapp	:app:assembleRelease	AudioToneTest.apk

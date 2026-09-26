@@ -36,8 +36,7 @@ android_app_import {
     apk: "apps-built/Settings.apk",
     system_ext_specific: true,
     privileged: true,
-    // Byte-for-byte (own key from build-apps.sh): implicitly presigned. Our
-    // Gradle APKs have stored dex and are aligned, so no skip flag needed.
+    // Keep the APK byte-for-byte so the package retains its own app key.
     preprocessed: true,
     dex_preopt: {
         enabled: false,
@@ -50,8 +49,7 @@ android_app_import {
     apk: "apps-built/MatonOSShell.apk",
     system_ext_specific: true,
     privileged: true,
-    // Byte-for-byte (own key from build-apps.sh): implicitly presigned. Our
-    // Gradle APKs have stored dex and are aligned, so no skip flag needed.
+    // Keep the APK byte-for-byte so the package retains its own app key.
     preprocessed: true,
     overrides: [
         "Home",
@@ -65,6 +63,30 @@ android_app_import {
     required: ["privapp-permissions-org.matonos.shell"],
 }
 
+android_app_import {
+    name: "MatonOSShelf",
+    apk: "apps-built/MatonOSShelf.apk",
+    system_ext_specific: true,
+    privileged: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    required: ["privapp-permissions-org.matonos.shelf"],
+}
+
+android_app_import {
+    name: "MatonOSRecents",
+    apk: "apps-built/MatonOSRecents.apk",
+    system_ext_specific: true,
+    privileged: true,
+    preprocessed: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    required: ["privapp-permissions-org.matonos.recents"],
+}
+
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.settings",
     src: "privapp-permissions/privapp-permissions-org.matonos.settings.xml",
@@ -75,6 +97,20 @@ prebuilt_etc {
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.shell",
     src: "privapp-permissions/privapp-permissions-org.matonos.shell.xml",
+    sub_dir: "permissions",
+    system_ext_specific: true,
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-org.matonos.shelf",
+    src: "privapp-permissions/privapp-permissions-org.matonos.shelf.xml",
+    sub_dir: "permissions",
+    system_ext_specific: true,
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-org.matonos.recents",
+    src: "privapp-permissions/privapp-permissions-org.matonos.recents.xml",
     sub_dir: "permissions",
     system_ext_specific: true,
 }

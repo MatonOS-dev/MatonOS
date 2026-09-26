@@ -1,5 +1,13 @@
 # The HDA controller may arrive by PCI modalias before codec drivers. Preload
-# every shipped HDA codec and then reprobe snd_hda_intel. This is asynchronous:
-# failures are benign and the audio HAL keeps its configured silent fallback.
+# every shipped HDA codec and then reprobe snd_hda_intel. This oneshot service
+# runs asynchronously; failures are benign and never gate the HAL or boot.
 on post-fs
-    exec_background -- /system/bin/sh /odm/bin/maton-audio-codecs.sh
+    start vendor.maton-audio-codecs
+
+service vendor.maton-audio-codecs /odm/bin/maton-audio-codecs.sh
+    class core
+    user root
+    group root
+    oneshot
+    disabled
+    timeout_period 30

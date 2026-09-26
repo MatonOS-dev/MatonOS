@@ -25,6 +25,9 @@ import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.Display;
 import android.graphics.Point;
+import android.graphics.Bitmap;
+import android.window.TaskSnapshot;
+import android.window.TaskSnapshotManager;
 import android.window.WindowContainerTransaction;
 import android.window.WindowOrganizer;
 
@@ -41,6 +44,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Locale;
 import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayOutputStream;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -66,11 +70,11 @@ public final class SystemBridgeService extends Service {
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
         @Override public int getBridgeApiVersion() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiVersion");
-            return 4;
+            return 5;
         }
         @Override public String getBridgeApiHash() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiHash");
-            return "c28b6a2d0714ed58a14a6b1c8f61db04";
+            return "f9c338ae6376519e76e122a975593be1";
         }
 
         @Override public boolean injectBackKey() {
@@ -99,16 +103,16 @@ public final class SystemBridgeService extends Service {
             if (allowed.length() == 0) Log.w(TAG, "Denied getBridgeStatus for uid=" + uid
                     + ": no built-in or developer trust entry matches caller");
             JSONObject status = new JSONObject();
-            try { status.put("apiVersion", 4); status.put("allowedTargets", allowed);
+            try { status.put("apiVersion", 5); status.put("allowedTargets", allowed);
                 status.put("availableChannels", channels); }
             catch (JSONException ignored) { }
             return status.toString();
         }
 
         @Override public boolean ensureShellOverlayAccess() {
-            String packageName = enforceAuthorizedCaller("launcher", "ensureShellOverlayAccess");
-            if (!"org.matonos.shell".equals(packageName))
-                deny("ensureShellOverlayAccess", Binder.getCallingUid(), "caller is not the shell");
+            String packageName = enforceLauncherCaller("ensureShellOverlayAccess");
+            if (!"org.matonos.shelf".equals(packageName))
+                deny("ensureShellOverlayAccess", Binder.getCallingUid(), "caller is not the shelf");
             try {
                 int uid = getPackageManager().getApplicationInfo(packageName, 0).uid;
                 AppOpsManager appOps = getSystemService(AppOpsManager.class);
@@ -118,19 +122,20 @@ public final class SystemBridgeService extends Service {
                         packageName) == AppOpsManager.MODE_ALLOWED;
             } catch (PackageManager.NameNotFoundException e) {
                 deny("ensureShellOverlayAccess", Binder.getCallingUid(),
-                        "allowlisted shell package disappeared");
+                        "allowlisted shelf package disappeared");
                 return false;
             }
         }
 
         @Override public String getRecentTasks(int maxTasks) {
             int uid = Binder.getCallingUid();
-            enforceAuthorizedCaller("launcher", "getRecentTasks");
+            enforceLauncherCaller("getRecentTasks");
             int limit = Math.max(0, Math.min(maxTasks, MAX_EXPOSED_TASKS));
             JSONArray result = new JSONArray();
             if (limit == 0) return result.toString();
             try {
                 for (ActivityManager.RecentTaskInfo task : recentTasks(uid, limit)) {
+                    if (task.userId != ActivityManager.getCurrentUser()) continue;
                     String packageName = taskPackageName(task);
                     if (packageName == null) continue;
                     JSONObject item = new JSONObject();
@@ -147,7 +152,7 @@ public final class SystemBridgeService extends Service {
 
         @Override public boolean moveTaskToFront(int taskId) {
             int uid = Binder.getCallingUid();
-            enforceAuthorizedCaller("launcher", "moveTaskToFront:" + taskId);
+            enforceLauncherCaller("moveTaskToFront:" + taskId);
             if (findRecentTask(taskId, uid) == null) return false;
             try {
                 ActivityTaskManager.getService().moveTaskToFront(null,
@@ -161,7 +166,7 @@ public final class SystemBridgeService extends Service {
 
         @Override public boolean setTaskFullscreen(int taskId) {
             int uid = Binder.getCallingUid();
-            enforceAuthorizedCaller("launcher", "setTaskFullscreen:" + taskId);
+            enforceLauncherCaller("setTaskFullscreen:" + taskId);
             ActivityManager.RecentTaskInfo task = findRecentTask(taskId, uid);
             if (task == null || task.token == null) return false;
             if (task.getWindowingMode() == WindowConfiguration.WINDOWING_MODE_FULLSCREEN) return true;
@@ -178,12 +183,12 @@ public final class SystemBridgeService extends Service {
 
         @Override public boolean removeRecentTask(int taskId) {
             int uid = Binder.getCallingUid();
-            String packageName = enforceAuthorizedCaller("launcher", "removeRecentTask:" + taskId);
+            String packageName = enforceLauncherCaller("removeRecentTask:" + taskId);
             ActivityManager.RecentTaskInfo task = findRecentTask(taskId, uid);
             if (task == null) return false;
             String taskPackage = taskPackageName(task);
             if (taskPackage == null || taskPackage.equals(packageName)
-                    || taskPackage.equals("org.matonos.shell")
+                    || isMatonLauncherPackage(taskPackage)
                     || taskPackage.equals("com.android.systemui")) return false;
             try { return ActivityTaskManager.getService().removeTask(taskId); }
             catch (RemoteException | RuntimeException e) {
@@ -193,9 +198,9 @@ public final class SystemBridgeService extends Service {
         }
 
         @Override public android.os.Bundle prepareShellOverlay(android.os.Bundle request) {
-            String packageName = enforceAuthorizedCaller("launcher", "prepareShellOverlay");
-            if (!"org.matonos.shell".equals(packageName) || request == null)
-                throw new SecurityException("Only the MatonOS shell may prepare overlays");
+            String packageName = enforceLauncherCaller("prepareShellOverlay");
+            if (!"org.matonos.shelf".equals(packageName) || request == null)
+                throw new SecurityException("Only the MatonOS shelf may prepare overlays");
             android.os.Bundle result = new android.os.Bundle();
             Object value = request.get("windowParams");
             if (!(value instanceof android.view.WindowManager.LayoutParams))
@@ -221,10 +226,92 @@ public final class SystemBridgeService extends Service {
             }
             if (getPackageManager().checkPermission("android.permission.SYSTEM_APPLICATION_OVERLAY",
                     packageName) != PackageManager.PERMISSION_GRANTED)
-                throw new SecurityException("shell lacks SYSTEM_APPLICATION_OVERLAY");
+                throw new SecurityException("shelf lacks SYSTEM_APPLICATION_OVERLAY");
             params.setSystemApplicationOverlay(true);
             result.putParcelable("windowParams", params);
             return result;
+        }
+
+        @Override public boolean navigateBack(boolean longPress) {
+            requireShelfCaller(enforceAuthorizedCaller("nav.back", "navigateBack:" + longPress),
+                    "navigateBack");
+            return injectBack(longPress);
+        }
+
+        @Override public boolean navigateHome() {
+            requireShelfCaller(enforceAuthorizedCaller("nav.home", "navigateHome"), "navigateHome");
+            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            try { startActivityAsUser(home, UserHandle.CURRENT); return true; }
+            catch (RuntimeException e) { Log.e(TAG, "Authorized Home navigation failed", e); return false; }
+        }
+
+        @Override public boolean navigateRecents() {
+            int uid = Binder.getCallingUid();
+            requireShelfCaller(enforceAuthorizedCaller("nav.recents", "navigateRecents"),
+                    "navigateRecents");
+            try {
+                List<ActivityManager.RecentTaskInfo> tasks = recentTasks(uid, MAX_EXPOSED_TASKS);
+                if (!tasks.isEmpty() && "org.matonos.recents".equals(taskPackageName(tasks.get(0)))) {
+                    for (ActivityManager.RecentTaskInfo task : tasks) {
+                        String pkg = taskPackageName(task);
+                        if (pkg == null || isMatonLauncherPackage(pkg) || "com.android.systemui".equals(pkg)) continue;
+                        ActivityTaskManager.getService().moveTaskToFront(null,
+                                "org.matonos.systembridge", task.taskId, 0, null);
+                        return true;
+                    }
+                    return false;
+                }
+                Intent recents = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_DEFAULT)
+                        .setComponent(new ComponentName("org.matonos.recents",
+                                "org.matonos.recents.RecentsComponentAnchor"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                startActivityAsUser(recents, UserHandle.CURRENT);
+                return true;
+            } catch (RemoteException | RuntimeException e) {
+                Log.e(TAG, "Authorized Recents navigation failed", e); return false;
+            }
+        }
+
+        @Override public byte[] getRecentTaskThumbnail(int taskId) {
+            int uid = Binder.getCallingUid();
+            String caller = enforceAuthorizedCaller("launcher", "getRecentTaskThumbnail:" + taskId);
+            if (!isLauncherCaller(caller)) deny("getRecentTaskThumbnail", uid,
+                    "caller package is not Shell, Shelf, or Recents");
+            ActivityManager.RecentTaskInfo task = findRecentTask(taskId, uid);
+            String packageName = task == null ? null : taskPackageName(task);
+            if (task == null || packageName == null || isMatonLauncherPackage(packageName)
+                    || "com.android.systemui".equals(packageName)
+                    || task.userId != ActivityManager.getCurrentUser()) return new byte[0];
+            try {
+                TaskSnapshot snapshot = TaskSnapshotManager.getInstance().getTaskSnapshot(
+                        taskId, TaskSnapshotManager.RESOLUTION_LOW);
+                if (snapshot == null || !snapshot.isBufferValid() || snapshot.hasProtectedContent()) return new byte[0];
+                Bitmap source = snapshot.wrapToBitmap();
+                if (source == null) return new byte[0];
+                float scale = Math.min(1f, Math.min(512f / source.getWidth(), 512f / source.getHeight()));
+                Bitmap scaled = Bitmap.createScaledBitmap(source,
+                        Math.max(1, Math.round(source.getWidth() * scale)),
+                        Math.max(1, Math.round(source.getHeight() * scale)), true);
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                for (int attempt = 0; attempt < 4; attempt++) {
+                    out.reset();
+                    scaled.compress(Bitmap.CompressFormat.PNG, 100, out);
+                    if (out.size() <= 512 * 1024) break;
+                    Bitmap smaller = Bitmap.createScaledBitmap(scaled,
+                            Math.max(1, scaled.getWidth() * 3 / 4),
+                            Math.max(1, scaled.getHeight() * 3 / 4), true);
+                    if (smaller != scaled) scaled.recycle();
+                    scaled = smaller;
+                }
+                if (scaled != source) scaled.recycle();
+                source.recycle();
+                byte[] png = out.toByteArray();
+                return png.length <= 512 * 1024 ? png : new byte[0];
+            } catch (Exception e) {
+                Log.w(TAG, "Authorized task thumbnail unavailable taskId=" + taskId, e);
+                return new byte[0];
+            }
         }
 
         @Override public String call(String target, String command, String jsonArgs) {
@@ -387,7 +474,11 @@ public final class SystemBridgeService extends Service {
         enforcePermission(uid, operation);
         enforceNotBanned(uid, operation);
         String packageName = authorizedPackage(uid, target);
-        if (packageName != null) return packageName;
+        if (packageName != null) {
+            Log.i(TAG, "Authorized action=" + operation + " target=" + target
+                    + " package=" + packageName + " uid=" + uid);
+            return packageName;
+        }
         deny(operation, uid, "package or signing certificate not allowlisted for target=" + target);
         return null;
     }
@@ -469,7 +560,7 @@ public final class SystemBridgeService extends Service {
 
     private static Set<String> knownTargets() {
         return new HashSet<>(java.util.Arrays.asList("launcher", "input", "sleep", "wifi",
-                "bluetooth", "audio", "camera", "status"));
+                "bluetooth", "audio", "camera", "status", "nav.back", "nav.home", "nav.recents"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {
@@ -712,17 +803,63 @@ public final class SystemBridgeService extends Service {
 
     private ActivityManager.RecentTaskInfo findRecentTask(int taskId, int callingUid) {
         for (ActivityManager.RecentTaskInfo task : recentTasks(callingUid, MAX_EXPOSED_TASKS)) {
-            if (task.taskId == taskId) return task;
+            if (task.taskId == taskId && task.userId == ActivityManager.getCurrentUser()) return task;
         }
         return null;
     }
 
     private static String taskPackageName(ActivityManager.RecentTaskInfo task) {
-        ComponentName component = task.topActivity != null ? task.topActivity : task.baseActivity;
+        ComponentName component = task.topActivity != null ? task.topActivity
+                : task.baseActivity != null ? task.baseActivity
+                : task.origActivity != null ? task.origActivity : task.realActivity;
         if (component != null) return component.getPackageName();
         if (task.baseIntent != null && task.baseIntent.getComponent() != null)
             return task.baseIntent.getComponent().getPackageName();
         return null;
+    }
+
+    private static boolean isMatonLauncherPackage(String packageName) {
+        return "org.matonos.shell".equals(packageName) || "org.matonos.shelf".equals(packageName)
+                || "org.matonos.recents".equals(packageName);
+    }
+
+    private static boolean isLauncherCaller(String packageName) {
+        return isMatonLauncherPackage(packageName);
+    }
+
+    private String enforceLauncherCaller(String operation) {
+        String packageName = enforceAuthorizedCaller("launcher", operation);
+        if (!isLauncherCaller(packageName))
+            deny(operation, Binder.getCallingUid(), "caller must be MatonOS Shell, Shelf, or Recents");
+        return packageName;
+    }
+
+    private void requireShelfCaller(String packageName, String operation) {
+        if (!"org.matonos.shelf".equals(packageName))
+            deny(operation, Binder.getCallingUid(), "only MatonOS Shelf may navigate");
+    }
+
+    private boolean injectBack(boolean longPress) {
+        InputManager input = getSystemService(InputManager.class);
+        long downTime = SystemClock.uptimeMillis();
+        KeyEvent down = new KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN,
+                KeyEvent.KEYCODE_BACK, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
+                KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
+        boolean first = input.injectInputEvent(down, InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH);
+        if (longPress && first) {
+            try { Thread.sleep(600); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            KeyEvent repeat = new KeyEvent(downTime, SystemClock.uptimeMillis(), KeyEvent.ACTION_DOWN,
+                    KeyEvent.KEYCODE_BACK, 1, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
+                    KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_LONG_PRESS,
+                    InputDevice.SOURCE_KEYBOARD);
+            first = input.injectInputEvent(repeat, InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH) && first;
+        }
+        KeyEvent up = new KeyEvent(downTime, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP,
+                KeyEvent.KEYCODE_BACK, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
+                KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
+        boolean second = input.injectInputEvent(up, InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH);
+        return first && second;
     }
 
     private void deny(String operation, int uid, String reason) {

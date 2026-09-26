@@ -139,7 +139,7 @@ esac
 # play through the host's PipeWire, headless ones into a null backend.
 if [[ $EXTRA != *hda* ]]; then
   [[ $GFX == none || $gtk_gl == egl-headless ]] && snd=none || snd=pipewire
-  args+=(-audiodev "$snd,id=snd0" -device intel-hda -device "hda-duplex,audiodev=snd0")
+  args+=(-audiodev "$snd,id=snd0" -device ich9-intel-hda -device "hda-duplex,audiodev=snd0")
 fi
 
 if [[ -n $EXTRA ]]; then

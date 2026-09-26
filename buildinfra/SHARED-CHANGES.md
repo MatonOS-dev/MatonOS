@@ -26,3 +26,6 @@
   call it. No servicemanager service label or shell-facing SELinux rule is
   needed. The fixed `service_contexts` file remains for future platform
   services but has no MatonOS shell-command entry.
+
+- Launcher integration follow-up (2026-09-26): `apps/shelf/modules/matonos-shelf/android/src/main/java/org/matonos/shelf/ShelfService.java` still calls `ensureShellOverlayAccess()` and `prepareShellOverlay()` through its raw `ShellBridge` binding. Rewire those to the new typed `MatonosClient` methods so area apps don't call the bridge Binder directly. Its TS facade currently reduces task/navigation results to booleans or strings; preserve `{available, value, reason}` where callers need to report unavailable bridge features.
+- Overlay permission mismatch to resolve before claiming Shelf-over-Settings works: `prepareShellOverlay()` checks `SYSTEM_APPLICATION_OVERLAY`, which this platform grants to the configured Recents component. The new configuration points that role at `org.matonos.recents`, while the persistent overlay window is owned by `org.matonos.shelf`. The Shelf package only asks for `SYSTEM_ALERT_WINDOW`; setting its app-op does not grant the system-overlay permission. Choose a design that keeps the exact-permission check meaningful and confirm the Shelf window can cross `HIDE_NON_SYSTEM_OVERLAY_WINDOWS` on a fresh image.

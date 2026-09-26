@@ -37,7 +37,7 @@ public final class MatonosClient implements AutoCloseable {
     public interface AvailabilityListener { void onAvailabilityChanged(boolean available, String reason); }
     public interface CheckCallback { void onComplete(CheckResult result); }
 
-    public static final int REQUIRED_BRIDGE_API = 4;
+    public static final int REQUIRED_BRIDGE_API = 5;
     private static final String BRIDGE_PACKAGE = "org.matonos.systembridge";
     private static final String BRIDGE_ACTION = "org.matonos.systembridge.BIND";
     private static final String TRUST_RESULT_PREFIX = "org.matonos.client.TRUST_RESULT.";
@@ -272,17 +272,39 @@ public final class MatonosClient implements AutoCloseable {
     }
 
     public Result<String> getRecentTasks(int maxTasks) {
-        ISystemBridge current = bridge;
-        if (!isAvailable() || current == null) return Result.unavailable(reason == null ? "BRIDGE_DISCONNECTED" : reason);
-        try { return Result.value(current.getRecentTasks(maxTasks)); }
-        catch (Exception e) { return Result.unavailable(reasonFor(e)); }
+        return invoke("launcher", b -> b.getRecentTasks(maxTasks));
     }
 
     public Result<Boolean> removeRecentTask(int taskId) {
-        ISystemBridge current = bridge;
-        if (!isAvailable() || current == null) return Result.unavailable(reason == null ? "BRIDGE_DISCONNECTED" : reason);
-        try { return Result.value(current.removeRecentTask(taskId)); }
-        catch (Exception e) { return Result.unavailable(reasonFor(e)); }
+        return invoke("launcher", b -> b.removeRecentTask(taskId));
+    }
+
+    public Result<Boolean> moveTaskToFront(int taskId) {
+        return invoke("launcher", b -> b.moveTaskToFront(taskId));
+    }
+
+    public Result<Boolean> setTaskFullscreen(int taskId) {
+        return invoke("launcher", b -> b.setTaskFullscreen(taskId));
+    }
+
+    public Result<Boolean> ensureShellOverlayAccess() {
+        return invoke("launcher", ISystemBridge::ensureShellOverlayAccess);
+    }
+
+    public Result<Boolean> navigateBack(boolean longPress) {
+        return invoke("nav.back", b -> b.navigateBack(longPress));
+    }
+
+    public Result<Boolean> navigateHome() {
+        return invoke("nav.home", ISystemBridge::navigateHome);
+    }
+
+    public Result<Boolean> navigateRecents() {
+        return invoke("nav.recents", ISystemBridge::navigateRecents);
+    }
+
+    public Result<byte[]> getRecentTaskThumbnail(int taskId) {
+        return invoke("launcher", b -> b.getRecentTaskThumbnail(taskId));
     }
 
     public Result<Bundle> prepareShellOverlay(WindowManager.LayoutParams params) {
@@ -291,6 +313,17 @@ public final class MatonosClient implements AutoCloseable {
         Bundle request = new Bundle();
         request.putParcelable("windowParams", params);
         try { return Result.value(current.prepareShellOverlay(request)); }
+        catch (Exception e) { return Result.unavailable(reasonFor(e)); }
+    }
+
+    private interface BridgeOperation<T> { T call(ISystemBridge bridge) throws Exception; }
+
+    private <T> Result<T> invoke(String target, BridgeOperation<T> operation) {
+        if (!isAvailable()) return Result.unavailable(reason == null ? "BRIDGE_UNAVAILABLE" : reason);
+        if (!isTargetAllowed(target)) return Result.unavailable("BRIDGE_APP_NOT_TRUSTED:" + target);
+        ISystemBridge current = bridge;
+        if (current == null) return Result.unavailable("BRIDGE_DISCONNECTED");
+        try { return Result.value(operation.call(current)); }
         catch (Exception e) { return Result.unavailable(reasonFor(e)); }
     }
 

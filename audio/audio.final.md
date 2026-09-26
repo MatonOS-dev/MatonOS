@@ -21,6 +21,30 @@ The requested +20% software boost is not implemented. BayLibre's primary stream 
 
 The first image build's VINTF check found both stock and generic audio APEX manifests; the coordinator then reported a successful 22:31 image with the generic HAL replacing stock. `audio/SHARED-CHANGES.md` contains the exact final `pc_x86_64.mk` package filter diff in case the duplicate returns.
 
-## HDA codec preload follow-up
+## 09:15 image follow-up — HDA preload did not work yet
 
-The user VM confirmed the image boots and AudioFlinger has two outputs, but `/proc/asound/cards` was empty because QEMU's HDA controller was present while the codec driver was not. Added an asynchronous post-fs ODM action that uses `modprobe -d /vendor/lib/modules` on each shipped `snd-hda-codec-*.ko` (with dependency ordering from `modules.dep`), then attempts to remove and reload `snd_hda_intel`. It never gates HAL startup or boot; all module errors are ignored. ODM bundle assembly passed with the new rc/script. Fresh image and QEMU verification are pending the coordinator build.
+The 09:15 image was tested on private QEMU port 5556 with Intel HDA and WAV
+capture. With a headless virtual display (`-g virgl`), Android reached
+`sys.boot_completed=1`, but `/proc/asound/cards` still showed no soundcards,
+the selector reported `vendor.maton.audio.selector_result=no_card`, and the
+kernel logged `snd_hda_intel ... Cannot probe codecs, giving up`. The controller
+and HDA core modules were loaded, but no `snd_hda_codec_*` modules were
+present. The captured WAV was 0 bytes; no playback was proven. The no-display
+`-g none` attempts remained ADB-offline, so they do not count as no-card
+boot verification.
+
+The prior preload used `/system/bin/modprobe` and ran via `exec_background`.
+I changed it to an asynchronous init oneshot service and `/vendor/bin/modprobe`
+with `/vendor/lib/modules/modules.dep`. Its executable runs in
+`matonos_driver`, and a `domain_auto_trans` to `vendor_modprobe` gives the
+module helper its intended SELinux domain. It loads every shipped
+`snd-hda-codec-*.ko`, then tries to reload `snd_hda_intel`; all failures remain
+non-fatal and do not gate HAL registration or boot. Shell syntax and ODM bundle
+assembly passed. This adds an existing-policy domain transition, so a fresh
+full image is required before testing this version.
+
+Build requested: `audio: full image — async ODM post-fs preload of all shipped
+snd-hda-codec modules through modules.dep, then re-probe snd_hda_intel; run the
+helper in vendor_modprobe via the driver-domain transition; verify HDA card,
+selector and WAV playback plus no-card boot`. Pending coordinator image and
+fresh-boot verification. No peak measurement is available.

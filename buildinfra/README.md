@@ -11,7 +11,7 @@ framework APIs.
 
 `tools/build-apps.sh` builds Gradle projects. The pilot is
 `buildinfra/apps/MatonOSSettings/`, pinned to Gradle 9.4.1 and Android Gradle
-Plugin 9.2.0. Gradle uses the checkout's AOSP API 35 public stub jar and a
+Plugin 9.2.0. Gradle uses the checkout's AOSP API 35 and 36 public stub jars and a
 user-local SDK at `~/Documents/matonos-android-sdk`. The script installs the
 pinned SDK build tools 36.0.0 and downloads command-line tools revision
 15859902 with a checked SHA-256. It takes Java 21 from the AOSP prebuilts when
@@ -25,14 +25,17 @@ output (normally `out/target/product/pc_x86_64/system/framework/framework.jar`);
 before each build. Rebuild the AOSP framework first whenever the platform API
 changes. The jar is compile-only and is never packaged in an APK.
 
-`buildinfra/apps/apps.list` is the app registry. It includes the system Settings
-and MatonOSShell image apps plus AudioToneTest, which is staged for `adb install`
+`buildinfra/apps/apps.list` is the app registry. It includes Settings, Shell,
+Shelf and Recents image apps plus AudioToneTest, which is staged for `adb install`
 testing only. Each app has its own development keystore under
 `~/.config/matonos-keys/<app>.jks`; the matching password is stored in a
 mode-0600 file beside it. Keys are generated on first use and never enter git.
 The settings pilot's certificate SHA-256 is written to the fixed
 `systembridge/res/raw/caller_cert_allowlist.txt` resource before AOSP compiles
-the bridge. Keep one key per package so F-Droid or other app updates cannot
+the bridge. Shell, Shelf and Recents have distinct persistent app keys; the
+Expo CNG projects use their pinned Gradle wrapper (Expo 57 uses Gradle 9.3.1 /
+AGP 8.12.0), compile against API 36, and run `check:release-linkage` before
+their APK and generated privapp XML are staged. Keep one key per package so F-Droid or other app updates cannot
 inherit another app's bridge access. Release builds will use separate release
 keys created and backed up offline, held outside the build host; the OS build
 server receives a protected signing step or a pre-signed APK. Never promote a
@@ -113,13 +116,14 @@ rules, but no native Soong module.
 ## Fixed Soong imports and privileges
 
 `buildinfra/Android.bp` contains one `android_app_import` per image app
-(Settings and MatonOSShell) and each associated `prebuilt_etc` permission
+(Settings, MatonOSShell, MatonOSShelf, MatonOSRecents) and each associated `prebuilt_etc` permission
 file. Sleepd, Wi-Fi, input, Bluetooth, PipeWire, and `libmatonos-ipc` are in
 the ODM bundle. The shell import overrides Home, Launcher2, Launcher3 and
 Launcher3QuickStep. AudioToneTest is in the Gradle registry for `adb install`
 testing only; it is not an image package. Imported APKs are privileged on
-`system_ext`, set
-`certificate: "PRESIGNED"`, and use their own app-specific signing keys.
+`system_ext`, set `preprocessed: true`, and use their own app-specific signing
+keys. Do not set `certificate: "PRESIGNED"`; Soong interprets that Make
+convention as a dependency on its PRESIGNED certificate file.
 
 Every privileged permission requested by an imported app must appear in its
 own `privapp-permissions-<package>.xml`, imported by a stable `prebuilt_etc`
@@ -134,18 +138,23 @@ The system bridge package is `org.matonos.systembridge`, platform-signed,
 privileged and persistent. It is the only custom app compiled with platform
 APIs. Its versioned AIDL exposes `getBridgeApiVersion`/`getBridgeApiHash`,
 generic `call(target, command, jsonArgs)`, topic subscribe/unsubscribe
-callbacks, the input `injectBackKey` operation, and the launcher operations
+callbacks, and the launcher operations
 `ensureShellOverlayAccess`, `getRecentTasks`, `moveTaskToFront`,
-`setTaskFullscreen`, `removeRecentTask`, and `prepareShellOverlay`. Task list
+`setTaskFullscreen`, `removeRecentTask`, `prepareShellOverlay`, scoped shelf
+navigation (`navigateBack`, `navigateHome`, `navigateRecents`), and bounded PNG
+task thumbnails. Task list
 reads use `REAL_GET_TASKS`; task removal revalidates current-user recents and
-refuses the shell and SystemUI tasks. `prepareShellOverlay` accepts only the
-launcher package and validated `TYPE_APPLICATION_OVERLAY` parameters. The
+refuses MatonOS Shell/Shelf/Recents and SystemUI tasks. `prepareShellOverlay`
+accepts only Shelf and validated `TYPE_APPLICATION_OVERLAY` parameters. The
 `input.set_absolute_pointer_mode` call disables acceleration and sets pointer
 speed to -7, returning the effective settings. The launcher methods authorize the `launcher` target on
-every call and task mutations require the task to remain in the current user's
-recent-task list.
+every call; navigation methods require the exact Shelf package, and task
+methods require one of the exact Shell/Shelf/Recents packages. Mutations and
+thumbnails revalidate current-user recents. Every authorized operation and
+denial is written to the bridge audit log.
 
-The app-facing bridge API is v4. `adb shell content call --uri
+The app-facing bridge API is v5. This app-facing AIDL version/hash is distinct
+from the frozen stable vendor channel, which remains VINTF v1. `adb shell content call --uri
 content://org.matonos.systembridge.shell --method trust --arg <package>
 --extra targets:s:launcher,audio` grants developer access; use `untrust` or
 `list` to revoke or inspect entries. The exported provider accepts shell UID
@@ -345,7 +354,7 @@ that machine.
 
 ## Developing system apps
 
-`MatonOSSettings` and `MatonOSShell` use the shared `MatonosClient` Gradle
+`MatonOSSettings`, `MatonOSShell`, `MatonOSShelf` and `MatonOSRecents` use the shared `MatonosClient` Gradle
 library. The default is `BridgeMode.REQUIRED`: call
 `MatonOS.requireBridge(activity, accessTargets, requiredChannelTargets,
 client -> ...)` before building the app UI. It checks installation, permission,

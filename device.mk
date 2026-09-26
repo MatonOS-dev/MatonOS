@@ -80,13 +80,9 @@ PRODUCT_COPY_FILES += \
 PRODUCT_PACKAGES += \
     matonos_overlay_frameworks_base_core \
     matonos_overlay_settings_provider \
-    MatonOSShell
-# The inherited handheld product explicitly adds Launcher3QuickStep. Remove it
-# from the final package set so the MatonOS shell is the only launcher/recents
-# owner after installclean; the module override alone (MatonOSShell prebuilt
-# import `overrides`) does not remove an explicitly-added package from a later
-# product include. Keep both.
-PRODUCT_PACKAGES := $(filter-out Launcher3QuickStep,$(PRODUCT_PACKAGES))
+    MatonOSShell \
+    MatonOSShelf \
+    MatonOSRecents
 # No modem on PCs: drop SIM/carrier-only apps (user, 2026-09-25). Keep
 # TeleService and CarrierConfig: the framework and Settings expect them even
 # on Wi-Fi-only devices.

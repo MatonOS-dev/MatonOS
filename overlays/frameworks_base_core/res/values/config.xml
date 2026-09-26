@@ -5,7 +5,7 @@
          its shelf has Back/Drawer/tasks/Recents via the system bridge. So no
          recents provider for SystemUI to bind, and no SystemUI navigation
          bar (AOSP default false) — otherwise two bars. Zero-patch config. -->
-    <string name="config_recentsComponentName" translatable="false">org.matonos.shell/.RecentsComponentAnchor</string>
+    <string name="config_recentsComponentName" translatable="false">org.matonos.recents/.RecentsComponentAnchor</string>
     <bool name="config_showNavigationBar">false</bool>
 
     <!-- Desktop windowing (ChromeOS-like desktop: resizable, captioned app

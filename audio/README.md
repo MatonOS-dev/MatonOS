@@ -62,10 +62,12 @@ verified or replaced.
 ## HDA codec driver preload
 
 The image can discover `snd_hda_intel` by PCI modalias before the HDA bus
-codec modules have registered. An asynchronous `post-fs` init action runs
-`/system/bin/modprobe` against `/vendor/lib/modules/modules.dep` for each
-shipped `snd-hda-codec-*.ko`, using depmod's dependency ordering. It then
-tries to remove and reload `snd_hda_intel`, prompting the controller to
+codec modules have registered. An asynchronous `post-fs` init service runs `/vendor/bin/modprobe` against
+`/vendor/lib/modules/modules.dep` for each shipped `snd-hda-codec-*.ko`, using
+depmod's dependency ordering. The service runs in `matonos_driver`; the
+`vendor_toolbox_exec` transition sends modprobe into Android's narrow
+`vendor_modprobe` domain so module loading uses its intended SELinux grants. It
+then tries to remove and reload `snd_hda_intel`, prompting the controller to
 enumerate codecs with their drivers present. Failures to load optional codecs
 or reload the controller are ignored; audio service and boot startup never
 wait for this action. Without an HDA controller, the selector and HAL retain
@@ -136,7 +138,11 @@ service with an unreadable ALSA proc path in a test build) and verify
 
 ## Current test state
 
-The BayLibre source was synced successfully at the pinned revision. The ODM
-bundle/config changes still need a new coordinator-built image before runtime
-claims can be made. Previous playback attempts were on older stock-HAL and
-loopback images and do not verify this implementation.
+The 2026-09-26 09:15 image boots Android with QEMU HDA attached, but HDA
+detection failed: `snd_hda_intel` logged `Cannot probe codecs, giving up`,
+`/proc/asound/cards` was empty, and the selector reported `no_card`. The first
+preload attempt used `/system/bin/modprobe`; the revised service now uses
+`/vendor/bin/modprobe` with an explicit transition to `vendor_modprobe`. The
+revision needs a fresh image and runtime verification. The 09:15 QEMU run did
+not produce playback evidence: its WAV was empty/header-only. No-card fresh
+boot and actual playback remain unverified for this BayLibre image.

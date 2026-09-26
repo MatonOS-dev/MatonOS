@@ -5,4 +5,8 @@ sleep org.matonos.settings
 wifi org.matonos.settings
 bluetooth org.matonos.settings
 launcher org.matonos.shell
-input org.matonos.shell
+launcher org.matonos.shelf
+launcher org.matonos.recents
+nav.back org.matonos.shelf
+nav.home org.matonos.shelf
+nav.recents org.matonos.shelf
