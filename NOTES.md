@@ -301,6 +301,29 @@ Feature work continues, but in this shape from now on.
   sandbox, and turning it into a real little distro. Also: libcamera
   (MIPI/IPU cameras) and Aurora Store (optional, e.g. offered via the same
   add-on/first-boot choice as Play).
+  **microG → real Google upgrade path (user, 2026-09-26; design only):**
+  - microG GmsCore + microG Companion (`com.android.vending`, the Play Store
+    stand-in apps check for: presence, LVL licensing, partial billing) are
+    preinstalled privileged, as one bundle.
+  - ONE combined "GMS-replacement support" PMS patch (counts as the single
+    budgeted exception together with the signature-spoofing hook):
+    1. spoofing hook: asks the bridge whether an app may claim a cert; the
+       bridge allowlist holds exact package/cert pairs (gms, vending,
+       optionally gsf), no wildcards;
+    2. pinned update exception: a static table `{package, installed cert
+       SHA-256, incoming cert SHA-256}` lets Google's real Play Store
+       (Google cert) install as an UPDATE over microG Companion (microG
+       cert), and real Play Services over microG GmsCore. Everything else
+       keeps the normal signature check. Hard-coded in the patch, never
+       decided by the bridge (update verification is too security-critical
+       for runtime policy). Pin Google's lineage if Play's key rotates.
+    Spoofing must never influence update verification.
+  - Result: user sideloads the real Play/GMS APK → installs as an update of
+    a system app → keeps privileged status (INSTALL_PACKAGES works, no add-on
+    slot needed for Play). "Uninstall updates" rolls back to microG for free.
+    Remove the vending (and gms) spoof pairs while real Google is active.
+  - Data dir carries over (offer "clear data" after switching). Key rotation
+    can't do this without Google's private key, hence the patch.
   Linux sandbox sketch: native `linuxd` service (own SELinux domain) mounts
   a distro rootfs from /data, sets up namespaces/cgroups, runs Linux
   processes in a confined domain (render node, own files, no binder).
