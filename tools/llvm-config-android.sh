@@ -14,9 +14,16 @@ host_prefix=$("$HOST" --prefix)
 
 # Components: the host's list minus other targets' components (the Android
 # build only has X86), minus components without a library in the install.
+# Targets the Android build really has (from its LLVMConfig.cmake).
+targets() {
+  sed -n 's/^set(LLVM_TARGETS_TO_BUILD \(.*\))$/\1/p' "$P/lib/cmake/llvm/LLVMConfig.cmake" | tr ';' ' '
+}
+
 components() {
   local c other skip
-  mapfile -t others < <("$HOST" --targets-built | tr ' ' '\n' | tr 'A-Z' 'a-z' | grep -vx x86)
+  local ours=" $(targets | tr 'A-Z' 'a-z') "
+  mapfile -t others < <("$HOST" --targets-built | tr ' ' '\n' | tr 'A-Z' 'a-z' |
+    while read -r t; do [[ $ours == *" $t "* ]] || echo "$t"; done)
   for c in $("$HOST" --components); do
     skip=0
     for other in "${others[@]}"; do [[ $c == "$other"* ]] && { skip=1; break; }; done
@@ -24,19 +31,25 @@ components() {
     # Pseudo-components (all, engine, native, x86, ...) have no library.
     if compgen -G "$P/lib/libLLVM*.a" >/dev/null &&
        ! ls "$P"/lib/libLLVM*.a | sed 's#.*/libLLVM##; s#\.a$##' | tr 'A-Z' 'a-z' | grep -qx "$c"; then
-      case $c in all|all-targets|engine|native|nativecodegen|x86) ;; *) continue ;; esac
+      case $c in all|all-targets|engine|native|nativecodegen|x86|amdgpu) ;; *) continue ;; esac
     fi
     printf '%s ' "$c"
   done
   echo
 }
 
+# --system-libs (often combined with --libs --ldflags in ONE call, as meson
+# does): the Android build needs none, so drop it and answer the rest.
+args=()
+for a in "$@"; do [[ $a == --system-libs ]] || args+=("$a"); done
+(( ${#args[@]} )) || { echo; exit 0; }
+set -- "${args[@]}"
+
 for a in "$@"; do
   case $a in
     --components) components; exit 0 ;;
-    --targets-built) echo X86; exit 0 ;;
+    --targets-built) targets; exit 0 ;;
     --host-target) echo x86_64-unknown-linux-android; exit 0 ;;
-    --system-libs) echo; exit 0 ;;
     --shared-mode) echo static; exit 0 ;;
     --link-shared) echo "llvm-config-android: only static LLVM is built" >&2; exit 1 ;;
   esac

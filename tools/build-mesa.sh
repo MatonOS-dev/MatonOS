@@ -18,7 +18,7 @@
 #      natively against LLVM $LLVM_VERSION (+ libclc, SPIRV-LLVM-Translator)
 #   2. libelf (needed by radeonsi) from AOSP's external/elfutils, as a shared
 #      library (LGPL) with vanilla zlib linked in, built with the NDK
-#   2b. LLVM for Android (static, X86) for llvmpipe/lavapipe
+#   2b. LLVM for Android (static, X86+AMDGPU) for llvmpipe/lavapipe
 #   3. android: every x86 PC driver the host distro's Mesa ships (user,
 #      2026-09-26) minus non-PC ones (d3d12/WSL, asahi, gfxstream):
 #      EGL/GLES (iris, crocus, radeonsi, r600, r300, nouveau, virgl,
@@ -173,21 +173,23 @@ elf_version=$(sed -n 's/^AC_INIT(\[[^]]*\],\[\([0-9.]*\)\].*/\1/p' "$ELFUTILS/co
 
 # ---------------------------------------------------------------- 2b. LLVM for Android
 # llvmpipe/lavapipe JIT on the device, so they need LLVM built for Android
-# (the NDK ships LLVM only as host tools). Static, X86 backend only, linked
+# (the NDK ships LLVM only as host tools). Static, X86 + AMDGPU backends (Mesa
+# requires the amdgpu module whenever radv/radeonsi build with LLVM on, even
+# with ACO), linked
 # into libgallium / the lavapipe HAL. Same version as the host LLVM: the host
 # llvm-tblgen drives the build and tools/llvm-config-android.sh answers
 # Mesa's llvm-config queries from the host's llvm-config.
 LLVM_ANDROID_SRC=${LLVM_ANDROID_SRC:-$HOME/Documents/llvm-project-21.1.8.src}
 LLVM_ANDROID=$OUT/llvm-android
-if [[ ! -f $LLVM_ANDROID/lib/libLLVMCore.a ]]; then
+if [[ ! -f $LLVM_ANDROID/lib/libLLVMCore.a || ! -f $LLVM_ANDROID/lib/libLLVMAMDGPUCodeGen.a ]]; then
   [[ -f $LLVM_ANDROID_SRC/llvm/CMakeLists.txt ]] ||
     die "no LLVM source at $LLVM_ANDROID_SRC (llvm-project-$($LLVM_CONFIG --version).src from github.com/llvm/llvm-project releases)"
-  info "Building LLVM $($LLVM_CONFIG --version) for Android (X86 only, static)"
+  info "Building LLVM $($LLVM_CONFIG --version) for Android (X86+AMDGPU, static)"
   "$AOSP/prebuilts/cmake/linux-x86/bin/cmake" -S "$LLVM_ANDROID_SRC/llvm" -B "$OUT/llvm-build" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-$API -DANDROID_STL=c++_static \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$LLVM_ANDROID" \
-    -DLLVM_TARGETS_TO_BUILD=X86 \
+    -DLLVM_TARGETS_TO_BUILD='X86;AMDGPU' \
     -DLLVM_HOST_TRIPLE=x86_64-unknown-linux-android -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-unknown-linux-android \
     -DLLVM_NATIVE_TOOL_DIR="$(dirname "$LLVM_CONFIG")" -DLLVM_TABLEGEN="$(dirname "$LLVM_CONFIG")/llvm-tblgen" \
     -DBUILD_SHARED_LIBS=OFF -DLLVM_BUILD_LLVM_DYLIB=OFF -DLLVM_BUILD_TOOLS=OFF -DLLVM_BUILD_UTILS=OFF \
