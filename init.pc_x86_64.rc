@@ -15,11 +15,11 @@ on late-fs
 on post-fs-data
     mkdir /data/vendor/var 0755 root root
 
-# zram swap (zramsize in the fstab, 50% of RAM; user, 2026-09-26). lz4 over
-# the kernel default: far cheaper to compress on old CPUs (Surface Pro 3).
-# Enabled after boot completes so it never delays boot.
+# zram swap (zramsize in the fstab, 50% of RAM; zstd for its ratio, PC CPUs
+# absorb the cost; user, 2026-09-26). Enabled after boot completes so it
+# never delays boot.
 on property:sys.boot_completed=1
-    write /sys/block/zram0/comp_algorithm lz4
+    write /sys/block/zram0/comp_algorithm zstd
     swapon_all
 
 on property:ro.debuggable=1
