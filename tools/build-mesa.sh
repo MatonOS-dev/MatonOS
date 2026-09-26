@@ -18,10 +18,12 @@
 #      natively against LLVM $LLVM_VERSION (+ libclc, SPIRV-LLVM-Translator)
 #   2. libelf (needed by radeonsi) from AOSP's external/elfutils, as a shared
 #      library (LGPL) with vanilla zlib linked in, built with the NDK
+#   2b. LLVM for Android (static, X86) for llvmpipe/lavapipe
 #   3. android: every x86 PC driver the host distro's Mesa ships (user,
-#      2026-09-26) minus LLVM-only (llvmpipe/lavapipe) and non-PC ones:
+#      2026-09-26) minus non-PC ones (d3d12/WSL, asahi, gfxstream):
 #      EGL/GLES (iris, crocus, i915, radeonsi, r600, r300, nouveau, virgl,
-#      svga, zink, softpipe), Vulkan (anv, hasvk, radv, NVK, venus) and GBM (libgbm_mesa + dri_gbm), cross-
+#      svga, zink, llvmpipe, softpipe), Vulkan (anv, hasvk, radv, NVK, venus,
+#      lavapipe) and GBM (libgbm_mesa + dri_gbm), cross-
 #      compiled with the NDK. radeonsi uses ACO (no LLVM on the target);
 #      android-stub replaces libcutils & co at link time; libdrm/zlib/expat
 #      are linked statically.
@@ -169,6 +171,34 @@ elf_version=$(sed -n 's/^AC_INIT(\[[^]]*\],\[\([0-9.]*\)\].*/\1/p' "$ELFUTILS/co
   echo "Cflags: -I$LIBELF_PREFIX/include"
 } > "$PKGCONFIG_DIR/libelf.pc"
 
+# ---------------------------------------------------------------- 2b. LLVM for Android
+# llvmpipe/lavapipe JIT on the device, so they need LLVM built for Android
+# (the NDK ships LLVM only as host tools). Static, X86 backend only, linked
+# into libgallium / the lavapipe HAL. Same version as the host LLVM: the host
+# llvm-tblgen drives the build and tools/llvm-config-android.sh answers
+# Mesa's llvm-config queries from the host's llvm-config.
+LLVM_ANDROID_SRC=${LLVM_ANDROID_SRC:-$HOME/Documents/llvm-project-21.1.8.src}
+LLVM_ANDROID=$OUT/llvm-android
+if [[ ! -f $LLVM_ANDROID/lib/libLLVMCore.a ]]; then
+  [[ -f $LLVM_ANDROID_SRC/llvm/CMakeLists.txt ]] ||
+    die "no LLVM source at $LLVM_ANDROID_SRC (llvm-project-$($LLVM_CONFIG --version).src from github.com/llvm/llvm-project releases)"
+  info "Building LLVM $($LLVM_CONFIG --version) for Android (X86 only, static)"
+  "$AOSP/prebuilts/cmake/linux-x86/bin/cmake" -S "$LLVM_ANDROID_SRC/llvm" -B "$OUT/llvm-build" -G Ninja \
+    -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+    -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-$API -DANDROID_STL=c++_static \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$LLVM_ANDROID" \
+    -DLLVM_TARGETS_TO_BUILD=X86 \
+    -DLLVM_HOST_TRIPLE=x86_64-unknown-linux-android -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-unknown-linux-android \
+    -DLLVM_NATIVE_TOOL_DIR="$(dirname "$LLVM_CONFIG")" -DLLVM_TABLEGEN="$(dirname "$LLVM_CONFIG")/llvm-tblgen" \
+    -DBUILD_SHARED_LIBS=OFF -DLLVM_BUILD_LLVM_DYLIB=OFF -DLLVM_BUILD_TOOLS=OFF -DLLVM_BUILD_UTILS=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_DOCS=OFF -DLLVM_INCLUDE_UTILS=OFF \
+    -DLLVM_ENABLE_TERMINFO=OFF -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_LIBXML2=OFF \
+    -DLLVM_ENABLE_LIBEDIT=OFF -DLLVM_ENABLE_LIBPFM=OFF -DLLVM_ENABLE_RTTI=ON -DLLVM_ENABLE_PIC=ON
+  "$AOSP/prebuilts/cmake/linux-x86/bin/cmake" --build "$OUT/llvm-build" -j"$JOBS" --target install
+fi
+export MATON_LLVM_ANDROID_PREFIX=$LLVM_ANDROID MATON_LLVM_HOST_CONFIG=$LLVM_CONFIG
+
 # ---------------------------------------------------------------- 3. android
 
 # libdrm is linked statically into Mesa, so libdrm_amdgpu's internal
@@ -198,6 +228,7 @@ pkg-config = 'pkg-config'
 # NVK (nouveau Vulkan) is Rust: rustup's x86_64-linux-android std, NDK linker.
 rust = ['$HOME/.cargo/bin/rustc', '--target', 'x86_64-linux-android', '-C', 'linker=$TOOLCHAIN/bin/x86_64-linux-android$API-clang']
 bindgen = '$HOME/.cargo/bin/bindgen'
+llvm-config = '$DEVICE_DIR/tools/llvm-config-android.sh'
 
 [properties]
 bindgen_clang_arguments = ['--target=x86_64-linux-android$API', '--sysroot=$TOOLCHAIN/sysroot']
@@ -227,12 +258,12 @@ meson setup "$AND_BUILD" "$MESA" \
   -Dlibdrm:default_library=static -Dzlib:default_library=static -Dexpat:default_library=static \
   -Dplatforms=android -Dandroid-stub=true -Dandroid-libbacktrace=disabled \
   -Dplatform-sdk-version=$API \
-  -Dgallium-drivers=iris,crocus,i915,radeonsi,r600,r300,nouveau,virgl,svga,zink,softpipe \
-  -Dvulkan-drivers=intel,intel_hasvk,amd,nouveau,virtio \
+  -Dgallium-drivers=iris,crocus,i915,radeonsi,r600,r300,nouveau,virgl,svga,zink,llvmpipe,softpipe \
+  -Dvulkan-drivers=intel,intel_hasvk,amd,nouveau,virtio,swrast \
   -Degl=enabled -Dgles1=enabled -Dgles2=enabled -Dopengl=true \
   -Degl-lib-suffix=_mesa -Dgles-lib-suffix=_mesa \
   -Dglx=disabled -Dgbm=enabled \
-  -Dllvm=disabled -Damd-use-llvm=false \
+  -Dllvm=enabled -Dshared-llvm=disabled -Damd-use-llvm=false \
   -Dmesa-clc=system -Dprecomp-compiler=system \
   -Dintel-rt=disabled \
   -Dgallium-va=disabled -Dvideo-codecs= -Dgallium-rusticl=false \
@@ -280,7 +311,7 @@ gallium=("$src"/libgallium*.so)
 cp "${gallium[@]}" "$STAGE/lib64/"
 # Vulkan HALs: the loader opens /vendor/lib64/hw/vulkan.<ro.hardware.vulkan>.so
 # (ro.hardware.vulkan is set per GPU by pc-gpu-detect.sh).
-for pair in intel:intel intel_hasvk:intel_hasvk radeon:radeon nouveau:nouveau virtio:virtio; do
+for pair in intel:intel intel_hasvk:intel_hasvk radeon:radeon nouveau:nouveau virtio:virtio lvp:swrast; do
   lib=$src/libvulkan_${pair%%:*}.so
   [[ -f $lib ]] || die "missing $(basename "$lib")"
   cp "$lib" "$STAGE/lib64/hw/vulkan.${pair##*:}.so"

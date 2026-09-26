@@ -43,7 +43,7 @@ case $vendor in
         [ "$device" = "0x1050" ] && vk=virtio ;;
 esac
 
-if [ -n "$vk" ]; then
-    setprop ro.hardware.vulkan "$vk"
-fi
+# No hardware Vulkan driver for this GPU (old Intel, VMware svga, unknown):
+# lavapipe, Mesa's LLVM software Vulkan, so Vulkan apps still run.
+setprop ro.hardware.vulkan "${vk:-swrast}"
 setprop vendor.pc.gpu "$vendor:$device"
