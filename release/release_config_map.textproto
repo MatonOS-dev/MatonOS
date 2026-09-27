@@ -1,0 +1,6 @@
+# MatonOS additions to the AOSP release config (flag values set at build time;
+# configuration, not an AOSP patch). Registered via PRODUCT_RELEASE_CONFIG_MAPS.
+default_containers: "product"
+default_containers: "system"
+default_containers: "system_ext"
+default_containers: "vendor"

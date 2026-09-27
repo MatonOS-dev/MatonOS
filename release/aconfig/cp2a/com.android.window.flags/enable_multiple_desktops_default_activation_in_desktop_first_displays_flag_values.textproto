@@ -1,0 +1,6 @@
+flag_value {
+  package: "com.android.window.flags"
+  name: "enable_multiple_desktops_default_activation_in_desktop_first_displays"
+  state: ENABLED
+  permission: READ_ONLY
+}

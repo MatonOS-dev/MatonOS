@@ -1,0 +1,8 @@
+// MatonOS build-time aconfig values (read-only flags are compiled in, so
+// they can't be flipped at runtime). Used by release_configs/cp2a.textproto.
+aconfig_value_set {
+    name: "aconfig_value_set-matonos",
+    srcs: [
+        "*/Android.bp",
+    ],
+}

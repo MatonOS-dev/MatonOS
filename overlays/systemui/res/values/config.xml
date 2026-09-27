@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<resources>
+    <!-- Desktop status bar (needs aconfig status_bar_for_desktop too, set in
+         release/aconfig; user, 2026-09-27). -->
+    <bool name="config_useDesktopStatusBar">true</bool>
+</resources>

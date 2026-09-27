@@ -1,0 +1,5 @@
+runtime_resource_overlay {
+    name: "matonos_overlay_systemui",
+    soc_specific: true,
+    sdk_version: "current",
+}

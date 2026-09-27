@@ -79,7 +79,11 @@ PRODUCT_COPY_FILES += \
 # Framework config overrides (vendor RRO), see overlays/.
 PRODUCT_PACKAGES += \
     matonos_overlay_frameworks_base_core \
-    matonos_overlay_settings_provider
+    matonos_overlay_settings_provider \
+    matonos_overlay_systemui
+# Build-time aconfig values (desktop taskbar in fullscreen, multi-desks,
+# desktop status bar): release/ extends AOSP's cp2a release config.
+PRODUCT_RELEASE_CONFIG_MAPS += device/maton/pc_x86_64/release/release_config_map.textproto
 # Home/taskbar/recents = stock Launcher3 (Launcher3QuickStep from
 # handheld_system_ext), always desktop-first (user, 2026-09-27). MatonOS
 # Shell/Shelf/Recents are parked (sources stay in apps/, not in the image).
