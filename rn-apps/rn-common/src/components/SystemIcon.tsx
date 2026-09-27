@@ -12,7 +12,7 @@ const NativeSystemIcon = requireNativeView<NativeProps>('MatonSystemIcon');
  */
 export const SYSTEM_ICONS = {
   back: 'com.android.systemui:drawable/ic_sysbar_back',
-  home: 'com.android.systemui:drawable/ic_sysbar_home_quick_step',
+  home: 'com.android.systemui:drawable/ic_sysbar_home',
   recents: 'com.android.systemui:drawable/ic_sysbar_recent',
   settings: 'com.android.systemui:drawable/ic_settings_24dp',
   battery: 'android:drawable/ic_battery',
