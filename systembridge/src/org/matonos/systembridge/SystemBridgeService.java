@@ -61,6 +61,7 @@ public final class SystemBridgeService extends Service {
     private android.os.Handler geometryHandler;
     private boolean geometryRetryPending;
     private final ConcurrentMap<String, Subscription> subscriptions = new ConcurrentHashMap<>();
+    private NavigationBarWindow navigationBarWindow;
     private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
         @Override public void onDisplayAdded(int displayId) { publishDisplayGeometry(); }
         @Override public void onDisplayRemoved(int displayId) { publishDisplayGeometry(); }
@@ -70,11 +71,11 @@ public final class SystemBridgeService extends Service {
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
         @Override public int getBridgeApiVersion() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiVersion");
-            return 5;
+            return 6;
         }
         @Override public String getBridgeApiHash() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiHash");
-            return "f9c338ae6376519e76e122a975593be1";
+            return "nav-provider-v1-20260927";
         }
 
         @Override public boolean injectBackKey() {
@@ -197,49 +198,13 @@ public final class SystemBridgeService extends Service {
             }
         }
 
-        @Override public android.os.Bundle prepareShellOverlay(android.os.Bundle request) {
-            String packageName = enforceLauncherCaller("prepareShellOverlay");
-            if (!"org.matonos.shelf".equals(packageName) || request == null)
-                throw new SecurityException("Only the MatonOS shelf may prepare overlays");
-            android.os.Bundle result = new android.os.Bundle();
-            Object value = request.get("windowParams");
-            if (!(value instanceof android.view.WindowManager.LayoutParams))
-                throw new IllegalArgumentException("windowParams is required");
-            android.view.WindowManager.LayoutParams params =
-                    new android.view.WindowManager.LayoutParams();
-            params.copyFrom((android.view.WindowManager.LayoutParams) value);
-            if (params.type != android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                    || params.width < -1 || params.width > 8192
-                    || params.height < -1 || params.height > 8192)
-                throw new IllegalArgumentException("unsupported overlay parameters");
-            final int safeFlags = android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                    | android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                    | android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                    | android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                    | android.view.WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH;
-            if ((params.flags & ~safeFlags) != 0)
-                throw new IllegalArgumentException("unsupported overlay flags");
-            try {
-                getPackageManager().getPermissionInfo("android.permission.SYSTEM_APPLICATION_OVERLAY", 0);
-            } catch (PackageManager.NameNotFoundException e) {
-                throw new SecurityException("system overlay permission is unavailable");
-            }
-            if (getPackageManager().checkPermission("android.permission.SYSTEM_APPLICATION_OVERLAY",
-                    packageName) != PackageManager.PERMISSION_GRANTED)
-                throw new SecurityException("shelf lacks SYSTEM_APPLICATION_OVERLAY");
-            params.setSystemApplicationOverlay(true);
-            result.putParcelable("windowParams", params);
-            return result;
-        }
-
         @Override public boolean navigateBack(boolean longPress) {
-            requireShelfCaller(enforceAuthorizedCaller("nav.back", "navigateBack:" + longPress),
-                    "navigateBack");
+            enforceSelectedProviderCaller("nav.back", "navigateBack:" + longPress);
             return injectBack(longPress);
         }
 
         @Override public boolean navigateHome() {
-            requireShelfCaller(enforceAuthorizedCaller("nav.home", "navigateHome"), "navigateHome");
+            enforceSelectedProviderCaller("nav.home", "navigateHome");
             Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try { startActivityAsUser(home, UserHandle.CURRENT); return true; }
@@ -248,8 +213,7 @@ public final class SystemBridgeService extends Service {
 
         @Override public boolean navigateRecents() {
             int uid = Binder.getCallingUid();
-            requireShelfCaller(enforceAuthorizedCaller("nav.recents", "navigateRecents"),
-                    "navigateRecents");
+            enforceSelectedProviderCaller("nav.recents", "navigateRecents");
             try {
                 List<ActivityManager.RecentTaskInfo> tasks = recentTasks(uid, MAX_EXPOSED_TASKS);
                 if (!tasks.isEmpty() && "org.matonos.recents".equals(taskPackageName(tasks.get(0)))) {
@@ -312,6 +276,45 @@ public final class SystemBridgeService extends Service {
                 Log.w(TAG, "Authorized task thumbnail unavailable taskId=" + taskId, e);
                 return new byte[0];
             }
+        }
+
+        @Override public String getNavigationBarProviderState() {
+            String caller = enforceAuthorizedCaller("status", "getNavigationBarProviderState");
+            if (!"org.matonos.settings".equals(caller))
+                deny("getNavigationBarProviderState", Binder.getCallingUid(), "Settings is required");
+            return navigationProviderState().toString();
+        }
+
+        @Override public boolean setNavigationBarProvider(String packageName, boolean enabled) {
+            String caller = enforceAuthorizedCaller("status", "setNavigationBarProvider:" + packageName);
+            if (!"org.matonos.settings".equals(caller))
+                deny("setNavigationBarProvider", Binder.getCallingUid(), "Settings is required");
+            if (packageName == null || packageName.isEmpty()) {
+                if (enabled) throw new IllegalArgumentException("provider package is required");
+                getSharedPreferences("navigation_bar_provider", MODE_PRIVATE).edit()
+                        .putBoolean("enabled", false).apply();
+                Log.i(TAG, "Navigation provider explicitly disabled by user through Settings");
+                applyNavigationProviderSelection();
+                return true;
+            }
+            String certificate = certificateFor(this, packageName);
+            if ("unavailable".equals(certificate) || "package unavailable".equals(certificate))
+                throw new IllegalArgumentException("selected provider is not installed or has no signing certificate");
+            try {
+                android.content.pm.ServiceInfo service = getPackageManager().getServiceInfo(
+                        new ComponentName(packageName, packageName + ".MatonNavigationBarProviderService"), 0);
+                if (!service.exported) throw new IllegalArgumentException("provider service must be exported");
+            } catch (PackageManager.NameNotFoundException e) {
+                throw new IllegalArgumentException("selected package has no MatonOS navigation provider service", e);
+            }
+            getSharedPreferences("navigation_bar_provider", MODE_PRIVATE).edit()
+                    .putString("package", packageName).putString("certificate", certificate)
+                    .putBoolean("enabled", enabled).apply();
+            Log.i(TAG, (enabled ? "Selected" : "Preset") + " navigation provider=" + packageName
+                    + " certificate=" + certificate + " enabled=" + enabled
+                    + " caller=" + caller);
+            applyNavigationProviderSelection();
+            return true;
         }
 
         @Override public String call(String target, String command, String jsonArgs) {
@@ -390,6 +393,8 @@ public final class SystemBridgeService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        navigationBarWindow = new NavigationBarWindow(this);
+        applyNavigationProviderSelection();
         geometryHandler = new android.os.Handler(getMainLooper());
         DisplayManager displayManager = getSystemService(DisplayManager.class);
         if (displayManager != null) {
@@ -462,6 +467,62 @@ public final class SystemBridgeService extends Service {
         result.put("pointerSpeed", Settings.System.getIntForUser(getContentResolver(),
                 Settings.System.POINTER_SPEED, 0, userId));
         return result;
+    }
+
+    private JSONObject navigationProviderState() {
+        android.content.SharedPreferences prefs = getSharedPreferences(
+                "navigation_bar_provider", MODE_PRIVATE);
+        JSONObject state = new JSONObject();
+        try {
+            state.put("packageName", prefs.getString("package", NavigationBarWindow.DEFAULT_PROVIDER));
+            state.put("enabled", prefs.getBoolean("enabled", false));
+            state.put("certificateSha256", prefs.getString("certificate", ""));
+            state.put("defaultDenied", !prefs.getBoolean("enabled", false));
+        } catch (JSONException impossible) { }
+        return state;
+    }
+
+    private void applyNavigationProviderSelection() {
+        if (navigationBarWindow == null) return;
+        android.content.SharedPreferences prefs = getSharedPreferences(
+                "navigation_bar_provider", MODE_PRIVATE);
+        String pkg = prefs.getString("package", NavigationBarWindow.DEFAULT_PROVIDER);
+        String cert = prefs.getString("certificate", null);
+        boolean enabled = prefs.getBoolean("enabled", false);
+        navigationBarWindow.select(pkg, cert, enabled);
+    }
+
+    private String enforceSelectedProviderCaller(String target, String operation) {
+        int uid = Binder.getCallingUid();
+        android.content.SharedPreferences prefs = getSharedPreferences(
+                "navigation_bar_provider", MODE_PRIVATE);
+        String selected = prefs.getString("package", NavigationBarWindow.DEFAULT_PROVIDER);
+        String pinnedCertificate = prefs.getString("certificate", null);
+        if (!prefs.getBoolean("enabled", false) || pinnedCertificate == null)
+            deny(operation, uid, "navigation provider capability is not enabled by the user");
+        String[] packages = getPackageManager().getPackagesForUid(uid);
+        if (packages != null) for (String pkg : packages) {
+            if (!selected.equals(pkg)) continue;
+            String current = certificateFor(this, pkg);
+            if (!pinnedCertificate.equals(current)) break;
+            Log.i(TAG, "Authorized provider action=" + operation + " target=" + target
+                    + " package=" + pkg + " uid=" + uid);
+            return pkg;
+        }
+        deny(operation, uid, "caller is not the selected, certificate-pinned navigation provider");
+        return null;
+    }
+
+    static String certificateFor(android.content.Context context, String packageName) {
+        try {
+            PackageInfo info = context.getPackageManager().getPackageInfo(packageName,
+                    PackageManager.GET_SIGNING_CERTIFICATES);
+            if (info.signingInfo == null || info.signingInfo.getApkContentsSigners().length != 1)
+                return "unavailable";
+            return sha256(info.signingInfo.getApkContentsSigners()[0].toByteArray());
+        } catch (PackageManager.NameNotFoundException e) {
+            return "package unavailable";
+        }
     }
 
     private void enforcePermission(int uid, String operation) {

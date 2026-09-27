@@ -6,9 +6,11 @@ import {ComposeUiPreview} from '../components/ComposeUiPreview';
 
 export function AppDrawerScreen(): React.JSX.Element {
   const theme = useTheme();
+  const window = useWindowDimensions();
   const [apps, setApps] = useState<LauncherApp[]>([]);
   const [query, setQuery] = useState('');
-  const columns = Math.max(4, Math.floor(useWindowDimensions().width / 168));
+  const columns = Math.max(4, Math.floor(window.width / 168));
+  const cellWidth = Math.floor((window.width - 32 - columns * 16) / columns);
   useEffect(() => {
     let live = true;
     void MatonShell.getLauncherApps()
@@ -58,6 +60,7 @@ export function AppDrawerScreen(): React.JSX.Element {
         renderItem={({item}) => (
           <LauncherAppTile
             app={item}
+            width={cellWidth}
             foreground={theme.colors.onSurface}
             highlight={theme.colors.secondaryContainer}
             outline={theme.colors.primary}
@@ -75,11 +78,13 @@ export function AppDrawerScreen(): React.JSX.Element {
 
 function LauncherAppTile({
   app,
+  width,
   foreground,
   highlight,
   outline,
 }: {
   app: LauncherApp;
+  width: number;
   foreground: string;
   highlight: string;
   outline: string;
@@ -96,7 +101,7 @@ function LauncherAppTile({
       onHoverOut={() => setHighlighted(false)}
       onFocus={() => setHighlighted(true)}
       onBlur={() => setHighlighted(false)}
-      style={[styles.cell, highlighted && {backgroundColor: highlight, borderColor: outline}]}
+      style={[styles.cell, {width}, highlighted && {backgroundColor: highlight, borderColor: outline}]}
     >
       {!!app.iconUri && <Image source={{uri: app.iconUri}} style={styles.icon} />}
       <Text numberOfLines={2} style={[styles.label, {color: foreground}]}>
@@ -111,8 +116,6 @@ const styles = StyleSheet.create({
   search: {marginHorizontal: 22, marginVertical: 14},
   grid: {padding: 16},
   cell: {
-    flex: 1,
-    minWidth: 120,
     minHeight: 130,
     margin: 8,
     alignItems: 'center',
