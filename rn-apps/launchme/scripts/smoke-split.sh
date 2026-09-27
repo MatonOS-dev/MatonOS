@@ -42,6 +42,11 @@ if ! grep -E 'android.permission.QUERY_ALL_PACKAGES: granted=true|android.permis
   echo "System Bridge does not hold QUERY_ALL_PACKAGES; provider certificate lookups may fail" >&2
   exit 1
 fi
+adb_shell logcat -b all -d -s MatonSystemBridge:I > "$EVIDENCE/bridge-startup.log"
+if ! grep -Fq 'Enabled image-bundled Shelf as the certificate-pinned default navigation provider' "$EVIDENCE/bridge-startup.log"; then
+  echo "Fresh boot did not record the certificate-pinned built-in Shelf default" >&2
+  exit 1
+fi
 adb_shell dumpsys activity services org.matonos.shelf > "$EVIDENCE/shelf-service.txt"
 
 adb_shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME -f 0x10000000 > "$EVIDENCE/home-start.txt"

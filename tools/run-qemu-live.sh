@@ -144,11 +144,13 @@ if [[ $EXTRA != *hda* ]]; then
   # pa (via pipewire-pulse on PipeWire hosts) is QEMU's best-tested backend;
   # MATON_QEMU_AUDIO=pipewire|alsa|none overrides.
   [[ $GFX == none || $gtk_gl == egl-headless ]] && snd=none || snd=${MATON_QEMU_AUDIO:-pa}
+  # mixer=off: QEMU would otherwise mirror the guest codec mixer (muted/0 at
+  # boot) onto the host stream -> silent VM. Android scales volume itself.
   # MATON_QEMU_SOUND=hda (default: Intel HDA like real PCs, same driver/HAL
   # path) or virtio (paravirtual virtio-sound, guest module virtio_snd).
   case ${MATON_QEMU_SOUND:-hda} in
     virtio) args+=(-audiodev "$snd,id=snd0" -device "virtio-sound-pci,audiodev=snd0") ;;
-    *)      args+=(-audiodev "$snd,id=snd0" -device ich9-intel-hda -device "hda-duplex,audiodev=snd0") ;;
+    *)      args+=(-audiodev "$snd,id=snd0" -device ich9-intel-hda -device "hda-duplex,audiodev=snd0,mixer=off") ;;
   esac
 fi
 
