@@ -168,13 +168,22 @@ public final class ShelfService extends Service {
     private void switchToJavaShelf(String reason) {
         android.util.Log.e("MatonOSShell", "RN shelf failed; switching to Java fallback: " + reason);
         rnFailed = true;
+        // Detach the React view from its container BEFORE stopping/detaching the
+        // surface: removing an already-detached React root throws an NPE in
+        // dispatchDetachedFromWindow.
+        if (providerRoot != null) {
+            try { providerRoot.removeAllViews(); }
+            catch (RuntimeException error) { android.util.Log.w("MatonOSShell", "Could not detach React shelf view", error); }
+        }
+        if (shelfRoot != null) {
+            try { shelfRoot.removeAllViews(); } catch (RuntimeException ignored) { }
+        }
         if (rnSurface != null) {
             try { rnSurface.stop(); }
             catch (RuntimeException error) { android.util.Log.w("MatonOSShell", "Could not stop failed React shelf", error); }
             rnSurface = null;
         }
         if (providerRoot != null) {
-            providerRoot.removeAllViews();
             if (javaFallback.getParent() instanceof android.view.ViewGroup)
                 ((android.view.ViewGroup) javaFallback.getParent()).removeView(javaFallback);
             providerRoot.addView(javaFallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
@@ -187,7 +196,17 @@ public final class ShelfService extends Service {
         catch (RuntimeException error) { android.util.Log.e("MatonOSShell", "Java shelf fallback attach failed", error); }
     }
 
-    static void fallbackToJavaShelf(String reason) { ShelfService service = active; if (service != null) service.switchToJavaShelf(reason); }
+    static void fallbackToJavaShelf(String reason) {
+        ShelfService service = active;
+        if (service == null) return;
+        // Dev builds: a JS render error must not pin the Java bar for the whole
+        // process (the next Fast Refresh fixes it). Release keeps the fallback.
+        if ((service.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            android.util.Log.w("MatonOSShell", "JS shelf error (dev build, staying on React for Fast Refresh): " + reason);
+            return;
+        }
+        service.switchToJavaShelf(reason);
+    }
     private boolean providerSurfaceAttached() { return providerRoot != null && providerRoot.isAttachedToWindow(); }
     static void dispatchLaunch(Context context, Intent intent) { ShelfService service = active; if (service != null) service.startShellActivity(intent); else context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
     static void openPanel(Context context, String target) {
