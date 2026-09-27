@@ -87,6 +87,16 @@ fi
 
 adb_device install -r "$APK"
 adb_device reverse tcp:8081 tcp:8081
+# adb reverse does not work over adb-over-TCP (QEMU VMs): point the dev
+# client at Metro directly. QEMU guests reach the host at 10.0.2.2; set
+# MATON_DEV_HOST=<host IP> for real devices over the network.
+DEV_HOST=${MATON_DEV_HOST:-10.0.2.2}
+prefs=$(mktemp)
+printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map>\n    <string name="debug_http_host">%s:%s</string>\n</map>\n' "$DEV_HOST" "8081" > "$prefs"
+adb_device push "$prefs" "/data/local/tmp/$PACKAGE.devhost.xml" >/dev/null
+rm -f "$prefs"
+adb_device shell "run-as $PACKAGE sh -c 'mkdir -p shared_prefs && cat /data/local/tmp/$PACKAGE.devhost.xml > shared_prefs/${PACKAGE}_preferences.xml'" ||
+  echo "WARNING: could not set the dev server host; the app may not reach Metro" >&2
 adb_device shell cmd package set-home-activity --user 0 "$PACKAGE/.HomeActivity" >/dev/null
 adb_device shell am force-stop "$PACKAGE" || true
 adb_device shell am start -a android.intent.action.MAIN -c android.intent.category.HOME -f 0x10000000 >/dev/null

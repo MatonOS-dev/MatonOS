@@ -83,6 +83,16 @@ fi
 
 device install -r "$APK"
 device reverse "tcp:$METRO_PORT" "tcp:$METRO_PORT"
+# adb reverse does not work over adb-over-TCP (QEMU VMs): point the dev
+# client at Metro directly. QEMU guests reach the host at 10.0.2.2; set
+# MATON_DEV_HOST=<host IP> for real devices over the network.
+DEV_HOST=${MATON_DEV_HOST:-10.0.2.2}
+prefs=$(mktemp)
+printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map>\n    <string name="debug_http_host">%s:%s</string>\n</map>\n' "$DEV_HOST" "$METRO_PORT" > "$prefs"
+device push "$prefs" "/data/local/tmp/$PACKAGE.devhost.xml" >/dev/null
+rm -f "$prefs"
+device shell "run-as $PACKAGE sh -c 'mkdir -p shared_prefs && cat /data/local/tmp/$PACKAGE.devhost.xml > shared_prefs/${PACKAGE}_preferences.xml'" ||
+  echo "WARNING: could not set the dev server host; the app may not reach Metro" >&2
 device shell am force-stop "$PACKAGE" || true
 device shell am start -a android.intent.action.MAIN -c android.intent.category.HOME -f 0x10000000 >/dev/null
 echo "Shelf dev client installed on $DEVICE; Metro is on port $METRO_PORT. Edit src/**/*.tsx for Fast Refresh."
