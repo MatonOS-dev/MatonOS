@@ -42,6 +42,10 @@ if ! grep -E 'android.permission.QUERY_ALL_PACKAGES: granted=true|android.permis
   echo "System Bridge does not hold QUERY_ALL_PACKAGES; provider certificate lookups may fail" >&2
   exit 1
 fi
+if ! grep -E 'org.matonos.permission.SYSTEM_BRIDGE: granted=true|org.matonos.permission.SYSTEM_BRIDGE.*granted=true' "$EVIDENCE/systembridge-package.txt" >/dev/null; then
+  echo "System Bridge lacks its provider-service bind permission" >&2
+  exit 1
+fi
 adb_shell logcat -b all -d -s MatonSystemBridge:I > "$EVIDENCE/bridge-startup.log"
 if ! grep -Fq 'Enabled image-bundled Shelf as the certificate-pinned default navigation provider' "$EVIDENCE/bridge-startup.log"; then
   echo "Fresh boot did not record the certificate-pinned built-in Shelf default" >&2
@@ -73,6 +77,12 @@ capture recents
 adb_shell am start -W -a android.settings.SETTINGS > "$EVIDENCE/settings-start.txt"
 sleep 8
 adb_shell dumpsys window windows > "$EVIDENCE/settings-windows.txt"
+capture settings-shelf
+adb_shell logcat -b crash -d -v brief > "$EVIDENCE/crash.log"
+if grep -E "$SHELL_PACKAGE|$SHELF_PACKAGE|$RECENTS_PACKAGE|Current Activity is of incorrect class|AppContext\.onHostResume" "$EVIDENCE/crash.log"; then
+  echo "Crash buffer contains a MatonOS app crash or Expo AppCompat lifecycle failure; see $EVIDENCE/crash.log" >&2
+  exit 1
+fi
 python3 - "$EVIDENCE/settings-windows.txt" "$EVIDENCE/settings-shelf-window.txt" <<'PY'
 import pathlib
 import re
@@ -93,16 +103,10 @@ if not re.search(r"^\s*isVisible=true\s*$", block, re.MULTILINE):
 if re.search(r"mIsForceHiddenNonSystemOverlayWindow=true", block):
     raise SystemExit("Settings is force-hiding the Shelf as a non-system overlay")
 PY
-capture settings-shelf
 
 adb_shell dumpsys meminfo "$SHELL_PACKAGE" > "$EVIDENCE/shell-meminfo.txt"
 adb_shell dumpsys meminfo "$SHELF_PACKAGE" > "$EVIDENCE/shelf-meminfo.txt"
 adb_shell dumpsys meminfo "$RECENTS_PACKAGE" > "$EVIDENCE/recents-meminfo.txt"
-adb_shell logcat -b crash -d -v brief > "$EVIDENCE/crash.log"
-if grep -E "$SHELL_PACKAGE|$SHELF_PACKAGE|$RECENTS_PACKAGE|Current Activity is of incorrect class|AppContext\.onHostResume" "$EVIDENCE/crash.log"; then
-  echo "Crash buffer contains a MatonOS app crash or Expo AppCompat lifecycle failure; see $EVIDENCE/crash.log" >&2
-  exit 1
-fi
 
 for screen in home drawer recents settings-shelf; do
   [[ -s "$EVIDENCE/$screen.png" ]] || { echo "Missing screenshot $screen.png" >&2; exit 1; }

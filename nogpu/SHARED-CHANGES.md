@@ -2,11 +2,14 @@
 
 These shared-file changes are part of the requested no-GPU fallback:
 
-- `graphics/pc-gpu-detect.sh`: add a bounded 1.5-second supported-render-node
-  check, then attempt to load vgem through `/vendor/bin/modprobe` only when no
-  supported render node appeared. Reason: vgem must exist before minigbm and
-  SurfaceFlinger initialize on unsupported PCs; an unbounded wait or required
-  module load could hold boot.
+- `graphics/pc-gpu-detect.sh`: identify PCI display adapters and their
+  supported drivers before considering fallback. Give matching hardware
+  render nodes a bounded 1.5-second appearance window, but keep a known GPU on
+  its hardware path after the timeout. Load vgem through `/vendor/bin/modprobe`
+  only when no supported PCI driver or render node exists. Reason: early-init
+  can run before modalias-triggered GPU modules publish render nodes; a known
+  GPU must not be diverted to llvmpipe. The bounded wait and optional module
+  load keep startup finite and boot-safe.
 - `sepolicy/matonos/file_contexts`: label `/dev/dri` and `/dev/dri/card*` as
   `graphics_device`, and `/dev/dri/renderD*` as `gpu_device`. Reason: the prior
   generic `device` label denied allocator access to the DRM directory/nodes.

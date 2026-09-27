@@ -1,15 +1,20 @@
 # No-GPU graphics fallback
 
 MatonOS uses the upstream `vgem` DRM module as a render device when no
-supported hardware render node appears during early boot. Mesa's llvmpipe
+supported PCI GPU driver is present. Mesa's llvmpipe
 renders into linear, shmem-backed dma-bufs; drm_hwcomposer presents those
 frames through the PC's real KMS display device. The virtual device does not
 replace the display controller.
 
 ## Design
 
-- `graphics/pc-gpu-detect.sh` gives PCI graphics drivers up to 1.5 seconds to
-  publish a supported render node. If none appears, it attempts to load
+- `graphics/pc-gpu-detect.sh` identifies PCI display hardware before checking
+  render nodes. Known Intel, AMD, NVIDIA, virtio-gpu, and VMware adapters are
+  treated as supported while their kernel driver is loading; the script waits
+  up to 1.5 seconds for a render node matching those drivers, then leaves the
+  hardware path selected even if node creation is slower. Only an unknown or
+  unsupported display adapter with no other supported render node triggers
+  vgem. In that case it attempts to load
   `/vendor/lib/modules/vgem.ko` with the existing vendor `modprobe`, and sets
   Mesa's Android `vendor.mesa.libgl.always.software` option so EGL selects
   `kms_swrast` for vgem instead of trying a nonexistent hardware DRI driver.
@@ -32,13 +37,13 @@ replace the display controller.
 
 ## Build and test status
 
-The initial implementation built and passed the SELinux label check. Its first
-fresh std-VGA boot confirmed that vgem loads and Vulkan selects `swrast`, but
-SurfaceFlinger crash-looped. Based on Mesa's Android loader path, the likely
-cause is that EGL tried hardware DRI instead of `kms_swrast`. The detector now
-sets Mesa's existing Android software-rendering option in the vendor namespace
-when no supported render node is found. That code is queued for a rebuild and
-fresh-boot verification; the fallback is not yet working end to end.
+The initial implementation built and passed the SELinux label check, but the
+10:19 virgl image loaded vgem before virtio-gpu published its render node. The
+detector now selects the hardware path from PCI IDs first, so a late render
+node cannot trigger software fallback. Earlier std-VGA boots confirmed vgem
+loads and Vulkan selects `swrast`, but SurfaceFlinger still failed allocating
+GBM buffers; that separate allocator issue remains under investigation. The
+updated detector needs a fresh build and virgl/std/bochs/ramfb boot checks.
 
 ## Fresh-image tests
 
@@ -66,12 +71,12 @@ or restart framework services to test.
 
 ## Open issues
 
-- The Mesa software-rendering property fix, vgem EGL/GBM path, and HWC3
-  dumb-buffer fallback still need a new build and fresh-boot verification
-  across the matrix above.
+- The PCI-first detector and vgem EGL/GBM path need a new build and fresh-boot
+  verification across the matrix above. Earlier std-VGA logs show Mesa GBM BO
+  allocations failing on vgem, so SurfaceFlinger did not reach boot complete.
 - The copy path supports 32-bit XRGB/ARGB/XBGR/ABGR client targets. Other
   formats or tiled modifiers return to the existing import-failure behavior.
-- The early detector's 1.5-second wait is a compromise for late PCI modules;
-  hardware whose driver appears after that timeout may transiently load vgem.
+- For recognized PCI hardware, a render node appearing after the bounded
+  wait does not cause vgem to load; Android continues on the hardware path.
 - No kernel configuration change is planned; `vgem.ko` is already staged in
   `prebuilt/modules`.
