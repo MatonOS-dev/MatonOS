@@ -101,7 +101,11 @@ function LauncherAppTile({
       onHoverOut={() => setHighlighted(false)}
       onFocus={() => setHighlighted(true)}
       onBlur={() => setHighlighted(false)}
-      style={[styles.cell, {width}, highlighted && {backgroundColor: highlight, borderColor: outline}]}
+      style={[
+        styles.cell,
+        {width},
+        highlighted && {backgroundColor: highlight, borderColor: outline},
+      ]}
     >
       {!!app.iconUri && <Image source={{uri: app.iconUri}} style={styles.icon} />}
       <Text numberOfLines={2} style={[styles.label, {color: foreground}]}>

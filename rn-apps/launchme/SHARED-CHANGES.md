@@ -38,20 +38,14 @@ boolean removeRecentTask(int taskId);
 
 The implementation must authorize target `launcher` for the exact caller, confirm that `taskId` is still in `getRecentTasks()` for the calling user's current profile, refuse MatonOS Shell/SystemUI tasks, and then remove the task through the framework task API. Bump the bridge API/hash and regenerate the Gradle client's AIDL output. Until this lands, the launcher cannot safely close another app's task using public APIs.
 
-## Keep the shelf visible over Settings' overlay protection
+## Keep the shelf visible over Settings' overlay protection (superseded 2026-09-27)
 
-AOSP SettingsBaseActivity / SettingsHomepageActivity enable `HIDE_NON_SYSTEM_OVERLAY_WINDOWS`; WM hides ordinary `TYPE_APPLICATION_OVERLAY` windows even when their app-op and service are healthy. A MatonOS app configured as the recents package receives `SYSTEM_APPLICATION_OVERLAY` through the platform's `recents` permission flag, but only the privileged bridge can set the corresponding `LayoutParams` system-overlay marker without exposing hidden APIs in the launcher. Please add:
-
-```aidl
-Bundle prepareShellOverlay(in Bundle request); // request/result key: "windowParams" (WindowManager.LayoutParams)
-```
-
-Authorize only `launcher` / `org.matonos.shell`; require `TYPE_APPLICATION_OVERLAY`, validate bounded width/height and flags, require the shell package to hold `SYSTEM_APPLICATION_OVERLAY`, then call `LayoutParams.setSystemApplicationOverlay(true)` and return the adjusted params in the response bundle. Deny all other window types and callers. Bump the bridge API version/hash and regenerate the Gradle client. The launcher will use this before `WindowManager.addView`; it retains a normal-overlay fallback for images with an older bridge.
+The initial request for `prepareShellOverlay()` and a Shelf-owned system overlay was superseded after confirming privapp XML cannot grant `SYSTEM_APPLICATION_OVERLAY`. The final bridge-owned navigation host contract is recorded at the end of this file; do not implement the older permission or `prepareShellOverlay()` request.
 
 ## Fresh-image findings (2026-09-25, image 15:58)
 
 - `getRecentTasks(32)` returns an empty result to the launcher even while the framework's `dumpsys activity recents` reports a live, visible app task. Reproduced with Fossify Math: task id 15 was `hasTask=true` and its `baseActivity` was `org.fossify.math/.activities.MainActivity`, while RecentsActivity displayed “No recent apps.” Please diagnose the bridge's recent-task retrieval/filtering and return these current-user app tasks in MRU order. The launcher already filters Shell/SystemUI and restricts display to launchable packages.
-- `removeRecentTask(int)` and `prepareShellOverlay(Bundle)` were not present in the System Bridge API in this image. Please land these along with the recent-task fix, regenerate the Gradle client, and request a new full image. Settings screenshots confirm its `HIDE_NON_SYSTEM_OVERLAY_WINDOWS` behavior hides the shelf even though the `MatonOS shelf` overlay window and service remain present.
+- `removeRecentTask(int)` was not present in this image; that request is historical. `prepareShellOverlay(Bundle)` was later superseded by the bridge-owned navigation provider host below.
 
 ## Expo CNG build helper
 
@@ -124,12 +118,20 @@ A full image request is queued after the three local APK builds. Fresh-image scr
 
 ## Shelf bridge-thread and overlay follow-up (2026-09-26)
 
-`ShelfService` now posts every bridge-availability notification to the main looper, and `installShelf()` defensively reposts itself if invoked off-main. This fixes the 10:06 boot crash where `matonos-bridge-check` called `WindowManager.addView()` directly. Shelf overlay setup now uses `MatonosClient.ensureShellOverlayAccess()` and `MatonosClient.prepareShellOverlay(LayoutParams)`; it no longer invokes those overlay Binder methods reflectively from `ShelfService`.
+`ShelfService` posts bridge-availability notifications to the main looper; this fixes the 10:06 boot crash where `matonos-bridge-check` called `WindowManager.addView()` directly. Its old Shelf-owned overlay setup was replaced by the bridge host below.
 
-The 10:06 image still cannot satisfy the system-overlay gate for the Shelf-owned window: `prepareShellOverlay()` requires `SYSTEM_APPLICATION_OVERLAY`, but the platform currently assigns that permission only to the configured Recents role (`org.matonos.recents`). `SYSTEM_ALERT_WINDOW` app-op is insufficient. Please grant `SYSTEM_APPLICATION_OVERLAY` to the exact allowlisted package `org.matonos.shelf` through the platform's controlled permission configuration (while retaining the bridge's exact permission and caller checks), or provide an equivalent narrowly scoped platform-owned authorization that allows only this Shelf overlay. Keep raw Binder access out of the app. Once included in a fresh image, verify Shelf remains visible over Settings with `HIDE_NON_SYSTEM_OVERLAY_WINDOWS` enabled.
+The 10:06 image still lacked visibility over Settings. The old request to grant the special overlay permission to Shelf is withdrawn; the system bridge now owns the protected host window.
 
 ## Shelf system-overlay permission and layout follow-up (2026-09-26)
 
-Image 10:52 confirms the Shelf service is healthy, but Settings hides its `TYPE_APPLICATION_OVERLAY` window (`mIsForceHiddenNonSystemOverlayWindow=true`, `isVisible=false`) because `org.matonos.shelf` has only `SYSTEM_ALERT_WINDOW`. Shelf now requests `android.permission.SYSTEM_APPLICATION_OVERLAY` in its Expo app config and source manifest, and its generated `privapp-permissions-org.matonos.shelf.xml` grants that permission in addition to `org.matonos.permission.SYSTEM_BRIDGE`. Please ensure the updated generated XML is staged/imported on the same privileged partition as the Shelf APK (system_ext); keep this grant narrowly scoped to `org.matonos.shelf` and allowlist it in any platform permission policy needed for privileged grants. The existing `prepareShellOverlay()` bridge path already exact-checks Shelf's caller and permission, then calls `LayoutParams.setSystemApplicationOverlay(true)`; the app must continue to use that typed bridge call.
+Image 10:52 confirmed Settings hid Shelf's app overlay. The proposed manifest and privapp permission grant from that run were invalid and are withdrawn; the bridge-owned host now uses the signature permission from its platform certificate.
 
 Shelf now follows `Settings.Secure.navigation_mode == 0` for its initial layout, showing Back/Home/Recents with running task buttons. A choice in Shelf Settings explicitly overrides that default and persists. The React Home no longer shows the stray Compose demo Switch under the app shortcuts; the Compose package remains available to the app.
+
+## Bridge-hosted navigation provider (2026-09-27; supersedes prior overlay-permission requests)
+
+The Shelf request for `SYSTEM_APPLICATION_OVERLAY` is withdrawn. The permission is signature/role/recents/installer gated, so a privapp XML grant cannot provide it. Shelf no longer requests it, and its privapp XML no longer contains it. The platform-signed system bridge owns a `TYPE_APPLICATION_OVERLAY` window, marks it with `setSystemApplicationOverlay(true)`, provides a navigation-bar inset source, and embeds the selected provider's `SurfacePackage` through `SurfaceControlViewHost`. Only the bridge requests the signature permission; the Shelf APK receives no grant.
+
+The bridge API is now version 6. `buildinfra/client` provides `NavigationBarProviderAdapter`, `MatonosClient.createNavigationBarProvider(...)`, and `getNavigationBarProviderState()`. Provider IPC uses typed AIDL; apps do not call hidden APIs, silently grant provider access, or create the protected host window. Provider selection and revocation happen only in the bridge-owned consent activity action `org.matonos.systembridge.NAVIGATION_PROVIDER_SETTINGS`. Shelf is the preset provider, but the capability is disabled until the user explicitly confirms it. Selection pins the package certificate and is audited. Please add a MatonOS Settings entry that launches this action.
+
+Shelf no longer starts a service from BOOT_COMPLETED or USER_UNLOCKED. Once selected, the system bridge binds the provider service at boot, which starts it without the background-service-start failure. The standard `SYSTEM_ALERT_WINDOW` path remains a fallback and can still be hidden by Settings if the bridge host is unavailable.

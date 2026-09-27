@@ -1,7 +1,7 @@
 From 139968a9db60618007d2e08a15b76ebca899ad6f Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Thu, 24 Sep 2026 23:19:38 +0200
-Subject: [PATCH] drm_hwcomposer: scan DRM card nodes past gaps
+Subject: [PATCH 1/2] drm_hwcomposer: scan DRM card nodes past gaps
 
 Change-Id: I684304d8f24bca71600fd89c43944bbf0cfd8f7f
 ---
@@ -42,5 +42,5 @@ index defec12..392f47b 100644
        auto dev = DrmDevice::CreateInstance(path.str(), this, idx);
        if (dev) {
 -- 
-2.53.0
+2.43.0
 

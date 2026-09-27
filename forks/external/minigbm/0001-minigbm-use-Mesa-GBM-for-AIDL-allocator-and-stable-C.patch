@@ -1,7 +1,8 @@
 From ad5e09a4c8a3d66fd3fcf22ba41ce69760cb7d83 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Thu, 24 Sep 2026 23:19:38 +0200
-Subject: [PATCH] minigbm: use Mesa GBM for AIDL allocator and stable C mapper
+Subject: [PATCH 1/2] minigbm: use Mesa GBM for AIDL allocator and stable C
+ mapper
 
 ---
  Android.bp                             | 16 ++++++++----
@@ -243,5 +244,5 @@ index 38cc624..3a08d02 100644
  #include "drv_helpers.h"
  }
 -- 
-2.53.0
+2.43.0
 

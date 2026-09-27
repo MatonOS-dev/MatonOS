@@ -68,7 +68,7 @@ import sys
 
 source = pathlib.Path(sys.argv[1]).read_text(errors="replace")
 match = re.search(
-    r"^\s*Window #\d+ Window\{[^\n]*MatonOS shelf[^\n]*\}:(.*?)(?=^\s*Window #\d+ Window\{|\Z)",
+    r"^\s*Window #\d+ Window\{[^\n]*MatonOS navigation provider host[^\n]*\}:(.*?)(?=^\s*Window #\d+ Window\{|\Z)",
     source,
     re.MULTILINE | re.DOTALL,
 )

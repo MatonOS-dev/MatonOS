@@ -76,7 +76,7 @@ public final class SystemBridgeService extends Service {
         }
         @Override public String getBridgeApiHash() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiHash");
-            return "nav-provider-v1-20260927";
+            return "b4bd3f60e69ed4c09211c844236a753bd956ab4150de401a8d654fdce752c69d";
         }
 
         @Override public boolean injectBackKey() {
@@ -105,7 +105,7 @@ public final class SystemBridgeService extends Service {
             if (allowed.length() == 0) Log.w(TAG, "Denied getBridgeStatus for uid=" + uid
                     + ": no built-in or developer trust entry matches caller");
             JSONObject status = new JSONObject();
-            try { status.put("apiVersion", 5); status.put("allowedTargets", allowed);
+            try { status.put("apiVersion", 6); status.put("allowedTargets", allowed);
                 status.put("availableChannels", channels); }
             catch (JSONException ignored) { }
             return status.toString();
@@ -286,16 +286,6 @@ public final class SystemBridgeService extends Service {
             return navigationProviderState().toString();
         }
 
-        @Override public boolean setNavigationBarProvider(String packageName, boolean enabled) {
-            String caller = enforceAuthorizedCaller("status", "setNavigationBarProvider:" + packageName);
-            if (!"org.matonos.settings".equals(caller))
-                deny("setNavigationBarProvider", Binder.getCallingUid(), "Settings is required");
-            selectNavigationProvider(SystemBridgeService.this, packageName, enabled);
-            Log.i(TAG, "Settings changed navigation provider=" + packageName + " enabled=" + enabled
-                    + " caller=" + caller);
-            return true;
-        }
-
         @Override public String call(String target, String command, String jsonArgs) {
             enforceAuthorizedCaller(target, "call:" + command);
             validateName(target, "target");
@@ -374,6 +364,7 @@ public final class SystemBridgeService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         activeService = this;
+        grantBridgeOverlayAppOps();
         navigationBarWindow = new NavigationBarWindow(this);
         applyNavigationProviderSelection();
         geometryHandler = new android.os.Handler(getMainLooper());
@@ -457,6 +448,20 @@ public final class SystemBridgeService extends Service {
         return result;
     }
 
+    private void grantBridgeOverlayAppOps() {
+        try {
+            AppOpsManager appOps = getSystemService(AppOpsManager.class);
+            int uid = android.os.Process.myUid();
+            appOps.setMode(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, uid, getPackageName(),
+                    AppOpsManager.MODE_ALLOWED);
+            appOps.setMode(AppOpsManager.OPSTR_SYSTEM_APPLICATION_OVERLAY, uid, getPackageName(),
+                    AppOpsManager.MODE_ALLOWED);
+            Log.i(TAG, "Enabled app-ops for bridge-owned navigation host window");
+        } catch (RuntimeException failure) {
+            Log.e(TAG, "Could not enable bridge navigation overlay app-ops", failure);
+        }
+    }
+
     private JSONObject navigationProviderState() {
         android.content.SharedPreferences prefs = getSharedPreferences(
                 "navigation_bar_provider", MODE_PRIVATE);
@@ -476,8 +481,9 @@ public final class SystemBridgeService extends Service {
                 "navigation_bar_provider", MODE_PRIVATE);
         String pkg = prefs.getString("package", NavigationBarWindow.DEFAULT_PROVIDER);
         String cert = prefs.getString("certificate", null);
+        String serviceClass = prefs.getString("serviceClass", null);
         boolean enabled = prefs.getBoolean("enabled", false);
-        navigationBarWindow.select(pkg, cert, enabled);
+        navigationBarWindow.select(pkg, cert, serviceClass, enabled);
     }
 
     private String enforceSelectedProviderCaller(String target, String operation) {
@@ -524,16 +530,16 @@ public final class SystemBridgeService extends Service {
             String certificate = certificateFor(context, packageName);
             if ("unavailable".equals(certificate) || "package unavailable".equals(certificate))
                 throw new IllegalArgumentException("selected provider is not installed or has no signing certificate");
-            try {
-                android.content.pm.ServiceInfo service = context.getPackageManager().getServiceInfo(
-                        new ComponentName(packageName, packageName + ".ShelfService"), 0);
-                if (!service.exported)
-                    throw new IllegalArgumentException("provider service must be exported");
-            } catch (PackageManager.NameNotFoundException e) {
-                throw new IllegalArgumentException("selected package has no MatonOS navigation provider service", e);
-            }
+            android.content.Intent intent = new android.content.Intent(NavigationBarWindow.PROVIDER_ACTION)
+                    .setPackage(packageName);
+            java.util.List<android.content.pm.ResolveInfo> candidates =
+                    context.getPackageManager().queryIntentServices(intent, 0);
+            if (candidates.size() != 1 || candidates.get(0).serviceInfo == null
+                    || !candidates.get(0).serviceInfo.exported)
+                throw new IllegalArgumentException("selected package must export exactly one MatonOS navigation provider service");
+            String serviceClass = candidates.get(0).serviceInfo.name;
             prefs.edit().putString("package", packageName).putString("certificate", certificate)
-                    .putBoolean("enabled", enabled).apply();
+                    .putString("serviceClass", serviceClass).putBoolean("enabled", enabled).apply();
             Log.i(TAG, (enabled ? "User selected" : "User preset") + " navigation provider=" + packageName
                     + " certificate=" + certificate + " enabled=" + enabled);
         }

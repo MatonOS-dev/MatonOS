@@ -317,11 +317,6 @@ public final class MatonosClient implements AutoCloseable {
         return invoke("status", ISystemBridge::getNavigationBarProviderState);
     }
 
-    /** Called only from an explicit user choice in MatonOS Settings. */
-    public Result<Boolean> setNavigationBarProvider(String packageName, boolean enabled) {
-        return invoke("status", b -> b.setNavigationBarProvider(packageName, enabled));
-    }
-
     private interface BridgeOperation<T> { T call(ISystemBridge bridge) throws Exception; }
 
     private <T> Result<T> invoke(String target, BridgeOperation<T> operation) {

@@ -138,14 +138,16 @@ The system bridge package is `org.matonos.systembridge`, platform-signed,
 privileged and persistent. It is the only custom app compiled with platform
 APIs. Its versioned AIDL exposes `getBridgeApiVersion`/`getBridgeApiHash`,
 generic `call(target, command, jsonArgs)`, topic subscribe/unsubscribe
-callbacks, and the launcher operations
-`ensureShellOverlayAccess`, `getRecentTasks`, `moveTaskToFront`,
-`setTaskFullscreen`, `removeRecentTask`, `prepareShellOverlay`, scoped shelf
-navigation (`navigateBack`, `navigateHome`, `navigateRecents`), and bounded PNG
-task thumbnails. Task list
-reads use `REAL_GET_TASKS`; task removal revalidates current-user recents and
-refuses MatonOS Shell/Shelf/Recents and SystemUI tasks. `prepareShellOverlay`
-accepts only Shelf and validated `TYPE_APPLICATION_OVERLAY` parameters. The
+callbacks, and launcher operations for overlay access, recent tasks, task
+switch/close/fullscreen, scoped shelf navigation (`navigateBack`,
+`navigateHome`, `navigateRecents`), bounded PNG thumbnails, and the typed
+navigation-provider adapter/state query. Task list reads use `REAL_GET_TASKS`;
+task removal revalidates current-user recents and refuses MatonOS
+Shell/Shelf/Recents and SystemUI tasks. The platform-signed bridge owns the
+system application-overlay host and its navigation inset source; it embeds
+the selected provider with `SurfaceControlViewHost`. Provider selection is
+disabled by default (Shelf is the preset), requires explicit user confirmation,
+pins the selected signing certificate, and can be revoked. The
 `input.set_absolute_pointer_mode` call disables acceleration and sets pointer
 speed to -7, returning the effective settings. The launcher methods authorize the `launcher` target on
 every call; navigation methods require the exact Shelf package, and task
@@ -153,7 +155,7 @@ methods require one of the exact Shell/Shelf/Recents packages. Mutations and
 thumbnails revalidate current-user recents. Every authorized operation and
 denial is written to the bridge audit log.
 
-The app-facing bridge API is v5. This app-facing AIDL version/hash is distinct
+The app-facing bridge API is v6. This app-facing AIDL version/hash is distinct
 from the frozen stable vendor channel, which remains VINTF v1. `adb shell content call --uri
 content://org.matonos.systembridge.shell --method trust --arg <package>
 --extra targets:s:launcher,audio` grants developer access; use `untrust` or

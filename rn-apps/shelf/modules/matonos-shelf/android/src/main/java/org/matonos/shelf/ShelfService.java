@@ -16,15 +16,12 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowManager;
-import android.view.Display;
-import android.view.SurfaceControlViewHost;
 
 import com.facebook.react.ReactHost;
 import com.facebook.react.ReactApplication;
 import org.matonos.systembridge.ISystemBridge;
 import org.matonos.client.MatonosClient;
 import org.matonos.client.NavigationBarProviderAdapter;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -43,7 +40,6 @@ public final class ShelfService extends Service {
     private WindowManager.LayoutParams params;
     private ShellBridge bridge;
     private boolean bridgeReady;
-    private SurfaceControlViewHost providerHost;
     private android.widget.FrameLayout providerRoot;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean added, homeVisible, expanded = true, rnFailed;
@@ -52,25 +48,17 @@ public final class ShelfService extends Service {
     private static final String PINS = "pinned";
     private static final String THREE_BUTTON = "three_button_mode";
     private static final String THREE_BUTTON_OVERRIDE = "three_button_mode_override";
-    private final NavigationBarProviderAdapter providerAdapter = new NavigationBarProviderAdapter() {
-        @Override protected SurfaceControlViewHost.SurfacePackage onAttach(
-                IBinder hostToken, int displayId, int widthPx, int heightPx) {
-            Display display = getSystemService(android.hardware.display.DisplayManager.class)
-                    .getDisplay(displayId);
-            if (display == null) throw new IllegalStateException("Bridge display is unavailable");
+    private final NavigationBarProviderAdapter providerAdapter = new NavigationBarProviderAdapter(this) {
+        @Override protected View onCreateView(int widthPx, int heightPx) {
             removeFallbackOverlay();
             providerRoot = new android.widget.FrameLayout(ShelfService.this);
             View providerContent = createShelfContent(providerRoot);
             if (providerContent == javaFallback) providerRoot.addView(javaFallback,
                     new android.widget.FrameLayout.LayoutParams(-1, -1));
-            providerHost = new SurfaceControlViewHost(getApplicationContext(), display, hostToken);
-            providerHost.setView(providerRoot, widthPx, heightPx);
-            SurfaceControlViewHost.SurfacePackage surface = providerHost.getSurfacePackage();
-            if (surface == null) throw new IllegalStateException("Bridge surface package is unavailable");
-            return surface;
+            return providerRoot;
         }
 
-        @Override protected void onDetach() { releaseProviderSurface(); }
+        @Override protected void onDetached() { releaseProviderSurface(); }
     };
     @Override public void onCreate() {
         super.onCreate(); active = this;
@@ -157,10 +145,6 @@ public final class ShelfService extends Service {
         if (rnSurface != null) { rnSurface.stop(); rnSurface = null; }
         if (providerRoot != null) providerRoot.removeAllViews();
         providerRoot = null;
-        if (providerHost != null) {
-            try { providerHost.release(); } catch (RuntimeException ignored) { }
-            providerHost = null;
-        }
     }
 
     void refreshOverlayAccess() {
@@ -176,7 +160,7 @@ public final class ShelfService extends Service {
             catch (RuntimeException error) { android.util.Log.w("MatonOSShell", "Could not stop failed React shelf", error); }
             rnSurface = null;
         }
-        if (providerRoot != null && providerHost != null) {
+        if (providerRoot != null) {
             providerRoot.removeAllViews();
             providerRoot.addView(javaFallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
             return;
@@ -228,6 +212,16 @@ public final class ShelfService extends Service {
         MatonShelfExpoModule.notifyShelfState();
     }
     private void refreshJavaFallback() {
+        if (providerRoot != null && providerRoot.getChildCount() == 1
+                && providerRoot.getChildAt(0) == javaFallback) {
+            providerRoot.removeView(javaFallback);
+            boolean oldExpanded = expanded;
+            javaFallback = new ShelfView(this);
+            javaFallback.setHomeVisible(homeVisible);
+            javaFallback.setExpanded(oldExpanded);
+            providerRoot.addView(javaFallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
+            return;
+        }
         boolean fallbackVisible = content == javaFallback;
         if (fallbackVisible && added) try { wm.removeView(content); } catch (RuntimeException ignored) { }
         boolean oldExpanded = expanded;
@@ -252,6 +246,21 @@ public final class ShelfService extends Service {
         Set<String> pins = getPinnedApps(context); boolean nowPinned = pins.add(pkg); if (!nowPinned) pins.remove(pkg);
         context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putStringSet(PINS, pins).apply();
         return nowPinned;
+    }
+    static boolean handleBroadcast(Intent intent) {
+        ShelfService service = active;
+        if (service == null || intent == null) return false;
+        if (ACTION_HOME_VISIBLE.equals(intent.getAction())) {
+            service.updateHomeVisibility(intent.getBooleanExtra(EXTRA_HOME_VISIBLE, false));
+            return true;
+        }
+        if (ACTION_TOGGLE_PIN.equals(intent.getAction())) {
+            String packageName = intent.getStringExtra("packageName");
+            if (packageName != null) togglePinnedApp(service, packageName);
+            MatonShelfExpoModule.notifyShelfState();
+            return true;
+        }
+        return false;
     }
     static void setShelfExpanded(boolean value) { if (active != null) { active.expanded = value; active.updateShelfHeight(active.dp(value || active.homeVisible ? 56 : 28)); MatonShelfExpoModule.notifyShelfState(); } }
     static ISystemBridge getBridge() { return active == null || active.bridge == null ? null : active.bridge.get(); }
@@ -293,6 +302,7 @@ public final class ShelfService extends Service {
     ISystemBridge systemBridge() { return bridge == null ? null : bridge.get(); }
     @Override public void onDestroy() {
         if (added && content != null) wm.removeView(content);
+        releaseProviderSurface();
         if (rnSurface != null) rnSurface.stop(); if (bridge != null) bridge.close(); active = null;
         try { host().onHostPause((android.app.Activity) null); }
         catch (RuntimeException | LinkageError error) { android.util.Log.w("MatonOSShelf", "React host pause failed", error); }

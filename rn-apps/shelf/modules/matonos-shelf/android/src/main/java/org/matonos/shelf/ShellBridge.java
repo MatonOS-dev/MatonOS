@@ -1,10 +1,8 @@
 package org.matonos.shelf;
 
 import android.content.Context;
-import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.WindowManager;
 
 import org.matonos.systembridge.ISystemBridge;
 import org.matonos.client.BridgeMode;
@@ -42,10 +40,6 @@ final class ShellBridge implements AutoCloseable {
 
     MatonosClient.Result<Boolean> ensureShellOverlayAccess() {
         return client.ensureShellOverlayAccess();
-    }
-
-    MatonosClient.Result<Bundle> prepareShellOverlay(WindowManager.LayoutParams params) {
-        return client.prepareShellOverlay(params);
     }
 
     boolean navigate(String action) { return navigate(action, false); }

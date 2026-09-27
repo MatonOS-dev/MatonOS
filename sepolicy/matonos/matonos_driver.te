@@ -103,9 +103,12 @@ domain_auto_trans(pc_gpu_detect, vendor_toolbox_exec, vendor_modprobe)
 # generic device denies those opens on enforcing builds; allow only the
 # allocator, composer, SurfaceFlinger and Mesa's GPU SP-HAL domains.
 allow hal_graphics_allocator_default gpu_device:chr_file rw_file_perms;
+allow hal_graphics_allocator_default graphics_device:dir r_dir_perms;
 allow hal_graphics_composer_default graphics_device:chr_file rw_file_perms;
+allow hal_graphics_composer_default graphics_device:dir r_dir_perms;
 allow surfaceflinger gpu_device:chr_file rw_file_perms;
 allow surfaceflinger graphics_device:chr_file rw_file_perms;
+allow surfaceflinger graphics_device:dir r_dir_perms;
 allow gpu_sphal_domain gpu_device:chr_file rw_file_perms;
 
 # Boot audio selector (odm/bin/maton-audio-select.sh): its own small domain,

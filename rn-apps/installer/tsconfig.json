@@ -1,0 +1,10 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
+    "noEmit": true
+  },
+  "include": ["expo-env.d.ts", "index.js", "src/**/*.ts", "src/**/*.tsx"]
+}

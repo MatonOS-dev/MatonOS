@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "MatonOS Installer",
+    "slug": "matonos-installer",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "org.matonos.installer",
+      "versionCode": 1,
+      "permissions": [
+        "org.matonos.permission.SYSTEM_BRIDGE"
+      ]
+    },
+    "plugins": ["./plugins/withInstallerDormant"],
+    "experiments": {"autolinkingModuleResolution": true},
+    "autolinking": {"autolinkingModuleResolution": true}
+  }
+}

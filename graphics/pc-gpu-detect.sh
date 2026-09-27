@@ -16,7 +16,7 @@ has_supported_render_node() {
         [ -e "$node/device/driver" ] || continue
         driver=$(basename "$(readlink "$node/device/driver" 2>/dev/null)")
         case "$driver" in
-            i915|xe|amdgpu|nouveau|virtio_gpu|vmwgfx) return 0 ;;
+            i915|xe|amdgpu|radeon|nouveau|virtio_gpu|vmwgfx) return 0 ;;
         esac
     done
     return 1
@@ -33,7 +33,7 @@ if ! has_supported_render_node; then
     # it for software rendering; drm_hwcomposer sends the resulting buffers
     # to the real KMS display. Ignore absence/failure: graphics must still
     # continue booting with the platform's existing no-renderer fallback.
-    if [ -x /vendor/bin/modprobe ] && [ -r /vendor/lib/modules/modules.dep ]; then
+    if [ -x /vendor/bin/modprobe ]; then
         /vendor/bin/modprobe -d /vendor/lib/modules vgem >/dev/null 2>&1 || :
     fi
 fi
