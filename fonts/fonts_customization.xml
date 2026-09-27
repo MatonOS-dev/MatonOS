@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MatonOS extra system font families (read by SystemFonts from
+     /product/etc/fonts_customization.xml). "new-named-family" families are
+     reachable ONLY by name (Typeface.create / React Native fontFamily): they
+     are not part of the text fallback chain and not user-selectable. -->
+<fonts-modification version="1">
+    <!-- Material Symbols Outlined (Apache-2.0, google/material-design-icons):
+         icon font with ligatures, e.g. the text "home" draws the home icon.
+         Codepoints: device/maton/pc_x86_64/fonts/*.codepoints -->
+    <family customizationType="new-named-family" name="material-symbols-outlined">
+        <font weight="400" style="normal">MaterialSymbolsOutlined.ttf</font>
+    </family>
+</fonts-modification>

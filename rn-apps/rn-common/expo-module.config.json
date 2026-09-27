@@ -1,6 +1,11 @@
 {
-  "platforms": ["android"],
+  "platforms": [
+    "android"
+  ],
   "android": {
-    "modules": ["org.matonos.rncommon.MatonOSExpoModule"]
+    "modules": [
+      "org.matonos.rncommon.MatonOSExpoModule",
+      "org.matonos.rncommon.SystemIconModule"
+    ]
   }
 }
