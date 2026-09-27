@@ -802,7 +802,9 @@ selector failure. Assess SOF firmware/topology separately if needed.
   ath9k/10k/11k, brcmfmac/b43). Users supply modules we can't ship (e.g.
   Broadcom `wl`) for their exact kernel release; signed with our key, stored
   where updates don't touch them, rebuilt per kernel release (DKMS-like).
-  The Wi-Fi proxy only needs nl80211/cfg80211 drivers (no wext-only ones).
+  The Wi-Fi proxy targets nl80211/cfg80211 drivers; in v4 it also gains a
+  wireless-extensions (wext) backend so legacy wext-only add-on drivers work
+  behind the same stable wlan0 (user, 2026-09-27).
 - Protected add-on hooks (e.g. extra kernel modules such as NVIDIA's):
   - Slot: ueventd modalias loading already reads `/odm/lib/modules` as well
     as `/vendor/lib/modules`; use an `odm`/`odm_dlkm` partition, or a separate

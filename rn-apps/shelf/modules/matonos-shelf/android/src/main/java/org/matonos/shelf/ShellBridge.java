@@ -30,6 +30,7 @@ final class ShellBridge implements AutoCloseable {
     private void onAvailabilityChanged(boolean ready, String reason) {
         // Availability checks complete on matonos-bridge-check. WindowManager and
         // ShelfService lifecycle work must always run on the main thread.
+        if (!ready && "BRIDGE_CONNECTING".equals(reason)) return;
         mainHandler.post(() -> listener.onBridgeChanged(ready));
     }
 

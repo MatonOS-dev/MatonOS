@@ -100,8 +100,7 @@ public final class ShelfService extends Service {
             return;
         }
         bridgeReady = available;
-        if (available) removeFallbackOverlay();
-        else if (!added) installFallbackOverlay();
+        if (!available && !added) installFallbackOverlay();
     }
 
     private void installFallbackOverlay() {
