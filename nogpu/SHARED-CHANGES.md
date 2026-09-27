@@ -13,10 +13,11 @@ These shared-file changes are part of the requested no-GPU fallback:
 - `sepolicy/matonos/matonos_driver.te`: allow the stock allocator, composer,
   SurfaceFlinger and Mesa GPU SP-HAL to open the corresponding DRM nodes, and
   allow the detector's existing executable domain to transition to
-  `vendor_modprobe`; allow that detector to set Mesa's `debug.mesa.*`
-  software-rendering option. Reason: vgem must be opened by the stock graphics
-  stack, loaded by the early detector, and Mesa must choose `kms_swrast` on
-  enforcing builds.
+  `vendor_modprobe`; allow that detector to set Mesa's vendor-owned
+  `vendor.mesa.*` software-rendering option. The corresponding MatonOS vendor
+  property type/context is in the existing policy set. Reason: vgem must be
+  opened by the stock graphics stack, loaded by the early detector, and Mesa
+  must choose `kms_swrast` on enforcing builds.
 
 No `device.mk`, root `BoardConfig.mk`, `sepolicy/vendor/*`, `tools/*`, or
 other area's files are part of this change.

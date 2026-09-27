@@ -33,10 +33,10 @@ if ! has_supported_render_node; then
     # it for software rendering; drm_hwcomposer sends the resulting buffers
     # to the real KMS display. Ignore absence/failure: graphics must still
     # continue booting with the platform's existing no-renderer fallback.
-    # Mesa reads this Android property as LIBGL_ALWAYS_SOFTWARE. Without it,
-    # EGL tries to load a hardware DRI driver named "vgem" instead of
-    # selecting kms_swrast for vgem's primary node.
-    setprop debug.mesa.libgl.always.software true
+    # Mesa's Android option lookup reads vendor.mesa.* properties. Keep this
+    # software-rendering flag in the vendor-owned namespace; vendor domains
+    # cannot write the core debug_prop namespace.
+    setprop vendor.mesa.libgl.always.software true
     if [ -x /vendor/bin/modprobe ]; then
         /vendor/bin/modprobe -d /vendor/lib/modules vgem >/dev/null 2>&1 || :
     fi

@@ -11,11 +11,11 @@ replace the display controller.
 - `graphics/pc-gpu-detect.sh` gives PCI graphics drivers up to 1.5 seconds to
   publish a supported render node. If none appears, it attempts to load
   `/vendor/lib/modules/vgem.ko` with the existing vendor `modprobe`, and sets
-  Mesa's Android `debug.mesa.libgl.always.software` option so EGL selects
+  Mesa's Android `vendor.mesa.libgl.always.software` option so EGL selects
   `kms_swrast` for vgem instead of trying a nonexistent hardware DRI driver.
   The wait is bounded; module-load failure is ignored so boot can continue.
-  Existing `matonos_driver.te` grants this selector the debug-property write
-  permission needed under enforcing SELinux.
+  Existing MatonOS property contexts and `matonos_driver.te` grant the selector
+  access to this vendor-owned Mesa option under enforcing SELinux.
 - minigbm's Mesa GBM backend prefers a non-vgem render node if one exists. For
   vgem it requests linear, non-scanout buffers and leaves render/texture use
   enabled for the software renderer. Real GPU allocations keep their previous
@@ -36,10 +36,9 @@ The initial implementation built and passed the SELinux label check. Its first
 fresh std-VGA boot confirmed that vgem loads and Vulkan selects `swrast`, but
 SurfaceFlinger crash-looped. Based on Mesa's Android loader path, the likely
 cause is that EGL tried hardware DRI instead of `kms_swrast`. The detector now
-sets Mesa's existing Android software-rendering option when no supported
-render node is found. That code and its policy permission are queued for a
-rebuild and fresh-boot verification; the fallback is not yet working end to
-end.
+sets Mesa's existing Android software-rendering option in the vendor namespace
+when no supported render node is found. That code is queued for a rebuild and
+fresh-boot verification; the fallback is not yet working end to end.
 
 ## Fresh-image tests
 

@@ -95,11 +95,12 @@ allow matonos_driver matonos_driver_exec:file { execute getattr map open read };
 # Run the Android kernel-module helper in its narrow privileged module loader
 # domain. Audio uses it to preload optional HDA codec modules from /vendor.
 domain_auto_trans(matonos_driver, vendor_toolbox_exec, vendor_modprobe)
-# The early graphics selector has the same narrowly scoped module-loader
+# nogpu: the early graphics selector has the same narrowly scoped module-loader
 # transition when it needs to load the optional vgem render node.
 domain_auto_trans(pc_gpu_detect, vendor_toolbox_exec, vendor_modprobe)
-# Mesa reads its software-rendering choice from debug.mesa.* properties.
-set_prop(pc_gpu_detect, debug_prop)
+# nogpu: Mesa reads its software-rendering choice from vendor.mesa.* properties
+# (debug.* is core-owned: vendor domains may never set it — neverallow).
+set_prop(pc_gpu_detect, vendor_maton_mesa_prop)
 
 # Stock graphics components open DRM render nodes directly. Labeling them as
 # generic device denies those opens on enforcing builds; allow only the

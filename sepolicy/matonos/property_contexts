@@ -3,3 +3,4 @@ persist.vendor.maton. u:object_r:vendor_maton_prop:s0 prefix
 # BayLibre's primary ALSA selector writes these before the audio APEX starts;
 # the HAL reads them when PrimaryMixer is constructed.
 persist.vendor.audio.primary. u:object_r:vendor_maton_prop:s0 prefix
+vendor.mesa. u:object_r:vendor_maton_mesa_prop:s0 prefix

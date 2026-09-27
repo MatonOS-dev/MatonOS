@@ -19,7 +19,7 @@
 #   -a  host port forwarded to the guest's adb (default: 5555); give each
 #       concurrently running VM its own port and -s log
 #   -x  extra QEMU arguments, word-split (e.g. -x "-device intel-hda
-#       -device hda-duplex,audiodev=snd0 -audiodev pipewire,id=snd0")
+#       -device hda-duplex,audiodev=snd0 -audiodev pa,id=snd0")
 #   -n  no KVM
 #
 # The image is attached as a USB stick (qemu-xhci + usb-storage): that's the
@@ -141,7 +141,9 @@ esac
 # Sound card (Intel HDA, like most PCs) unless -x brings its own: windowed VMs
 # play through the host's PipeWire, headless ones into a null backend.
 if [[ $EXTRA != *hda* ]]; then
-  [[ $GFX == none || $gtk_gl == egl-headless ]] && snd=none || snd=pipewire
+  # pa (via pipewire-pulse on PipeWire hosts) is QEMU's best-tested backend;
+  # MATON_QEMU_AUDIO=pipewire|alsa|none overrides.
+  [[ $GFX == none || $gtk_gl == egl-headless ]] && snd=none || snd=${MATON_QEMU_AUDIO:-pa}
   args+=(-audiodev "$snd,id=snd0" -device ich9-intel-hda -device "hda-duplex,audiodev=snd0")
 fi
 

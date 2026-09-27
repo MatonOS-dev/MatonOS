@@ -1,2 +1,5 @@
 # Unified MatonOS vendor property namespace for all drivers and their readers.
 vendor_restricted_prop(vendor_maton_prop)
+# nogpu: Mesa options for all processes (Mesa reads vendor.mesa.<option>);
+# set only by pc_gpu_detect (software rendering on the vgem fallback GPU).
+vendor_public_prop(vendor_maton_mesa_prop)
