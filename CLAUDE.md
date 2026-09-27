@@ -176,7 +176,10 @@ APIs + this interface, never hidden APIs directly.
 modern "superuser" app: it grants named capabilities, never general
 privilege). Rules: stay a thin gatekeeper (check + forward; daemons do the
 work); default-deny per capability (own target name, allowlist entry and,
-where relevant, user consent — nothing via general "trust"); one audit log
+where relevant, user consent — nothing via general "trust") — **except
+built-in MatonOS apps (user, 2026-09-27): apps shipped in the image and
+signed with our pinned per-app keys get their capabilities allowed by
+default; explicit user consent is only for third-party apps**; one audit log
 of grants/denials/privileged calls, visible in settings; unit/CTS-style
 tests for the authorisation logic; dangerous capabilities (signature
 spoofing policy, installer, native-bridge/add-on installs, dev trust) in
