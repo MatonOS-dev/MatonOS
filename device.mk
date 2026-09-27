@@ -79,10 +79,15 @@ PRODUCT_COPY_FILES += \
 # Framework config overrides (vendor RRO), see overlays/.
 PRODUCT_PACKAGES += \
     matonos_overlay_frameworks_base_core \
-    matonos_overlay_settings_provider \
-    MatonOSShell \
-    MatonOSShelf \
-    MatonOSRecents
+    matonos_overlay_settings_provider
+# Home/taskbar/recents = stock Launcher3 (Launcher3QuickStep from
+# handheld_system_ext), always desktop-first (user, 2026-09-27). MatonOS
+# Shell/Shelf/Recents are parked (sources stay in apps/, not in the image).
+# Debug property from WM Shell's DesktopDisplayModeController: forces the
+# default display desktop-first regardless of keyboard/touchpad. If a later
+# release drops it, the display falls back to the classic touch-first shell.
+PRODUCT_PRODUCT_PROPERTIES += \
+    persist.wm.debug.force_desktop_first_on_default_display_for_testing=true
 # No modem on PCs: drop SIM/carrier-only apps (user, 2026-09-25). Keep
 # TeleService and CarrierConfig: the framework and Settings expect them even
 # on Wi-Fi-only devices.
