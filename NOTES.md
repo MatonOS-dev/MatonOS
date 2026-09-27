@@ -275,6 +275,12 @@ Feature work continues, but in this shape from now on.
   (b) one host process with one Hermes runtime rendering Shell/Shelf/Recents
   as surfaces embedded via SurfaceControlViewHost (saves tens of MB PSS per
   app; gives up independent updates and crash isolation).
+- **Trusted-installer patch + microG pulled forward (user, 2026-09-27)**:
+  F-Droid 2.0 dropped Privileged Extension support (no INSTALL_PACKAGES), so
+  installs prompted. User approved a PackageInstallerSession patch: a
+  hard-coded {installer package, cert SHA-256} table (F-Droid; later real
+  Play) skips the user-action/pre-approval prompt. Built in the same full
+  build as microG below (agent `gms`). Privileged Extension gets removed.
 - **v3: microG (moved up from v4, user 2026-09-26)**: shipped PREINSTALLED
   for app compatibility (many apps need GMS APIs / a Play Store package) —
   a deliberate exception to v4's "sockets, not shipped binaries" (microG is
