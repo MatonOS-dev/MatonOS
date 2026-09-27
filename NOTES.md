@@ -796,6 +796,13 @@ selector failure. Assess SOF firmware/topology separately if needed.
   Two libcs coexist per-process; no libc sharing needed. Keep namespaces,
   cgroups, overlayfs, KVM/vhost and loop enabled in `pc.config` so this stays
   possible without a kernel change.
+- **Out-of-tree kernel drivers (decided 2026-09-27, user): v4, via the
+  add-on slot below.** Until then MatonOS ships upstream in-tree drivers only
+  (Wi-Fi coverage on 7.2 is broad: rtw88/rtw89/rtl8xxxu, iwlwifi, mt76,
+  ath9k/10k/11k, brcmfmac/b43). Users supply modules we can't ship (e.g.
+  Broadcom `wl`) for their exact kernel release; signed with our key, stored
+  where updates don't touch them, rebuilt per kernel release (DKMS-like).
+  The Wi-Fi proxy only needs nl80211/cfg80211 drivers (no wext-only ones).
 - Protected add-on hooks (e.g. extra kernel modules such as NVIDIA's):
   - Slot: ueventd modalias loading already reads `/odm/lib/modules` as well
     as `/vendor/lib/modules`; use an `odm`/`odm_dlkm` partition, or a separate

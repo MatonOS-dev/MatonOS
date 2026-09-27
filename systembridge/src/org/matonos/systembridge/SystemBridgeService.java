@@ -56,6 +56,7 @@ public final class SystemBridgeService extends Service {
     private static final String TAG = "MatonSystemBridge";
     private static final String PERMISSION = "org.matonos.permission.SYSTEM_BRIDGE";
     private static final int MAX_EXPOSED_TASKS = 50;
+    private static volatile SystemBridgeService activeService;
     private volatile Set<String> allowedCerts;
     private volatile Set<String> targetCallers;
     private android.os.Handler geometryHandler;
@@ -289,31 +290,9 @@ public final class SystemBridgeService extends Service {
             String caller = enforceAuthorizedCaller("status", "setNavigationBarProvider:" + packageName);
             if (!"org.matonos.settings".equals(caller))
                 deny("setNavigationBarProvider", Binder.getCallingUid(), "Settings is required");
-            if (packageName == null || packageName.isEmpty()) {
-                if (enabled) throw new IllegalArgumentException("provider package is required");
-                getSharedPreferences("navigation_bar_provider", MODE_PRIVATE).edit()
-                        .putBoolean("enabled", false).apply();
-                Log.i(TAG, "Navigation provider explicitly disabled by user through Settings");
-                applyNavigationProviderSelection();
-                return true;
-            }
-            String certificate = certificateFor(this, packageName);
-            if ("unavailable".equals(certificate) || "package unavailable".equals(certificate))
-                throw new IllegalArgumentException("selected provider is not installed or has no signing certificate");
-            try {
-                android.content.pm.ServiceInfo service = getPackageManager().getServiceInfo(
-                        new ComponentName(packageName, packageName + ".MatonNavigationBarProviderService"), 0);
-                if (!service.exported) throw new IllegalArgumentException("provider service must be exported");
-            } catch (PackageManager.NameNotFoundException e) {
-                throw new IllegalArgumentException("selected package has no MatonOS navigation provider service", e);
-            }
-            getSharedPreferences("navigation_bar_provider", MODE_PRIVATE).edit()
-                    .putString("package", packageName).putString("certificate", certificate)
-                    .putBoolean("enabled", enabled).apply();
-            Log.i(TAG, (enabled ? "Selected" : "Preset") + " navigation provider=" + packageName
-                    + " certificate=" + certificate + " enabled=" + enabled
+            selectNavigationProvider(SystemBridgeService.this, packageName, enabled);
+            Log.i(TAG, "Settings changed navigation provider=" + packageName + " enabled=" + enabled
                     + " caller=" + caller);
-            applyNavigationProviderSelection();
             return true;
         }
 
@@ -382,6 +361,7 @@ public final class SystemBridgeService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        applyNavigationProviderSelection();
         try {
             Log.i(TAG, "Absolute pointer settings applied: " +
                     setAbsolutePointerMode(UserHandle.USER_CURRENT));
@@ -393,6 +373,7 @@ public final class SystemBridgeService extends Service {
 
     @Override public void onCreate() {
         super.onCreate();
+        activeService = this;
         navigationBarWindow = new NavigationBarWindow(this);
         applyNavigationProviderSelection();
         geometryHandler = new android.os.Handler(getMainLooper());
@@ -411,6 +392,13 @@ public final class SystemBridgeService extends Service {
         }
         // The bridge is bound explicitly by apps. Shell administration is exposed
         // through the UID-gated ContentProvider below, never ServiceManager.
+    }
+
+    @Override public void onDestroy() {
+        if (navigationBarWindow != null) navigationBarWindow.detachProvider();
+        if (geometryHandler != null) geometryHandler.removeCallbacksAndMessages(null);
+        if (activeService == this) activeService = null;
+        super.onDestroy();
     }
 
     private void publishDisplayGeometry() {
@@ -523,6 +511,35 @@ public final class SystemBridgeService extends Service {
         } catch (PackageManager.NameNotFoundException e) {
             return "package unavailable";
         }
+    }
+
+    static void selectNavigationProvider(Context context, String packageName, boolean enabled) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences(
+                "navigation_bar_provider", MODE_PRIVATE);
+        if (packageName == null || packageName.isEmpty()) {
+            if (enabled) throw new IllegalArgumentException("provider package is required");
+            prefs.edit().putBoolean("enabled", false).apply();
+            Log.i(TAG, "Navigation provider explicitly revoked by user");
+        } else {
+            String certificate = certificateFor(context, packageName);
+            if ("unavailable".equals(certificate) || "package unavailable".equals(certificate))
+                throw new IllegalArgumentException("selected provider is not installed or has no signing certificate");
+            try {
+                android.content.pm.ServiceInfo service = context.getPackageManager().getServiceInfo(
+                        new ComponentName(packageName, packageName + ".ShelfService"), 0);
+                if (!service.exported)
+                    throw new IllegalArgumentException("provider service must be exported");
+            } catch (PackageManager.NameNotFoundException e) {
+                throw new IllegalArgumentException("selected package has no MatonOS navigation provider service", e);
+            }
+            prefs.edit().putString("package", packageName).putString("certificate", certificate)
+                    .putBoolean("enabled", enabled).apply();
+            Log.i(TAG, (enabled ? "User selected" : "User preset") + " navigation provider=" + packageName
+                    + " certificate=" + certificate + " enabled=" + enabled);
+        }
+        SystemBridgeService service = activeService;
+        if (service != null) service.applyNavigationProviderSelection();
+        else context.startService(new Intent(context, SystemBridgeService.class));
     }
 
     private void enforcePermission(int uid, String operation) {

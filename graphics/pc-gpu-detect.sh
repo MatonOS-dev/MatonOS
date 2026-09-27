@@ -8,6 +8,36 @@
 # before any GPU kernel module has loaded. EGL/GLES needs no selection: Mesa's
 # EGL picks the gallium driver from the render node itself.
 
+# Wait briefly for PCI GPU modules to publish render nodes. This is bounded so
+# a missing or slow driver can never hold boot indefinitely. The kernel module
+# loader and device-node creation run asynchronously during early boot.
+has_supported_render_node() {
+    for node in /sys/class/drm/renderD*; do
+        [ -e "$node/device/driver" ] || continue
+        driver=$(basename "$(readlink "$node/device/driver" 2>/dev/null)")
+        case "$driver" in
+            i915|xe|amdgpu|nouveau|virtio_gpu|vmwgfx) return 0 ;;
+        esac
+    done
+    return 1
+}
+
+attempt=0
+while [ "$attempt" -lt 15 ] && ! has_supported_render_node; do
+    sleep 0.1
+    attempt=$((attempt + 1))
+done
+
+if ! has_supported_render_node; then
+    # vgem is a shmem-backed DRM render node. Mesa's kms_swrast/llvmpipe uses
+    # it for software rendering; drm_hwcomposer sends the resulting buffers
+    # to the real KMS display. Ignore absence/failure: graphics must still
+    # continue booting with the platform's existing no-renderer fallback.
+    if [ -x /vendor/bin/modprobe ] && [ -r /vendor/lib/modules/modules.dep ]; then
+        /vendor/bin/modprobe -d /vendor/lib/modules vgem >/dev/null 2>&1 || :
+    fi
+fi
+
 primary=""
 first=""
 for dev in /sys/bus/pci/devices/*; do

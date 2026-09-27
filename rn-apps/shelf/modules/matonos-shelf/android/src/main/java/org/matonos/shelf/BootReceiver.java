@@ -4,9 +4,11 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
-/** Starts the persistent shelf at boot and relays the shell's foreground state. */
+/** Relays shell state changes; system-bridge binding owns provider startup at boot. */
 public final class BootReceiver extends BroadcastReceiver {
     @Override public void onReceive(Context context, Intent intent) {
+        if (intent == null || Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())
+                || Intent.ACTION_USER_UNLOCKED.equals(intent.getAction())) return;
         Intent start = new Intent(context, ShelfService.class);
         if (ShelfService.ACTION_HOME_VISIBLE.equals(intent.getAction())) {
             start.setAction(ShelfService.ACTION_HOME_VISIBLE)

@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
+    <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
     <uses-permission android:name="android.permission.MANAGE_APP_OPS_MODES" />
     <uses-permission android:name="android.permission.MANAGE_ACTIVITY_TASKS" />
     <uses-permission android:name="android.permission.REORDER_TASKS" />
@@ -33,6 +35,12 @@
         </receiver>
         <activity android:name=".SystemBridgeService$TrustedAppsActivity" android:exported="true">
             <intent-filter><action android:name="org.matonos.systembridge.TRUST_SETTINGS" /></intent-filter>
+        </activity>
+        <activity android:name=".NavigationProviderSettingsActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="org.matonos.systembridge.NAVIGATION_PROVIDER_SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
         <provider android:name=".SystemBridgeService$ShellProvider"
             android:authorities="org.matonos.systembridge.shell"

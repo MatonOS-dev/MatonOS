@@ -56,6 +56,9 @@ allow hal_audio_default matonos_driver:unix_stream_socket connectto;
 # USB, HCI, rfkill and hotplug discovery used by Bluetooth and Wi-Fi drivers.
 type matonos_rfkill_device, dev_type;
 type matonos_vhci_device, dev_type;
+# DRM nodes are created dynamically by whichever PCI/display drivers exist.
+# Keep render access on Android's existing GPU device type; cards retain the
+# graphics-device type so the stock composer policy continues to apply.
 allow matonos_driver matonos_rfkill_device:chr_file rw_file_perms;
 allow hal_bluetooth_default matonos_rfkill_device:chr_file rw_file_perms;
 allow matonos_driver matonos_vhci_device:chr_file rw_file_perms;
@@ -92,6 +95,18 @@ allow matonos_driver matonos_driver_exec:file { execute getattr map open read };
 # Run the Android kernel-module helper in its narrow privileged module loader
 # domain. Audio uses it to preload optional HDA codec modules from /vendor.
 domain_auto_trans(matonos_driver, vendor_toolbox_exec, vendor_modprobe)
+# The early graphics selector has the same narrowly scoped module-loader
+# transition when it needs to load the optional vgem render node.
+domain_auto_trans(pc_gpu_detect, vendor_toolbox_exec, vendor_modprobe)
+
+# Stock graphics components open DRM render nodes directly. Labeling them as
+# generic device denies those opens on enforcing builds; allow only the
+# allocator, composer, SurfaceFlinger and Mesa's GPU SP-HAL domains.
+allow hal_graphics_allocator_default gpu_device:chr_file rw_file_perms;
+allow hal_graphics_composer_default graphics_device:chr_file rw_file_perms;
+allow surfaceflinger gpu_device:chr_file rw_file_perms;
+allow surfaceflinger graphics_device:chr_file rw_file_perms;
+allow gpu_sphal_domain gpu_device:chr_file rw_file_perms;
 
 # Boot audio selector (odm/bin/maton-audio-select.sh): its own small domain,
 # NOT a HAL server (HAL servers may neither touch audio_device nor run system

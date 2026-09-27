@@ -11,14 +11,13 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.RemoteException;
-import android.os.Bundle;
 import android.provider.Settings;
-import android.view.WindowManager;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.matonos.systembridge.IMatonosListener;
 import org.matonos.systembridge.ISystemBridge;
+import org.matonos.systembridge.INavigationBarProvider;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,7 +36,7 @@ public final class MatonosClient implements AutoCloseable {
     public interface AvailabilityListener { void onAvailabilityChanged(boolean available, String reason); }
     public interface CheckCallback { void onComplete(CheckResult result); }
 
-    public static final int REQUIRED_BRIDGE_API = 5;
+    public static final int REQUIRED_BRIDGE_API = 6;
     private static final String BRIDGE_PACKAGE = "org.matonos.systembridge";
     private static final String BRIDGE_ACTION = "org.matonos.systembridge.BIND";
     private static final String TRUST_RESULT_PREFIX = "org.matonos.client.TRUST_RESULT.";
@@ -307,13 +306,20 @@ public final class MatonosClient implements AutoCloseable {
         return invoke("launcher", b -> b.getRecentTaskThumbnail(taskId));
     }
 
-    public Result<Bundle> prepareShellOverlay(WindowManager.LayoutParams params) {
-        ISystemBridge current = bridge;
-        if (!isAvailable() || current == null) return Result.unavailable(reason == null ? "BRIDGE_DISCONNECTED" : reason);
-        Bundle request = new Bundle();
-        request.putParcelable("windowParams", params);
-        try { return Result.value(current.prepareShellOverlay(request)); }
-        catch (Exception e) { return Result.unavailable(reasonFor(e)); }
+    /** Creates the typed service endpoint used by a user-selected navigation provider. */
+    public static INavigationBarProvider createNavigationBarProvider(
+            NavigationBarProviderAdapter adapter) {
+        if (adapter == null) throw new IllegalArgumentException("provider adapter is required");
+        return adapter.endpoint();
+    }
+
+    public Result<String> getNavigationBarProviderState() {
+        return invoke("status", ISystemBridge::getNavigationBarProviderState);
+    }
+
+    /** Called only from an explicit user choice in MatonOS Settings. */
+    public Result<Boolean> setNavigationBarProvider(String packageName, boolean enabled) {
+        return invoke("status", b -> b.setNavigationBarProvider(packageName, enabled));
     }
 
     private interface BridgeOperation<T> { T call(ISystemBridge bridge) throws Exception; }

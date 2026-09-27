@@ -1,14 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />
     <application android:resizeableActivity="true" android:supportsRtl="true">
-        <service android:name="org.matonos.shelf.ShelfService" android:exported="false" />
+        <service
+            android:name="org.matonos.shelf.ShelfService"
+            android:exported="true"
+            android:permission="org.matonos.permission.SYSTEM_BRIDGE">
+            <intent-filter>
+                <action android:name="org.matonos.systembridge.NAVIGATION_PROVIDER" />
+            </intent-filter>
+        </service>
         <receiver android:name="org.matonos.shelf.BootReceiver" android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.USER_UNLOCKED" />
                 <action android:name="org.matonos.shelf.HOME_VISIBILITY" />
                 <action android:name="org.matonos.shelf.TOGGLE_PIN" />
             </intent-filter>
