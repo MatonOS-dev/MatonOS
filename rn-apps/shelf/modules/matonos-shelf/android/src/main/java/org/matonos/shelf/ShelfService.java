@@ -52,6 +52,7 @@ public final class ShelfService extends Service {
         @Override protected View onCreateView(int widthPx, int heightPx) {
             removeFallbackOverlay();
             providerRoot = new android.widget.FrameLayout(ShelfService.this);
+            reportPreferredHostHeight();
             View providerContent = createShelfContent(providerRoot);
             if (providerContent == javaFallback) providerRoot.addView(javaFallback,
                     new android.widget.FrameLayout.LayoutParams(-1, -1));
@@ -145,7 +146,10 @@ public final class ShelfService extends Service {
     private void removeFallbackOverlay() {
         if (!added || content == null) return;
         try { wm.removeView(content); } catch (RuntimeException ignored) { }
-        if (rnSurface != null) { rnSurface.stop(); rnSurface = null; }
+        // The fallback overlay is Java-only: never stop rnSurface here. It belongs
+        // to the nav-host provider, and the bridge disables the fallback right
+        // after attaching the provider (that stopped the RN surface 45 ms after
+        // start -> empty embedded bar, no Fast Refresh).
         if (shelfRoot != null) shelfRoot.removeAllViews();
         shelfRoot = null; content = null; added = false;
     }
@@ -297,8 +301,13 @@ public final class ShelfService extends Service {
         } catch (PendingIntent.CanceledException | RuntimeException error) { android.util.Log.w("MatonOSShell", "Shelf activity launch rejected", error); }
     }
     private void updateShelfHeight(int height) {
+        if (providerRoot != null) providerAdapter.reportPreferredHeight(height);
         if (!added || params == null || content == null || params.height == height) return;
         params.height = height; try { wm.updateViewLayout(content, params); } catch (RuntimeException ignored) { }
+    }
+
+    private void reportPreferredHostHeight() {
+        providerAdapter.reportPreferredHeight(dp(expanded || homeVisible ? 56 : 28));
     }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_HOME_VISIBLE.equals(intent.getAction()))
