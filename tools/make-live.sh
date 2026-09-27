@@ -101,6 +101,9 @@ cmdline+=" firmware_class.path=/vendor/firmware"
 cmdline+=" brd.rd_nr=2 brd.rd_size=8388608"
 cmdline+=" androidboot.hardware=pc_x86_64"
 cmdline+=" androidboot.fstab_suffix=pc_x86_64.live"
+# Live-image marker (ro.boot.matonos.live): shows the "Install MatonOS" entry
+# and starts the install service only here, never on installed systems.
+cmdline+=" androidboot.matonos.live=1"
 cmdline+=" androidboot.boot_part_uuid=$esp_uuid"
 cmdline+=" androidboot.selinux=permissive androidboot.verifiedbootstate=orange"
 [[ -n $EXTRA_CMDLINE ]] && cmdline+=" $EXTRA_CMDLINE"
