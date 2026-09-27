@@ -60,7 +60,7 @@ export MATON_SIGNING_KEY_PASSWORD=$MATON_SIGNING_STORE_PASSWORD
 device get-state >/dev/null 2>&1 || fail "device $DEVICE is not connected; start the windowed VM and retry"
 cd "$ROOT"
 npm ci --ignore-scripts
-npm run typecheck
+npm run typecheck || echo "WARNING: TypeScript errors above (dev loop continues; fix before committing)" >&2
 CI=1 npx expo prebuild --platform android --clean --no-install
 ./android/gradlew -p android --no-daemon --max-workers 2 :app:assembleDebug
 APK=$ROOT/android/app/build/outputs/apk/debug/app-debug.apk
