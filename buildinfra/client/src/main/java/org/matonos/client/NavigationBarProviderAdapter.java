@@ -33,6 +33,9 @@ public abstract class NavigationBarProviderAdapter {
     /** Called on the main thread when the bridge hides or replaces this provider. */
     protected void onDetached() { }
 
+    /** Called on the main thread while the bridge's protected host is unavailable. */
+    protected void onFallbackOverlayEnabled(boolean enabled) { }
+
     /** Returns a typed AIDL endpoint for a provider Service's onBind implementation. */
     public final INavigationBarProvider endpoint() {
         return new INavigationBarProvider.Stub() {
@@ -68,6 +71,15 @@ public abstract class NavigationBarProviderAdapter {
                     try { onDetached(); }
                     catch (RuntimeException | LinkageError failure) {
                         Log.w(TAG, "Provider detach failed", failure);
+                    }
+                });
+            }
+
+            @Override public void setFallbackOverlayEnabled(boolean enabled) {
+                main.post(() -> {
+                    try { onFallbackOverlayEnabled(enabled); }
+                    catch (RuntimeException | LinkageError failure) {
+                        Log.w(TAG, "Fallback overlay state update failed", failure);
                     }
                 });
             }

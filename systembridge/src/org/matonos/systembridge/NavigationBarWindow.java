@@ -34,6 +34,8 @@ final class NavigationBarWindow {
     private WindowManager.LayoutParams params;
     private INavigationBarProvider provider;
     private ServiceConnection connection;
+    private ServiceConnection fallbackConnection;
+    private INavigationBarProvider fallbackProvider;
     private IBinder providerBinder;
     private String packageName;
     private String serviceClass;
@@ -46,6 +48,7 @@ final class NavigationBarWindow {
     NavigationBarWindow(Context context) {
         this.context = context;
         this.windowManager = context.getSystemService(WindowManager.class);
+        main.post(this::ensureShelfFallbackBound);
     }
 
     void select(String pkg, String cert, String providerServiceClass, boolean enabled) {
@@ -56,6 +59,7 @@ final class NavigationBarWindow {
             serviceClass = providerServiceClass;
             this.enabled = enabled;
             retryCount = 0;
+            ensureShelfFallbackBound();
             if (enabled) attachProvider();
         });
     }
@@ -195,6 +199,7 @@ final class NavigationBarWindow {
                                 try {
                                     surfaceView.setChildSurfacePackage(child);
                                     root.setVisibility(View.VISIBLE);
+                                    setFallbackOverlayEnabled(false);
                                 } catch (RuntimeException failure) {
                                     Log.e(TAG, "Could not embed provider surface", failure);
                                     child.release();
@@ -236,7 +241,74 @@ final class NavigationBarWindow {
         attached = false;
     }
 
+    void close() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            main.post(this::close);
+            return;
+        }
+        detachProvider();
+        if (fallbackConnection != null) {
+            try { context.unbindService(fallbackConnection); } catch (RuntimeException ignored) { }
+            fallbackConnection = null;
+        }
+        fallbackProvider = null;
+    }
+
+    private void ensureShelfFallbackBound() {
+        if (fallbackConnection != null) return;
+        String pinned = SystemBridgeService.pinnedCertificateForKey(context, "matonos-shelf");
+        if (pinned == null || !pinned.equals(SystemBridgeService.certificateFor(context, DEFAULT_PROVIDER))) {
+            Log.e(TAG, "Shelf fallback certificate does not match the image-pinned key");
+            return;
+        }
+        String providerClass = SystemBridgeService.providerServiceClass(context, DEFAULT_PROVIDER);
+        if (providerClass == null) {
+            Log.e(TAG, "Shelf fallback provider service is unavailable");
+            return;
+        }
+        Intent intent = new Intent(PROVIDER_ACTION).setComponent(new ComponentName(DEFAULT_PROVIDER, providerClass));
+        ServiceConnection fallback = new ServiceConnection() {
+            @Override public void onServiceConnected(ComponentName name, IBinder binder) {
+                main.post(() -> {
+                    fallbackProvider = INavigationBarProvider.Stub.asInterface(binder);
+                    setFallbackOverlayEnabled(root == null || root.getVisibility() != View.VISIBLE);
+                });
+            }
+            @Override public void onServiceDisconnected(ComponentName name) {
+                main.post(() -> fallbackProvider = null);
+            }
+            @Override public void onBindingDied(ComponentName name) {
+                main.post(() -> {
+                    fallbackProvider = null;
+                    if (fallbackConnection != null) {
+                        try { context.unbindService(fallbackConnection); } catch (RuntimeException ignored) { }
+                        fallbackConnection = null;
+                    }
+                    main.postDelayed(NavigationBarWindow.this::ensureShelfFallbackBound, 1500);
+                });
+            }
+            @Override public void onNullBinding(ComponentName name) {
+                main.post(() -> Log.e(TAG, "Shelf fallback returned a null binding"));
+            }
+        };
+        try {
+            if (context.bindService(intent, fallback, Context.BIND_AUTO_CREATE | Context.BIND_IMPORTANT))
+                fallbackConnection = fallback;
+        } catch (RuntimeException failure) {
+            Log.e(TAG, "Could not bind the built-in Shelf fallback service", failure);
+        }
+    }
+
+    private void setFallbackOverlayEnabled(boolean enabled) {
+        INavigationBarProvider target = fallbackProvider;
+        if (target == null && DEFAULT_PROVIDER.equals(packageName)) target = provider;
+        if (target == null) return;
+        try { target.setFallbackOverlayEnabled(enabled); }
+        catch (Exception failure) { Log.w(TAG, "Could not update Shelf fallback visibility", failure); }
+    }
+
     private void hideHost() {
+        setFallbackOverlayEnabled(true);
         if (root != null) {
             try { windowManager.removeView(root); } catch (RuntimeException ignored) { }
             root = null;

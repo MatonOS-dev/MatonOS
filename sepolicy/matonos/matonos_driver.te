@@ -98,6 +98,8 @@ domain_auto_trans(matonos_driver, vendor_toolbox_exec, vendor_modprobe)
 # The early graphics selector has the same narrowly scoped module-loader
 # transition when it needs to load the optional vgem render node.
 domain_auto_trans(pc_gpu_detect, vendor_toolbox_exec, vendor_modprobe)
+# Mesa reads its software-rendering choice from debug.mesa.* properties.
+set_prop(pc_gpu_detect, debug_prop)
 
 # Stock graphics components open DRM render nodes directly. Labeling them as
 # generic device denies those opens on enforcing builds; allow only the

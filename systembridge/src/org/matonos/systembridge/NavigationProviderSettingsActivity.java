@@ -12,6 +12,25 @@ public final class NavigationProviderSettingsActivity extends Activity {
         if (provider == null || provider.isEmpty()) provider = NavigationBarWindow.DEFAULT_PROVIDER;
         final String selected = provider;
         String certificate = SystemBridgeService.certificateFor(this, selected);
+        if (NavigationBarWindow.DEFAULT_PROVIDER.equals(selected)) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Built-in navigation bar")
+                    .setMessage("MatonOS Shelf is built in and its signing certificate is pinned by the image. "
+                            + "It is enabled by default. You can restore it or revoke its built-in navigation capability.\n\n"
+                            + "Certificate: " + certificate)
+                    .setPositiveButton("Use Shelf", (dialog, which) -> {
+                        try { SystemBridgeService.selectNavigationProvider(this, selected, true); }
+                        catch (RuntimeException failure) { showError(failure); }
+                        finish();
+                    })
+                    .setNegativeButton("Close", (dialog, which) -> finish())
+                    .setNeutralButton("Revoke", (dialog, which) -> {
+                        SystemBridgeService.selectNavigationProvider(this, "", false);
+                        finish();
+                    })
+                    .show();
+            return;
+        }
         new AlertDialog.Builder(this)
                 .setTitle("Navigation bar provider")
                 .setMessage("Allow " + selected + " to provide the system navigation bar?\n\n"
@@ -22,8 +41,7 @@ public final class NavigationProviderSettingsActivity extends Activity {
                         SystemBridgeService.selectNavigationProvider(this, selected, true);
                         finish();
                     } catch (RuntimeException failure) {
-                        new AlertDialog.Builder(this).setTitle("Provider unavailable")
-                                .setMessage(failure.getMessage()).setPositiveButton("OK", (d, w) -> finish()).show();
+                        showError(failure);
                     }
                 })
                 .setNegativeButton("Not now", (dialog, which) -> finish())
@@ -33,5 +51,10 @@ public final class NavigationProviderSettingsActivity extends Activity {
                 })
                 .setOnCancelListener(dialog -> finish())
                 .show();
+    }
+
+    private void showError(RuntimeException failure) {
+        new AlertDialog.Builder(this).setTitle("Provider unavailable")
+                .setMessage(failure.getMessage()).setPositiveButton("OK", (d, w) -> finish()).show();
     }
 }

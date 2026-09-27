@@ -37,6 +37,13 @@ adb_shell wm dismiss-keyguard
 adb_shell input keyevent KEYCODE_WAKEUP
 sleep 2
 
+adb_shell dumpsys package org.matonos.systembridge > "$EVIDENCE/systembridge-package.txt"
+if ! grep -E 'android.permission.QUERY_ALL_PACKAGES: granted=true|android.permission.QUERY_ALL_PACKAGES.*granted=true' "$EVIDENCE/systembridge-package.txt" >/dev/null; then
+  echo "System Bridge does not hold QUERY_ALL_PACKAGES; provider certificate lookups may fail" >&2
+  exit 1
+fi
+adb_shell dumpsys activity services org.matonos.shelf > "$EVIDENCE/shelf-service.txt"
+
 adb_shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME -f 0x10000000 > "$EVIDENCE/home-start.txt"
 sleep 12
 adb_shell dumpsys activity activities > "$EVIDENCE/home-activities.txt"

@@ -59,6 +59,9 @@ public final class ShelfService extends Service {
         }
 
         @Override protected void onDetached() { releaseProviderSurface(); }
+        @Override protected void onFallbackOverlayEnabled(boolean enabled) {
+            if (enabled) installFallbackOverlay(); else removeFallbackOverlay();
+        }
     };
     @Override public void onCreate() {
         super.onCreate(); active = this;
@@ -75,10 +78,10 @@ public final class ShelfService extends Service {
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.BOTTOM; params.setFitInsetsTypes(0); params.setTitle("MatonOS shelf fallback");
         bridge = new ShellBridge(this, this::onBridgeAvailabilityChanged); bridge.connect();
-        // The platform bridge binds this service when the user-selected provider is enabled.
-        // A delayed normal overlay is retained only when the bridge cannot be reached.
+        // The bridge should control this fallback through the typed provider adapter; retain
+        // a local watchdog too, so attach failures never leave the user without navigation.
         mainHandler.postDelayed(() -> {
-            if (!bridgeReady && !added) installFallbackOverlay();
+            if (!providerSurfaceAttached() && !added) installFallbackOverlay();
         }, 7000);
     }
 
@@ -105,9 +108,15 @@ public final class ShelfService extends Service {
             }
             if (!Settings.canDrawOverlays(this)) return;
         }
-        content = createShelfContent(null);
-        if (content == javaFallback && content.getParent() != null)
-            ((android.view.ViewGroup) content.getParent()).removeView(content);
+        // Keep the fallback deliberately simple and independent from the provider's RN
+        // SurfaceControlViewHost lifecycle. The Java controls remain usable during detach,
+        // React reloads, attach errors, or bridge restarts.
+        content = javaFallback;
+        if (content.getParent() != null) {
+            content = new ShelfView(this);
+            ((ShelfView) content).setHomeVisible(homeVisible);
+            ((ShelfView) content).setExpanded(expanded);
+        }
         try { wm.addView(content, params); added = true; }
         catch (WindowManager.BadTokenException | SecurityException error) {
             android.util.Log.e("MatonOSShell", "Cannot attach shelf overlay", error);
@@ -162,17 +171,20 @@ public final class ShelfService extends Service {
         }
         if (providerRoot != null) {
             providerRoot.removeAllViews();
+            if (javaFallback.getParent() instanceof android.view.ViewGroup)
+                ((android.view.ViewGroup) javaFallback.getParent()).removeView(javaFallback);
             providerRoot.addView(javaFallback, new android.widget.FrameLayout.LayoutParams(-1, -1));
             return;
         }
         if (added && content != null) try { wm.removeView(content); } catch (RuntimeException ignored) { }
         if (shelfRoot != null) shelfRoot.removeAllViews();
         content = javaFallback; added = false;
-        if (content != null && Settings.canDrawOverlays(this) && !bridgeReady) try { wm.addView(content, params); added = true; }
+        if (content != null && Settings.canDrawOverlays(this)) try { wm.addView(content, params); added = true; }
         catch (RuntimeException error) { android.util.Log.e("MatonOSShell", "Java shelf fallback attach failed", error); }
     }
 
     static void fallbackToJavaShelf(String reason) { ShelfService service = active; if (service != null) service.switchToJavaShelf(reason); }
+    private boolean providerSurfaceAttached() { return providerRoot != null && providerRoot.isAttachedToWindow(); }
     static void dispatchLaunch(Context context, Intent intent) { ShelfService service = active; if (service != null) service.startShellActivity(intent); else context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
     static void openPanel(Context context, String target) {
         ShelfService service = active;

@@ -6,6 +6,7 @@ import android.app.AppOpsManager;
 import android.app.WindowConfiguration;
 import android.app.Service;
 import android.hardware.display.DisplayManager;
+import android.content.Context;
 import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -365,6 +366,7 @@ public final class SystemBridgeService extends Service {
         super.onCreate();
         activeService = this;
         grantBridgeOverlayAppOps();
+        ensureBuiltInShelfDefault();
         navigationBarWindow = new NavigationBarWindow(this);
         applyNavigationProviderSelection();
         geometryHandler = new android.os.Handler(getMainLooper());
@@ -386,7 +388,7 @@ public final class SystemBridgeService extends Service {
     }
 
     @Override public void onDestroy() {
-        if (navigationBarWindow != null) navigationBarWindow.detachProvider();
+        if (navigationBarWindow != null) navigationBarWindow.close();
         if (geometryHandler != null) geometryHandler.removeCallbacksAndMessages(null);
         if (activeService == this) activeService = null;
         super.onDestroy();
@@ -471,6 +473,7 @@ public final class SystemBridgeService extends Service {
             state.put("enabled", prefs.getBoolean("enabled", false));
             state.put("certificateSha256", prefs.getString("certificate", ""));
             state.put("defaultDenied", !prefs.getBoolean("enabled", false));
+            state.put("userChoiceMade", prefs.getBoolean("userChoiceMade", false));
         } catch (JSONException impossible) { }
         return state;
     }
@@ -484,6 +487,71 @@ public final class SystemBridgeService extends Service {
         String serviceClass = prefs.getString("serviceClass", null);
         boolean enabled = prefs.getBoolean("enabled", false);
         navigationBarWindow.select(pkg, cert, serviceClass, enabled);
+    }
+
+    /** Enable the image-bundled Shelf by default only when its pinned app key matches. */
+    private void ensureBuiltInShelfDefault() {
+        android.content.SharedPreferences prefs = getSharedPreferences(
+                "navigation_bar_provider", MODE_PRIVATE);
+        if (prefs.getBoolean("userChoiceMade", false)) return;
+        String existingPackage = prefs.getString("package", null);
+        // Before this default existed, an explicit revoke was stored as enabled=false
+        // without the newer userChoiceMade marker. Preserve that revocation.
+        if (prefs.contains("enabled") && !prefs.getBoolean("enabled", false)) {
+            prefs.edit().putBoolean("userChoiceMade", true).apply();
+            return;
+        }
+        if (existingPackage != null && !NavigationBarWindow.DEFAULT_PROVIDER.equals(existingPackage)) {
+            // Preserve legacy explicit selections written before userChoiceMade existed.
+            prefs.edit().putBoolean("userChoiceMade", true).apply();
+            return;
+        }
+        String pinned = pinnedCertificateForKey(this, "matonos-shelf");
+        String installed = certificateFor(this, NavigationBarWindow.DEFAULT_PROVIDER);
+        if (pinned == null || !pinned.equals(installed)) {
+            Log.e(TAG, "Built-in Shelf certificate does not match caller_cert_allowlist; default remains disabled");
+            return;
+        }
+        String serviceClass = providerServiceClass(this, NavigationBarWindow.DEFAULT_PROVIDER);
+        if (serviceClass == null) {
+            Log.e(TAG, "Built-in Shelf has no visible navigation provider service; default remains disabled");
+            return;
+        }
+        prefs.edit().putString("package", NavigationBarWindow.DEFAULT_PROVIDER)
+                .putString("certificate", pinned).putString("serviceClass", serviceClass)
+                .putBoolean("enabled", true).putBoolean("userChoiceMade", false)
+                .putBoolean("builtInDefault", true).apply();
+        Log.i(TAG, "Enabled image-bundled Shelf as the certificate-pinned default navigation provider");
+    }
+
+    static String pinnedCertificateForKey(Context context, String keyId) {
+        if (keyId == null) return null;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                context.getResources().openRawResource(R.raw.caller_cert_allowlist), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] fields = line.trim().split("\\s+");
+                if (fields.length == 2 && fields[0].equals(keyId)) return fields[1].toLowerCase(Locale.ROOT);
+                // Compatibility with the pre-key-id generated hash-only file.
+                if (fields.length == 1 && keyId.equals("matonos-shelf")
+                        && fields[0].matches("(?i)[0-9a-f]{64}")) {
+                    String installed = certificateFor(context, NavigationBarWindow.DEFAULT_PROVIDER);
+                    if (fields[0].equalsIgnoreCase(installed)) return fields[0].toLowerCase(Locale.ROOT);
+                }
+            }
+        } catch (Exception ignored) { }
+        return null;
+    }
+
+    static String providerServiceClass(Context context, String packageName) {
+        if (packageName == null || packageName.isEmpty()) return null;
+        android.content.Intent intent = new android.content.Intent(NavigationBarWindow.PROVIDER_ACTION)
+                .setPackage(packageName);
+        java.util.List<android.content.pm.ResolveInfo> candidates =
+                context.getPackageManager().queryIntentServices(intent, 0);
+        if (candidates.size() != 1 || candidates.get(0).serviceInfo == null
+                || !candidates.get(0).serviceInfo.exported) return null;
+        return candidates.get(0).serviceInfo.name;
     }
 
     private String enforceSelectedProviderCaller(String target, String operation) {
@@ -524,22 +592,23 @@ public final class SystemBridgeService extends Service {
                 "navigation_bar_provider", MODE_PRIVATE);
         if (packageName == null || packageName.isEmpty()) {
             if (enabled) throw new IllegalArgumentException("provider package is required");
-            prefs.edit().putBoolean("enabled", false).apply();
+            prefs.edit().putBoolean("enabled", false).putBoolean("userChoiceMade", true)
+                    .putBoolean("builtInDefault", false).apply();
             Log.i(TAG, "Navigation provider explicitly revoked by user");
         } else {
             String certificate = certificateFor(context, packageName);
             if ("unavailable".equals(certificate) || "package unavailable".equals(certificate))
                 throw new IllegalArgumentException("selected provider is not installed or has no signing certificate");
-            android.content.Intent intent = new android.content.Intent(NavigationBarWindow.PROVIDER_ACTION)
-                    .setPackage(packageName);
-            java.util.List<android.content.pm.ResolveInfo> candidates =
-                    context.getPackageManager().queryIntentServices(intent, 0);
-            if (candidates.size() != 1 || candidates.get(0).serviceInfo == null
-                    || !candidates.get(0).serviceInfo.exported)
+            String serviceClass = providerServiceClass(context, packageName);
+            if (serviceClass == null)
                 throw new IllegalArgumentException("selected package must export exactly one MatonOS navigation provider service");
-            String serviceClass = candidates.get(0).serviceInfo.name;
+            if (NavigationBarWindow.DEFAULT_PROVIDER.equals(packageName)
+                    && !certificate.equals(pinnedCertificateForKey(context, "matonos-shelf")))
+                throw new IllegalArgumentException("built-in Shelf certificate does not match the pinned image key");
             prefs.edit().putString("package", packageName).putString("certificate", certificate)
-                    .putString("serviceClass", serviceClass).putBoolean("enabled", enabled).apply();
+                    .putString("serviceClass", serviceClass).putBoolean("enabled", enabled)
+                    .putBoolean("userChoiceMade", true)
+                    .putBoolean("builtInDefault", false).apply();
             Log.i(TAG, (enabled ? "User selected" : "User preset") + " navigation provider=" + packageName
                     + " certificate=" + certificate + " enabled=" + enabled);
         }
@@ -673,7 +742,7 @@ public final class SystemBridgeService extends Service {
         boolean builtin = false;
         for (String entry : readLines(context, R.raw.target_caller_allowlist)) {
             if (!entry.endsWith(" " + packageName)) continue;
-            if (readLines(context, R.raw.caller_cert_allowlist).contains(cert)) { builtin = true; break; }
+            if (readCertificateAllowlist(context).contains(cert)) { builtin = true; break; }
         }
         if (!builtin) context.getPackageManager().revokeRuntimePermission(packageName, PERMISSION,
                 UserHandle.getUserHandleForUid(uid));
@@ -955,7 +1024,7 @@ public final class SystemBridgeService extends Service {
         Set<String> result = allowedCerts;
         if (result != null) return result;
         synchronized (this) {
-            if (allowedCerts == null) allowedCerts = readLines(R.raw.caller_cert_allowlist);
+            if (allowedCerts == null) allowedCerts = readCertificateAllowlist(this);
             return allowedCerts;
         }
     }
@@ -983,6 +1052,24 @@ public final class SystemBridgeService extends Service {
             }
         } catch (Exception e) {
             Log.e(TAG, "Cannot load bridge allowlist resource " + resource, e);
+        }
+        return result;
+    }
+
+    private static Set<String> readCertificateAllowlist(android.content.Context context) {
+        Set<String> result = new HashSet<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                context.getResources().openRawResource(R.raw.caller_cert_allowlist), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+                String[] fields = line.split("\\s+");
+                String cert = fields.length == 1 ? fields[0] : fields[fields.length - 1];
+                if (cert.matches("(?i)[0-9a-f]{64}")) result.add(cert.toLowerCase(Locale.ROOT));
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Cannot load bridge certificate allowlist", e);
         }
         return result;
     }

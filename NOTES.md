@@ -265,6 +265,16 @@ Feature work continues, but in this shape from now on.
   both: make-live.sh repacks only the _a partitions and passes
   androidboot.slot_suffix=_a. v1 stays non-A/B; installer.sh/make-payload.sh
   become legacy once the v2 app replaces them.
+- **v3: user refines the Expo apps (Shell/Shelf/Recents) personally** (user,
+  2026-09-27), once the framework (nav-bar host, no-GPU fallback) is stable;
+  agents stay off apps the user claims.
+- **v3: evaluate a shared React Native runtime** (user idea, 2026-09-27),
+  decided on measured PSS + APK sizes: (a) a system shared-library APK with
+  RN/Hermes/common Expo modules (saves disk/update size, not memory; needs
+  exact version lockstep across apps, awkward with Expo autolinking/CNG), or
+  (b) one host process with one Hermes runtime rendering Shell/Shelf/Recents
+  as surfaces embedded via SurfaceControlViewHost (saves tens of MB PSS per
+  app; gives up independent updates and crash isolation).
 - **v3: microG (moved up from v4, user 2026-09-26)**: shipped PREINSTALLED
   for app compatibility (many apps need GMS APIs / a Play Store package) —
   a deliberate exception to v4's "sockets, not shipped binaries" (microG is
