@@ -78,12 +78,82 @@ adb_shell am start -W -a android.settings.SETTINGS > "$EVIDENCE/settings-start.t
 sleep 8
 adb_shell dumpsys window windows > "$EVIDENCE/settings-windows.txt"
 capture settings-shelf
+adb_shell dumpsys input > "$EVIDENCE/settings-input.txt"
+adb_shell logcat -b all -d -s MatonSystemBridge:I > "$EVIDENCE/nav-input-before.log"
+display_size=$(adb_shell wm size | awk '/Physical size:/ {size=$3} /Override size:/ {size=$3} END {print size}')
+density_dpi=$(adb_shell wm density | awk '/Physical density:/ {dpi=$3} /Override density:/ {dpi=$3} END {print dpi}')
+[[ $display_size =~ ^([0-9]+)x([0-9]+)$ && $density_dpi =~ ^[0-9]+$ ]] || {
+  echo "Could not read display geometry for Shelf input test" >&2; exit 1;
+}
+IFS=x read -r display_width display_height <<< "$display_size"
+dp_to_px() { echo $(( ($1 * density_dpi + 80) / 160 )); }
+# On Settings the bar is compact. Tap the handle to expand it, then tap Back;
+# the bridge audit proves the embedded view received the touch and invoked nav.back.
+adb_shell input tap "$((display_width / 2))" "$((display_height - $(dp_to_px 14)))"
+sleep 1
+adb_shell input tap "$(dp_to_px 24)" "$((display_height - $(dp_to_px 28)))"
+sleep 2
+adb_shell logcat -b all -d -s MatonSystemBridge:I > "$EVIDENCE/nav-input.log"
+touch_before=$(grep -F -c 'Authorized provider action=navigateBack target=nav.back' "$EVIDENCE/nav-input-before.log" || true)
+touch_after=$(grep -F -c 'Authorized provider action=navigateBack target=nav.back' "$EVIDENCE/nav-input.log" || true)
+if (( touch_after <= touch_before )); then
+  echo "ADB input tap did not reach Shelf Back through the embedded host; see $EVIDENCE/settings-input.txt and nav-input.log" >&2
+  exit 1
+fi
+if [[ -n ${MATON_QMP_SOCKET:-} ]]; then
+  adb_shell am start -W -a android.intent.action.MAIN -c android.intent.category.HOME -f 0x10000000 >/dev/null
+  sleep 5
+  adb_shell logcat -b all -d -s MatonSystemBridge:I > "$EVIDENCE/nav-mouse-before.log"
+  python3 - "$MATON_QMP_SOCKET" "$display_width" "$display_height" "$(($display_width - $(dp_to_px 24)))" "$(($display_height - $(dp_to_px 28)))" <<'PY'
+import json
+import socket
+import sys
+
+path, width, height, x, y = sys.argv[1], *(int(value) for value in sys.argv[2:])
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.connect(path)
+reader = sock.makefile("r", encoding="utf-8")
+reader.readline()  # QMP greeting
+
+def execute(command, arguments=None):
+    request = {"execute": command}
+    if arguments is not None:
+        request["arguments"] = arguments
+    sock.sendall((json.dumps(request) + "\r\n").encode())
+    while True:
+        response = json.loads(reader.readline())
+        if "error" in response:
+            raise RuntimeError(response["error"])
+        if "return" in response:
+            return response["return"]
+
+execute("qmp_capabilities")
+events = [
+    {"type": "abs", "data": {"axis": "x", "value": round(x * 32767 / max(1, width - 1))}},
+    {"type": "abs", "data": {"axis": "y", "value": round(y * 32767 / max(1, height - 1))}},
+    {"type": "btn", "data": {"button": "left", "down": True}},
+    {"type": "btn", "data": {"button": "left", "down": False}},
+]
+for event in events:
+    execute("input-send-event", {"events": [event]})
+sock.close()
+PY
+  sleep 3
+  adb_shell logcat -b all -d -s MatonSystemBridge:I > "$EVIDENCE/nav-mouse.log"
+  mouse_before=$(grep -F -c 'Authorized provider action=navigateRecents target=nav.recents' "$EVIDENCE/nav-mouse-before.log" || true)
+  mouse_after=$(grep -F -c 'Authorized provider action=navigateRecents target=nav.recents' "$EVIDENCE/nav-mouse.log" || true)
+  if (( mouse_after <= mouse_before )); then
+    echo "QEMU mouse click did not reach Shelf Recents through the embedded host; see nav-mouse.log" >&2
+    exit 1
+  fi
+fi
 adb_shell logcat -b crash -d -v brief > "$EVIDENCE/crash.log"
 if grep -E "$SHELL_PACKAGE|$SHELF_PACKAGE|$RECENTS_PACKAGE|Current Activity is of incorrect class|AppContext\.onHostResume" "$EVIDENCE/crash.log"; then
   echo "Crash buffer contains a MatonOS app crash or Expo AppCompat lifecycle failure; see $EVIDENCE/crash.log" >&2
   exit 1
 fi
-python3 - "$EVIDENCE/settings-windows.txt" "$EVIDENCE/settings-shelf-window.txt" <<'PY'
+compact_height_px=$(( (28 * density_dpi + 80) / 160 ))
+python3 - "$EVIDENCE/settings-windows.txt" "$EVIDENCE/settings-shelf-window.txt" "$compact_height_px" <<'PY'
 import pathlib
 import re
 import sys
@@ -102,6 +172,20 @@ if not re.search(r"^\s*isVisible=true\s*$", block, re.MULTILINE):
     raise SystemExit("Shelf window exists over Settings but isVisible is not true")
 if re.search(r"mIsForceHiddenNonSystemOverlayWindow=true", block):
     raise SystemExit("Settings is force-hiding the Shelf as a non-system overlay")
+expected_height = int(sys.argv[3])
+requested = re.search(r"^\s*Requested w=\d+ h=(\d+)\s*$", block, re.MULTILINE)
+inset = re.search(r"type=navigationBars, source=FRAME, flags=\[\], insetsSize=Insets\{left=0, top=0, right=0, bottom=(\d+)\}", block)
+frame = re.search(r"^\s*Frames:.*?frame=\[\d+,(-?\d+)\]\[\d+,(-?\d+)\]", block, re.MULTILINE)
+if requested is None or inset is None or frame is None:
+    raise SystemExit("Could not inspect compact Shelf host height and navigation inset")
+requested_height = int(requested.group(1))
+inset_height = int(inset.group(1))
+frame_height = int(frame.group(2)) - int(frame.group(1))
+if (requested_height, inset_height, frame_height) != (expected_height,) * 3:
+    raise SystemExit(
+        f"Compact Shelf host height mismatch: expected {expected_height}px, "
+        f"window={requested_height}px inset={inset_height}px frame={frame_height}px"
+    )
 PY
 
 adb_shell dumpsys meminfo "$SHELL_PACKAGE" > "$EVIDENCE/shell-meminfo.txt"

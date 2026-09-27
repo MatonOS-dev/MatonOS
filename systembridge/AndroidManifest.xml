@@ -10,7 +10,8 @@
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
-    <!-- The bridge checks arbitrary app/provider certificates as its gatekeeper. -->
+    <!-- This is the audited gatekeeper: certificate checks cover arbitrary third-party
+         navigation providers and future trusted capabilities, not a fixed package list. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />

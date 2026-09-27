@@ -101,6 +101,46 @@ class MatonShelfExpoModule : Module() {
     Function("openPanel") { panel: String -> ShelfService.openPanel(requireNotNull(appContext.reactContext), panel) }
     Function("goHome") { ShelfService.goHome(requireNotNull(appContext.reactContext)) }
     Function("reportSurfaceFailure") { error: String -> ShelfService.fallbackToJavaShelf(error) }
+    // Interactive bar area in dp relative to the bar (e.g. from onLayout of the
+    // wrapping Pressable); everything else passes through to the app below.
+    // Width/height <= 0 = whole bar.
+    Function("setTouchableRect") { x: Double, y: Double, width: Double, height: Double ->
+      ShelfService.setTouchableRects(listOf(listOf(x, y, width, height)))
+    }
+    // Several interactive areas (dp, relative to the host window), each
+    // [x, y, width, height]. Empty list = nothing touchable (all passes through).
+    Function("setTouchableRegion") { rects: List<List<Double>> -> ShelfService.setTouchableRects(rects) }
+    // Notification area (ShelfNotificationListener). Empty list until access is granted.
+    AsyncFunction("getNotifications") { ShelfNotificationListener.snapshot(requireNotNull(appContext.reactContext)) }
+    Function("isNotificationAccessGranted") { ShelfNotificationListener.isConnected() }
+    Function("dismissNotification") { key: String -> ShelfNotificationListener.dismiss(key) }
+    Function("dismissAllNotifications") { ShelfNotificationListener.dismissAll() }
+    Function("openNotification") { key: String -> ShelfNotificationListener.open(key) }
+    Function("invokeNotificationAction") { key: String, index: Int, reply: String? ->
+      ShelfNotificationListener.invokeAction(requireNotNull(appContext.reactContext), key, index, reply)
+    }
+    Function("openNotificationHistory") { ShelfNotificationListener.openHistory(requireNotNull(appContext.reactContext)) }
+    Function("openNotificationSettings") { packageName: String? ->
+      ShelfNotificationListener.openSettings(requireNotNull(appContext.reactContext), packageName)
+    }
+    // Android's own rendering of a notification's content (see NotificationContentView).
+    View(NotificationContentView::class) {
+      Prop("notificationKey") { view: NotificationContentView, key: String? -> view.setKey(key) }
+      Prop("expanded") { view: NotificationContentView, expanded: Boolean? -> view.setExpanded(expanded) }
+    }
+    // The system's default launcher (whatever app answers the HOME intent).
+    AsyncFunction("getHomeApp") {
+      val context = requireNotNull(appContext.reactContext)
+      val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+      val info = context.packageManager.resolveActivity(home, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+      val activity = info?.activityInfo
+      if (activity == null || activity.packageName == "android") null  // no default chosen yet (resolver)
+      else mapOf(
+        "packageName" to activity.packageName,
+        "component" to ComponentName(activity.packageName, activity.name).flattenToString(),
+        "label" to info.loadLabel(context.packageManager).toString(),
+      )
+    }
   }
 
   private fun launcherApps(context: Context): List<ResolveInfo> {
@@ -131,6 +171,18 @@ class MatonShelfExpoModule : Module() {
 
   companion object {
     @Volatile private var active: MatonShelfExpoModule? = null
+    /** Notifications changed ("posted"/"removed" with key, "connected"/"disconnected"). */
+    @JvmStatic fun notifyNotificationsChanged(change: String, key: String?) {
+      active?.sendEvent("shelfStateChanged", mapOf("type" to "notifications", "change" to change, "key" to (key ?: "")))
+    }
+    /** Top task changed (bridge task-stack listener); isHome = any launcher's home task. */
+    @JvmStatic fun notifyForeground(packageName: String, isHome: Boolean) {
+      active?.sendEvent("shelfStateChanged", mapOf("type" to "foreground", "packageName" to packageName, "isHome" to isHome))
+    }
+    /** Mouse entered/left the whole bar (RN's onHoverIn/Out don't fire on Android by default). */
+    @JvmStatic fun notifyHover(hovered: Boolean) {
+      active?.sendEvent("shelfStateChanged", mapOf("type" to "hover", "hovered" to hovered))
+    }
     @JvmStatic fun notifyShelfState() {
       active?.sendEvent("shelfStateChanged", mapOf(
         "type" to "stateChanged",

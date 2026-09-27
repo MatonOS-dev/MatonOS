@@ -5,7 +5,8 @@
   "android": {
     "modules": [
       "org.matonos.rncommon.MatonOSExpoModule",
-      "org.matonos.rncommon.SystemIconModule"
+      "org.matonos.rncommon.SystemIconModule",
+      "org.matonos.rncommon.HardwareModule"
     ]
   }
 }

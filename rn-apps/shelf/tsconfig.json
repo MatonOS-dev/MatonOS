@@ -8,7 +8,6 @@
     "noEmit": true
   },
   "include": [
-    "expo-env.d.ts",
     "index.js",
     "src/**/*.ts",
     "src/**/*.tsx"

@@ -1,0 +1,90 @@
+From 2ca3f04ede1768d0d7c1b3186a664f49a1739eb9 Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Sun, 27 Sep 2026 11:25:36 +0200
+Subject: [PATCH 3/5] drm_hwcomposer: sync software copy dma-bufs
+
+Change-Id: I91e6c6191f1bd2e17f81f20f07af9c7852bdd0a4
+---
+ drm/DrmDevice.cpp | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/drm/DrmDevice.cpp b/drm/DrmDevice.cpp
+index d92c5a3..4ead116 100644
+--- a/drm/DrmDevice.cpp
++++ b/drm/DrmDevice.cpp
+@@ -17,11 +17,14 @@
+ #include "DrmDevice.h"
+ 
+ #include <drm_fourcc.h>
++#include <linux/dma-buf.h>
++#include <sys/ioctl.h>
+ #include <sys/mman.h>
+ #include <xf86drm.h>
+ #include <xf86drmMode.h>
+ 
+ #include <algorithm>
++#include <cerrno>
+ #include <cinttypes>
+ #include <cstdint>
+ #include <cstring>
+@@ -43,6 +46,13 @@
+ 
+ namespace android::drm_hwcomposer {
+ 
++static bool DmaBufSync(int fd, uint64_t flags) {
++  struct dma_buf_sync sync = {.flags = flags};
++  // Some coherent DRM exporters do not implement the optional sync ioctl.
++  // Their buffers remain CPU-mappable, so keep the copy path usable there.
++  return ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync) == 0;
++}
++
+ DrmDevice::~DrmDevice() = default;
+ 
+ auto DrmDevice::CreateInstance(std::string const &path,
+@@ -511,17 +521,30 @@ auto DrmDevice::CopyBufferToDumb(const BufferInfo &source)
+                              source.height;
+   const size_t target_size = static_cast<size_t>(target->pitches[0]) *
+                              target->height;
++  const bool source_sync =
++      DmaBufSync(source.prime_fds[0], DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ);
+   void *source_map = mmap(nullptr, source_size, PROT_READ, MAP_SHARED,
+                           source.prime_fds[0], 0);
+   if (source_map == MAP_FAILED) {
+     ALOGE("Unable to map client-target dma-buf for software display copy");
++    if (source_sync) {
++      DmaBufSync(source.prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
++    }
+     return {};
+   }
++  const bool target_sync =
++      DmaBufSync(target->prime_fds[0], DMA_BUF_SYNC_START | DMA_BUF_SYNC_WRITE);
+   void *target_map = mmap(nullptr, target_size, PROT_READ | PROT_WRITE,
+                           MAP_SHARED, target->prime_fds[0], 0);
+   if (target_map == MAP_FAILED) {
+     ALOGE("Unable to map KMS dumb buffer for software display copy");
++    if (target_sync) {
++      DmaBufSync(target->prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_WRITE);
++    }
+     munmap(source_map, source_size);
++    if (source_sync) {
++      DmaBufSync(source.prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
++    }
+     return {};
+   }
+ 
+@@ -539,6 +562,12 @@ auto DrmDevice::CopyBufferToDumb(const BufferInfo &source)
+     }
+   }
+ 
++  if (target_sync) {
++    DmaBufSync(target->prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_WRITE);
++  }
++  if (source_sync) {
++    DmaBufSync(source.prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
++  }
+   munmap(target_map, target_size);
+   munmap(source_map, source_size);
+   return target;
+-- 
+2.43.0
+

@@ -22,9 +22,11 @@ replace the display controller.
   Existing MatonOS property contexts and `matonos_driver.te` grant the selector
   access to this vendor-owned Mesa option under enforcing SELinux.
 - minigbm's Mesa GBM backend prefers a non-vgem render node if one exists. For
-  vgem it requests linear, non-scanout buffers and leaves render/texture use
-  enabled for the software renderer. Real GPU allocations keep their previous
-  behavior.
+  vgem it allocates linear storage from `/dev/dma_heap/system`: vgem supplies
+  the Mesa DRM/PRIME import path but has no GEM buffer-creation ioctl, so
+  `gbm_bo_create()` on vgem cannot allocate. The dma-bufs remain CPU-mappable
+  for llvmpipe and PRIME-importable by vgem or the display KMS driver. Real
+  GPU allocations keep their Mesa GBM path.
 - drm_hwcomposer first imports buffers normally. If import fails for the
   already-composited HWC3 client target, it waits up to three seconds for the
   acquire fence and copies a supported 32-bit linear buffer into a KMS dumb
@@ -37,13 +39,29 @@ replace the display controller.
 
 ## Build and test status
 
-The initial implementation built and passed the SELinux label check, but the
-10:19 virgl image loaded vgem before virtio-gpu published its render node. The
-detector now selects the hardware path from PCI IDs first, so a late render
-node cannot trigger software fallback. Earlier std-VGA boots confirmed vgem
-loads and Vulkan selects `swrast`, but SurfaceFlinger still failed allocating
-GBM buffers; that separate allocator issue remains under investigation. The
-updated detector needs a fresh build and virgl/std/bochs/ramfb boot checks.
+The 10:39 image built successfully and passed `tools/check-selinux-labels.sh`.
+Fresh `-g virgl` boot reached `sys.boot_completed=1`; Mesa reported virgl,
+`ro.hardware.vulkan=virtio`, the software property was unset, and vgem was not
+loaded. The captured home screen is at
+`/mnt/data/aosp/out/pc-logs/nogpu/virgl-1039.png`.
+
+The 12:38 image includes the dma-heap allocator fix. Fresh `-g std` debug boot
+reached `sys.boot_completed=1`; vgem was live, the software property was true,
+`ro.hardware.vulkan=swrast`, and SurfaceFlinger reported llvmpipe. The render
+node was labeled `gpu_device`. The captured display was black: drm_hwcomposer
+logged `Unable to map KMS dumb buffer for software display copy` and
+SurfaceFlinger reported `BAD_DISPLAY` on present. The client-target allocation
+now works; the remaining issue was mapping the KMS dumb target through its
+exported dma-buf. Patch 0004 keeps the driver's `MODE_MAP_DUMB` mapping alive
+and writes the software copy through it. It is queued for a fresh build and
+runtime verification. Ramfb and virgl have not yet been tested against the
+12:38 image.
+
+The dma-heap allocator and dma-buf sync changes are committed to their forks
+and exported as minigbm patch 0003 and drm_hwcomposer patch 0003. The KMS
+mapping lifetime fix is committed as drm_hwcomposer patch 0004. All three
+compiled into the 12:38 image; the mapping lifetime fix still needs a fresh
+image before it can be runtime-tested.
 
 ## Fresh-image tests
 
@@ -71,9 +89,11 @@ or restart framework services to test.
 
 ## Open issues
 
-- The PCI-first detector and vgem EGL/GBM path need a new build and fresh-boot
-  verification across the matrix above. Earlier std-VGA logs show Mesa GBM BO
-  allocations failing on vgem, so SurfaceFlinger did not reach boot complete.
+- The PCI-first detector's virgl regression was fixed and verified on image
+  10:39. The 12:38 image verifies std VGA boot completion and llvmpipe, but
+  its display stays black because the VRAM dumb-target copy cannot mmap the
+  exported dma-buf. Verify the new KMS-fd mapping path, ramfb, and virgl on the
+  next fresh image.
 - The copy path supports 32-bit XRGB/ARGB/XBGR/ABGR client targets. Other
   formats or tiled modifiers return to the existing import-failure behavior.
 - For recognized PCI hardware, a render node appearing after the bounded

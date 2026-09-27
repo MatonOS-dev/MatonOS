@@ -15,10 +15,7 @@
         "org.matonos.permission.SYSTEM_BRIDGE"
       ]
     },
-    "plugins": [
-      "./plugins/withMatonShelf",
-      "expo-splash-screen"
-    ],
+    "plugins": ["./plugins/withMatonShelf"],
     "experiments": {
       "autolinkingModuleResolution": true
     },

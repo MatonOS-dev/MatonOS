@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.graphics.PixelFormat;
 import android.graphics.Insets;
+import android.graphics.Color;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -33,6 +34,54 @@ final class NavigationBarWindow {
     private SurfaceView surfaceView;
     private WindowManager.LayoutParams params;
     private INavigationBarProvider provider;
+    private int insetPx = -1;
+    // Foreground app / home detection for the provider (any launcher): top task
+    // package + whether its activity type is HOME.
+    private boolean taskListenerRegistered;
+    private String lastForeground;
+    private boolean lastForegroundHome;
+    private final android.app.TaskStackListener taskListener = new android.app.TaskStackListener() {
+        @Override public void onTaskStackChanged() { main.post(NavigationBarWindow.this::publishForeground); }
+    };
+
+    private void registerTaskListener() {
+        if (taskListenerRegistered) return;
+        try {
+            android.app.ActivityTaskManager.getService().registerTaskStackListener(taskListener);
+            taskListenerRegistered = true;
+        } catch (Exception failure) {
+            Log.w(TAG, "Could not register task stack listener", failure);
+        }
+        lastForeground = null;
+        publishForeground();
+    }
+
+    private void unregisterTaskListener() {
+        if (!taskListenerRegistered) return;
+        try { android.app.ActivityTaskManager.getService().unregisterTaskStackListener(taskListener); }
+        catch (Exception ignored) { }
+        taskListenerRegistered = false;
+    }
+
+    private void publishForeground() {
+        INavigationBarProvider current = provider;
+        if (current == null) return;
+        try {
+            java.util.List<android.app.ActivityManager.RunningTaskInfo> tasks =
+                    android.app.ActivityTaskManager.getInstance().getTasks(1);
+            if (tasks == null || tasks.isEmpty()) return;
+            android.app.ActivityManager.RunningTaskInfo top = tasks.get(0);
+            android.content.ComponentName component = top.topActivity != null ? top.topActivity : top.baseActivity;
+            String pkg = component == null ? "" : component.getPackageName();
+            boolean isHome = top.getActivityType() == android.app.WindowConfiguration.ACTIVITY_TYPE_HOME;
+            if (pkg.equals(lastForeground) && isHome == lastForegroundHome) return;
+            lastForeground = pkg;
+            lastForegroundHome = isHome;
+            current.onForegroundChanged(pkg, isHome);
+        } catch (Exception failure) {
+            Log.w(TAG, "Foreground query failed", failure);
+        }
+    }
     private ServiceConnection connection;
     private ServiceConnection fallbackConnection;
     private INavigationBarProvider fallbackProvider;
@@ -44,6 +93,8 @@ final class NavigationBarWindow {
     private boolean surfaceRequested;
     private boolean enabled;
     private int retryCount;
+    private int lastProviderWidthPx;
+    private int lastProviderHeightPx;
 
     NavigationBarWindow(Context context) {
         this.context = context;
@@ -112,13 +163,27 @@ final class NavigationBarWindow {
         if (root != null) return;
         int height = Math.round(56 * context.getResources().getDisplayMetrics().density);
         root = new FrameLayout(context);
+        root.setBackgroundColor(Color.TRANSPARENT);
         root.setVisibility(View.INVISIBLE);
         surfaceView = new SurfaceView(context);
-        surfaceView.setZOrderOnTop(false);
+        // Embedded SurfaceControlViewHost input is routed only when this child surface
+        // sits above the host window. A translucent top surface also avoids SurfaceView's
+        // default opaque black background layer.
+        surfaceView.getHolder().setFormat(PixelFormat.TRANSLUCENT);
+        surfaceView.setBackgroundColor(Color.TRANSPARENT);
+        surfaceView.setZOrderOnTop(true);
         root.addView(surfaceView, new FrameLayout.LayoutParams(-1, -1));
-        params = new WindowManager.LayoutParams(-1, height,
+        // Full-screen, transparent canvas for the provider (user, 2026-09-27): apps
+        // behind keep working through the provider's touchable region; only the
+        // bar height is reserved as the apps' bottom inset.
+        params = new WindowManager.LayoutParams(-1, -1,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                // NOT_TOUCHABLE: the host never takes touches itself; only the
+                // provider's embedded window does, within the touchable region the
+                // provider sets (AttachedSurfaceControl#setTouchableRegion). Presses
+                // outside it reach the app underneath (user, 2026-09-27).
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                         | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT);
         params.gravity = Gravity.BOTTOM;
@@ -135,7 +200,10 @@ final class NavigationBarWindow {
         params.setTitle("MatonOS navigation provider host");
         try {
             windowManager.addView(root, params);
-            root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> requestSurfaceIfReady());
+            root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+                requestSurfaceIfReady();
+                notifyProviderHostSize();
+            });
             root.post(this::requestSurfaceIfReady);
         } catch (RuntimeException failure) {
             root = null;
@@ -157,6 +225,7 @@ final class NavigationBarWindow {
         providerBinder = binder;
         provider = INavigationBarProvider.Stub.asInterface(binder);
         surfaceRequested = false;
+        lastProviderWidthPx = lastProviderHeightPx = 0;
         retryCount = 0;
         try {
             binder.linkToDeath(() -> main.post(this::hideAndAwaitProvider), 0);
@@ -170,6 +239,7 @@ final class NavigationBarWindow {
     private void hideAndAwaitProvider() {
         hideHost();
         INavigationBarProvider oldProvider = provider;
+        unregisterTaskListener();
         provider = null;
         providerBinder = null;
         surfaceRequested = false;
@@ -187,6 +257,10 @@ final class NavigationBarWindow {
             surfaceRequested = true;
             provider.attach(hostToken, display.getDisplayId(), root.getWidth(), root.getHeight(),
                     new INavigationBarHostCallback.Stub() {
+                        @Override public void onPreferredHeightChanged(int heightPx) {
+                            main.post(() -> updateProviderHeight(heightPx));
+                        }
+
                         @Override public void onSurfaceReady(Bundle response) {
                             main.post(() -> {
                 if (response == null) { detachProvider(); scheduleReattach(); return; }
@@ -199,7 +273,9 @@ final class NavigationBarWindow {
                                 try {
                                     surfaceView.setChildSurfacePackage(child);
                                     root.setVisibility(View.VISIBLE);
+                                    notifyProviderHostSize();
                                     setFallbackOverlayEnabled(false);
+                                    registerTaskListener();
                                 } catch (RuntimeException failure) {
                                     Log.e(TAG, "Could not embed provider surface", failure);
                                     child.release();
@@ -217,6 +293,43 @@ final class NavigationBarWindow {
         }
     }
 
+    private void updateProviderHeight(int requestedHeightPx) {
+        if (root == null || params == null || !enabled || provider == null) return;
+        float density = context.getResources().getDisplayMetrics().density;
+        int minPx = Math.max(1, Math.round(24 * density));
+        int maxPx = Math.max(minPx, Math.round(80 * density));
+        int heightPx = Math.max(minPx, Math.min(maxPx, requestedHeightPx));
+        // The window stays full screen; the provider's height only sets the
+        // reserved bottom inset (the apps' safe area).
+        if (insetPx != heightPx) {
+            insetPx = heightPx;
+            params.providedInsets[0] = params.providedInsets[0]
+                    .setInsetsSize(Insets.of(0, 0, 0, heightPx));
+            try {
+                windowManager.updateViewLayout(root, params);
+            } catch (RuntimeException failure) {
+                Log.e(TAG, "Could not resize protected navigation host", failure);
+                return;
+            }
+        }
+        notifyProviderHostSize();
+    }
+
+    private void notifyProviderHostSize() {
+        if (provider == null || root == null || root.getWidth() <= 0 || root.getHeight() <= 0
+                || surfaceView == null || surfaceView.getChildSurfacePackage() == null) return;
+        int widthPx = surfaceView.getWidth();
+        int heightPx = surfaceView.getHeight();
+        if (widthPx == lastProviderWidthPx && heightPx == lastProviderHeightPx) return;
+        lastProviderWidthPx = widthPx;
+        lastProviderHeightPx = heightPx;
+        try {
+            provider.onHostSizeChanged(widthPx, heightPx);
+        } catch (Exception failure) {
+            Log.w(TAG, "Could not notify navigation provider of host resize", failure);
+        }
+    }
+
     private void scheduleReattach() {
         if (!enabled) return;
         long delayMs = Math.min(30_000L, 1_000L << Math.min(retryCount++, 5));
@@ -230,6 +343,7 @@ final class NavigationBarWindow {
         }
         hideHost();
         INavigationBarProvider oldProvider = provider;
+        unregisterTaskListener();
         provider = null;
         surfaceRequested = false;
         providerBinder = null;

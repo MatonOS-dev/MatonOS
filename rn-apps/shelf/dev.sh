@@ -59,6 +59,9 @@ export MATON_SIGNING_KEY_PASSWORD=$MATON_SIGNING_STORE_PASSWORD
 "$ADB" connect "$DEVICE" >/dev/null 2>&1 || true
 device get-state >/dev/null 2>&1 || fail "device $DEVICE is not connected; start the windowed VM and retry"
 cd "$ROOT"
+# npm ci recreates node_modules: a Metro left running keeps a stale file map
+# (unresolvable react-native internals -> RN surface falls back). Restart it.
+stop_metro
 npm ci --ignore-scripts
 npm run typecheck || echo "WARNING: TypeScript errors above (dev loop continues; fix before committing)" >&2
 CI=1 npx expo prebuild --platform android --clean --no-install
@@ -71,7 +74,7 @@ if curl --silent --fail "http://localhost:$METRO_PORT/status" | grep -q 'package
     || fail "port $METRO_PORT belongs to another Metro; stop it and retry"
 else
   stop_metro
-  nohup "$ROOT/node_modules/.bin/expo" start --dev-client --localhost --port "$METRO_PORT" >"$METRO_LOG" 2>&1 </dev/null &
+  nohup "$ROOT/node_modules/.bin/expo" start --dev-client --localhost --port "$METRO_PORT" --clear >"$METRO_LOG" 2>&1 </dev/null &
   echo $! > "$METRO_PID"
   ready=0
   for _ in {1..120}; do

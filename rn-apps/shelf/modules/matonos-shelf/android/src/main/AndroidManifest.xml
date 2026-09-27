@@ -11,6 +11,16 @@
                 <action android:name="org.matonos.systembridge.NAVIGATION_PROVIDER" />
             </intent-filter>
         </service>
+        <!-- Source for the Shelf's own notification area (granted by the bridge
+             for the built-in Shelf). -->
+        <service
+            android:name="org.matonos.shelf.ShelfNotificationListener"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
         <receiver android:name="org.matonos.shelf.BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="org.matonos.shelf.HOME_VISIBILITY" />

@@ -51,7 +51,18 @@ public final class ShelfService extends Service {
     private final NavigationBarProviderAdapter providerAdapter = new NavigationBarProviderAdapter(this) {
         @Override protected View onCreateView(int widthPx, int heightPx) {
             removeFallbackOverlay();
-            providerRoot = new android.widget.FrameLayout(ShelfService.this);
+            providerRoot = new android.widget.FrameLayout(ShelfService.this) {
+                // Whole-bar hover for JS ('hover' shelfStateChanged events): observe
+                // enter/exit here, then let the React views get the events as usual.
+                @Override public boolean dispatchHoverEvent(android.view.MotionEvent event) {
+                    int action = event.getActionMasked();
+                    if (action == android.view.MotionEvent.ACTION_HOVER_ENTER)
+                        MatonShelfExpoModule.notifyHover(true);
+                    else if (action == android.view.MotionEvent.ACTION_HOVER_EXIT)
+                        MatonShelfExpoModule.notifyHover(false);
+                    return super.dispatchHoverEvent(event);
+                }
+            };
             reportPreferredHostHeight();
             View providerContent = createShelfContent(providerRoot);
             if (providerContent == javaFallback) providerRoot.addView(javaFallback,
@@ -60,6 +71,9 @@ public final class ShelfService extends Service {
         }
 
         @Override protected void onDetached() { releaseProviderSurface(); }
+        @Override protected void onForegroundChanged(String packageName, boolean isHome) {
+            MatonShelfExpoModule.notifyForeground(packageName, isHome);
+        }
         @Override protected void onFallbackOverlayEnabled(boolean enabled) {
             if (enabled) installFallbackOverlay(); else removeFallbackOverlay();
         }
@@ -320,13 +334,40 @@ public final class ShelfService extends Service {
         } catch (PendingIntent.CanceledException | RuntimeException error) { android.util.Log.w("MatonOSShell", "Shelf activity launch rejected", error); }
     }
     private void updateShelfHeight(int height) {
-        if (providerRoot != null) providerAdapter.reportPreferredHeight(height);
+        if (providerRoot != null) reportPreferredHostHeight();  // fixed; see HOST_HEIGHT_DP
         if (!added || params == null || content == null || params.height == height) return;
         params.height = height; try { wm.updateViewLayout(content, params); } catch (RuntimeException ignored) { }
     }
 
+    // Nav-host window: ALWAYS full height with a transparent background, and
+    // apps' bottom inset = that full height (user, 2026-09-27). Collapsing is
+    // purely visual inside it (the RN bar animates its own size), so it can be
+    // smooth instead of a window relayout per step.
+    static final int HOST_HEIGHT_DP = 56;
+    /**
+     * JS declares its interactive areas (dp, relative to the host window), each
+     * [x, y, width, height]; everything else passes through to the app below.
+     * Empty list = nothing touchable.
+     */
+    static void setTouchableRects(java.util.List<? extends java.util.List<Double>> rects) {
+        ShelfService service = active;
+        if (service == null) return;
+        float d = service.getResources().getDisplayMetrics().density;
+        android.graphics.Region region = new android.graphics.Region();
+        for (java.util.List<Double> r : rects) {
+            if (r == null || r.size() != 4 || r.get(2) <= 0 || r.get(3) <= 0) continue;
+            region.op(Math.round((float) (r.get(0) * d)), Math.round((float) (r.get(1) * d)),
+                    Math.round((float) ((r.get(0) + r.get(2)) * d)),
+                    Math.round((float) ((r.get(1) + r.get(3)) * d)), android.graphics.Region.Op.UNION);
+        }
+        service.mainHandler.post(() -> {
+            android.widget.FrameLayout root = service.providerRoot;
+            if (root != null && root.getRootSurfaceControl() != null)
+                root.getRootSurfaceControl().setTouchableRegion(region);
+        });
+    }
     private void reportPreferredHostHeight() {
-        providerAdapter.reportPreferredHeight(dp(expanded || homeVisible ? 56 : 28));
+        providerAdapter.reportPreferredHeight(dp(HOST_HEIGHT_DP));
     }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_HOME_VISIBLE.equals(intent.getAction()))

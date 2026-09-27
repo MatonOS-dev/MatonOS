@@ -7,3 +7,5 @@ export {MatonButton} from './components/MatonButton';
 export {createMatonTheme, MD3DarkTheme, MD3LightTheme} from './theme/matonTheme';
 export {SystemIcon, Symbol, SYSTEM_ICONS, SYMBOL_FONT_FAMILY} from './components/SystemIcon';
 export type {SystemIconName} from './components/SystemIcon';
+export {Hardware} from './Hardware';
+export type {HardwareState} from './Hardware';
