@@ -294,6 +294,12 @@ Feature work continues, but in this shape from now on.
   for Google's official uncertified-device registration page. We never
   ship, host, link to or auto-download Google binaries, and we never spoof
   Play certification/Integrity (no other vendors' fingerprints).
+  The page opens with a big red warning (user, 2026-09-28; wording fixed,
+  shown before anything else, must be acknowledged to continue):
+  "YOU DO THIS AT YOUR OWN RISK. MatonOS makes no claim that this will work
+  or be functional, and does not endorse this action. MatonOS believes in
+  user choice and will not stop you from continuing at your own peril. If
+  you intend to use MatonOS for a commercial use case, turn back now."
 - **App stores via MatonOS Settings (user, 2026-09-28)**: Settings is NOT
   a store. It only offers to install the two stores: Aurora Store (upstream
   preload build from the MatonOS repo, installed over its placeholder via
