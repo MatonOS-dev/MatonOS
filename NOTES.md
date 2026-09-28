@@ -500,7 +500,15 @@ Feature work continues, but in this shape from now on.
     2026-09-28): estimated ~15-22 MB stripped (from Debian trixie sizes,
     not a build), ~6-9 MB erofs-compressed. Runtimes/apps still go to /data
     only when the user installs them. (Earlier idea of shipping it as an
-    optional add-on is superseded.) This depends on
+    optional add-on is superseded.)
+    Built with Soong on the system side (system_ext) — user decision
+    2026-09-28, an explicit exception to "natives outside Soong" for this
+    stack — so it links Android's BoringSSL (libcrypto/libssl), curl,
+    libxml2, zstd, brotli, zlib, libfuse and libc++ instead of bundling
+    them (~8-12 MB added instead of ~22 MB; TLS fixes arrive with Android).
+    New third-party modules under linux/third_party/: glib, json-glib,
+    libarchive, libseccomp, bubblewrap, ostree, flatpak, gpgme stack.
+    Feasibility spike started 2026-09-28 (agent flatpak-spike). This depends on
     add-on packages being able to ship userspace daemons (deferred in the
     first add-on release; now needed for v4). Debian (mmdebstrap) stays the
     fallback if this proves unworkable: measured 2026-09-28 at 321 MiB
