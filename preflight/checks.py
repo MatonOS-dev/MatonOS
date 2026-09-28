@@ -206,6 +206,9 @@ def check_fixed_sepolicy_files() -> None:
 APPROVED_PATCHES = {
     # 2026-09-26: small upstreamable fix for an obvious AOSP bug.
     "frameworks/base/0001-SystemUI-hide-unified-battery-without-battery.patch",
+    # 2026-09-27: user-approved GMS-replacement support (microG, NOTES.md v3).
+    "frameworks/base/0002-microg-signature-spoofing.patch",
+    "frameworks/base/0003-pinned-gms-update.patch",
 }
 
 

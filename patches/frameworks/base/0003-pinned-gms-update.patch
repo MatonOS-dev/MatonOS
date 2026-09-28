@@ -1,0 +1,106 @@
+diff --git a/services/core/java/com/android/server/pm/InstallPackageHelper.java b/services/core/java/com/android/server/pm/InstallPackageHelper.java
+index e7bb826461bc..9aae805fe16f 100644
+--- a/services/core/java/com/android/server/pm/InstallPackageHelper.java
++++ b/services/core/java/com/android/server/pm/InstallPackageHelper.java
+@@ -2199,8 +2199,12 @@ final class InstallPackageHelper {
+                         // of the old package; this allows a rollback to a previously installed
+                         // version after an app's signing key has been rotated without requiring
+                         // the rollback capability on the previous signing key.
+-                        if (!isRollback || !oldPkgSigningDetails.hasAncestorOrSelf(
+-                                parsedPkgSigningDetails)) {
++                        // MatonOS: pinned stand-in -> real app transitions (see
++                        // PackageManagerServiceUtils.isMatonPinnedGmsUpdate).
++                        if ((!isRollback || !oldPkgSigningDetails.hasAncestorOrSelf(
++                                parsedPkgSigningDetails))
++                                && !PackageManagerServiceUtils.isMatonPinnedGmsUpdate(pkgName11,
++                                        oldPkgSigningDetails, parsedPkgSigningDetails)) {
+                             throw new PrepareFailure(INSTALL_FAILED_UPDATE_INCOMPATIBLE,
+                                     "New package has a different signature: " + pkgName11);
+                         }
+diff --git a/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java b/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+index 291027365119..126bbd4e6bda 100644
+--- a/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
++++ b/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
+@@ -469,6 +469,69 @@ public class PackageManagerServiceUtils {
+         }
+     }
+ 
++
++    /**
++     * The one-way signer transitions allowed for replacing preloaded stand-ins with the real
++     * app: {package, installed stand-in cert, trusted root cert of the real app}. The real
++     * app must be signed by one key whose lineage includes the root, so Google's later key
++     * rotations keep working (Play services is already signed by a rotated key).
++     */
++    private static final String[][] MATON_PINNED_TRANSITIONS = {
++        // microG Services -> Google Play services (Google's original platform key).
++        {"com.google.android.gms",
++            "9bd06727e62796c0130eb6dab39b73157451582cbd138e86c468acc395d14165",
++            "F0FD6C5B410F25CB25C3B53346C8972FAE30F8EE7411DF910480AD6B2D60DB83"},
++        // microG Companion -> Google Play Store.
++        {"com.android.vending",
++            "9bd06727e62796c0130eb6dab39b73157451582cbd138e86c468acc395d14165",
++            "F0FD6C5B410F25CB25C3B53346C8972FAE30F8EE7411DF910480AD6B2D60DB83"},
++        // microG Services Framework Proxy -> Google Services Framework ("bring your own
++        // GApps"). Google's platform root like GMS; confirm against a real GSF APK.
++        {"com.google.android.gsf",
++            "9bd06727e62796c0130eb6dab39b73157451582cbd138e86c468acc395d14165",
++            "F0FD6C5B410F25CB25C3B53346C8972FAE30F8EE7411DF910480AD6B2D60DB83"},
++        // Aurora Store placeholder -> upstream Aurora preload signer.
++        {"com.aurora.store",
++            "34dbdec66bae372f92fd7a8a0eaa8b565f8fa0a6c48ad2bf15dc8ecba577d74c",
++            "4C626157AD02BDA3401A7263555F68A79663FC3E13A4D4369A12570941AA280F"},
++        // YouTube placeholder -> Google Play signing cert and its lineage.
++        {"com.google.android.youtube",
++            "09c3278bec1adfed5b89aa2c33f8e4c039861b65a78fc0f53474f172ebe40b63",
++            "3D7A1223019AA39D9EA0E3436AB7C0896BFB4FB679F4DE5FE7C23F326C8F994A"},
++    };
++
++    static boolean isMatonPinnedGmsUpdate(String packageName,
++            SigningDetails installed, SigningDetails incoming) {
++        if (incoming == null || incoming.getSignatures() == null
++                || incoming.getSignatures().length != 1) return false;
++        for (String[] transition : MATON_PINNED_TRANSITIONS) {
++            if (transition[0].equals(packageName)
++                    && hasExactSigner(installed, new String[] {transition[1]})
++                    && incoming.hasAncestorOrSelfWithDigest(java.util.Set.of(transition[2]))) {
++                return true;
++            }
++        }
++        return false;
++    }
++
++    private static boolean hasExactSigner(SigningDetails details, String[] expectedSha256) {
++        if (details == null || details.getSignatures() == null
++                || details.getSignatures().length != 1) return false;
++        try {
++            byte[] hash = java.security.MessageDigest.getInstance("SHA-256")
++                    .digest(details.getSignatures()[0].toByteArray());
++            StringBuilder hex = new StringBuilder(64);
++            for (byte value : hash) hex.append(String.format(java.util.Locale.ROOT,
++                    "%02x", value & 0xff));
++            for (String expected : expectedSha256) {
++                if (expected.equals(hex.toString())) return true;
++            }
++            return false;
++        } catch (java.security.NoSuchAlgorithmException e) {
++            throw new AssertionError(e);
++        }
++    }
++
+     /**
+      * Verifies that signatures match.
+      * @returns {@code true} if the compat signatures were matched; otherwise, {@code false}.
+@@ -524,6 +587,12 @@ public class PackageManagerServiceUtils {
+                 match = pkgSetting.getSigningDetails().hasAncestorOrSelf(parsedSignatures);
+             }
+ 
++            // A narrowly pinned transition lets upstream Google APKs replace the preloaded
++            // microG implementations. This path is independent of signature spoofing policy.
++            if (!match && isMatonPinnedGmsUpdate(packageName,
++                    pkgSetting.getSigningDetails(), parsedSignatures)) {
++                match = true;
++            }
+             if (!match) {
+                 throw new PackageManagerException(INSTALL_FAILED_UPDATE_INCOMPATIBLE,
+                         "Existing package " + packageName
