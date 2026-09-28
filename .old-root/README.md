@@ -23,7 +23,8 @@ Work in progress, not yet ready for daily use.
   fallback for machines without a supported GPU, and Launcher3 desktop mode.
 - **Hardware glue.** Our own daemons handle Wi-Fi, Bluetooth, audio card
   selection, sleep/wake (including forwarding Android wake locks) and input.
-  QEMU's absolute mouse works. Firmware includes linux-firmware, SOF audio
+  QEMU's absolute (tablet-style) mouse doesn't track correctly yet.
+  Firmware includes linux-firmware, SOF audio
   and the Wi-Fi regulatory database.
 - **Apps.**
   - MatonOS Settings is an Expo UI app, opened from Android Settings'
