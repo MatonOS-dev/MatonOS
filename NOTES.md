@@ -193,6 +193,13 @@ Feature work continues, but in this shape from now on.
   are NOT copied (user decision: installed system starts with empty /data).
   Requires the product to be A/B (slot-suffixed dynamic partitions, per-slot
   systemd-boot entries, a boot-control HAL); the live image keeps only A.
+  Boot chain (user, 2026-09-28): systemd-boot stays; each slot's kernel is a
+  signed UKI (kernel + microcode + ramdisks + cmdline with slot suffix). Slot
+  switching and rollback use systemd-boot boot counting (entry renames in
+  the ESP by our boot-control HAL); no EFI NVRAM writes. Firmware boots the
+  fallback BOOTX64.EFI (shim -> systemd-boot with Secure Boot). Direct
+  EFI-stub boot without a loader was rejected (no A/B rollback, NVRAM
+  fragility, no recovery menu).
   **Displays follow the hardware-glue principle (decided 2026-09-24)**: a
   MatonOS display daemon (own SELinux domain) changes on the fly what
   display hardware Android sees, and Android just handles ordinary hotplugs.
