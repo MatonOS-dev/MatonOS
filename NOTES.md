@@ -357,6 +357,13 @@ Feature work continues, but in this shape from now on.
   is transitional until the adapter lands. Tasks are split narrowly: (1)
   swap to the stock HAL, (2) NDK PipeWire/WirePlumber prebuilts, (3) the
   DriverInterface adapter only. Replacing AudioFlinger is never an option.
+  Because Android only sees one PipeWire device, its own output switcher
+  can't pick hardware: **MatonOS Settings gets an audio selector** (user,
+  2026-09-28) that configures PipeWire — default output/input device,
+  card profiles (e.g. HDMI vs analog, duplex), per-device volume/mute,
+  hotplug shown live. Settings -> bridge `audio` target -> PipeWire's
+  control side (WirePlumber settings / pw metadata) over our channel.
+  Later maybe a quick-settings tile for switching output.
 - **Module trust = signatures, not LoadPin (user, 2026-09-28)**: LoadPin
   (on in the distro base config) pinned all module/firmware loads to /vendor
   and would refuse driver add-ons; it is disabled in pc.config. Every add-on
