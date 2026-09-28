@@ -509,6 +509,12 @@ Feature work continues, but in this shape from now on.
     New third-party modules under linux/third_party/: glib, json-glib,
     libarchive, libseccomp, bubblewrap, ostree, flatpak, gpgme stack.
     Feasibility spike started 2026-09-28 (agent flatpak-spike).
+    Stub APK generation + signing may live in a SEPARATE small app rather
+    than the bridge (user: code separation); the bridge owns Flatpak
+    install/uninstall via matonos-linuxd (system_ext service wrapping the
+    flatpak CLI). Compositor library v1 runs apps "like Termux" (single
+    host app, input forwarded straight to the compositor) before per-app
+    stubs exist.
     Isolation rules (user, 2026-09-28): Flatpak apps only ever link their
     runtime's glibc/Mesa inside the bwrap sandbox; what crosses is kernel
     syscalls/ioctls and device nodes, sockets (Wayland, PipeWire/Pulse,
