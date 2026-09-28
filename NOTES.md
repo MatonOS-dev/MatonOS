@@ -589,6 +589,21 @@ Feature work continues, but in this shape from now on.
     (apksig) and installs it silently (the bridge does this); uninstalling the Flatpak removes the stub. Windows use
     setTaskDescription(label, icon) so Recents/taskbar group them under the
     app. Same mechanism could give browser PWAs real app entries.
+    Stub install flow: (1) store app -> bridge flatpak.install -> linuxd
+    runs flatpak install and reports the app's .desktop + icon; (2) the
+    STORE app instantiates a template stub (package org.matonos.linux.<id>,
+    label/icon, <uses-library> compositor lib, one launcher activity,
+    versionCode bumped on name/icon changes) and signs it with a per-device
+    stub key held in Android Keystore (non-exportable); (3) it hands the APK
+    fd to the BRIDGE (flatpak.install_stub), which verifies package prefix,
+    pinned stub cert, manifest == template (one activity, allowed
+    uses-library, only template-approved permissions) and that the Flatpak
+    is installed, then installs silently via PackageInstaller. The store app
+    needs no install privileges. Permissions (user question): dangerous
+    permissions are RUNTIME — the stub declares only what the Flatpak's
+    manifest needs (mic/camera/location/notifications) and requests them at
+    first use, triggered by our glue (camera/location portals, PipeWire
+    capture); denial returns normal "access denied" to the Linux app.
     Uninstall sync: the stub gets no callback, but the bridge receives
     ACTION_PACKAGE_FULLY_REMOVED (manifest receivers allowed; not sent for
     updates, unlike PACKAGE_REMOVED) for org.matonos.linux.* and runs
