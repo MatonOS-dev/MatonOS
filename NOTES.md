@@ -556,6 +556,27 @@ Feature work continues, but in this shape from now on.
     hasn't exited after a short grace period, the host runs `flatpak kill
     <id>`. Force-stopping the host app kills the compositor, so every
     Wayland client loses its connection and exits too.
+  - **Per-app compositors (user, 2026-09-28; replaces one shared
+    compositor):** every Linux app's stub APK runs its OWN compositor
+    instance (the Xtr126 fork, instantiated per stub), so each Linux app is
+    an Android app in every respect: isolation (a compositor crash/exploit
+    hits one app), lifecycle (close/swipe/force-stop ends that app only),
+    per-app volume (the stub's own AAudio stream), per-app mic/camera
+    permissions, Recents/taskbar/notifications grouping. The compositor and
+    Xwayland code live in ONE shared library APK (system, declared
+    <library>; stubs <uses-library> it, since stubs are signed on-device).
+    Xwayland starts lazily per app only for X11 clients (Flatpak apps get
+    the host's X socket; runtimes ship only X client libs) — per-app X
+    servers also stop X11 apps snooping on each other. Xwayland ships as an
+    executable in the library's nativeLibraryDir. Cross-app features map to
+    Android APIs instead of a big session service: clipboard <->
+    ClipboardManager; drag and drop <-> startDragAndDrop(DRAG_FLAG_GLOBAL);
+    xdg-open/launching <-> intents (other Linux apps start via their stub);
+    text-input-v3 <-> the stub activity's InputConnection; notifications <->
+    NotificationManager; file chooser <-> SAF; screen capture <->
+    MediaProjection; focus/activation <-> Android tasks. Still shared: the
+    Flatpak/container side (bridge + container daemon), the D-Bus session
+    bus, PipeWire. Cost: ~20-40 MB per running app (+Xwayland if X11).
   - Alternative kept on file: compositor inside the container + a small
     Android-side presenter over binder (keeps untrusted Wayland parsing in
     the container; more parts). Estimate for the fork route: ~1-2 weeks of
