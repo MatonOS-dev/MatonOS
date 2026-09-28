@@ -469,6 +469,15 @@ Feature work continues, but in this shape from now on.
   parts on shipped images — kept by our Secure Boot design (own MOK key or
   SB off); never lock that down. Publish sources for GPL parts with images.
   **v4 Linux-apps plan (user, 2026-09-28), refined after reading Xtr126's code:**
+  - Components (user): (1) a small Debian system image as the Linux base
+    (immutable, signed, shipped per MatonOS release); (2) a small **Flathub
+    app** built with Expo (our React rules) that browses/searches Flathub
+    and asks to install/uninstall — UI only; (3) the **system bridge owns
+    installing and uninstalling Flathub packages**: it drives flatpak in the
+    container (via the container daemon's channel), generates, signs and
+    silently installs/removes the stub APKs, and does the uninstall sync
+    below. The Flathub app reaches it through a `flatpak` bridge target
+    (built-in app = default-allow; third-party callers need consent).
   - Fork wlroots-android-bridge. Its compositor (labwc/wlroots) runs as an
     ANDROID (bionic) process: launched via app_process, hands 3 binders
     (main/surface/input) to the host app inside an intent Bundle (no
@@ -489,17 +498,16 @@ Feature work continues, but in this shape from now on.
     generates a stub APK per app (package org.matonos.linux.<flatpak-id>,
     label/icon from the .desktop file, one launcher activity that asks the
     compositor to `flatpak run <id>`), signs it with an on-device key
-    (apksig) and installs it silently (INSTALL_PACKAGES via a privileged
-    helper/Settings); uninstalling the Flatpak removes the stub. Windows use
+    (apksig) and installs it silently (the bridge does this); uninstalling the Flatpak removes the stub. Windows use
     setTaskDescription(label, icon) so Recents/taskbar group them under the
     app. Same mechanism could give browser PWAs real app entries.
-    Uninstall sync: the stub gets no callback, but the host app receives
+    Uninstall sync: the stub gets no callback, but the bridge receives
     ACTION_PACKAGE_FULLY_REMOVED (manifest receivers allowed; not sent for
     updates, unlike PACKAGE_REMOVED) for org.matonos.linux.* and runs
     `flatpak uninstall --delete-data <id>` (user decision: data goes with
     the app, as on Android) plus `flatpak uninstall --unused` for runtimes. Reverse: a Flatpak removed on
     the Linux side (its .desktop export disappears) -> host uninstalls the
-    stub silently.
+    stub silently (bridge).
   - Alternative kept on file: compositor inside the container + a small
     Android-side presenter over binder (keeps untrusted Wayland parsing in
     the container; more parts). Estimate for the fork route: ~1-2 weeks of
