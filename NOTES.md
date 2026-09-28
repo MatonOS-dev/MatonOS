@@ -386,6 +386,12 @@ Feature work continues, but in this shape from now on.
   AAudio bridge. Base distro: Debian stable (user: stability; mmdebstrap,
   pinned point release, security rebuilds per MatonOS release). Compositor
   host (app vs bridge) open. No libhybris (all our drivers are open Linux ones).
+  No desktop environment (user): like Crostini/WSLg, each Linux app is just
+  an Android window; the Linux session is only D-Bus, the compositor
+  (+Xwayland), xdg-desktop-portal with our backend (file chooser, open-URI,
+  notifications, Settings portal for Android dark mode/accent), PipeWire +
+  WirePlumber, a Secret Service, fonts/icons/cursors, xdg-user-dirs on the
+  shared folders. No DM, panel, Linux launcher or notification daemon.
   Linux sandbox sketch: native `linuxd` service (own SELinux domain) mounts
   a distro rootfs from /data, sets up namespaces/cgroups, runs Linux
   processes in a confined domain (render node, own files, no binder).
