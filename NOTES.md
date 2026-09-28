@@ -303,6 +303,12 @@ Feature work continues, but in this shape from now on.
   (NikGapps), LiteGapps (files/files.tar.xz -> <abi>/<sdk>/system/...); APKs
   with native code must match x86_64. Verified 2026-09-28: LiteGapps
   x86_64/37 GmsCore, Phonesky and GSF all chain to Google's F0FD6C... root.
+  Settings checks each package in order ABI (x86_64 native code only) ->
+  version (must be newer than our stand-in, else Android refuses a
+  downgrade) -> Google signing lineage, each with its own message. Of the
+  packages tried on 2026-09-28 only LiteGapps x86_64/37 passes (MindTheGapps
+  17 / NikGapps 16 are arm64; MindTheGapps 13, OpenGApps 11 and MindTheGapps
+  9 x86 are older than our stand-ins, the last also 32-bit).
   The page opens with a big red warning (user, 2026-09-28; wording fixed,
   shown before anything else, must be acknowledged to continue):
   "YOU DO THIS AT YOUR OWN RISK. MatonOS makes no claim that this will work
