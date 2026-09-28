@@ -469,8 +469,22 @@ Feature work continues, but in this shape from now on.
   parts on shipped images — kept by our Secure Boot design (own MOK key or
   SB off); never lock that down. Publish sources for GPL parts with images.
   **v4 Linux-apps plan (user, 2026-09-28), refined after reading Xtr126's code:**
-  - Components (user): (1) a small Debian system image as the Linux base
-    (immutable, signed, shipped per MatonOS release); (2) a small **Flathub
+  - **No Debian base (user decision, 2026-09-28, supersedes the Debian
+    image):** we need the Android<->Linux glue anyway, so the host side is
+    only flatpak + bubblewrap + ostree (+ their deps) built for Android
+    (NDK / termux-packages recipes), and Flatpak apps run on the Android
+    kernel with their runtime's own /usr. Session pieces (D-Bus, PipeWire,
+    xdg-desktop-portal with our backend, flatpak-session-helper) are our
+    glue, run either as Android-side natives or from a Flatpak runtime.
+    Shipped as an OPTIONAL ADD-ON package (per MatonOS version under
+    updates/<version>/addons/, like driver add-ons), fetched when the user
+    enables Linux apps — nothing in the system image. This depends on
+    add-on packages being able to ship userspace daemons (deferred in the
+    first add-on release; now needed for v4). Debian (mmdebstrap) stays the
+    fallback if this proves unworkable: measured 2026-09-28 at 321 MiB
+    installed for minbase + flatpak/dbus/portal/PipeWire, ~60-100 MB as
+    trimmed erofs.
+  - Components (user): (1) the Linux-apps add-on above; (2) a small **Flathub
     app** built with Expo (our React rules) that browses/searches Flathub
     and asks to install/uninstall — UI only; (3) the **system bridge owns
     installing and uninstalling Flathub packages**: it drives flatpak in the
@@ -485,7 +499,8 @@ Feature work continues, but in this shape from now on.
     home go in a per-Android-user credential-encrypted dir (available after
     unlock), so Linux app data follows Android's user separation. The Debian
     base image stays read-only; its writable bits (/etc overrides, /var)
-    also live under /data/matonos/linux.
+    also live under /data/matonos/linux (no base image with option C; the
+    add-on's writable state lives there instead).
   - Fork wlroots-android-bridge. Its compositor (labwc/wlroots) runs as an
     ANDROID (bionic) process: launched via app_process, hands 3 binders
     (main/surface/input) to the host app inside an intent Bundle (no
