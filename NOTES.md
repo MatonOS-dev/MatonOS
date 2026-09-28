@@ -413,6 +413,16 @@ Feature work continues, but in this shape from now on.
     Remove the vending (and gms) spoof pairs while real Google is active.
   - Data dir carries over (offer "clear data" after switching). Key rotation
     can't do this without Google's private key, hence the patch.
+- **v6 (user, 2026-09-28): AppImage support** on top of the v4 Flatpak
+  stack: AppImages can't run natively (they mount via FUSE and expect the
+  host's glibc/GL/Wayland libs; our host is bionic). Instead the store app
+  imports them: extract the squashfs (--appimage-extract/unsquashfs, no
+  FUSE at run time) under /data/matonos/linux/, run under bwrap with a
+  Flatpak runtime as /usr and the AppImage as /app, same sockets, same
+  per-app compositor stub APK from its embedded .desktop/icon, same
+  uninstall sync. Sandboxed by default (safer than on desktop Linux); a
+  default permission set since AppImages declare none; some AppImages
+  needing host libs the runtime lacks won't work; x86_64 only.
 - **v5 (user, 2026-09-25): Bluetooth audio (classic + LE audio) via OUR Bluetooth HAL** — it provides the Bluetooth audio provider behind the stable virtual controller, and only then does the audio policy gain the bluetooth module. Until v5: no Bluetooth audio anywhere in the shipped policy (it blocked boot).
 - **v5 (far future, user 2026-09-25): cellular for PCs with built-in modems**
   (WWAN M.2 LTE/5G, MBIM/QMI). Likely our own Radio HAL (IRadio AIDL →
