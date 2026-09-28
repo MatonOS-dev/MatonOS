@@ -556,6 +556,18 @@ Feature work continues, but in this shape from now on.
   requestPointerCapture() with raw relative motion forwarded; released when
   the app unlocks or loses focus. Size follows Android's pointer size
   (XCURSOR_SIZE set to match).
+  Soft keyboard / IME (2026-09-28): the compositor implements
+  zwp_text_input_v3; the host view's onCreateInputConnection() returns an
+  InputConnection backed by the focused window's text-input state.
+  enable/disable -> InputMethodManager.showSoftInput()/hideSoftInputFromWindow();
+  set_content_type -> EditorInfo.inputType/imeOptions (email, number,
+  password, no-autocorrect); set_surrounding_text -> getTextBeforeCursor/
+  getSelectedText; set_cursor_rectangle -> CursorAnchorInfo; IME
+  setComposingText -> preedit_string; commitText/deleteSurroundingText ->
+  commit_string/delete_surrounding_text. Covers GTK3/4, Qt5/6,
+  Chromium/Electron on Wayland. X11 apps: later, an IBus/Fcitx-compatible
+  frontend in the container relaying to the same InputConnection (physical
+  keyboards work regardless). Not part of compositor v1.
   - **No Debian base (user decision, 2026-09-28, supersedes the Debian
     image):** we need the Android<->Linux glue anyway, so the host side is
     only flatpak + bubblewrap + ostree (+ their deps) built for Android
