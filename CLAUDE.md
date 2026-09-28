@@ -155,6 +155,14 @@ present Android with a simple, stable device through its normal HALs/APIs:
 
 ## Rule: our own apps and daemons are built outside Soong (decided 2026-09-24)
 
+**Relaxed (user, 2026-09-28):** with zram (32 GiB) Soong analysis is no
+longer the blocker it was, so Soong modules are allowed where they bring a
+real benefit — e.g. native code that should link Android's platform
+libraries (BoringSSL, curl, libxml2…) like the Flatpak stack. Still prefer
+outside-Soong builds for code we iterate on constantly (our Gradle/Expo apps,
+fast-changing daemons), and batch Android.bp changes into as few analyses as
+possible. The original reasoning below still describes the trade-off.
+
 Soong re-analyses (15–35 min, ~40 GB with swap) whenever the build graph
 changes. So our **custom apps are never Soong modules**: they are Gradle
 projects (`tools/build-apps.sh`) whose signed APKs the image imports with a
