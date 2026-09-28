@@ -275,11 +275,13 @@ Feature work continues, but in this shape from now on.
   (b) one host process with one Hermes runtime rendering Shell/Shelf/Recents
   as surfaces embedded via SurfaceControlViewHost (saves tens of MB PSS per
   app; gives up independent updates and crash isolation).
-- **Aurora Store is the only app store (user, 2026-09-28)**: Neo Store is
-  removed; preinstalled apps ship the build signed like their Google Play
-  version so Aurora can update them; Firefox (Play build) replaces Fennec
-  F-Droid. Supersedes the F-Droid/Neo Store plan; our own repo (v3) needs a
-  new update path.
+- **App stores (user, 2026-09-28, final)**: F-Droid Basic, built from
+  source by us with INSTALL_PACKAGES/DELETE_PACKAGES added to its manifest
+  (small in-tree patch), signed with our key, privileged = silent installs;
+  updated from our repo later. Preinstalled apps stay on their F-Droid
+  builds. Neo Store removed. Aurora Store: a placeholder app (com.aurora.store,
+  our key) reserves the package; the real Aurora installs over it via the
+  pinned signer-transition table in patch 0003, like microG Companion → Play.
 - **Module trust = signatures, not LoadPin (user, 2026-09-28)**: LoadPin
   (on in the distro base config) pinned all module/firmware loads to /vendor
   and would refuse driver add-ons; it is disabled in pc.config. Every add-on
