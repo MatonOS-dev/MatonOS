@@ -523,6 +523,16 @@ Feature work continues, but in this shape from now on.
   zero-copy dma-buf sharing with wlroots; automatic fallback to a public-API
   path (render into an NDK AHardwareBuffer via EGL, one GPU copy/frame) if
   the symbol disappears. Re-check on every AOSP upgrade.
+  Decorations (user, 2026-09-28; the opposite of GNOME): server-side by
+  default — the compositor implements xdg-decoration and asks every app for
+  server-side mode, so Android's desktop-mode caption bar (title, window
+  buttons, drag) is the decoration (Qt/KDE, Electron-on-Wayland, most
+  toolkits, X11 via Xwayland drop their own). CSD-only apps (GTK4/libadwaita
+  header bars ignore xdg-decoration): a window that never negotiates
+  xdg-decoration gets its host activity's caption made transparent
+  (APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND, Android 15+) so the app's
+  header bar shows through under Android's window controls. Never two
+  visible title bars.
   - **No Debian base (user decision, 2026-09-28, supersedes the Debian
     image):** we need the Android<->Linux glue anyway, so the host side is
     only flatpak + bubblewrap + ostree (+ their deps) built for Android
