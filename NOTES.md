@@ -403,8 +403,9 @@ Feature work continues, but in this shape from now on.
   directly: Rust components via rsbinder; C/C++ via AOSP's own libbinder
   built for glibc (its linux_glibc host variant + libutils/libcutils/liblog/
   libbase), shipped in the rootfs and, if third-party Linux apps should call
-  Android directly, as a Flatpak runtime extension (org.matonos.Platform.Binder)
-  with our AIDL headers. Alternative: libgbinder (Sailfish/Waydroid, in Debian).
+  Only OUR components talk binder (user): build the glibc libbinder into the
+  rootfs when v4 starts; no Flatpak binder extension, third-party Linux apps
+  go through portals. Alternative kept in mind: libgbinder (Waydroid, Debian).
   Linux sandbox sketch: native `linuxd` service (own SELinux domain) mounts
   a distro rootfs from /data, sets up namespaces/cgroups, runs Linux
   processes in a confined domain (render node, own files, no binder).
