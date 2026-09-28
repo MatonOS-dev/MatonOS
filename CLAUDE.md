@@ -204,6 +204,15 @@ daemon sockets; daemons validate strictly. New daemon commands/events then
 need no bridge or AIDL change; typed per-area wrappers live in the Gradle
 client library.
 
+## Rule: our native code is plain C (user, 2026-09-28)
+
+New native code we write from scratch (daemons, helpers, services) is plain
+C, like `native/matonos-sleepd/matonos-sleepd.c` — the user reads C far more
+easily than C++. Use C++ only where a library forces it (e.g. AIDL NDK
+backends, liblp), and then keep the C++ to a thin shim around C code.
+Android-side app/system logic that isn't native goes in Java (not Kotlin).
+Existing C++ is not rewritten just for this; trim or convert when touched.
+
 ## Rule: our drivers live in the ODM partition, invisible to Soong (user, 2026-09-25)
 
 (Vehicle: Android's ODM partition — stock Android reads /odm/etc/init,
