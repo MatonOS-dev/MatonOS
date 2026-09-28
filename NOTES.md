@@ -517,6 +517,12 @@ Feature work continues, but in this shape from now on.
   so no WM layer (no labwc). Input: the host forwards public-API key/motion
   events to the wlr seat. Deps must be MIT/BSD-style (wlroots, wayland,
   pixman, xkbcommon, libdrm); Termux recipes only as build references.
+  Buffers (user, 2026-09-28): private API accepted — the compositor gets
+  AHardwareBuffer native handles via AHardwareBuffer_getNativeHandle
+  (dlsym from libnativewindow at runtime; works in app processes) for
+  zero-copy dma-buf sharing with wlroots; automatic fallback to a public-API
+  path (render into an NDK AHardwareBuffer via EGL, one GPU copy/frame) if
+  the symbol disappears. Re-check on every AOSP upgrade.
   - **No Debian base (user decision, 2026-09-28, supersedes the Debian
     image):** we need the Android<->Linux glue anyway, so the host side is
     only flatpak + bubblewrap + ostree (+ their deps) built for Android
