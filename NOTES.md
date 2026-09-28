@@ -275,6 +275,11 @@ Feature work continues, but in this shape from now on.
   (b) one host process with one Hermes runtime rendering Shell/Shelf/Recents
   as surfaces embedded via SurfaceControlViewHost (saves tens of MB PSS per
   app; gives up independent updates and crash isolation).
+- **Module trust = signatures, not LoadPin (user, 2026-09-28)**: LoadPin
+  (on in the distro base config) pinned all module/firmware loads to /vendor
+  and would refuse driver add-ons; it is disabled in pc.config. Every add-on
+  module is signed with the MatonOS module key; MODULE_SIG_FORCE is enabled
+  once add-on signing is in the repo pipeline (secureboot area).
 - **microG signature spoofing = LineageOS's implementation (user, 2026-09-28)**:
   patch 0002 copies LineageOS 23.2's ComputerEngine code: Google's signature is
   presented only for com.google.android.gms / com.android.vending signed with
