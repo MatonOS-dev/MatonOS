@@ -9,7 +9,7 @@
 # The site is behind Cloudflare's edge cache, so:
 #   - index files get <file>.hwfm sidecars (HWFM header overrides) with a
 #     60 s cache, APKs keep HWFM's one-day default (their names are versioned);
-#   - APKs and icons are uploaded before the index that references them, so a
+#   - APKs, icons and index diffs (diff/, immutable) are uploaded before the index that references them, so a
 #     client never sees an index pointing at a file that isn't there yet.
 # fdroidserver comes from ~/.local/opt/fdroidserver (pip --target): the
 # distro's 2.2.1 can't parse resources of APKs targeting SDK 36+.
@@ -51,7 +51,7 @@ done
 # The server has no rsync: stream files with tar over ssh (APKs/icons, then index).
 host=${REMOTE%%:*}; dir=${REMOTE#*:}
 push() { tar -C "$REPO/repo" -cf - "$@" | ssh "$host" "mkdir -p '$dir/repo' && tar -C '$dir/repo' -xf -"; }
-mapfile -t payload < <(cd "$REPO/repo" && find . -mindepth 1 -maxdepth 1 \( -name '*.apk' -o -name '*.zip' -o -name 'icons*' -o -name 'index.css' -o -name 'index.png' -o -name 'status' \) -printf '%P\n')
+mapfile -t payload < <(cd "$REPO/repo" && find . -mindepth 1 -maxdepth 1 \( -name '*.apk' -o -name '*.zip' -o -name 'icons*' -o -name 'diff' -o -name 'index.css' -o -name 'index.png' -o -name 'status' \) -printf '%P\n')
 info "Uploading APKs and icons to $REMOTE"
 push "${payload[@]}"
 mapfile -t index < <(cd "$REPO/repo" && for f in "${INDEX_FILES[@]}"; do [[ -f $f ]] && printf '%s\n%s\n' "$f.hwfm" "$f"; done)
