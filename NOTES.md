@@ -478,6 +478,14 @@ Feature work continues, but in this shape from now on.
     silently installs/removes the stub APKs, and does the uninstall sync
     below. The Flathub app reaches it through a `flatpak` bridge target
     (built-in app = default-allow; third-party callers need consent).
+  - Storage (user): Flatpak installs live in a hidden folder under
+    userdata, not in shared storage — e.g. /data/matonos/linux/flatpak
+    (system-wide installation, own SELinux label, invisible to Files/MTP,
+    excluded from Android backups). Per-app data (~/.var/app) and the Linux
+    home go in a per-Android-user credential-encrypted dir (available after
+    unlock), so Linux app data follows Android's user separation. The Debian
+    base image stays read-only; its writable bits (/etc overrides, /var)
+    also live under /data/matonos/linux.
   - Fork wlroots-android-bridge. Its compositor (labwc/wlroots) runs as an
     ANDROID (bionic) process: launched via app_process, hands 3 binders
     (main/surface/input) to the host app inside an intent Bundle (no
