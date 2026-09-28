@@ -493,6 +493,13 @@ Feature work continues, but in this shape from now on.
     helper/Settings); uninstalling the Flatpak removes the stub. Windows use
     setTaskDescription(label, icon) so Recents/taskbar group them under the
     app. Same mechanism could give browser PWAs real app entries.
+    Uninstall sync: the stub gets no callback, but the host app receives
+    ACTION_PACKAGE_FULLY_REMOVED (manifest receivers allowed; not sent for
+    updates, unlike PACKAGE_REMOVED) for org.matonos.linux.* and runs
+    `flatpak uninstall <id>` (+ `--unused` for runtimes; `--delete-data`
+    to match Android, or ask — decide later). Reverse: a Flatpak removed on
+    the Linux side (its .desktop export disappears) -> host uninstalls the
+    stub silently.
   - Alternative kept on file: compositor inside the container + a small
     Android-side presenter over binder (keeps untrusted Wayland parsing in
     the container; more parts). Estimate for the fork route: ~1-2 weeks of
