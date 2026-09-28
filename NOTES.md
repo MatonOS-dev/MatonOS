@@ -533,6 +533,16 @@ Feature work continues, but in this shape from now on.
   (APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND, Android 15+) so the app's
   header bar shows through under Android's window controls. Never two
   visible title bars.
+  Scaling (user, 2026-09-28): Android's density is the source of truth,
+  per window (Configuration.densityDpi, updated when a window moves to
+  another display). Wayland: wp_fractional_scale_v1 (exact factor) + wl_output
+  integer scale (rounded up) + wp_viewporter for apps without fractional
+  support; re-render on display change. X11 via per-app Xwayland: HiDPI /
+  native-scaling mode (full-resolution X clients, not blurry upscales),
+  plus per-instance Xft.dpi, GDK_SCALE/GDK_DPI_SCALE, QT_SCALE_FACTOR,
+  XCURSOR_SIZE; Chromium-based apps (Steam) may get
+  --force-device-scale-factor. Android font scale/display size flow to Linux
+  apps too (Settings portal text-scaling-factor, Xft.dpi).
   - **No Debian base (user decision, 2026-09-28, supersedes the Debian
     image):** we need the Android<->Linux glue anyway, so the host side is
     only flatpak + bubblewrap + ostree (+ their deps) built for Android
