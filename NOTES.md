@@ -383,7 +383,9 @@ Feature work continues, but in this shape from now on.
   extension; needs bubblewrap / nested user namespaces) or AppImage (needs
   /dev/fuse). Our xdg-desktop-portal backend maps file chooser -> Android
   picker, open-URI -> intents, notifications -> Android; PipeWire <->
-  AAudio bridge. Base distro and compositor host (app vs bridge) open.
+  AAudio bridge. Base distro: Debian stable (user: stability; mmdebstrap,
+  pinned point release, security rebuilds per MatonOS release). Compositor
+  host (app vs bridge) open. No libhybris (all our drivers are open Linux ones).
   Linux sandbox sketch: native `linuxd` service (own SELinux domain) mounts
   a distro rootfs from /data, sets up namespaces/cgroups, runs Linux
   processes in a confined domain (render node, own files, no binder).
