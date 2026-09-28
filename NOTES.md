@@ -275,6 +275,11 @@ Feature work continues, but in this shape from now on.
   (b) one host process with one Hermes runtime rendering Shell/Shelf/Recents
   as surfaces embedded via SurfaceControlViewHost (saves tens of MB PSS per
   app; gives up independent updates and crash isolation).
+- **Aurora Store is the only app store (user, 2026-09-28)**: Neo Store is
+  removed; preinstalled apps ship the build signed like their Google Play
+  version so Aurora can update them; Firefox (Play build) replaces Fennec
+  F-Droid. Supersedes the F-Droid/Neo Store plan; our own repo (v3) needs a
+  new update path.
 - **Module trust = signatures, not LoadPin (user, 2026-09-28)**: LoadPin
   (on in the distro base config) pinned all module/firmware loads to /vendor
   and would refuse driver add-ons; it is disabled in pc.config. Every add-on
