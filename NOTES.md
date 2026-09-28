@@ -188,6 +188,11 @@ Feature work continues, but in this shape from now on.
   (replaces installer.sh's sysfs boot_devices). Refuse the live medium.
   Open: UEFI boot entry (efivarfs vs fallback BOOTX64.EFI), SELinux policy,
   progress/cancel before partitioning.
+  Install sequence (user, 2026-09-28): partition -> copy live slot A ->
+  clone A to B -> disable the installer on the installed image. User files
+  are NOT copied (user decision: installed system starts with empty /data).
+  Requires the product to be A/B (slot-suffixed dynamic partitions, per-slot
+  systemd-boot entries, a boot-control HAL); the live image keeps only A.
   **Displays follow the hardware-glue principle (decided 2026-09-24)**: a
   MatonOS display daemon (own SELinux domain) changes on the fly what
   display hardware Android sees, and Android just handles ordinary hotplugs.
