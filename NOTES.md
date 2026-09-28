@@ -454,6 +454,13 @@ Feature work continues, but in this shape from now on.
   notifications, Settings portal for Android dark mode/accent), PipeWire +
   WirePlumber, a Secret Service, fonts/icons/cursors, xdg-user-dirs on the
   shared folders. No DM, panel, Linux launcher or notification daemon.
+  Prior art to build on (user, 2026-09-28): github.com/Xtr126/wlroots-android-bridge
+  (GPL-3.0) — labwc/wlroots compositor with an AHardwareBuffer wlr_allocator
+  over minigbm gralloc, per-window ASurfaceTransaction_setBuffer to
+  SurfaceFlinger (zero-copy, overlays/scanout), Mesa iris tested, binder
+  (NDK AIDL) link to a small Android host app; keyboard+mouse done, touch/
+  stylus/gamepad/pointer-lock not. Runs its Linux side in Termux; we'd host
+  it in the Debian container with glibc libbinder instead.
   Linux -> Android IPC = binder (user): fds cross for free (dma-buf buffers,
   PipeWire memory, files). A dedicated binderfs device for the container
   (e.g. `linuxbinder`) whose context manager is our bridge daemon, so Linux
