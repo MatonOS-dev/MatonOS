@@ -283,6 +283,15 @@ Feature work continues, but in this shape from now on.
   update-manifest files get `<file>.hwfm` sidecars with a short
   Cache-Control/CDN-Cache-Control (HWFM 4f86397); payloads/APKs are uploaded
   before the index that references them. Signing keys stay on the build PC.
+- **MatonOS Settings gets its own store client (user, 2026-09-28)**: an
+  "Apps & updates" part of Settings speaks the F-Droid repo format itself
+  (entry.jar signature against pinned repo fingerprints, index-v2 + diffs,
+  per-APK sha256/signer), installs silently as a privileged app, has the
+  pinned stand-in -> real app transitions built in, and installs Aurora over
+  its placeholder from the MatonOS repo. Later also the front end for OS
+  updates and add-ons under updates/. Settings therefore becomes privileged
+  with INSTALL_PACKAGES/DELETE_PACKAGES. F-Droid Basic stays until then
+  (no signature-check patch in it). Planned after v2's core work.
 - **App stores (user, 2026-09-28, final)**: F-Droid Basic, built from
   source by us with INSTALL_PACKAGES/DELETE_PACKAGES added to its manifest
   (small in-tree patch), signed with our key, privileged = silent installs;
