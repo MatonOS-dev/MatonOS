@@ -427,6 +427,12 @@ Feature work continues, but in this shape from now on.
      zygote may load from + setting the props without Soong.
   2. **GMS replacement (microG)**: moved to **v3** (user, 2026-09-26), see
      there.
+- **Later idea (user, 2026-09-28): "Car mode" launcher** — our own Expo UI
+  launcher with an Android Auto-style layout (app rail + large dashboard
+  cards: now playing via media sessions, the user's maps app, phone, apps;
+  day/night, big touch targets) for PCs in cars/vans/workshops. Own design
+  and icons: the real Android Auto UI is Google's closed app; AOSP's
+  Automotive CarLauncher/car-ui-lib are open but need the car services.
 - **v4**: Google Play via the add-on slot (stub/overlay), maybe the Linux
   sandbox, and turning it into a real little distro. Also: libcamera
   (MIPI/IPU cameras) and Aurora Store (optional, e.g. offered via the same
