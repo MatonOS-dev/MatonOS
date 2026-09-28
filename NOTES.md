@@ -275,6 +275,13 @@ Feature work continues, but in this shape from now on.
   (b) one host process with one Hermes runtime rendering Shell/Shelf/Recents
   as surfaces embedded via SurfaceControlViewHost (saves tens of MB PSS per
   app; gives up independent updates and crash isolation).
+- **Hosting (user, 2026-09-28)**: OS updates and our F-Droid repo are served
+  from the user's HP server (`han-mc-server`, HWFM static file server) at
+  https://download.hanro50.net.za/matonos — F-Droid repo under `fdroid/repo`,
+  OS update payloads under `updates/`. Behind Cloudflare's edge cache: index /
+  update-manifest files get `<file>.hwfm` sidecars with a short
+  Cache-Control/CDN-Cache-Control (HWFM 4f86397); payloads/APKs are uploaded
+  before the index that references them. Signing keys stay on the build PC.
 - **App stores (user, 2026-09-28, final)**: F-Droid Basic, built from
   source by us with INSTALL_PACKAGES/DELETE_PACKAGES added to its manifest
   (small in-tree patch), signed with our key, privileged = silent installs;
