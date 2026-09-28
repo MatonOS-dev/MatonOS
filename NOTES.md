@@ -346,24 +346,17 @@ Feature work continues, but in this shape from now on.
   builds. Neo Store removed. Aurora Store: a placeholder app (com.aurora.store,
   our key) reserves the package; the real Aurora installs over it via the
   pinned signer-transition table in patch 0003, like microG Companion → Play.
-- **Audio architecture (user, 2026-09-28)**: BayLibre's HAL is dropped.
-  Android sees ONE output and ONE input, and they are PipeWire: the stock
-  AOSP AIDL audio HAL (hardware/interfaces/audio/aidl/default, small
-  patches allowed, e.g. to keep Bluetooth/LE from breaking boot) with one
-  new class, `StreamPipeWire : DriverInterface`, plugged into ModulePrimary.
-  PipeWire + WirePlumber (built for bionic, run as an Android-side service)
-  own all real hardware: cards, HDMI, USB, hotplug, default device. The
-  same PipeWire serves Linux (Flatpak) apps in v4. The ALSA card selector
-  is transitional until the adapter lands. Tasks are split narrowly: (1)
-  swap to the stock HAL, (2) NDK PipeWire/WirePlumber prebuilts, (3) the
-  DriverInterface adapter only. Replacing AudioFlinger is never an option.
-  Because Android only sees one PipeWire device, its own output switcher
-  can't pick hardware: **MatonOS Settings gets an audio selector** (user,
-  2026-09-28) that configures PipeWire — default output/input device,
-  card profiles (e.g. HDMI vs analog, duplex), per-device volume/mute,
-  hotplug shown live. Settings -> bridge `audio` target -> PipeWire's
-  control side (WirePlumber settings / pw metadata) over our channel.
-  Later maybe a quick-settings tile for switching output.
+- **Audio (user, 2026-09-28, final)**: Android's audio stays as it is
+  (BayLibre AIDL HAL + our ALSA card selector; no PipeWire HAL). For v4
+  Linux apps, the bionic PipeWire in the Linux-apps add-on gets a sink
+  (and source) that sends the mixed stream over binder to the MatonOS
+  side, which plays it with AAudio/AudioTrack (records with AudioRecord
+  for the source). Linux audio then enters Android's normal mix: volume,
+  audio focus, media controls and Bluetooth routing all work, and Android
+  stays the only owner of the hardware. Transport: one shared-memory ring
+  (memfd) handed over binder once + small binder notifications, not
+  per-buffer binder calls. Receiving side: the bridge (user) — or, to keep
+  the bridge a thin gatekeeper, the unprivileged Linux-apps host app.
 - **Module trust = signatures, not LoadPin (user, 2026-09-28)**: LoadPin
   (on in the distro base config) pinned all module/firmware loads to /vendor
   and would refuse driver add-ons; it is disabled in pc.config. Every add-on
