@@ -596,6 +596,8 @@ Feature work continues, but in this shape from now on.
     them (~8-12 MB added instead of ~22 MB; TLS fixes arrive with Android).
     New third-party modules under linux/third_party/: glib, json-glib,
     libarchive, libseccomp, bubblewrap, ostree, flatpak, gpgme stack.
+    Maintained as PATCHES over pristine pinned upstream sources (user,
+    2026-09-28): linux/third_party/<name>/upstream + patches/NNNN-*.patch.
     Feasibility spike started 2026-09-28 (agent flatpak-spike).
     Stub APK generation + signing lives in a SEPARATE app, not the bridge
     (user: code separation); that generator app grows into the Flathub/
