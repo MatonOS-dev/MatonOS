@@ -577,6 +577,20 @@ Feature work continues, but in this shape from now on.
     MediaProjection; focus/activation <-> Android tasks. Still shared: the
     Flatpak/container side (bridge + container daemon), the D-Bus session
     bus, PipeWire. Cost: ~20-40 MB per running app (+Xwayland if X11).
+  - Xtr126's code is NOT shipped as its app (user, 2026-09-28): it is the
+    BASE of our system library ("run Wayland apps"): its wlroots/labwc
+    compositor core, AHardwareBuffer allocator, per-window
+    ASurfaceTransaction output and input path get restructured into the
+    shared library APK the stubs load (one compositor instance per stub),
+    with Xwayland alongside; its demo app / Termux launcher are dropped.
+  - Evaluated, not chosen as the base: gamescope (Valve, BSD-2) — one-app
+    micro-compositor, but composites everything into ONE output (desktop
+    apps need one Android window per toplevel), X11-centric, would need a
+    new Vulkan-to-ANativeWindow backend and lose the zero-copy SurfaceControl
+    path; keep as a later per-app "game mode" compositor (e.g. Steam
+    Flatpak). exo (Chrome OS) — Chromium/Aura-bound, not extractable;
+    Sommelier (Crostini, BSD) — an in-VM proxy that still needs a host
+    compositor; useful reference for X11 quirks, DPI scaling, clipboard.
   - Alternative kept on file: compositor inside the container + a small
     Android-side presenter over binder (keeps untrusted Wayland parsing in
     the container; more parts). Estimate for the fork route: ~1-2 weeks of
