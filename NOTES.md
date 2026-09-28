@@ -413,6 +413,17 @@ Feature work continues, but in this shape from now on.
     Remove the vending (and gms) spoof pairs while real Google is active.
   - Data dir carries over (offer "clear data" after switching). Key rotation
     can't do this without Google's private key, hence the patch.
+- **v7 (user, 2026-09-28): NVIDIA proprietary stack for Linux apps** —
+  NVIDIA's OPEN GPU kernel modules (nvidia.ko/nvidia-drm.ko, MIT/GPL, Turing+)
+  as a signed driver add-on built against our kernel (closed-module GPUs out:
+  redistribution grey); userspace from Flathub's
+  org.freedesktop.Platform.GL.nvidia-<version> extensions (NVIDIA GL/Vulkan/
+  CUDA/NVENC inside each Flatpak sandbox, auto-matched to the kernel driver).
+  Android itself can't use NVIDIA's glibc-only userspace, and nvidia.ko and
+  nouveau can't share a GPU, so the target is HYBRID laptops: Android + our
+  compositor + display on the iGPU (Mesa), Linux apps render on the NVIDIA
+  dGPU, frames cross as dma-bufs (PRIME render offload; watch modifiers,
+  use linear/common ones). NVIDIA-only desktops stay on nouveau + NVK.
 - **v6 (user, 2026-09-28): AppImage support** on top of the v4 Flatpak
   stack: AppImages can't run natively (they mount via FUSE and expect the
   host's glibc/GL/Wayland libs; our host is bionic). Instead the store app
