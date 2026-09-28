@@ -275,6 +275,13 @@ Feature work continues, but in this shape from now on.
   (b) one host process with one Hermes runtime rendering Shell/Shelf/Recents
   as surfaces embedded via SurfaceControlViewHost (saves tens of MB PSS per
   app; gives up independent updates and crash isolation).
+- **microG signature spoofing = LineageOS's implementation (user, 2026-09-28)**:
+  patch 0002 copies LineageOS 23.2's ComputerEngine code: Google's signature is
+  presented only for com.google.android.gms / com.android.vending signed with
+  microG's real key and whose `fake-signature` metadata equals Google's
+  certificate. No permission, no bridge policy (the bridge-based spoof
+  provider and FAKE_PACKAGE_SIGNATURE were dropped). Supersedes the
+  "hook that asks the bridge" design below.
 - **App store = Neo Store, privileged; microG pulled forward (user, 2026-09-27)**:
   F-Droid 2.0 dropped Privileged Extension support and doesn't request
   INSTALL_PACKAGES, so every install prompted. Neo Store
