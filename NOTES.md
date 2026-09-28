@@ -399,6 +399,12 @@ Feature work continues, but in this shape from now on.
   Container side in Rust with rsbinder (pure-Rust binder + AIDL, no bionic);
   stable, versioned AIDL interfaces (compositor/surfaces/input/IME, audio,
   portals, clipboard, shortcuts); one SELinux binder_call rule per service.
+  Binder is a kernel driver (ioctl on the device), so glibc code can use it
+  directly: Rust components via rsbinder; C/C++ via AOSP's own libbinder
+  built for glibc (its linux_glibc host variant + libutils/libcutils/liblog/
+  libbase), shipped in the rootfs and, if third-party Linux apps should call
+  Android directly, as a Flatpak runtime extension (org.matonos.Platform.Binder)
+  with our AIDL headers. Alternative: libgbinder (Sailfish/Waydroid, in Debian).
   Linux sandbox sketch: native `linuxd` service (own SELinux domain) mounts
   a distro rootfs from /data, sets up namespaces/cgroups, runs Linux
   processes in a confined domain (render node, own files, no binder).
