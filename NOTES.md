@@ -468,6 +468,36 @@ Feature work continues, but in this shape from now on.
   installation-information rule: users must be able to run modified GPL-3
   parts on shipped images — kept by our Secure Boot design (own MOK key or
   SB off); never lock that down. Publish sources for GPL parts with images.
+  **v4 Linux-apps plan (user, 2026-09-28), refined after reading Xtr126's code:**
+  - Fork wlroots-android-bridge. Its compositor (labwc/wlroots) runs as an
+    ANDROID (bionic) process: launched via app_process, hands 3 binders
+    (main/surface/input) to the host app inside an intent Bundle (no
+    servicemanager); AIDL: registerXdgTopLevelCallback, add/removeXdgTopLevel
+    (one activity per toplevel), onSurfaceCreated/Changed/Destroyed (Surface
+    back to the compositor, ASurfaceTransaction per window), InputQueue ->
+    wlr seat. Linux apps are plain Wayland clients: only the Wayland socket
+    (and PipeWire/D-Bus sockets) crosses into the Debian container, buffers
+    as dma-buf fds. The glibc libbinder is then NOT needed for display.
+  - Host it in a normal, UNPRIVILEGED MatonOS app: Android's app sandbox (own
+    uid + untrusted app SELinux domain) contains a compositor exploit to that
+    app. Never run it as a system/privileged component.
+  - Build its native deps (wayland, wlroots, labwc, pixman, xkbcommon, libdrm)
+    from termux-packages recipes with our own package name/prefix instead of
+    maintaining our own bionic ports; we pin and rebuild. Our minigbm fork
+    is the gralloc its dma-buf import trick relies on.
+  - Flatpaks as real Android apps, WebAPK-style: on Flatpak install the host
+    generates a stub APK per app (package org.matonos.linux.<flatpak-id>,
+    label/icon from the .desktop file, one launcher activity that asks the
+    compositor to `flatpak run <id>`), signs it with an on-device key
+    (apksig) and installs it silently (INSTALL_PACKAGES via a privileged
+    helper/Settings); uninstalling the Flatpak removes the stub. Windows use
+    setTaskDescription(label, icon) so Recents/taskbar group them under the
+    app. Same mechanism could give browser PWAs real app entries.
+  - Alternative kept on file: compositor inside the container + a small
+    Android-side presenter over binder (keeps untrusted Wayland parsing in
+    the container; more parts). Estimate for the fork route: ~1-2 weeks of
+    agent work to reach parity (GPU-accelerated resizable windows, kbd+mouse);
+    touch/stylus/gamepad/pointer-lock/clipboard/IME/portals extra.
   Linux -> Android IPC = binder (user): fds cross for free (dma-buf buffers,
   PipeWire memory, files). A dedicated binderfs device for the container
   (e.g. `linuxbinder`) whose context manager is our bridge daemon, so Linux
