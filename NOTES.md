@@ -461,6 +461,13 @@ Feature work continues, but in this shape from now on.
   (NDK AIDL) link to a small Android host app; keyboard+mouse done, touch/
   stylus/gamepad/pointer-lock not. Runs its Linux side in Termux; we'd host
   it in the Debian container with glibc libbinder instead.
+  Licensing (user, 2026-09-28): GPL code in our mono-repo is fine (as with
+  the kernel). The compositor stays a separate GPL-3.0 program talking to
+  Android over binder (aggregation); the Android host app and our other
+  code keep their licenses as long as they don't link GPL code. GPLv3's
+  installation-information rule: users must be able to run modified GPL-3
+  parts on shipped images — kept by our Secure Boot design (own MOK key or
+  SB off); never lock that down. Publish sources for GPL parts with images.
   Linux -> Android IPC = binder (user): fds cross for free (dma-buf buffers,
   PipeWire memory, files). A dedicated binderfs device for the container
   (e.g. `linuxbinder`) whose context manager is our bridge daemon, so Linux
