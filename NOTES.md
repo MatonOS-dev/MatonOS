@@ -494,6 +494,18 @@ Feature work continues, but in this shape from now on.
   parts on shipped images — kept by our Secure Boot design (own MOK key or
   SB off); never lock that down. Publish sources for GPL parts with images.
   **v4 Linux-apps plan (user, 2026-09-28), refined after reading Xtr126's code:**
+  **NO GPL for the compositor (user, 2026-09-28 evening; supersedes every
+  Xtr126/labwc/GPL-3.0 item below):** Xtr126's work is dropped entirely
+  (labwc is GPL-2.0-only, the bridge GPL-3.0 — incompatible, and its JNI was
+  TODO stubs). Our compositor = wlroots (MIT) + our own minimal core, with a
+  CLEAN-ROOM reimplementation of the two architectural ideas only: an
+  AHardwareBuffer/gralloc-backed wlr_allocator and per-toplevel output via
+  ASurfaceTransaction to SurfaceFlinger. No code copied from Xtr126/labwc.
+  As the OS (not a Termux app) we get direct hardware access: our minigbm
+  gralloc, the DRM render node, our Mesa. Android does window management,
+  so no WM layer (no labwc). Input: the host forwards public-API key/motion
+  events to the wlr seat. Deps must be MIT/BSD-style (wlroots, wayland,
+  pixman, xkbcommon, libdrm); Termux recipes only as build references.
   - **No Debian base (user decision, 2026-09-28, supersedes the Debian
     image):** we need the Android<->Linux glue anyway, so the host side is
     only flatpak + bubblewrap + ostree (+ their deps) built for Android
