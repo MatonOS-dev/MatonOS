@@ -517,6 +517,10 @@ Feature work continues, but in this shape from now on.
   so no WM layer (no labwc). Input: the host forwards public-API key/motion
   events to the wlr seat. Deps must be MIT/BSD-style (wlroots, wayland,
   pixman, xkbcommon, libdrm); Termux recipes only as build references.
+  Deps (user, 2026-09-28): AOSP's own external/libdrm, libxkbcommon, pixman,
+  wayland, wayland-protocols are forked (local manifest, branch matonos/v1.2,
+  like minigbm/drm_hwcomposer) and bumped to what wlroots needs; only wlroots
+  is vendored. Five more forks to rebase on AOSP upgrades.
   Buffers (user, 2026-09-28): private API accepted — the compositor gets
   AHardwareBuffer native handles via AHardwareBuffer_getNativeHandle
   (dlsym from libnativewindow at runtime; works in app processes) for
