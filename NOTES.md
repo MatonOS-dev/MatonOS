@@ -574,9 +574,15 @@ Feature work continues, but in this shape from now on.
   - Storage (user): Flatpak installs live in a hidden folder under
     userdata, not in shared storage — e.g. /data/matonos/linux/flatpak
     (system-wide installation, own SELinux label, invisible to Files/MTP,
-    excluded from Android backups). Per-app data (~/.var/app) and the Linux
-    home go in a per-Android-user credential-encrypted dir (available after
-    unlock), so Linux app data follows Android's user separation. The Debian
+    excluded from Android backups). Per-app DATA (~/.var/app/<id>) lives
+    in the app's STUB's own Android data folder (user, 2026-09-28), bind-
+    mounted into the sandbox: uninstalling the stub deletes it, Settings ->
+    Apps shows its size, "Clear storage" resets the Linux app, and Android's
+    per-user separation/encryption apply. Installed FILES (the app's /app,
+    runtimes, the ostree repo) stay in the shared hidden store: runtimes are
+    shared and deduplicated, Android neverallows system components executing
+    code from app data folders, and a stub must not be able to modify its
+    app's binaries; the uninstall sync removes them instead. The Debian
     base image stays read-only; its writable bits (/etc overrides, /var)
     also live under /data/matonos/linux (no base image with option C; the
     add-on's writable state lives there instead).
