@@ -355,8 +355,8 @@ Feature work continues, but in this shape from now on.
   audio focus, media controls and Bluetooth routing all work, and Android
   stays the only owner of the hardware. Transport: one shared-memory ring
   (memfd) handed over binder once + small binder notifications, not
-  per-buffer binder calls. Receiving side: the bridge (user) — or, to keep
-  the bridge a thin gatekeeper, the unprivileged Linux-apps host app.
+  per-buffer binder calls. Receiving side: the unprivileged Linux-apps host
+  app (user decision; keeps audio code out of the bridge).
 - **Module trust = signatures, not LoadPin (user, 2026-09-28)**: LoadPin
   (on in the distro base config) pinned all module/firmware loads to /vendor
   and would refuse driver add-ons; it is disabled in pc.config. Every add-on
