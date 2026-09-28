@@ -508,7 +508,17 @@ Feature work continues, but in this shape from now on.
     them (~8-12 MB added instead of ~22 MB; TLS fixes arrive with Android).
     New third-party modules under linux/third_party/: glib, json-glib,
     libarchive, libseccomp, bubblewrap, ostree, flatpak, gpgme stack.
-    Feasibility spike started 2026-09-28 (agent flatpak-spike). This depends on
+    Feasibility spike started 2026-09-28 (agent flatpak-spike).
+    Isolation rules (user, 2026-09-28): Flatpak apps only ever link their
+    runtime's glibc/Mesa inside the bwrap sandbox; what crosses is kernel
+    syscalls/ioctls and device nodes, sockets (Wayland, PipeWire/Pulse,
+    D-Bus), fds (dma-buf, memfd) and read-only data under /run/host. NO
+    host command execution: build flatpak-session-helper without (or with
+    disabled) host-command spawning and never expose org.freedesktop.Flatpak
+    to apps, so `flatpak-spawn --host` can't reach the bionic system side.
+    The D-Bus session bus is heavily locked down: default-deny policy,
+    only our portal backend names and explicitly allowed services are
+    reachable; Flatpak's own bus proxy (xdg-dbus-proxy) filters per app. This depends on
     add-on packages being able to ship userspace daemons (deferred in the
     first add-on release; now needed for v4). Debian (mmdebstrap) stays the
     fallback if this proves unworkable: measured 2026-09-28 at 321 MiB
