@@ -278,7 +278,8 @@ Feature work continues, but in this shape from now on.
 - **Hosting (user, 2026-09-28)**: OS updates and our F-Droid repo are served
   from the user's HP server (`han-mc-server`, HWFM static file server) at
   https://download.hanro50.net.za/matonos — F-Droid repo under `fdroid/repo`,
-  OS update payloads under `updates/`. Behind Cloudflare's edge cache: index /
+  OS update payloads under `updates/`; driver add-ons are keyed to a
+  MatonOS release and live with it under `updates/<version>/addons/`. Behind Cloudflare's edge cache: index /
   update-manifest files get `<file>.hwfm` sidecars with a short
   Cache-Control/CDN-Cache-Control (HWFM 4f86397); payloads/APKs are uploaded
   before the index that references them. Signing keys stay on the build PC.
