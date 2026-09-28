@@ -294,11 +294,11 @@ Feature work continues, but in this shape from now on.
   for Google's official uncertified-device registration page. We never
   ship, host, link to or auto-download Google binaries, and we never spoof
   Play certification/Integrity (no other vendors' fingerprints).
-  Privileged permissions: the image ships OUR allowlists for gms, vending
-  and gsf (gms/privapp-permissions-*.xml), generated from what microG and
-  the real Google apps request (intersected with the framework's privileged
-  permissions); only the stand-ins or genuine Google apps (via patch 0003)
-  can hold those packages. GsfProxy is privileged for that reason.
+  Privileged permissions need no Google allowlist: updated system apps are
+  exempt from the privapp allowlist (AppIdPermissionPolicy), so genuine
+  Google apps installed over the privileged stand-ins get their privileged
+  permissions automatically; our XMLs only cover what microG requests.
+  GsfProxy is privileged so the real Services Framework inherits that.
   Supported user zips: flat TWRP layout (MindTheGapps), nested per-app zips
   (NikGapps), LiteGapps (files/files.tar.xz -> <abi>/<sdk>/system/...); APKs
   with native code must match x86_64. Verified 2026-09-28: LiteGapps

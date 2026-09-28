@@ -34,7 +34,8 @@ android_app_import {
 // microG Services Framework Proxy (legacy GCM compatibility; microG's
 // self-check expects it). Privileged although GsfProxy needs no privileged
 // permissions: the real Google Services Framework ("bring your own GApps")
-// inherits privileged status only by updating a privileged stand-in.
+// inherits privileged status only by updating a privileged stand-in, and as
+// an updated system app it needs no allowlist entries.
 android_app_import {
     name: "MatonMicroGGsfProxy",
     apk: "apks/MatonMicroGGsfProxy.apk",
@@ -46,14 +47,6 @@ android_app_import {
     dex_preopt: {
         enabled: false,
     },
-    required: ["privapp-permissions-com.google.android.gsf.xml"],
-}
-
-prebuilt_etc {
-    name: "privapp-permissions-com.google.android.gsf.xml",
-    src: "privapp-permissions-com.google.android.gsf.xml",
-    sub_dir: "permissions",
-    product_specific: true,
 }
 
 prebuilt_etc {
