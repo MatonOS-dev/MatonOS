@@ -475,7 +475,14 @@ Feature work continues, but in this shape from now on.
     (NDK / termux-packages recipes), and Flatpak apps run on the Android
     kernel with their runtime's own /usr. Session pieces (D-Bus, PipeWire,
     xdg-desktop-portal with our backend, flatpak-session-helper) are our
-    glue, run either as Android-side natives or from a Flatpak runtime.
+    glue, run as Android-side natives (user, 2026-09-28): D-Bus (session
+    bus daemon) built for bionic; PipeWire + pipewire-pulse built for bionic
+    (our earlier NDK PipeWire work was replaced by the BayLibre audio HAL —
+    revive it for v4, plus an AAudio sink/source node of ours; it may also
+    help with the remaining audio issues); xdg-desktop-portal + our backend
+    is the glue we write anyway. Flatpak apps only see their sockets
+    (bus, pipewire-0, pulse/native, Wayland), so bionic servers work with
+    the runtimes' glibc clients.
     Shipped as an OPTIONAL ADD-ON package (per MatonOS version under
     updates/<version>/addons/, like driver add-ons), fetched when the user
     enables Linux apps — nothing in the system image. This depends on
