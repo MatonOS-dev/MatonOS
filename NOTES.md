@@ -375,6 +375,15 @@ Feature work continues, but in this shape from now on.
   sandbox, and turning it into a real little distro. Also: libcamera
   (MIPI/IPU cameras) and Aurora Store (optional, e.g. offered via the same
   add-on/first-boot choice as Play).
+  **Linux apps direction (user, 2026-09-28):** an IMMUTABLE distro rootfs
+  (signed image, shipped with MatonOS releases under updates/<version>/,
+  A/B like our partitions) + a custom Wayland compositor bridging each Linux
+  toplevel to an Android window (dma-buf import, Xwayland, input/IME,
+  clipboard); apps installed as Flatpak (own runtimes incl. Mesa GL
+  extension; needs bubblewrap / nested user namespaces) or AppImage (needs
+  /dev/fuse). Our xdg-desktop-portal backend maps file chooser -> Android
+  picker, open-URI -> intents, notifications -> Android; PipeWire <->
+  AAudio bridge. Base distro and compositor host (app vs bridge) open.
   Linux sandbox sketch: native `linuxd` service (own SELinux domain) mounts
   a distro rootfs from /data, sets up namespaces/cgroups, runs Linux
   processes in a confined domain (render node, own files, no binder).
