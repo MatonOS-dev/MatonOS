@@ -346,6 +346,17 @@ Feature work continues, but in this shape from now on.
   builds. Neo Store removed. Aurora Store: a placeholder app (com.aurora.store,
   our key) reserves the package; the real Aurora installs over it via the
   pinned signer-transition table in patch 0003, like microG Companion → Play.
+- **Audio architecture (user, 2026-09-28)**: BayLibre's HAL is dropped.
+  Android sees ONE output and ONE input, and they are PipeWire: the stock
+  AOSP AIDL audio HAL (hardware/interfaces/audio/aidl/default, small
+  patches allowed, e.g. to keep Bluetooth/LE from breaking boot) with one
+  new class, `StreamPipeWire : DriverInterface`, plugged into ModulePrimary.
+  PipeWire + WirePlumber (built for bionic, run as an Android-side service)
+  own all real hardware: cards, HDMI, USB, hotplug, default device. The
+  same PipeWire serves Linux (Flatpak) apps in v4. The ALSA card selector
+  is transitional until the adapter lands. Tasks are split narrowly: (1)
+  swap to the stock HAL, (2) NDK PipeWire/WirePlumber prebuilts, (3) the
+  DriverInterface adapter only. Replacing AudioFlinger is never an option.
 - **Module trust = signatures, not LoadPin (user, 2026-09-28)**: LoadPin
   (on in the distro base config) pinned all module/firmware loads to /vendor
   and would refuse driver add-ons; it is disabled in pc.config. Every add-on
