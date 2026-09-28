@@ -494,9 +494,13 @@ Feature work continues, but in this shape from now on.
     is the glue we write anyway. Flatpak apps only see their sockets
     (bus, pipewire-0, pulse/native, Wayland), so bionic servers work with
     the runtimes' glibc clients.
-    Shipped as an OPTIONAL ADD-ON package (per MatonOS version under
-    updates/<version>/addons/, like driver add-ons), fetched when the user
-    enables Linux apps — nothing in the system image. This depends on
+    The bionic Flatpak stack (flatpak/libflatpak, ostree, glib/gio, curl +
+    one TLS lib, libarchive, libxml2, zstd/brotli, gpgme+gpg, bubblewrap,
+    libseccomp, json-glib, fuse3, libc++) is PRESHIPPED in the image (user,
+    2026-09-28): estimated ~15-22 MB stripped (from Debian trixie sizes,
+    not a build), ~6-9 MB erofs-compressed. Runtimes/apps still go to /data
+    only when the user installs them. (Earlier idea of shipping it as an
+    optional add-on is superseded.) This depends on
     add-on packages being able to ship userspace daemons (deferred in the
     first add-on release; now needed for v4). Debian (mmdebstrap) stays the
     fallback if this proves unworkable: measured 2026-09-28 at 321 MiB
