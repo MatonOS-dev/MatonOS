@@ -423,6 +423,10 @@ Feature work continues, but in this shape from now on.
   uninstall sync. Sandboxed by default (safer than on desktop Linux); a
   default permission set since AppImages declare none; some AppImages
   needing host libs the runtime lacks won't work; x86_64 only.
+  **Snap: rejected (user, 2026-09-28)** — snapd needs systemd (mount and
+  service units), AppArmor for strict confinement (we're SELinux), system-
+  wide squashfs loop mounts, and a proprietary store backend. Apps on Snap
+  are almost always on Flathub or as AppImages too.
 - **v5 (user, 2026-09-25): Bluetooth audio (classic + LE audio) via OUR Bluetooth HAL** — it provides the Bluetooth audio provider behind the stable virtual controller, and only then does the audio policy gain the bluetooth module. Until v5: no Bluetooth audio anywhere in the shipped policy (it blocked boot).
 - **v5 (far future, user 2026-09-25): cellular for PCs with built-in modems**
   (WWAN M.2 LTE/5G, MBIM/QMI). Likely our own Radio HAL (IRadio AIDL →
