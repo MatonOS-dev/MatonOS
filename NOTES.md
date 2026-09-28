@@ -283,6 +283,17 @@ Feature work continues, but in this shape from now on.
   update-manifest files get `<file>.hwfm` sidecars with a short
   Cache-Control/CDN-Cache-Control (HWFM 4f86397); payloads/APKs are uploaded
   before the index that references them. Signing keys stay on the build PC.
+- **"Bring your own GApps" in Settings (user, 2026-09-28)**: our stand-in for
+  TWRP-flashed GApps (we have no custom recovery). The user supplies Google's
+  APKs or a MindTheGapps-style zip (x86_64 only; MindTheGapps 17 is arm64-
+  only so far); Settings verifies each APK's Google signing lineage and
+  installs Play services / Play Store / Services Framework as updates over
+  the microG stand-ins via patch 0003 (needs a GsfProxy -> Google GSF row),
+  so they inherit system privileges without touching read-only partitions.
+  "Uninstall updates" returns to microG. Settings also shows the device ID
+  for Google's official uncertified-device registration page. We never
+  ship, host, link to or auto-download Google binaries, and we never spoof
+  Play certification/Integrity (no other vendors' fingerprints).
 - **App stores via MatonOS Settings (user, 2026-09-28)**: Settings is NOT
   a store. It only offers to install the two stores: Aurora Store (upstream
   preload build from the MatonOS repo, installed over its placeholder via
