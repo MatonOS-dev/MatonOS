@@ -294,6 +294,15 @@ Feature work continues, but in this shape from now on.
   for Google's official uncertified-device registration page. We never
   ship, host, link to or auto-download Google binaries, and we never spoof
   Play certification/Integrity (no other vendors' fingerprints).
+  Privileged permissions: the image ships OUR allowlists for gms, vending
+  and gsf (gms/privapp-permissions-*.xml), generated from what microG and
+  the real Google apps request (intersected with the framework's privileged
+  permissions); only the stand-ins or genuine Google apps (via patch 0003)
+  can hold those packages. GsfProxy is privileged for that reason.
+  Supported user zips: flat TWRP layout (MindTheGapps), nested per-app zips
+  (NikGapps), LiteGapps (files/files.tar.xz -> <abi>/<sdk>/system/...); APKs
+  with native code must match x86_64. Verified 2026-09-28: LiteGapps
+  x86_64/37 GmsCore, Phonesky and GSF all chain to Google's F0FD6C... root.
   The page opens with a big red warning (user, 2026-09-28; wording fixed,
   shown before anything else, must be acknowledged to continue):
   "YOU DO THIS AT YOUR OWN RISK. MatonOS makes no claim that this will work

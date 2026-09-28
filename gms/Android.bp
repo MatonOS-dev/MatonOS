@@ -1,0 +1,85 @@
+// microG upstream APKs remain byte-for-byte so official repo updates retain their signer.
+android_app_import {
+    name: "MatonMicroGmsCore",
+    apk: "apks/MatonMicroGmsCore.apk",
+    product_specific: true,
+    privileged: true,
+    presigned: true,
+    preprocessed: true,
+    skip_preprocessed_apk_checks: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    required: [
+        "privapp-permissions-org.microg.gmscore.xml",
+        "default-permissions-org.microg.gmscore.xml",
+        "sysconfig-matonos-microg.xml",
+    ],
+}
+
+android_app_import {
+    name: "MatonMicroGCompanion",
+    apk: "apks/MatonMicroGCompanion.apk",
+    product_specific: true,
+    privileged: true,
+    presigned: true,
+    preprocessed: true,
+    skip_preprocessed_apk_checks: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    required: ["privapp-permissions-com.android.vending.xml"],
+}
+
+// microG Services Framework Proxy (legacy GCM compatibility; microG's
+// self-check expects it). Privileged although GsfProxy needs no privileged
+// permissions: the real Google Services Framework ("bring your own GApps")
+// inherits privileged status only by updating a privileged stand-in.
+android_app_import {
+    name: "MatonMicroGGsfProxy",
+    apk: "apks/MatonMicroGGsfProxy.apk",
+    product_specific: true,
+    privileged: true,
+    presigned: true,
+    preprocessed: true,
+    skip_preprocessed_apk_checks: true,
+    dex_preopt: {
+        enabled: false,
+    },
+    required: ["privapp-permissions-com.google.android.gsf.xml"],
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-com.google.android.gsf.xml",
+    src: "privapp-permissions-com.google.android.gsf.xml",
+    sub_dir: "permissions",
+    product_specific: true,
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-org.microg.gmscore.xml",
+    src: "privapp-permissions-org.microg.gmscore.xml",
+    sub_dir: "permissions",
+    product_specific: true,
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-com.android.vending.xml",
+    src: "privapp-permissions-com.android.vending.xml",
+    sub_dir: "permissions",
+    product_specific: true,
+}
+
+prebuilt_etc {
+    name: "default-permissions-org.microg.gmscore.xml",
+    src: "default-permissions-org.microg.gmscore.xml",
+    sub_dir: "default-permissions",
+    product_specific: true,
+}
+
+prebuilt_etc {
+    name: "sysconfig-matonos-microg.xml",
+    src: "sysconfig-matonos-microg.xml",
+    sub_dir: "sysconfig",
+    product_specific: true,
+}
