@@ -193,16 +193,17 @@ Feature work continues, but in this shape from now on.
   are NOT copied (user decision: installed system starts with empty /data).
   Requires the product to be A/B (slot-suffixed dynamic partitions, per-slot
   systemd-boot entries, a boot-control HAL); the live image keeps only A.
-  Language (user, 2026-09-28): after A/B works, the installer is split —
-  the logic (plan, step sequence, verification, progress, errors) moves to
-  JAVA (a system-side service with the bridge or its own small platform
-  app, readable for the user); a SMALL native block helper keeps only the
-  narrow privileged ops (open a disk by verified identity, read/write byte
-  ranges, run sgdisk/newfs_msdos/LP-metadata tools with fixed args,
-  progress). Disk-identity and "refuse the live disk" checks live in BOTH
-  layers. Python rejected on device (no runtime in Android; build-side
-  scripts/tests may use Python). Done as a separate narrow task, using the
-  existing end-to-end install test as the safety net.
+  Service scope (user, 2026-09-28; corrects an earlier note): the install
+  SERVICE stays THIN by design — it only exposes base system info (disks,
+  sizes, verified identity, which one is the live medium) and executes
+  simple, individually validated primitive operations. ALL deciding
+  (layout, sizes, step sequence, what to verify) lives in the MatonOS
+  Settings app (TypeScript/Expo, createV1Plan.ts), which the user can read.
+  After A/B works, trim the service back to info + primitives (anything
+  that decides moves up into Settings); what remains is small enough to be
+  readable — a Java service with a tiny native block helper, or a short
+  C++ file. "Never the live disk" and identity checks stay in the service
+  as the last line of defence. Python rejected on device (no runtime).
   Boot chain (user, 2026-09-28): systemd-boot stays; each slot's kernel is a
   signed UKI (kernel + microcode + ramdisks + cmdline with slot suffix). Slot
   switching and rollback use systemd-boot boot counting (entry renames in
