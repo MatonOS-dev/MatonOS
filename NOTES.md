@@ -560,6 +560,14 @@ LineageOS was considered (security merges, Updater, signing tooling) and
 rejected in favour of staying on plain AOSP; its ideas (Updater app, F-Droid
 Privileged Extension) are still reused where useful.
 
+Re-evaluated 2026-09-28 (user): LineageOS 24 (android-17.0.0_r1) now has an
+actively maintained generic PC target (device/pc/basic_x86_64_pc +
+virt-common: Mesa, minigbm, drm_hwcomposer) and monthly security merges; it
+would drop patch 0002 and maybe our graphics forks, at the cost of a
+re-integration and a monthly sync/build/sign/publish routine. Decision:
+stay on AOSP for a hobby project; switch to LineageOS if MatonOS ever becomes
+commercial (monthly security updates would then be expected).
+
 ## Security updates
 
 - AOSP: monthly Android Security Bulletin (patch levels YYYY-MM-01 / -05);
