@@ -543,6 +543,15 @@ Feature work continues, but in this shape from now on.
   XCURSOR_SIZE; Chromium-based apps (Steam) may get
   --force-device-scale-factor. Android font scale/display size flow to Linux
   apps too (Settings portal text-scaling-factor, Xft.dpi).
+  Cursor (2026-09-28): Android keeps drawing the ONE system pointer (HW
+  cursor plane); Linux apps only choose its shape. cursor-shape-v1 names ->
+  PointerIcon.getSystemIcon() via setPointerIcon on the host activity (Android
+  look); custom cursor surfaces (wl_pointer.set_cursor) ->
+  PointerIcon.create(bitmap, hotspot); Xwayland cursors take the same path.
+  Pointer lock (pointer-constraints + relative-pointer) ->
+  requestPointerCapture() with raw relative motion forwarded; released when
+  the app unlocks or loses focus. Size follows Android's pointer size
+  (XCURSOR_SIZE set to match).
   - **No Debian base (user decision, 2026-09-28, supersedes the Debian
     image):** we need the Android<->Linux glue anyway, so the host side is
     only flatpak + bubblewrap + ostree (+ their deps) built for Android
