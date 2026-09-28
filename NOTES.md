@@ -496,8 +496,8 @@ Feature work continues, but in this shape from now on.
     Uninstall sync: the stub gets no callback, but the host app receives
     ACTION_PACKAGE_FULLY_REMOVED (manifest receivers allowed; not sent for
     updates, unlike PACKAGE_REMOVED) for org.matonos.linux.* and runs
-    `flatpak uninstall <id>` (+ `--unused` for runtimes; `--delete-data`
-    to match Android, or ask — decide later). Reverse: a Flatpak removed on
+    `flatpak uninstall --delete-data <id>` (user decision: data goes with
+    the app, as on Android) plus `flatpak uninstall --unused` for runtimes. Reverse: a Flatpak removed on
     the Linux side (its .desktop export disappears) -> host uninstalls the
     stub silently.
   - Alternative kept on file: compositor inside the container + a small
