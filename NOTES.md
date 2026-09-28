@@ -518,7 +518,24 @@ Feature work continues, but in this shape from now on.
     to apps, so `flatpak-spawn --host` can't reach the bionic system side.
     The D-Bus session bus is heavily locked down: default-deny policy,
     only our portal backend names and explicitly allowed services are
-    reachable; Flatpak's own bus proxy (xdg-dbus-proxy) filters per app. This depends on
+    reachable; Flatpak's own bus proxy (xdg-dbus-proxy) filters per app.
+  - Prototype order (de-risking, scariest first): (1) a CLI Flatpak under
+    bwrap on MatonOS (namespaces/seccomp/SELinux); (2) one Wayland window
+    (weston-terminal from a Flatpak, its own Mesa) through the Xtr126 path on
+    real Intel hardware; (3) a GTK4 app with menus/dialogs; (4) one X11 app
+    via per-app Xwayland; (5) FINAL MILESTONE: the Steam Flatpak
+    (com.valvesoftware.Steam) launches a Proton game in a gamescope "game
+    mode" stub. Steam specifics: kernel 32-bit support is already on
+    (IA32_EMULATION=y) and Flatpak brings the i386 runtime + GL32 Mesa;
+    pressure-vessel's nested containers need our portal glue to implement
+    org.freedesktop.portal.Flatpak's SANDBOXED Spawn (not host spawn) and
+    nested user namespaces; Steam Input needs /dev/hidraw* and /dev/uinput
+    passed into the sandbox (the steam-devices udev-rule equivalent).
+    Anti-cheat works only where developers enabled Linux (as on Steam Deck).
+    Known risks: Flatpak/bwrap vs Android SELinux+seccomp; dma-buf modifiers
+    between runtime Mesa and minigbm beyond Intel iris; Wayland popups/CSD vs
+    Android windows; input fidelity; per-app stubs as untrusted_app owning
+    sockets; keeping wlroots/Xwayland/PipeWire current. v4 is months of work. This depends on
     add-on packages being able to ship userspace daemons (deferred in the
     first add-on release; now needed for v4). Debian (mmdebstrap) stays the
     fallback if this proves unworkable: measured 2026-09-28 at 321 MiB
