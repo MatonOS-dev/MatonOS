@@ -392,6 +392,13 @@ Feature work continues, but in this shape from now on.
   notifications, Settings portal for Android dark mode/accent), PipeWire +
   WirePlumber, a Secret Service, fonts/icons/cursors, xdg-user-dirs on the
   shared folders. No DM, panel, Linux launcher or notification daemon.
+  Linux -> Android IPC = binder (user): fds cross for free (dma-buf buffers,
+  PipeWire memory, files). A dedicated binderfs device for the container
+  (e.g. `linuxbinder`) whose context manager is our bridge daemon, so Linux
+  apps reach only the services we publish, never Android's servicemanager.
+  Container side in Rust with rsbinder (pure-Rust binder + AIDL, no bionic);
+  stable, versioned AIDL interfaces (compositor/surfaces/input/IME, audio,
+  portals, clipboard, shortcuts); one SELinux binder_call rule per service.
   Linux sandbox sketch: native `linuxd` service (own SELinux domain) mounts
   a distro rootfs from /data, sets up namespaces/cgroups, runs Linux
   processes in a confined domain (render node, own files, no binder).
