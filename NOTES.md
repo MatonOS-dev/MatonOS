@@ -201,8 +201,10 @@ Feature work continues, but in this shape from now on.
   Settings app (TypeScript/Expo, createV1Plan.ts), which the user can read.
   After A/B works, trim the service back to info + primitives (anything
   that decides moves up into Settings); what remains is small enough to be
-  readable — a Java service with a tiny native block helper, or a short
-  C++ file. "Never the live disk" and identity checks stay in the service
+  readable — written in plain C (user preference, like matonos-sleepd.c);
+  C++-only pieces (liblp for LP metadata) are reached through AOSP's tools
+  (lpmake/lpadd-style) or a tiny C-callable shim, not by writing the
+  service in C++. "Never the live disk" and identity checks stay in the service
   as the last line of defence. Python rejected on device (no runtime).
   Boot chain (user, 2026-09-28): systemd-boot stays; each slot's kernel is a
   signed UKI (kernel + microcode + ramdisks + cmdline with slot suffix). Slot
