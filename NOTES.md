@@ -289,10 +289,12 @@ Feature work continues, but in this shape from now on.
   the pinned transitions) and F-Droid (official client from f-droid.org).
   For that it reads repo indexes itself (entry.jar signature against pinned
   fingerprints, per-APK sha256/signer) and installs silently as a privileged
-  app (INSTALL_PACKAGES/DELETE_PACKAGES). It also stays the front end for
-  MatonOS's own updates (OS, add-ons, our apps). F-Droid Basic is dropped
-  from the image once Settings has the install option; preinstalled
-  F-Droid apps are then updated by F-Droid if the user installs it.
+  app (INSTALL_PACKAGES/DELETE_PACKAGES). It also UPDATES apps (user): with
+  exactly two hard-coded repos (f-droid.org and MatonOS, fingerprints
+  pinned; no repo management, no browsing) it keeps the preinstalled apps
+  (Fennec, Fossify, Open Camera, ...), our apps and the stores current, next
+  to MatonOS's own OS and add-on updates. F-Droid Basic is dropped from the
+  image once Settings can do this.
 - **App stores (user, 2026-09-28, final)**: F-Droid Basic, built from
   source by us with INSTALL_PACKAGES/DELETE_PACKAGES added to its manifest
   (small in-tree patch), signed with our key, privileged = silent installs;
