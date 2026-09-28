@@ -193,6 +193,16 @@ Feature work continues, but in this shape from now on.
   are NOT copied (user decision: installed system starts with empty /data).
   Requires the product to be A/B (slot-suffixed dynamic partitions, per-slot
   systemd-boot entries, a boot-control HAL); the live image keeps only A.
+  Language (user, 2026-09-28): after A/B works, the installer is split —
+  the logic (plan, step sequence, verification, progress, errors) moves to
+  JAVA (a system-side service with the bridge or its own small platform
+  app, readable for the user); a SMALL native block helper keeps only the
+  narrow privileged ops (open a disk by verified identity, read/write byte
+  ranges, run sgdisk/newfs_msdos/LP-metadata tools with fixed args,
+  progress). Disk-identity and "refuse the live disk" checks live in BOTH
+  layers. Python rejected on device (no runtime in Android; build-side
+  scripts/tests may use Python). Done as a separate narrow task, using the
+  existing end-to-end install test as the safety net.
   Boot chain (user, 2026-09-28): systemd-boot stays; each slot's kernel is a
   signed UKI (kernel + microcode + ramdisks + cmdline with slot suffix). Slot
   switching and rollback use systemd-boot boot counting (entry renames in
