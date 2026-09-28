@@ -549,6 +549,13 @@ Feature work continues, but in this shape from now on.
     the app, as on Android) plus `flatpak uninstall --unused` for runtimes. Reverse: a Flatpak removed on
     the Linux side (its .desktop export disappears) -> host uninstalls the
     stub silently (bridge).
+    Closing (user): closing a Linux app's Android window (close button,
+    swiping its task away in Recents) closes the Flatpak app: the host sends
+    the toplevel a Wayland close request (xdg_toplevel.close, so unsaved-work
+    dialogs still work); when the app's last window is gone and the process
+    hasn't exited after a short grace period, the host runs `flatpak kill
+    <id>`. Force-stopping the host app kills the compositor, so every
+    Wayland client loses its connection and exits too.
   - Alternative kept on file: compositor inside the container + a small
     Android-side presenter over binder (keeps untrusted Wayland parsing in
     the container; more parts). Estimate for the fork route: ~1-2 weeks of
