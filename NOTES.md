@@ -631,9 +631,15 @@ Feature work continues, but in this shape from now on.
     only our portal backend names and explicitly allowed services are
     reachable; Flatpak's own bus proxy (xdg-dbus-proxy) filters per app.
     D-Bus + UIDs (user, 2026-09-29): each Linux app runs as its STUB's Android
-    UID (per-app; makes forwarding to that app's stub simple). dbus-daemon
-    (reference implementation, bionic port, no systemd) + xdg-dbus-proxy
-    (~0.6-0.8 MB). Bus socket in the owning user's runtime dir; "only the
+    UID (per-app; makes forwarding to that app's stub simple). NO
+    dbus-daemon (user, 2026-09-29): each stub runs its OWN MINI-BROKER built
+    on GDBus (already shipped in libgio) — single-app mode: it implements the
+    org.freedesktop.DBus methods apps actually use (Hello, RequestName/
+    ReleaseName, AddMatch/RemoveMatch, NameOwnerChanged, GetNameOwner,
+    ListNames...) and routes between the app's own processes and the stub's
+    in-process portal objects. The broker IS the policy point (default-deny;
+    replaces xdg-dbus-proxy). New code: test against GTK/Qt/Electron apps;
+    add bus features as real apps need them. Superseded below: dbus-daemon. Bus socket in the owning user's runtime dir; "only the
     bus owner's UID may connect" does the isolation; the config uses NUMERIC
     UIDs only (bionic getpwnam() knows Android IDs, not Linux users — no fake
     passwd db); default-deny policy with only our portal backend + Flatpak
