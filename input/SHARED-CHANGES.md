@@ -19,16 +19,13 @@
    `input org.matonos.settings`; the daemon uses the existing generic bridge
    channel and needs no new bridge API.
 
-2. After the first full-image build succeeds, retire these three patch files
-   together, then run the next full build so `tools/apply-patches.sh` no
-   longer applies them:
+2. **Done:** the zero-patch migration retired these three files before the
+   current build; they now live under `retired-patches/` and are not applied:
 
    - `patches/frameworks/native/0001-inputflinger-support-absolute-mice.patch`
    - `patches/frameworks/native/0002-inputflinger-PS2-mice-wake-the-display.patch`
    - `patches/frameworks/base/0002-WMShell-keyboard-and-mouse-start-on-the-desktop.patch`
 
-   They remain in place until the replacement has passed a fresh-image boot
-   and QEMU input checks.
 
 3. Coordinator: list the strict stable-device-only Android inventory
    requirement under NOTES.md "Dropped for zero patches". Stock EventHub
@@ -53,3 +50,39 @@ and every display change. This small edit is in the buildinfra-owned
 while inputd is not registered. A vendor property was rejected by Treble's
 system-to-vendor property neverallow, so no display-size properties or policy
 rules are needed.
+
+# Conditional absolute-pointer mode (requested 2026-09-27)
+
+The fresh QEMU boot showed that the absolute mode was not active:
+`pointer_speed` remained 0, the acceleration setting was unset, and
+`dumpsys activity services` showed no running bridge service. Although a
+`BridgeBootReceiver` is already declared, ensure it starts the bridge and
+keeps it running after `BOOT_COMPLETED`. The service should query
+`input.get_state` and subscribe to `input/state`.
+`matonos-inputd` now includes `absolutePointers` in both replies.
+Apply the flat unit-gain mouse settings only while `absolutePointers > 0`; save
+the active user's prior values and restore them when the count returns to
+zero or the active user changes. Remove the unconditional settings writes from
+bridge `onCreate`/`onStartCommand`. This keeps relative-only PCs' normal mouse
+settings untouched while allowing the absolute-to-relative proxy to place the
+cursor accurately. No AIDL or new channel instance is needed.
+
+**Still pending:** the current shared `SystemBridgeService.java` calls
+`setAbsolutePointerMode()` unconditionally from both `onCreate()` and
+`onStartCommand()` and does not query/subscribe to the input channel state.
+That global behavior can change settings on real PCs with only relative mice.
+The bridge integration must be made conditional before this feature is
+considered complete; this input area cannot edit the buildinfra-owned bridge.
+
+# Fresh boot bridge failure (verified 2026-09-28)
+
+The fresh image now installs and starts `org.matonos.systembridge`, and its
+service successfully sends the 1600x900 display geometry to inputd. However,
+both unconditional calls to `setAbsolutePointerMode(UserHandle.USER_CURRENT)`
+fail with `SecurityException`: SettingsProvider rejects user `-2` from the
+bridge app UID without `INTERACT_ACROSS_USERS_FULL`. Please use the concrete
+active user ID (for the current single-user image, `UserHandle.myUserId()`)
+when reading/writing pointer settings. At the same time, implement the
+conditional state query/subscription requested above, and cache/restore each
+user's settings on device removal or user change; do not change relative-only
+PCs. Fresh-boot evidence: `out/pc-logs/input/final-bridge-errors.txt`.

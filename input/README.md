@@ -29,11 +29,23 @@ pixels, tracks the last target, and emits the difference as REL motion. If the
 bridge channel has not provided dimensions yet, it checks the connected DRM connector's
 current `mode`, then fb0's current virtual size; it never uses the advertised
 mode list. It compensates for display density so InputReader's density scaling
-does not change intended distance. The system bridge disables mouse
-acceleration and sets pointer speed to -7 (unit gain), because stock AOSP has
-no per-device acceleration control or absolute cursor mapper. This changes
-the global mouse transform. The exact-corner test is pending a fresh image
-containing this update.
+does not change intended distance. InputReader also applies its cursor density
+scale (`viewportDensity / 320`) and the normal mouse velocity curve. Exact
+absolute placement therefore needs that curve flattened while an absolute
+pointer source is present. The bridge's existing setter was not active in the
+first runtime check: `pointer_speed` stayed at 0, acceleration was unset, and
+the bridge service was not running. A channel state field and a conditional
+bridge update are now requested in `SHARED-CHANGES.md`; relative-only devices
+must keep the user's normal pointer settings.
+
+In this AOSP branch, EventHub classifies a cursor only when the device has
+`BTN_MOUSE`, `REL_X`, and `REL_Y`. Its touch-device path requires multitouch
+position axes, or `BTN_TOUCH` plus `ABS_X`/`ABS_Y`; `touch.deviceType=pointer`
+only changes how that already-classified touch device is mapped. Therefore an
+absolute mouse that reports buttons plus `ABS_X`/`ABS_Y` is not made into a
+cursor by an IDC alone. The proxy converts its absolute target positions into
+relative deltas on the stable virtual pointer, while physical relative devices
+continue through the existing relative-event path.
 
 Wheel events are merged from each source. Legacy `REL_WHEEL` and
 `REL_HWHEEL` detents are converted to `REL_WHEEL_HI_RES` and
@@ -83,15 +95,69 @@ presence as `vendor.maton.input.*` properties. A fixed import stanza in
 
 ## Current verification and open work
 
-- NDK x86_64/API 35 compile succeeded using the AOSP CMake/Ninja prebuilts.
-- AOSP image build and fresh-boot tests are pending; the build request is in
-  `out/pc-logs/agents/build-requests.txt`.
-- The three existing AOSP patches remain in `patches/` until a fresh image
-  proves the replacements. Do not delete them during an active build.
-- QEMU absolute-axis mapping now uses DRM display geometry and position
-  differences; NDK compilation passes. Fresh-image corner verification and
-  the bridge operation that disables acceleration and sets unit pointer gain
-  remain outstanding.
+- `tools/build-native.sh` compiled the updated x86_64/API 35 daemon, and
+  `tools/preflight.sh` passed on 2026-09-27.
+- Fresh QEMU boot on the 2026-09-27 20:38 image reached
+  `sys.boot_completed=1`. The kernel has `CONFIG_MOUSE_PS2_VMMOUSE=y` and
+  loaded `psmouse`. With the existing `q35,vmport=on` harness (no explicit
+  `-device vmmouse`), QEMU exposed `VirtualPS/2 VMware VMMouse` as two evdev
+  nodes: one BTN_MOUSE + ABS_X/ABS_Y (0..65535), and one BTN_MOUSE + REL_X/REL_Y.
+  QEMU's monitor lists `vmmouse (absolute)` as the active mouse.
+- `matonos-inputd` grabbed both VMware nodes. Stock EventHub does not expose
+  the grabbed ABS node to InputReader; it sees the REL node as a cursor and
+  also sees the stable `MatonOS Pointer` as a cursor. `dumpsys input` showed
+  the stable pointer loads `/vendor/usr/idc/Vendor_4d54_Product_0002.idc`.
+  `touch.deviceType=pointer` cannot classify the raw ABS-only mouse because
+  EventHub never assigns it the touch class needed to create a touch mapper.
+- A separate fresh boot of the same image with `-device usb-tablet,bus=xhci.0`
+  exposed `QEMU QEMU USB Tablet` with ABS_X/Y (0..32767), BTN_MOUSE, and
+  relative wheel events. Stock InputReader classified it as
+  `ROTARY_ENCODER | EXTERNAL` with source `ROTARY_ENCODER`, while the PS/2
+  VMMouse remained the usable cursor. With the guest asleep, selecting/moving
+  the USB tablet did not wake it. The USB controller's sysfs wakeup flag read
+  `enabled`, but this QEMU xHCI route did not wake s2idle. A direct QMP absolute
+  event on the active VMMouse did wake the guest (`mWakefulness` changed from
+  Asleep to Awake). This rules out usb-tablet for the wake requirement.
+- Fresh 22:38 image: QMP absolute coordinates are normalized to 0..32767;
+  QEMU expands them to VMMouse evdev's 0..65535 range. With unit-gain
+  InputReader settings in this disposable VM, QMP points 0, 16384, and 32767
+  landed at (0,0), (800,450), and (1599,899) on a 1600x900 display. The pointer
+  is visible in `fresh-center-normalized.png`; the matching `MotionEvent`
+  coordinates are in the adjacent `fresh-*-normalized.txt` files under
+  `/mnt/data/aosp/out/pc-logs/input/`. This confirms host-normalized position
+  and Android cursor position stay aligned without pointer capture when the
+  pointer transform is flat and unit gain.
+- Fresh-image s2idle wake: `/sys/power/mem_sleep` reported `[s2idle]`. A root
+  shell wrote `mem` to `/sys/power/state`; its command remained blocked until a
+  QMP relative PS/2 mouse event arrived. Guest `dmesg` recorded `PM: suspend
+  entry (s2idle)` at 1347.081 s and `PM: suspend exit` at 1394.905 s. The QEMU
+  monitor listed only the PS/2 mouse during suspend; after resume it restored
+  `vmmouse (absolute)`. Evidence is in `s2idle-wake-kmsg.txt` and
+  `fresh-vmmouse-wake.txt` under the same log directory. The idle property was
+  reset to 0 before the VM was shut down.
+- The VM entered the configured sleep path before I disabled its idle timer;
+  the next coordinator build then stopped it. I did not obtain a usable
+  on-screen cursor screenshot or complete the edge/re-entry checks. The
+  coordinator stopped the tablet comparison VM while I was collecting the
+  post-wake capture.
+  Logs and captures from that boot are in `/mnt/data/aosp/out/pc-logs/input/`.
+- Absolute-axis deltas now invert InputReader's `viewportDensity / 320` scale
+  directly. `absolutePointers` is included in the input channel state so the
+  bridge can enable its flat, unit-gain transform only while an absolute
+  pointer is connected, then restore the user's settings. Native rebuild and
+  preflight succeeded. The 22:38 image reached `sys.boot_completed=1`. On
+  QEMU's normalized QMP range (0..32767), target points 0, 16384, and 32767
+  produced InputReader coordinates (0,0), (800,450), and (1599,899) on the
+  1600x900 display. `fresh-center-normalized.png` and
+  `fresh-top-left-normalized.png` show the cursor at the center and upper-left
+  corner; matching `dumpsys input` motion records are in the adjacent
+  `fresh-*-normalized.txt` files under `/mnt/data/aosp/out/pc-logs/input/`.
+  This placement check used temporary QEMU-only settings
+  `pointer_speed=-7` and `mouse_pointer_acceleration_enabled=0`, because
+  SystemBridge was not running in the image. Default settings on that boot
+  were speed 0 and acceleration unset, so automatic enable/restore behavior is
+  still unverified. The current bridge source still writes the global settings
+  unconditionally on service startup; see `SHARED-CHANGES.md`.
 - Touchpad gestures beyond one-finger motion/tap and per-device key quirks or
   layouts are not implemented yet.
 - AOSP continues to list grabbed physical evdev devices. Hiding them from its
@@ -103,8 +169,11 @@ presence as `vendor.maton.input.*` properties. A fixed import stanza in
 Use the newly built image after the coordinator reports success. Run only one
 VM at a time; do not remount or push binaries into a running image.
 
-1. Boot headless with adb port 5567 and a serial log, using the command in
-   `HANDOFF.md` and `tools/run-qemu-live.sh -g none -m 4096 -a 5567`.
+1. Boot with graphics enabled on adb port 5567 and a serial log:
+   `tools/run-qemu-live.sh -g virgl -m 4096 -a 5567 -s
+   /mnt/data/aosp/out/pc-logs/input/serial.log`. After adb connects, run
+   `adb root` and immediately set `persist.vendor.maton.sleep_idle_s` to `0`.
+   This prevents sleepd from suspending the guest during pointer checks.
 2. Confirm the daemon starts: `adb -s 127.0.0.1:5567 logcat -d -s
    matonos-inputd`, and check `getprop vendor.maton.input.*`.
 3. Run `adb shell dumpsys input` and confirm MatonOS Keyboard and MatonOS
@@ -115,10 +184,11 @@ VM at a time; do not remount or push binaries into a running image.
    move the pointer, click, and drag-to-unlock. The VM should not require
    pointer capture. Physical keyboard/pointer devices may still appear in
    `dumpsys input`; verify their events do not reach Android while grabbed.
-5. Add a QEMU USB tablet using the harness's extra-QEMU-args option. Move to
-   each screen edge and click launcher items. Confirm Android reports a
-   cursor-capable MatonOS Pointer, not a rotary encoder, and that movement and
-   clicks work without pointer capture.
+5. Do not use `usb-tablet` for the supported path: the fresh boot classified
+   it as a rotary encoder, and its events did not wake s2idle. Keep QEMU's
+   built-in PS/2 controller plus `vmport=on` VMMouse. `virtio-tablet-pci` is
+   an untested alternative; only consider it after a separate fresh boot
+   confirms stock cursor classification and PS/2 s2idle wake still works.
 6. With a keyboard and mouse attached, verify the dormant MatonOS Desktop
    Touchpad is present; remove the mouse and verify the shim is removed.
    Repeat with the keyboard disconnected. Check WM Shell starts desktop-first
@@ -156,3 +226,36 @@ and resume behavior pass.
 On all systems, verify a missing keyboard or pointer does not prevent boot,
 and verify the stable virtual devices remain registered through physical
 hotplug. Restore normal idle timeout settings after wake tests.
+
+## Fresh verification after SystemBridge install fix — 2026-09-28
+
+On the coordinator's fresh full image, boot completed (`sys.boot_completed=1`),
+`matonos-inputd` ran, and `org.matonos.systembridge/.SystemBridgeService` was
+installed and started. `getevent -lp` showed the expected QEMU VMware VMMouse
+pair: one PS/2 AUX REL_X/REL_Y mouse for wake and one ABS_X/ABS_Y device with
+range 0..65535. `CONFIG_MOUSE_PS2_VMMOUSE` is enabled. InputReader classified
+the inputd virtual device as `Classes: CURSOR`, `Sources: MOUSE`, with a
+1600x900 display range. The bridge successfully delivered display geometry.
+
+The bridge's absolute-pointer setting call failed on boot. It passes
+`UserHandle.USER_CURRENT` (-2) to SettingsProvider, which rejects the bridge
+app UID without cross-user permission. Defaults remained pointer speed 0 and
+acceleration unset. In this disposable QEMU user, setting speed to -7 and
+acceleration to 0 allowed a clean placement check; no AOSP or kernel change
+was made. QMP absolute values 0, 16384, and 32767 produced InputReader cursor
+positions (0,0), (800,450), and (1599,899), respectively, on the 1600x900
+display. The center screencap `out/pc-logs/input/final-center.png` visibly
+shows the Android cursor at center. The bridge fix and conditional settings
+restore are requested in `SHARED-CHANGES.md`; until that lands, this mode is
+not automatically enabled and relative-only host settings are not yet proven
+to be preserved by the bridge.
+
+Mouse wake also passed on this boot. `/sys/power/mem_sleep` reported
+`[s2idle]`; `echo mem > /sys/power/state` entered suspend, and a QMP REL event
+on the remaining PS/2 mouse woke it. Guest dmesg recorded suspend entry at
+199.166528 s and exit at 206.344752 s; boot remained complete afterward. The
+idle timer property was restored to 0 before shutting down the 4 GB VM.
+
+Runtime evidence is in `out/pc-logs/input/final-bridge-errors.txt` and
+`out/pc-logs/input/final-center.png`. Host cursor rendering was not separately
+captured; QMP absolute input coordinates and Android cursor coordinates match.

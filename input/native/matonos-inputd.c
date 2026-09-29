@@ -14,6 +14,7 @@
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <matonos_ipc.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -425,12 +426,27 @@ static void emit_absolute_axis(unsigned int code, int value, int min, int max) {
     int target = (int)(target_f + 0.5f);
     if (target < 0) target = 0;
     if (target >= extent) target = extent - 1;
+    unsigned int rel = code == ABS_X ? REL_X : REL_Y;
+    /* Re-sync: Android keeps its own cursor position and only sees our REL
+     * deltas, so anything it clamps (host cursor leaving the window, edges)
+     * or drops leaves a permanent offset. Android clamps at the screen edge,
+     * so over-driving into the edge puts both sides at a known point: do it
+     * when the target is on an edge, or on a big jump (window re-entry),
+     * then move to the exact target from there. */
+    bool at_edge = target == 0 || target == extent - 1;
+    bool jump = fabsf((float)target - *position) > (float)extent / 4.0f;
+    if (at_edge || jump) {
+        int push = (int)((float)extent * absolute_cursor_correction) + 2;
+        bool to_max = target == extent - 1;
+        (void)emit(pointer_fd, EV_REL, rel, to_max ? push : -push);
+        *position = to_max ? (float)(extent - 1) : 0.0f;
+    }
     float scaled_delta = (float)(target - *position) * absolute_cursor_correction;
     int delta = scaled_delta >= 0.0f ? (int)(scaled_delta + 0.5f) : (int)(scaled_delta - 0.5f);
     *position += (float)delta / absolute_cursor_correction;
     if (*position < 0.0f) *position = 0.0f;
     if (*position > (float)(extent - 1)) *position = (float)(extent - 1);
-    if (delta) (void)emit(pointer_fd, EV_REL, code == ABS_X ? REL_X : REL_Y, delta);
+    if (delta) (void)emit(pointer_fd, EV_REL, rel, delta);
 }
 
 static void forward_event(struct source *s, const struct input_event *e) {
@@ -477,8 +493,10 @@ static void forward_event(struct source *s, const struct input_event *e) {
             return;
         }
         (void)emit(pointer_fd, EV_REL, e->code, e->value);
-        if (e->code == REL_X) pointer_pos_x += (float)e->value / density_correction;
-        if (e->code == REL_Y) pointer_pos_y += (float)e->value / density_correction;
+        /* CursorInputMapper moves a REL count by viewport dpi / 320, the
+         * inverse of absolute_cursor_correction (not the touchpad scale). */
+        if (e->code == REL_X) pointer_pos_x += (float)e->value / absolute_cursor_correction;
+        if (e->code == REL_Y) pointer_pos_y += (float)e->value / absolute_cursor_correction;
         if (pointer_pos_x < 0.0f) pointer_pos_x = 0.0f;
         if (pointer_pos_y < 0.0f) pointer_pos_y = 0.0f;
         if (pointer_pos_x > display_width - 1) pointer_pos_x = (float)(display_width - 1);
