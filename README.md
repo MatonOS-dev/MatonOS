@@ -67,6 +67,24 @@ MatonOS is mostly an assembly of other people's excellent open-source work:
   [GloDroid](https://github.com/GloDroid)
 - [drm_hwcomposer](https://gitlab.freedesktop.org/drm-hwcomposer/drm-hwcomposer)
 - [systemd-boot](https://systemd.io/BOOT/)
+- [wireless-regdb](https://git.kernel.org/pub/scm/linux/kernel/git/wens/wireless-regdb.git)
+- BayLibre's generic AIDL audio HAL
+- [microG](https://microg.org/) (GmsCore, Companion, GsfProxy); the signature
+  spoofing patch follows [LineageOS](https://lineageos.org/)'s approach
+- [F-Droid](https://f-droid.org/) (F-Droid Basic, our own build)
+- Preinstalled apps: [Fossify](https://github.com/FossifyOrg) (Calculator,
+  Calendar, Clock, Contacts, Gallery, Music Player, Notes),
+  [Fennec F-Droid](https://f-droid.org/packages/org.mozilla.fennec_fdroid/),
+  [Open Camera](https://opencamera.org.uk/)
+- [Expo](https://expo.dev/) / [React Native](https://reactnative.dev/)
+  (MatonOS Settings and our other apps)
+- Linux apps (in development): [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots),
+  [Flatpak](https://flatpak.org/), [OSTree](https://ostreedev.github.io/ostree/),
+  [bubblewrap](https://github.com/containers/bubblewrap),
+  [GLib](https://gitlab.gnome.org/GNOME/glib),
+  [libseccomp](https://github.com/seccomp/libseccomp),
+  [GnuPG](https://gnupg.org/) and their dependencies (see
+  `linux/third_party/LICENSES`)
 
 Each component keeps its own licence; see the upstream projects.
 
