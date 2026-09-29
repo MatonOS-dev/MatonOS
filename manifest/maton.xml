@@ -1,34 +1,47 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  pc_x86_64 local manifest. Install with:
-    cp device/maton/pc_x86_64/manifest/maton.xml .repo/local_manifests/
+  MatonOS local manifest. Install with:
+    mkdir -p .repo/local_manifests
+    curl -o .repo/local_manifests/maton.xml \
+      https://raw.githubusercontent.com/Hanro50/MatonOS/main/manifest/maton.xml
+    repo sync -c
+  Brings in the MatonOS device tree and our forks of AOSP / third-party
+  projects (github.com/MatonOS-dev, branch matonos/v1.2).
 -->
 <manifest>
-  <remote name="android-generic" fetch="https://github.com/android-generic" />
-  <remote name="baylibre" fetch="https://github.com/BayLibre" />
+  <remote name="matonos-dev" fetch="https://github.com/MatonOS-dev" />
+  <remote name="matonos" fetch="https://github.com/Hanro50" />
 
-  <!-- These revisions are local branches in the project checkouts. Create
-       the branches before syncing a fresh checkout. -->
-  <extend-project name="platform/external/drm_hwcomposer"
-                  revision="refs/heads/matonos/v1.2" />
-  <extend-project name="platform/external/libdrm"
-                  revision="refs/heads/matonos/v1.2" />
-  <extend-project name="platform/external/libxkbcommon"
-                  revision="refs/heads/matonos/v1.2" />
-  <extend-project name="platform/external/pixman"
-                  revision="refs/heads/matonos/v1.2" />
-  <extend-project name="platform/external/wayland"
-                  revision="refs/heads/matonos/v1.2" />
-  <extend-project name="platform/external/wayland-protocols"
-                  revision="refs/heads/matonos/v1.2" />
+  <!-- Device tree (this repository) -->
+  <project path="device/maton/pc_x86_64" name="MatonOS" remote="matonos"
+           revision="main" />
 
+  <!-- Graphics: minigbm (fork of android-generic's), drm_hwcomposer -->
   <remove-project name="platform/external/minigbm" />
-  <project path="external/minigbm" name="external_minigbm" remote="android-generic"
-           revision="refs/heads/matonos/v1.2" />
+  <project path="external/minigbm" name="android_external_minigbm"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <remove-project name="platform/external/drm_hwcomposer" />
+  <project path="external/drm_hwcomposer" name="android_external_drm_hwcomposer"
+           remote="matonos-dev" revision="matonos/v1.2" />
 
-  <!-- Audio HAL (user, 2026-09-25; local branch matonos/v1.2 = upstream a3abeb7 + IModule V4 fix): BayLibre's generic AIDL HAL, a configurable
-       AOSP-reference derivative (card/device via persist.vendor.audio.*). -->
+  <!-- Dependency bumps for wlroots -->
+  <remove-project name="platform/external/libdrm" />
+  <project path="external/libdrm" name="android_external_libdrm"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <remove-project name="platform/external/libxkbcommon" />
+  <project path="external/libxkbcommon" name="android_external_libxkbcommon"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <remove-project name="platform/external/pixman" />
+  <project path="external/pixman" name="android_external_pixman"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <remove-project name="platform/external/wayland" />
+  <project path="external/wayland" name="android_external_wayland"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <remove-project name="platform/external/wayland-protocols" />
+  <project path="external/wayland-protocols" name="android_external_wayland-protocols"
+           remote="matonos-dev" revision="matonos/v1.2" />
+
+  <!-- Audio HAL: BayLibre's generic AIDL HAL (fork, + IModule V4 fixes) -->
   <project path="hardware/baylibre/audio" name="android_hardware_baylibre_audio"
-           remote="baylibre" revision="refs/heads/matonos/v1.2"
-           upstream="main" />
+           remote="matonos-dev" revision="matonos/v1.2" />
 </manifest>

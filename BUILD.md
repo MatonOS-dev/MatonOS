@@ -26,58 +26,24 @@ build takes several hours.
   - a **Mesa 26.2.x release** tarball from <https://archive.mesa3d.org/>,
     plus SPIRV-LLVM-Translator 21 if your distro lacks it.
 
-## 2. Get AOSP
+## 2. Get AOSP and MatonOS
+
+MatonOS's local manifest adds this device tree and our forked projects
+(see [FORKS.md](FORKS.md)) on top of AOSP:
 
 ```sh
 mkdir aosp && cd aosp
 repo init -u https://android.googlesource.com/platform/manifest -b android-latest-release
+mkdir -p .repo/local_manifests
+curl -o .repo/local_manifests/maton.xml \
+  https://raw.githubusercontent.com/Hanro50/MatonOS/main/manifest/maton.xml
 repo sync -c -j8
 ```
 
-## 3. Get MatonOS
+The device tree lands in `device/maton/pc_x86_64`; run the commands below
+from there unless noted.
 
-This repository is the device tree. Clone it into place:
-
-```sh
-git clone https://github.com/Hanro50/MatonOS device/maton/pc_x86_64
-```
-
-## 4. Set up the forked AOSP projects
-
-MatonOS changes a few AOSP projects. Each has a patch series and a `BASE` file
-under `device/maton/pc_x86_64/forks/<project path>/`. For each project, make a
-local `matonos/v1.2` branch at its base and apply the patches:
-
-```sh
-F=device/maton/pc_x86_64/forks
-# AOSP projects (base = first line of BASE, or the "base:" field):
-for p in external/drm_hwcomposer external/libdrm external/libxkbcommon \
-         external/pixman external/wayland external/wayland-protocols; do
-  base=$(grep -oE '^[0-9a-f]{7,40}|base: [0-9a-f]+' $F/$p/BASE | head -1 | awk '{print $NF}')
-  git -C $p checkout -b matonos/v1.2 "$base" && git -C $p am "$PWD/$F/$p"/*.patch
-done
-```
-
-Two projects come from outside AOSP; replace/add them first:
-
-```sh
-rm -rf external/minigbm
-git clone https://github.com/android-generic/external_minigbm -b 14-x86 external/minigbm
-git clone https://github.com/BayLibre/android_hardware_baylibre_audio hardware/baylibre/audio
-for p in external/minigbm hardware/baylibre/audio; do
-  base=$(awk '/^base:/{print $2}' $F/$p/BASE)
-  git -C $p checkout -b matonos/v1.2 "$base" && git -C $p am "$PWD/$F/$p"/*.patch
-done
-```
-
-Then install the local manifest so `repo sync` keeps these branches:
-
-```sh
-mkdir -p .repo/local_manifests
-cp device/maton/pc_x86_64/manifest/maton.xml .repo/local_manifests/
-```
-
-## 5. Machine settings
+## 3. Machine settings
 
 Create `matonos.local.env` in the **AOSP root** (git-ignored; read by
 `tools/local-env.sh`) with your paths, for example:
@@ -92,7 +58,7 @@ MATON_SPIRV_PREFIX=$HOME/.local/opt/spirv-llvm-21
 `tools/build-kernel.sh` and `tools/build-mesa.sh` take the kernel and Mesa
 source paths as `-s` / `-m` (or `LINUX_DIR` / `MESA_DIR`).
 
-## 6. Fetch and build the pieces outside Soong
+## 4. Fetch and build the pieces outside Soong
 
 Run from `device/maton/pc_x86_64`:
 
@@ -111,7 +77,7 @@ Our apps are signed with per-app development keys that `build-apps.sh`
 creates on first run (kept outside the repo). Nothing in this repository
 contains signing keys.
 
-## 7. Build the image
+## 5. Build the image
 
 ```sh
 MATON_BUILD_COORDINATOR=1 tools/build.sh
@@ -126,7 +92,7 @@ image at `out/target/product/pc_x86_64/matonos-live-x86_64.img`. Useful flags:
 If Soong fails with "provider … modified after being set", run once with
 `SOONG_INCREMENTAL_ANALYSIS=false`.
 
-## 8. Test it
+## 6. Test it
 
 ```sh
 tools/run-qemu-live.sh -g std        # windowed, software rendering

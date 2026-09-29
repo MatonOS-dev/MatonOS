@@ -80,12 +80,12 @@ This repository is the device tree; check it out at
 | `rn-apps/flathub/` | The Flathub store app. |
 | `rn-apps/rn-common/` | Shared React Native library. |
 | `rn-apps/launchme`, `rn-apps/shelf`, `rn-apps/recents` | The earlier custom shell. It is parked, not built into the image; Launcher3 replaced it. |
-| `forks/<aosp path>/` | Our commits on forked AOSP projects (minigbm, drm_hwcomposer, BayLibre audio, libdrm, libxkbcommon, pixman, wayland, wayland-protocols) as `git format-patch` series plus `BASE`, applied on local `matonos/v1.2` branches. |
+| `FORKS.md` | Our forks of AOSP/third-party projects (minigbm, drm_hwcomposer, BayLibre audio, libdrm, libxkbcommon, pixman, wayland, wayland-protocols) in the [MatonOS-dev](https://github.com/MatonOS-dev) org, pulled in by `manifest/maton.xml`. |
 
 ## Building
 
 See **[BUILD.md](BUILD.md)** for the full setup: host requirements, AOSP
-sync, the forked projects, machine settings, building and testing in QEMU.
+sync with our local manifest, machine settings, building and testing in QEMU.
 
 Build outputs, downloaded APKs, kernel/Mesa prebuilts and all signing keys
 are not in this repo. The tools rebuild or fetch them.
