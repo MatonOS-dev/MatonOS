@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Image as ComposeImage, Button, Column, Host, LazyColumn, LazyRow, OutlinedTextField, Row, Text } from "@expo/ui/jetpack-compose";
+import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { background, fillMaxSize, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import { getAppById, getAppDetails, getCollection, searchApps, type StoreApp } from "./FlathubApi";
 import { getInstalledRefs, installApp, uninstallApp, type ProgressEvent } from "./FlatpakBridge";
@@ -12,15 +13,42 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
 }
 
+function Show({ when, children }: { when: boolean; children: ReactNode }) {
+  if (!when) return null;
+  return <>{children}</>;
+}
+
+function AppIcon({ app, imageSize }: { app: StoreApp; imageSize: number }) {
+  if (!app.icon) return null;
+  return <ComposeImage source={{ uri: app.icon }} contentDescription={`${app.name} icon`} modifiers={[size(imageSize, imageSize)]} />;
+}
+
+function ProgressLine({ progress }: { progress: string }) {
+  if (!progress) return null;
+  return <Text style={{ typography: "bodyMedium" }}>{progress}</Text>;
+}
+
+function Screenshots({ app }: { app: StoreApp }) {
+  if (app.screenshots.length === 0) return null;
+  const tiles = screenshotTiles(app);
+  return (
+    <>
+      <Text style={{ typography: "titleMedium" }}>Screenshots</Text>
+      <LazyRow horizontalArrangement={{ spacedBy: 10 }} verticalAlignment="center">{tiles}</LazyRow>
+    </>
+  );
+}
+
 function AppTile({ app, installed, onOpen }: { app: StoreApp; installed: boolean; onOpen: (app: StoreApp) => void }) {
+  const buttonLabel = installed ? "Open" : "View";
   return (
     <Row verticalAlignment="center" modifiers={[paddingAll(12)]}>
-      {app.icon ? <ComposeImage source={{ uri: app.icon }} contentDescription={`${app.name} icon`} modifiers={[size(52, 52)]} /> : null}
+      <AppIcon app={app} imageSize={52} />
       <Column modifiers={[weight(1), padding(12, 0, 12, 0)]}>
         <Text style={{ typography: "titleMedium" }}>{app.name}</Text>
         <Text style={{ typography: "bodyMedium" }} maxLines={2}>{app.summary}</Text>
       </Column>
-      <Button onClick={() => onOpen(app)}><Text>{installed ? "Open" : "View"}</Text></Button>
+      <Button onClick={() => onOpen(app)}><Text>{buttonLabel}</Text></Button>
     </Row>
   );
 }
@@ -35,7 +63,7 @@ function DetailContent({ app, installed, busy, progress, onBack, onInstall, onUn
     <LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 14 }}>
       <Button onClick={onBack}><Text>‹  Back to apps</Text></Button>
       <Row verticalAlignment="center">
-        {app.icon ? <ComposeImage source={{ uri: app.icon }} contentDescription={`${app.name} icon`} modifiers={[size(84, 84)]} /> : null}
+        <AppIcon app={app} imageSize={84} />
         <Column modifiers={[padding(18, 0, 18, 0)]}>
           <Text style={{ typography: "headlineSmall" }}>{app.name}</Text>
           <Text style={{ typography: "bodyLarge" }}>{app.summary}</Text>
@@ -44,10 +72,9 @@ function DetailContent({ app, installed, busy, progress, onBack, onInstall, onUn
       </Row>
       <Row horizontalArrangement={{ spacedBy: 10 }}>
         <Button enabled={!busy} onClick={action}><Text>{actionLabel}</Text></Button>
-        {progress ? <Text style={{ typography: "bodyMedium" }}>{progress}</Text> : null}
+        <ProgressLine progress={progress} />
       </Row>
-      {app.screenshots.length > 0 ? <Text style={{ typography: "titleMedium" }}>Screenshots</Text> : null}
-      {app.screenshots.length > 0 ? <LazyRow horizontalArrangement={{ spacedBy: 10 }} verticalAlignment="center">{screenshotTiles(app)}</LazyRow> : null}
+      <Screenshots app={app} />
       <Text style={{ typography: "titleMedium" }}>Permissions</Text>
       <Text style={{ typography: "bodyMedium" }}>{permissionText}</Text>
       <Text style={{ typography: "titleMedium" }}>About this app</Text>
@@ -66,6 +93,7 @@ function screenshotTiles(app: StoreApp): ReactNode[] {
 }
 
 export default function App() {
+  const themeColors = useMaterialColors({ colorScheme: "dark", seedColor: "#79c75b" });
   const [page, setPage] = useState<Page>("browse");
   const [feed, setFeed] = useState<Feed>("popular");
   const [apps, setApps] = useState<StoreApp[]>([]);
@@ -175,9 +203,9 @@ export default function App() {
     const tiles = appTiles(installedApps, installedIds, (app) => void openDetails(app));
     content = <Column modifiers={[weight(1)]}>
       <Text style={{ typography: "headlineSmall" }} modifiers={[paddingAll(20)]}>Installed apps</Text>
-      {loading ? <Text modifiers={[paddingAll(20)]}>Loading installed apps…</Text> : null}
-      {installedError && !loading ? <Text modifiers={[paddingAll(20)]}>{installedError}</Text> : null}
-      {installedApps.length === 0 && !installedError && !loading ? <Text modifiers={[paddingAll(20)]}>No installed apps are listed yet.</Text> : null}
+      <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading installed apps…</Text></Show>
+      <Show when={Boolean(installedError) && !loading}><Text modifiers={[paddingAll(20)]}>{installedError}</Text></Show>
+      <Show when={installedApps.length === 0 && !installedError && !loading}><Text modifiers={[paddingAll(20)]}>No installed apps are listed yet.</Text></Show>
       <LazyColumn verticalArrangement={{ spacedBy: 4 }} contentPadding={{ bottom: 20 }}>{tiles}</LazyColumn>
     </Column>;
   } else {
@@ -191,20 +219,20 @@ export default function App() {
       <OutlinedTextField onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 0, 16, 0)]}>
         <OutlinedTextField.Label>Search apps</OutlinedTextField.Label>
       </OutlinedTextField>
-      {loading ? <Text modifiers={[paddingAll(16)]}>Loading Flathub…</Text> : null}
+      <Show when={loading}><Text modifiers={[paddingAll(16)]}>Loading Flathub…</Text></Show>
       <LazyColumn verticalArrangement={{ spacedBy: 4 }} contentPadding={{ bottom: 20 }}>{tiles}</LazyColumn>
     </Column>;
   }
 
   return (
     <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b">
-      <Column modifiers={[fillMaxSize(), background("#121212")]}>
+      <Column modifiers={[fillMaxSize(), background(themeColors.background)]}>
         <Row horizontalArrangement={{ spacedBy: 12 }} modifiers={[paddingAll(14)]}>
           <Text style={{ typography: "titleLarge" }} modifiers={[weight(1)]}>Software Center</Text>
           <Button onClick={() => void selectPage("browse")}><Text>Browse</Text></Button>
           <Button onClick={() => void selectPage("installed")}><Text>Installed</Text></Button>
         </Row>
-        {message ? <Text style={{ typography: "bodyMedium" }} modifiers={[padding(18, 0, 18, 8)]}>{message}</Text> : null}
+        <Show when={Boolean(message)}><Text style={{ typography: "bodyMedium" }} modifiers={[padding(18, 0, 18, 8)]}>{message}</Text></Show>
         {content}
       </Column>
     </Host>

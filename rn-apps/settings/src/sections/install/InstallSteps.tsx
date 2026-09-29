@@ -121,6 +121,7 @@ export function InstallWelcomeStep({
 
 export function InstallDrivesStep({
   drives,
+  preview,
   error,
   ready,
   selectedId,
@@ -129,6 +130,7 @@ export function InstallDrivesStep({
   formatSize,
 }: {
   drives: InstallDrive[];
+  preview: boolean;
   error: string;
   ready: boolean;
   selectedId: string;
@@ -164,11 +166,21 @@ export function InstallDrivesStep({
         ) : null}
         <ActionButton label={copy.refresh} variant="text" onClick={onRefresh} />
       </SettingsCard>
-      <FlatList
-        data={drives}
-        keyExtractor={(drive) => drive.id}
-        renderItem={renderItem}
-      />
+      {preview && drives[0] ? (
+        <DriveCard
+          drive={drives[0]}
+          selected={drives[0].id === selectedId}
+          onSelect={onSelect}
+          formatSize={formatSize}
+        />
+      ) : (
+        <FlatList
+          style={{ height: 320 }}
+          data={drives}
+          keyExtractor={(drive) => drive.id}
+          renderItem={renderItem}
+        />
+      )}
     </>
   );
 }
@@ -277,11 +289,21 @@ export function InstallProgressStep({
       <Text style={{ typography: "bodySmall" }}>
         {operations.filter((item) => item.status === "complete").length} of {count} operations complete
       </Text>
-      <FlatList
-        data={operations}
-        keyExtractor={(operation, index) => `${index}:${operation.title}`}
-        renderItem={renderItem}
-      />
+      {preview ? (
+        <>
+          {operations[0] ? <OperationRow operation={operations[0]} /> : null}
+          {operations[1] ? <OperationRow operation={operations[1]} /> : null}
+          {operations[2] ? <OperationRow operation={operations[2]} /> : null}
+          {operations[3] ? <OperationRow operation={operations[3]} /> : null}
+        </>
+      ) : (
+        <FlatList
+          style={{ height: 240 }}
+          data={operations}
+          keyExtractor={(operation, index) => `${index}:${operation.title}`}
+          renderItem={renderItem}
+        />
+      )}
       {preview ? (
         <>
           <ActionButton

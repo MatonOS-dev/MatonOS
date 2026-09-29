@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useFocusEffect } from "expo-router";
 import {
@@ -71,19 +71,24 @@ export function InstallSection() {
   const [failureMessage, setFailureMessage] = useState("");
   const [planCount, setPlanCount] = useState(0);
   const [previewMode, setPreviewMode] = useState(false);
+  const previewModeRef = useRef(false);
 
   const refreshDrives = useCallback(async () => {
     setReadiness("loading");
     setLoadError("");
     try {
       const state = await MatonOS.call("install", "get_status");
+      if (previewModeRef.current) return;
       if (!state.available)
         throw new Error(state.reason || copy.installServiceUnavailable);
       const status = parse<{ executorReady: boolean }>(state.value);
       if (!status?.executorReady) throw new Error(copy.installUnavailable);
-      setDrives(await bridgeInstallerApi.listDrives());
+      const availableDrives = await bridgeInstallerApi.listDrives();
+      if (previewModeRef.current) return;
+      setDrives(availableDrives);
       setReadiness("ready");
     } catch (problem) {
+      if (previewModeRef.current) return;
       setReadiness("unavailable");
       setLoadError(
         problem instanceof Error
@@ -205,6 +210,7 @@ export function InstallSection() {
   };
 
   const restartWizard = () => {
+    previewModeRef.current = false;
     setSelected(null);
     setEraseConfirmed(false);
     setOperationStates([]);
@@ -225,6 +231,7 @@ export function InstallSection() {
         onContinue={() => setStep("drives")}
         onRefresh={() => void refreshDrives()}
         onPreview={() => {
+          previewModeRef.current = true;
           const previewDrive: InstallDrive = {
             id: "preview-drive",
             identity:
@@ -249,6 +256,7 @@ export function InstallSection() {
     drives: () => (
       <InstallDrivesStep
         drives={drives}
+        preview={previewMode}
         error={loadError}
         ready={readiness === "ready"}
         selectedId={selected?.id ?? ""}
