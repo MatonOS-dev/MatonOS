@@ -692,7 +692,15 @@ Feature work continues, but in this shape from now on.
     - portal.Background -> foreground service on the stub.
     - portal.Trash -> MediaStore trash. portal.Account -> name/picture.
     - org.freedesktop.login1 -> read-only PrepareForSleep signals only.
-    Never served: NetworkManager, systemd, Avahi, PackageKit, BlueZ, GeoClue.
+    System services (user, 2026-09-29):
+    - Avahi / NetworkManager -> limited subset, only after the app asks for
+      the matching Android permission (Avahi -> NsdManager mDNS browse/
+      publish; NetworkManager -> read-only state, wifi scan with location).
+    - GeoClue -> Android location; calling it triggers the location
+      permission prompt.
+    - BlueZ -> not served (Android has no BlueZ); an Android Bluetooth API
+      bridge can be exposed later if developers want it.
+    - PackageKit / systemd -> never (no equivalent on MatonOS).
   - Prototype order (de-risking, scariest first): (1) a CLI Flatpak under
     bwrap on MatonOS (namespaces/seccomp/SELinux); (2) one Wayland window
     (weston-terminal from a Flatpak, its own Mesa) through the Xtr126 path on
