@@ -87,8 +87,8 @@ patches apply to the pinned upstream tree.
 
 ### VM verification
 
-On a copy of the 2026-09-29 18:14:53 OK image (QEMU `-g none -m 4096`, port
-5560, SELinux permissive), the no-codecs bundle passed `flatpak --version`
+On a copy of the 2026-09-29 23:27:20 OK image (QEMU `-g none -m 4096`, port
+5565, SELinux permissive), the no-codecs bundle passed `flatpak --version`
 (1.14.10), imported signed Flathub, and installed
 `org.freedesktop.Platform//26.08` and `io.github.zyedidia.micro` with GPG
 verification enabled. The Platform shell returned 0 and reported kernel
@@ -96,17 +96,23 @@ verification enabled. The Platform shell returned 0 and reported kernel
 Android needs a writable 0700 `XDG_RUNTIME_DIR` (Android has no `/run/user`).
 Full command output is in `out/pc-logs/flatpak-spike/no-codecs-vm-evidence.txt`.
 
-UID 10999 (Android app UID range) ran `flatpak --version` successfully with
-the no-codecs binary and test runner. This unprovisioned UID has no
-`android.permission.INTERNET` grant or Android `inet` supplementary group:
-Flathub `remote-add` failed with curl error `[6] Could not resolve hostname`.
-Flatpak also rejects `--user install` when invoked as root (`Refusing to
-operate on a user installation as root!`). A real store app must have the
-Internet permission and invoke Flatpak in its own UID to create/install into
-its owned directory. The patched-bundle Platform shell and Micro launch under
-UID 10999 are still pending a VM run with the app UID provisioned for network
-access; the previous GDK-enabled bundle passed those two non-root launch
-checks on an earlier image.
+UID 10999 ran `flatpak --version`, the Platform shell, and Micro 2.0.15
+without root; the shell reported `uid=10999(u0_a999)` and returned 0. Root
+added `/tmp/.X11-unix` mode 1777 after the first Micro launch failed with
+`bwrap: Can't mkdir /tmp/.X11-unix: Permission denied` (`/tmp` was
+`shell:shell` mode 0771). Flatpak/bwrap itself did not need root once that
+shared X11 socket directory and a 0700 user-owned `XDG_RUNTIME_DIR` existed.
+
+The test UID still could not fetch Flathub, even with supplementary group
+3003 (`inet`): `remote-add` failed with curl error `[6] Could not resolve
+hostname`. It has no installed package / Android `INTERNET` permission record.
+Root therefore seeded a signed, GPG-verified system install for the UID launch
+test; Flatpak refuses root `--user install` with `Refusing to operate on a
+user installation as root!`. In production, Software Center must hold the
+Android `INTERNET` permission and perform its user installation as its own
+package UID. MatonOS also needs to create `/tmp/.X11-unix` mode 1777 during
+boot for unprivileged apps that request X11. Full results and errors are in
+`out/pc-logs/flatpak-spike/no-codecs-vm-evidence.txt`.
 
 ## Open items
 
