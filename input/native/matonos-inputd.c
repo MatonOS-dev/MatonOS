@@ -37,6 +37,9 @@
 #define PROP_PRESENT "vendor.maton.input.present"
 #define PROP_KEYBOARD "vendor.maton.input.keyboard"
 #define PROP_POINTER "vendor.maton.input.pointer"
+/* Number of absolute pointers (VM/tablet); the bridge applies unit-gain cursor
+ * settings only while this is non-zero, so real mice keep Android defaults. */
+#define PROP_ABSOLUTE "vendor.maton.input.absolute"
 #define DRM_DIR "/sys/class/drm"
 
 enum kind { KIND_NONE = 0, KIND_KEYBOARD = 1, KIND_POINTER = 2 };
@@ -65,11 +68,13 @@ static struct source sources[MAX_DEVICES];
 static int epfd = -1, inotify_fd = -1, keyboard_fd = -1, pointer_fd = -1;
 static _Atomic int touchpad_fd = -1;
 static _Atomic unsigned int keyboards, pointers;
+static _Atomic unsigned int absolute_pointers;
 static MatonosIpcServer *ipc;
 static bool pointer_wheel_hi_res, pointer_hwheel_hi_res;
 static _Atomic uint64_t requested_display_size;
 static int display_width = 1200, display_height = 1200;
 static float density_correction = 1.0f;
+static float absolute_cursor_correction = 1.0f;
 static float pointer_pos_x = 600.0f, pointer_pos_y = 600.0f;
 
 /* Connector `mode` is the currently programmed DRM mode. `modes` is only the
@@ -134,7 +139,13 @@ static void refresh_display_geometry(void) {
     char density[32] = {0};
     if (__system_property_get("ro.sf.lcd_density", density) > 0) {
         int dpi = atoi(density);
-        if (dpi > 0) density_correction = 240.0f / (float)dpi;
+        if (dpi > 0) {
+            density_correction = 240.0f / (float)dpi;
+            /* CursorInputMapper applies viewport density / XHIGH (320 dpi)
+             * to REL deltas. Invert that scale for absolute-position deltas;
+             * keep touchpad conversion on its existing scale. */
+            absolute_cursor_correction = 320.0f / (float)dpi;
+        }
     }
 }
 
@@ -159,9 +170,15 @@ static void sync_out(int fd) { (void)emit(fd, EV_SYN, SYN_REPORT, 0); }
 
 static void state_update(void) {
     const bool present = keyboards != 0 || pointers != 0;
+    unsigned int abs_count = atomic_load(&absolute_pointers);
     (void)__system_property_set(PROP_PRESENT, present ? "1" : "0");
     (void)__system_property_set(PROP_KEYBOARD, keyboards ? "1" : "0");
     (void)__system_property_set(PROP_POINTER, pointers ? "1" : "0");
+    {
+        char abs_buf[16];
+        snprintf(abs_buf, sizeof(abs_buf), "%u", abs_count);
+        (void)__system_property_set(PROP_ABSOLUTE, abs_buf);
+    }
     if (present && keyboards && pointers && touchpad_fd < 0) {
         int fd = open(UINPUT_NODE, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd >= 0) {
@@ -198,9 +215,10 @@ static void state_update(void) {
         ALOGI("desktop touchpad removed");
     }
     if (ipc) {
-        char json[160];
-        snprintf(json, sizeof(json), "{\"keyboards\":%u,\"pointers\":%u,\"desktopTouchpad\":%s}",
-                 keyboards, pointers, touchpad_fd >= 0 ? "true" : "false");
+        char json[192];
+        snprintf(json, sizeof(json), "{\"keyboards\":%u,\"pointers\":%u,\"absolutePointers\":%u,\"desktopTouchpad\":%s}",
+                 keyboards, pointers, abs_count,
+                 touchpad_fd >= 0 ? "true" : "false");
         (void)matonos_ipc_publish(ipc, "state", json);
     }
 }
@@ -279,6 +297,7 @@ static void remove_source(int i) {
     close(s->fd);
     if (s->kind == KIND_KEYBOARD && keyboards) keyboards--;
     if (s->kind == KIND_POINTER && pointers) pointers--;
+    if (s->kind == KIND_POINTER && s->absolute && absolute_pointers) absolute_pointers--;
     ALOGI("removed %s (%s)", s->node, s->name);
     s->fd = -1;
     state_update();
@@ -327,7 +346,9 @@ static void add_source(const char *node) {
     struct source *s = &sources[i];
     s->fd = fd; s->kind = kb ? KIND_KEYBOARD : KIND_POINTER;
     snprintf(s->name, sizeof(s->name), "%s", name);
-    s->absolute = !rel && (abs_xy || mt); s->mt = mt;
+    /* Only bare absolute pointer sources need InputReader's cursor transform
+     * flattened. Multitouch touchpads keep their normal touchpad settings. */
+    s->absolute = !rel && abs_xy && !mt; s->mt = mt;
     s->has_wheel_hi_res = bit_test(rel_bits, REL_WHEEL_HI_RES);
     s->has_hwheel_hi_res = bit_test(rel_bits, REL_HWHEEL_HI_RES);
     s->has_hardware_buttons = bit_test(key_bits, BTN_MOUSE) || bit_test(key_bits, BTN_LEFT);
@@ -336,6 +357,7 @@ static void add_source(const char *node) {
     if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) < 0) { (void)ioctl(fd, EVIOCGRAB,0); close(fd); s->fd=-1; return; }
     if (kb) keyboards++;
     if (ptr) pointers++;
+    if (s->absolute && ptr) absolute_pointers++;
     ALOGI("grabbed %s (%s)%s%s wheel=%s%s hwheel=%s%s (virtual hi-res=%s/%s)",
           node, name, kb ? " keyboard" : "", ptr ? " pointer" : "",
           bit_test(rel_bits, REL_WHEEL) ? "REL_WHEEL" : "none",
@@ -403,9 +425,9 @@ static void emit_absolute_axis(unsigned int code, int value, int min, int max) {
     int target = (int)(target_f + 0.5f);
     if (target < 0) target = 0;
     if (target >= extent) target = extent - 1;
-    float scaled_delta = (float)(target - *position) * density_correction;
+    float scaled_delta = (float)(target - *position) * absolute_cursor_correction;
     int delta = scaled_delta >= 0.0f ? (int)(scaled_delta + 0.5f) : (int)(scaled_delta - 0.5f);
-    *position += (float)delta / density_correction;
+    *position += (float)delta / absolute_cursor_correction;
     if (*position < 0.0f) *position = 0.0f;
     if (*position > (float)(extent - 1)) *position = (float)(extent - 1);
     if (delta) (void)emit(pointer_fd, EV_REL, code == ABS_X ? REL_X : REL_Y, delta);
@@ -543,8 +565,9 @@ static void handle_inotify(void) {
 static int get_state(const char *args, char *result, size_t capacity, void *context) {
     (void)args; (void)context;
     if (capacity < 2) return -1;
-    snprintf(result, capacity, "{\"keyboards\":%u,\"pointers\":%u,\"desktopTouchpad\":%s}",
-             keyboards, pointers, touchpad_fd >= 0 ? "true" : "false");
+    snprintf(result, capacity, "{\"keyboards\":%u,\"pointers\":%u,\"absolutePointers\":%u,\"desktopTouchpad\":%s}",
+             keyboards, pointers, atomic_load(&absolute_pointers),
+             touchpad_fd >= 0 ? "true" : "false");
     return 0;
 }
 
