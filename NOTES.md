@@ -704,7 +704,10 @@ Feature work continues, but in this shape from now on.
       distro (no system packages to install); any install/remove call,
       including Flatpak refs, returns a permission-denied error. Apps install
       through the MatonOS store, never via the bus (user).
-    - systemd -> never (no equivalent on MatonOS).
+    - systemd -> behave like a non-systemd distro (Alpine/Void/Devuan):
+      org.freedesktop.systemd1 is simply not on the bus (ServiceUnknown), so
+      apps take their existing non-systemd fallbacks; org.freedesktop.login1
+      is the elogind-compatible subset only (PrepareForSleep etc.) (user).
   - Prototype order (de-risking, scariest first): (1) a CLI Flatpak under
     bwrap on MatonOS (namespaces/seccomp/SELinux); (2) one Wayland window
     (weston-terminal from a Flatpak, its own Mesa) through the Xtr126 path on
