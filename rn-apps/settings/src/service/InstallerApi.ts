@@ -43,7 +43,7 @@ export type InstallerOperation =
       declaredDiskBytes: number;
       diskGuid: string;
       partitions: GptPartition[];
-    };
+    }
   | {
       kind: "create_lp_metadata";
       superPartGuid: string;
@@ -75,8 +75,7 @@ export type InstallerOperation =
         inlineContents?: string;
         sha256?: string;
       }[];
-    }
-
+    };
 
 export type OperationRequestV1 = {
   apiVersion: 1;
