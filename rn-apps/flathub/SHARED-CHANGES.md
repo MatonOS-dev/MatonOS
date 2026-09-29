@@ -5,12 +5,19 @@
    The existing bridge and linuxd already implement the required calls and
    progress event. The current ACL only authorizes `org.matonos.settings`, so
    this app cannot install or remove apps until its package is authorized.
-2. Add `Flathub.apk` as a fixed `android_app_import` in
-   `device/maton/pc_x86_64/buildinfra/Android.bp`, include the
-   `privapp-permissions-org.matonos.flathub` file, and grant
-   `org.matonos.permission.SYSTEM_BRIDGE` in that file. Expo apps use their own
-   generated certificate, which `tools/build-apps.sh` adds to the certificate
-   allowlist at build time. This imports the APK produced from this app's
-   `apps.list` row into the image so built-in app authorization applies.
+2. Add a fixed `android_app_import` module (for example, `MatonOSFlathub`) to
+   `device/maton/pc_x86_64/buildinfra/Android.bp`, with
+   `apk: "apps-built/Flathub.apk"`, `system_ext_specific: true`,
+   `privileged: true`, `preprocessed: true`, and the required permission
+   module. Add a `prebuilt_etc` module sourcing
+   `privapp-permissions/privapp-permissions-org.matonos.flathub.xml`.
+3. Add both modules to `PRODUCT_PACKAGES` in
+   `device/maton/pc_x86_64/buildinfra/buildinfra.mk`, so the APK and its
+   privileged permission grant enter the image. The APK is already staged
+   from `buildinfra/apps/apps.list`; its permission XML is present in
+   `buildinfra/privapp-permissions/`, and `tools/build-apps.sh` has registered
+   the app certificate.
 
-No AOSP or systembridge implementation change is needed.
+No bridge implementation change is needed. The current successful image was
+checked and contains no Flathub APK, so QEMU UI verification must wait until
+the shared packaging entries above are included in an image.

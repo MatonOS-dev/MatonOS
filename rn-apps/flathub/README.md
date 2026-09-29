@@ -27,13 +27,20 @@ and `npm run lint` from this directory for source checks.
 - Preflight passes. Expo release packaging and the release-linkage check
   succeeded; `apps-built/Flathub.apk` is staged, its permission XML is present,
   and its signing certificate is registered.
-- The 2026-09-29 22:00 full image build completed successfully, but the image
-  has no Flathub APK. `buildinfra/Android.bp` and `buildinfra/buildinfra.mk`
-  do not import or package the app. The `flatpak` caller allowlist also still
-  authorizes only Settings. See `SHARED-CHANGES.md` for the exact additions.
-- QEMU screenshots were not captured because this OK image does not include
-  Flathub; the user instruction is to report the missing buildinfra wiring
-  instead of editing it.
+- The 2026-09-29 23:27 full image includes Flathub at
+  `/system_ext/priv-app/MatonOSFlathub/MatonOSFlathub.apk`. The coordinator also
+  added its permission XML and `flatpak` caller authorization.
+- In QEMU, Popular, New, search, and Installed screens were captured under
+  `/mnt/data/aosp/out/pc-logs/flatpak-store/`. Opening a detail page with
+  screenshots crashed with a nested vertical-scroll Compose exception. The
+  source now uses a horizontal `LazyRow` for screenshots and paints a dark root
+  background to fix the low text contrast. TypeScript and ESLint pass; this fix
+  still needs an APK/image rebuild and fresh-VM verification.
+- The Installed screen received the bridge's generic `The Flatpak operation
+  failed.` response. During the Calculator install attempt, the bridge
+  authorized `add_flathub`, but the detail-screen crash happened before the
+  `install` call, so no download or progress event was observed. See
+  `/mnt/data/aosp/out/pc-logs/flatpak-store/runtime-findings.txt`.
 
 ## Real PC checks
 

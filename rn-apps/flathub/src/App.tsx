@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Image as ComposeImage, Button, Column, Host, LazyColumn, OutlinedTextField, Row, Text } from "@expo/ui/jetpack-compose";
-import { fillMaxSize, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
+import { Image as ComposeImage, Button, Column, Host, LazyColumn, LazyRow, OutlinedTextField, Row, Text } from "@expo/ui/jetpack-compose";
+import { background, fillMaxSize, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import { getAppById, getAppDetails, getCollection, searchApps, type StoreApp } from "./FlathubApi";
 import { getInstalledRefs, installApp, uninstallApp, type ProgressEvent } from "./FlatpakBridge";
 import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
@@ -47,7 +47,7 @@ function DetailContent({ app, installed, busy, progress, onBack, onInstall, onUn
         {progress ? <Text style={{ typography: "bodyMedium" }}>{progress}</Text> : null}
       </Row>
       {app.screenshots.length > 0 ? <Text style={{ typography: "titleMedium" }}>Screenshots</Text> : null}
-      {app.screenshots.length > 0 ? <LazyColumn horizontalAlignment="start" verticalArrangement={{ spacedBy: 10 }}>{screenshotTiles(app)}</LazyColumn> : null}
+      {app.screenshots.length > 0 ? <LazyRow horizontalArrangement={{ spacedBy: 10 }} verticalAlignment="center">{screenshotTiles(app)}</LazyRow> : null}
       <Text style={{ typography: "titleMedium" }}>Permissions</Text>
       <Text style={{ typography: "bodyMedium" }}>{permissionText}</Text>
       <Text style={{ typography: "titleMedium" }}>About this app</Text>
@@ -198,7 +198,7 @@ export default function App() {
 
   return (
     <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b">
-      <Column modifiers={[fillMaxSize()]}>
+      <Column modifiers={[fillMaxSize(), background("#121212")]}>
         <Row horizontalArrangement={{ spacedBy: 12 }} modifiers={[paddingAll(14)]}>
           <Text style={{ typography: "titleLarge" }} modifiers={[weight(1)]}>Software Center</Text>
           <Button onClick={() => void selectPage("browse")}><Text>Browse</Text></Button>
