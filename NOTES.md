@@ -669,7 +669,7 @@ Feature work continues, but in this shape from now on.
     - org.freedesktop.portal.FileChooser -> Android file picker (SAF).
     - org.freedesktop.portal.OpenURI -> ACTION_VIEW, i.e. the default browser
       for http(s) and the default handler for other schemes.
-    - org.freedesktop.portal.Documents -> OPEN. Needed to hand picked files
+    - org.freedesktop.portal.Documents -> DECIDED (user): copy-in/write-back. Hands picked files
       to the sandbox. Proposed v1: the stub copies the picked content:// file
       into a per-app doc dir bound into the sandbox and writes it back on
       save; later a FUSE view (Android has /dev/fuse) instead of copies.
