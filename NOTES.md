@@ -435,6 +435,13 @@ Feature work continues, but in this shape from now on.
     Remove the vending (and gms) spoof pairs while real Google is active.
   - Data dir carries over (offer "clear data" after switching). Key rotation
     can't do this without Google's private key, hence the patch.
+- **v8 (user, 2026-09-29): Nix packages** as a Linux app source beside
+  Flatpak/AppImage: closures under /nix/store carry their own glibc/Mesa, so
+  they run under bwrap with a read-only store at /data/matonos/linux/nix
+  (system-owned) mounted as /nix/store, same sockets, D-Bus broker and
+  per-app stub APKs from the package's .desktop file; default permission set
+  (Nix declares none, like AppImage). Rollback via Nix generations. Full
+  NixOS (configuration.nix, systemd userland) is out of scope.
 - **v7 (user, 2026-09-28): NVIDIA proprietary stack for Linux apps** —
   NVIDIA's OPEN GPU kernel modules (nvidia.ko/nvidia-drm.ko, MIT/GPL, Turing+)
   as a signed driver add-on built against our kernel (closed-module GPUs out:
