@@ -100,6 +100,8 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   [[ -n $key_id && $key_id != \#* ]] || continue
   [[ -n $project_rel && -n $task && -n $apk_name ]] || die "bad app registry row: $key_id"
   [[ $key_id =~ ^[a-z0-9][a-z0-9_-]*$ && $apk_name =~ ^[A-Za-z0-9._-]+\.apk$ ]] || die "unsafe app registry row: $key_id"
+  # MATON_APPS_ONLY="id ...": build only these apps (others keep their staged APKs).
+  if [[ -n ${MATON_APPS_ONLY:-} && " ${MATON_APPS_ONLY} " != *" $key_id "* ]]; then continue; fi
   # MATON_SKIP_APPS="id ...": keep the already-staged APK (e.g. an app mid-rewrite).
   if [[ " ${MATON_SKIP_APPS:-} " == *" $key_id "* ]]; then info "Skipping $key_id (MATON_SKIP_APPS), keeping staged $apk_name"; continue; fi
   project=$DEVICE_DIR/$project_rel

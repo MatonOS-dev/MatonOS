@@ -9,7 +9,10 @@
 #                          builds), then download
 #
 # apps/apps.lock, one app per line:
-#   <soong module> <package> <versionCode> <apk sha256> <signer cert sha256>
+#   <soong module> <package> <versionCode> <apk sha256> <signer cert sha256> [url]
+#   With [url], the APK comes from that upstream URL instead of F-Droid
+#   (upstream-signed builds, e.g. Aurora Store's preload flavor); -u leaves
+#   such lines alone.
 #
 # The APKs are installed byte for byte (apps/Android.bp: preprocessed,
 # presigned), never re-signed: F-Droid can only update an app whose signer
@@ -62,6 +65,9 @@ for line in open(lock):
     if not line.strip() or line.startswith("#"):
         out.append(line)
         continue
+    if len(line.split()) > 5:
+        out.append(line)
+        continue
     module, pkg = line.split()[:2]
     best = None
     for v in packages[pkg]["versions"].values():
@@ -83,7 +89,7 @@ fi
 
 # ---------------------------------------------------------------- download
 mkdir -p "$OUT"
-while read -r module pkg vc sha signer; do
+while read -r module pkg vc sha signer url; do
   [[ -z $module || $module == \#* ]] && continue
   dest=$OUT/$module.apk
   if [[ -f $dest ]] && echo "$sha  $dest" | sha256sum -c --status; then
@@ -94,12 +100,16 @@ while read -r module pkg vc sha signer; do
   tmp=$work/$module.apk
   file=${pkg}_$vc.apk
   # Superseded versions move from repo/ to archive/.
-  curl -sSfL -o "$tmp" "$REPO/$file" || curl -sSfL -o "$tmp" "$ARCHIVE/$file" ||
-    die "$file not found in F-Droid's repo or archive"
+  if [[ -n $url ]]; then
+    curl -sSfL -o "$tmp" "$url" || die "$module: download failed ($url)"
+  else
+    curl -sSfL -o "$tmp" "$REPO/$file" || curl -sSfL -o "$tmp" "$ARCHIVE/$file" ||
+      die "$file not found in F-Droid's repo or archive"
+  fi
   echo "$sha  $tmp" | sha256sum -c --status || die "$file: SHA-256 mismatch"
   certs=$("$JAVA" -jar "$APKSIGNER_JAR" verify --print-certs "$tmp") || die "$file: signature invalid"
   grep -qi "certificate SHA-256 digest: $signer" <<<"$certs" ||
-    die "$file: signer is not the one F-Droid lists ($signer)"
+    die "$file: signer is not the pinned one ($signer)"
   mv "$tmp" "$dest"
 done < "$LOCK"
 

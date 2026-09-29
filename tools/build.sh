@@ -161,6 +161,7 @@ if [[ $DO_AOSP == 1 ]]; then
 
   info "Preinstalled apps"
   "$TOOLS/fetch-apps.sh"
+  "$TOOLS/../gms/fetch-gms.sh"
 
   info "AOSP build ($PRODUCT-$RELEASE-$VARIANT, -j$JOBS${MODULES:+, modules: $MODULES})"
   # envsetup/lunch aren't set -u clean; run them in a subshell without it.

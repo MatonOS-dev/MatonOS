@@ -30,7 +30,7 @@ while getopts "n:a:o:j:h" opt; do
        CXX=$TOOLCHAIN/bin/x86_64-linux-android$API-clang++
        AR=$TOOLCHAIN/bin/llvm-ar; STRIP=$TOOLCHAIN/bin/llvm-strip ;;
     a) AOSP=$(readlink -f "$OPTARG") ;;
-    o) OUT=$(readlink -m "$OPTARG"); SRC=$OUT/src; PREFIX=$OUT/prefix; DEST=$OUT/dest ;;
+    o) OUT=$(readlink -m "$OPTARG"); SRC=$OUT/src; DEST=$OUT/dest ;;
     j) JOBS=$OPTARG ;;
     *) echo "Usage: $0 [-n NDK] [-a AOSP] [-o build-dir] [-j jobs]"; exit 0 ;;
   esac
@@ -216,7 +216,7 @@ meson setup "$OUT/pipewire" "$SRC/pipewire" --cross-file "$OUT/android-x86_64.in
   --prefix=/vendor --libdir=lib64 --buildtype=release -Ddefault_library=shared \
   -Dalsa=enabled -Dlibsystemd=disabled \
   -Dsystemd-system-service=disabled -Dsystemd-user-service=disabled \
-  -Ddbus=disabled -Dbluez5=disabled -Dpipewire-alsa=disabled \
+  -Ddbus=disabled -Dbluez5=disabled -Dpipewire-alsa=enabled \
   -Dpipewire-jack=disabled -Dpipewire-v4l2=disabled -Dlibcamera=disabled \
   -Dvulkan=disabled -Dffmpeg=disabled -Dgstreamer=disabled \
   -Dgstreamer-device-provider=disabled -Dman=disabled -Ddocs=disabled \
@@ -248,7 +248,7 @@ meson setup "$OUT/wireplumber" "$SRC/wireplumber" --cross-file "$OUT/android-x86
   --prefix=/vendor --libdir=lib64 --buildtype=release -Ddefault_library=shared \
   -Dsystem-lua=false -Dsystemd=disabled -Dsystemd-system-service=false \
   -Dsystemd-user-service=false -Dintrospection=disabled \
-  -Ddoc=disabled -Dtests=false -Dtools=false
+  -Ddoc=disabled -Dtests=false -Dtools=true
 ninja -C "$OUT/wireplumber" -j"$JOBS"
 DESTDIR="$DEST" ninja -C "$OUT/wireplumber" install
 
@@ -272,7 +272,7 @@ cp "$DEVICE_DIR/audio/config/pipewire/pipewire.conf.d/10-maton-fallback.conf" \
 # Keep only runtime assets in the image; cross-build headers, pkg-config files
 # and GLib development utilities are build-time dependencies.
 for bin in "$DEST/vendor/bin"/*; do
-  case $(basename "$bin") in pipewire|wireplumber|pw-cat|pw-cli) ;; *) rm -f "$bin" ;; esac
+  case $(basename "$bin") in pipewire|pipewire-pulse|wireplumber|pw-cat|pw-play|pw-cli|wpctl) ;; *) rm -f "$bin" ;; esac
 done
 # PRODUCT_COPY_FILES installs regular files only. Dereference the versioned
 # upstream library symlinks into regular vendor files so DT_NEEDED names resolve.
@@ -292,6 +292,24 @@ rm -rf "$STAGE/vendor/include" "$STAGE/vendor/lib64/pkgconfig" \
   "$STAGE/vendor/lib64/glib-2.0/include" \
   "$STAGE/vendor/share/bash-completion" "$STAGE/vendor/share/gettext" \
   "$STAGE/vendor/share/aclocal" "$STAGE/vendor/share/glib-2.0"
-find "$STAGE/vendor/lib64" -maxdepth 1 -type f \( -name '*.a' -o -name '*.la' \) -delete
+find "$STAGE/vendor/lib64" -type f \( -name '*.a' -o -name '*.la' \) -delete
 rm -f "$STAGE/vendor/lib64/libgirepository-2.0.so"
+# Keep headers in a separate development tree for the future HAL adapter.
+# Runtime image consumers need only vendor/{bin,etc,lib64,share}; the prebuilt
+# source bundle also carries include/ and unstripped link metadata separately.
+mkdir -p "$STAGE/devel"
+rm -rf "$STAGE/devel/include" "$STAGE/devel/lib64"
+cp -a "$DEST/vendor/include" "$STAGE/devel/include"
+mkdir -p "$STAGE/devel/lib64"
+cp -a "$DEST/vendor/lib64"/. "$STAGE/devel/lib64/"
+find "$STAGE/devel/lib64" -type f \( -name '*.a' -o -name '*.la' \) -delete
+# Staged shared libraries and executables are compact, self-contained runtime
+# files. Headers and shared objects remain suitable for a HAL adapter link.
+while IFS= read -r -d '' file; do
+  case "$file" in *.so|*.so.*) "$STRIP" --strip-unneeded "$file" 2>/dev/null || true ;; esac
+done < <(find "$STAGE/vendor/lib64" "$STAGE/vendor/bin" -type f -print0)
+for bin in "$STAGE/vendor/bin"/*; do
+  case $(basename "$bin") in *.so) continue ;; *) "$STRIP" --strip-unneeded "$bin" 2>/dev/null || true ;; esac
+done
+du -sh "$STAGE/vendor" "$STAGE/devel" >&2
 echo "PipeWire vendor prebuilts staged in $STAGE/vendor"

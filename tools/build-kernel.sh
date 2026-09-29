@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./build-kernel.sh [-s <linux src>] [-a <aosp dir>] [-f <linux-firmware dir>]
-#                     [-o <build dir>] [-j <jobs>] [-n] [-c]
+#                     [-o <build dir>] [-j <jobs>] [-n] [-c] [-S]
 #
 #   -s  mainline kernel source    (default: $LINUX_DIR or ~/Documents/linux)
 #   -a  AOSP checkout             (default: derived from this script's location)
@@ -14,6 +14,7 @@
 #   -j  parallel jobs             (default: nproc)
 #   -n  skip firmware staging
 #   -c  configure and check the fragments only, don't build
+#   -S  sign every module with the local MatonOS DEV key and require signed modules
 #
 # Config = kernel/base.config (broad distro config) + AOSP kernel/configs
 #          android-base.config + kernel/pc.config (merged in that order,
@@ -32,12 +33,15 @@ info() { echo "==> $*"; }
 
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
 AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+# secureboot: pinned CPU microcode is staged on every kernel build, with or without -S.
+source "$DEVICE_DIR/secureboot/microcode.sh"
 LINUX=${LINUX_DIR:-$HOME/Documents/linux}
 FIRMWARE=${LINUX_FIRMWARE_DIR:-$HOME/Documents/linux-firmware}
 KOUT=""
 JOBS=$(nproc)
 STAGE_FW=1
 CONFIG_ONLY=0
+SECURE_BOOT=0
 
 # Android release letter + kernel branch whose android-base.config we merge.
 # c/android-6.18 (Android 17) is still an empty placeholder upstream, so use
@@ -45,7 +49,7 @@ CONFIG_ONLY=0
 ANDROID_BASE_FRAGMENT=${ANDROID_BASE_FRAGMENT:-b/android-6.12/android-base.config}
 FIRMWARE_URL=https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git
 
-while getopts "s:a:f:o:j:nch" opt; do
+while getopts "s:a:f:o:j:ncSh" opt; do
   case $opt in
     s) LINUX=$OPTARG ;;
     a) AOSP=$OPTARG ;;
@@ -54,6 +58,7 @@ while getopts "s:a:f:o:j:nch" opt; do
     j) JOBS=$OPTARG ;;
     n) STAGE_FW=0 ;;
     c) CONFIG_ONLY=1 ;;
+    S) SECURE_BOOT=1 ;;
     *) sed -n '2,26p' "$0"; exit 1 ;;
   esac
 done
@@ -63,6 +68,11 @@ STAGE=$DEVICE_DIR/prebuilt
 BASE_CFG=$AOSP/kernel/configs/$ANDROID_BASE_FRAGMENT
 PC_CFG=$DEVICE_DIR/kernel/pc.config
 BASE=$DEVICE_DIR/kernel/base.config
+if (( SECURE_BOOT )); then
+  # shellcheck source=../secureboot/secureboot.sh
+  source "$DEVICE_DIR/secureboot/secureboot.sh"
+  sb_ensure_dev_key
+fi
 
 # ---------------------------------------------------------------- preflight
 [[ -f $LINUX/Makefile && -f $LINUX/arch/x86/configs/x86_64_defconfig ]] ||
@@ -72,7 +82,7 @@ BASE=$DEVICE_DIR/kernel/base.config
 [[ -f $BASE ]]     || die "missing $BASE"
 
 PATH=$PATH:/sbin:/usr/sbin
-for t in make flex bison bc perl pahole modinfo git zstd; do
+for t in make flex bison bc perl pahole modinfo git zstd cpio; do
   command -v "$t" >/dev/null || die "missing tool: $t"
 done
 for h in libelf openssl; do
@@ -126,6 +136,12 @@ shopt -u nullglob
 info "Configuring ($KOUT)"
 mkdir -p "$KOUT"
 "$LINUX/scripts/kconfig/merge_config.sh" -m -O "$KOUT" "$BASE" "$BASE_CFG" "$PC_CFG" >/dev/null
+# secureboot: module-sign enforcement is deliberately opt-in and uses the shared MatonOS key.
+if (( SECURE_BOOT )); then
+  "$LINUX/scripts/config" --file "$KOUT/.config" \
+    --set-str CONFIG_MODULE_SIG_KEY "$SB_KEY_DIR/kernel-signing-key.pem" \
+    --enable CONFIG_MODULE_SIG --enable CONFIG_MODULE_SIG_ALL --enable CONFIG_MODULE_SIG_FORCE
+fi
 kmake -s olddefconfig
 
 # Report fragment options that didn't survive olddefconfig (renamed symbols,
@@ -157,6 +173,13 @@ info "Checking android-base.config"
 check_fragment "$BASE_CFG" 0
 info "Checking pc.config"
 check_fragment "$PC_CFG" 1
+if (( SECURE_BOOT )); then
+  for sym in CONFIG_MODULE_SIG CONFIG_MODULE_SIG_ALL CONFIG_MODULE_SIG_FORCE; do
+    grep -qx "$sym=y" "$KOUT/.config" || die "$sym did not survive configuration; signed-module build cannot continue"
+  done
+  grep -Fxq "CONFIG_MODULE_SIG_KEY=\"$SB_KEY_DIR/kernel-signing-key.pem\"" "$KOUT/.config" ||
+    die "kernel did not select the MatonOS Secure Boot signing key"
+fi
 
 if [[ $CONFIG_ONLY == 1 ]]; then
   info "Config OK: $KOUT/.config"
@@ -180,10 +203,17 @@ mkdir -p "$STAGE/modules"
 cp "$KOUT/arch/x86/boot/bzImage" "$STAGE/bzImage"
 cp "$KOUT/.config" "$STAGE/kernel.config"
 echo "$krel" > "$STAGE/kernel.release"
+# secureboot: stage CPU microcode on every kernel build, regardless of -S/-n.
+ucode_work=$(mktemp -d --tmpdir pc-microcode.XXXXXX)
+sb_build_microcode_cpio "$STAGE/microcode.cpio" "$ucode_work"
+mkdir -p "$STAGE/firmware"
+cp "$DEVICE_DIR/secureboot/licenses/Intel-Microcode-LICENSE.txt" "$STAGE/firmware/LICENSE.intel-microcode"
+cp "$ucode_work/amd-WHENCE.txt" "$STAGE/firmware/LICENSE.amd-WHENCE"
+rm -rf "$ucode_work"
 
 modtmp=$(mktemp -d --tmpdir pc-kernel-modules.XXXXXX)
 trap 'rm -rf "$modtmp"' EXIT
-kmake -s INSTALL_MOD_PATH="$modtmp" INSTALL_MOD_STRIP=1 modules_install
+kmake -s INSTALL_MOD_PATH="$modtmp" INSTALL_MOD_STRIP=$((1 - SECURE_BOOT)) modules_install
 # The AOSP build runs depmod itself over a flat module list.
 while IFS= read -r -d '' ko; do
   name=$(basename "$ko")
@@ -224,6 +254,45 @@ if [[ $STAGE_FW == 1 ]]; then
   done
   (( missing == 0 )) ||
     info "$missing referenced firmware files are not in linux-firmware (usually optional/older versions)"
+
+  # Firmware the kernel requests by path, not via modinfo, and which lives
+  # outside linux-firmware (both redistributable; distros ship them too):
+  #   - SOF audio DSP firmware + topologies (sof-bin, Intel laptops ~2019+);
+  #   - the signed Wi-Fi regulatory database (wireless-regdb; cfg80211
+  #     requires regulatory.db + .p7s, else world-roaming channels only).
+  # Pinned by version and SHA-256, cached in $FW_CACHE.
+  FW_CACHE=${FW_CACHE:-$HOME/.cache/matonos/firmware}
+  mkdir -p "$FW_CACHE"
+  fetch_pinned() { # url sha256 -> path
+    local out=$FW_CACHE/$(basename "$1")
+    if ! echo "$2  $out" | sha256sum -c --status 2>/dev/null; then
+      curl -sSfL -o "$out.part" "$1" || die "download failed: $1"
+      echo "$2  $out.part" | sha256sum -c --status || die "SHA-256 mismatch: $1"
+      mv "$out.part" "$out"
+    fi
+    echo "$out"
+  }
+  SOF_VER=2026.09.1
+  sof=$(fetch_pinned "https://github.com/thesofproject/sof-bin/releases/download/v$SOF_VER/sof-bin-$SOF_VER.tar.gz" \
+    42ce40ec98f366365eab8e046d779b416d80b6ff2513b8f6be2a61a88e679b73)
+  REGDB_VER=2026.09.03
+  regdb=$(fetch_pinned "https://mirrors.edge.kernel.org/pub/software/network/wireless-regdb/wireless-regdb-$REGDB_VER.tar.xz" \
+    b22e0901227b820cd1c280abe681a15b773a5103a5e10dc442e94ebb34cbf58d)
+  fwtmp=$(mktemp -d)
+  tar xzf "$sof" -C "$fwtmp"
+  mkdir -p "$STAGE/firmware/intel"
+  # -L: PRODUCT_COPY_FILES copies regular files only, so resolve sof-bin's
+  # version symlinks into real files.
+  for d in "$fwtmp/sof-bin-$SOF_VER"/sof*; do
+    cp -rL "$d" "$STAGE/firmware/intel/"
+  done
+  find "$STAGE/firmware/intel" -path '*/sof*' -type f ! -name '*.zst' -exec zstd -q -19 -T0 --rm {} \;
+  cp "$fwtmp/sof-bin-$SOF_VER/LICENCE.Intel" "$STAGE/firmware/LICENCE.sof-intel"
+  cp "$fwtmp/sof-bin-$SOF_VER/LICENCE.NXP" "$STAGE/firmware/LICENCE.sof-nxp"
+  tar xJf "$regdb" -C "$fwtmp"
+  cp "$fwtmp/wireless-regdb-$REGDB_VER"/regulatory.db{,.p7s} "$STAGE/firmware/"
+  cp "$fwtmp/wireless-regdb-$REGDB_VER/LICENSE" "$STAGE/firmware/LICENSE.wireless-regdb"
+  rm -rf "$fwtmp"
   info "Staged firmware: $(du -sh "$STAGE/firmware" | cut -f1)"
 fi
 

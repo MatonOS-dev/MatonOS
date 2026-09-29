@@ -3,7 +3,7 @@
 #
 # Usage: ./run-qemu-live.sh [-i <live image>] [-g virgl|venus|std|none] [-m <MiB>]
 #                           [-r <WxH>] [-s <serial log>] [-a <adb port>]
-#                           [-x "<extra QEMU args>"] [-n]
+#                           [-x "<extra QEMU args>"] [-n] [-S] [-V <vars file>]
 #
 #   -i  image       (default: <aosp>/out/target/product/pc_x86_64/matonos-live-x86_64.img)
 #   -g  graphics    virgl: virtio-gpu with host GL (default)
@@ -21,6 +21,8 @@
 #   -x  extra QEMU arguments, word-split (e.g. -x "-device intel-hda
 #       -device hda-duplex,audiodev=snd0 -audiodev pa,id=snd0")
 #   -n  no KVM
+#   -S  boot with OVMF Secure Boot code and Microsoft keys enrolled
+#   -V  use this persistent writable OVMF vars file (created from the selected template)
 #
 # The image is attached as a USB stick (qemu-xhci + usb-storage): that's the
 # real use case, and androidboot.boot_part_uuid matches SCSI/NVMe/MMC disks
@@ -40,8 +42,10 @@ LOG=""
 KVM=1
 ADB_PORT=5555
 EXTRA=""
+SECURE_BOOT=0
+VARS_FILE=""
 
-while getopts "i:g:m:r:s:a:x:nh" opt; do
+while getopts "i:g:m:r:s:a:x:nSV:h" opt; do
   case $opt in
     i) IMAGE=$OPTARG ;;
     g) GFX=$OPTARG ;;
@@ -51,6 +55,8 @@ while getopts "i:g:m:r:s:a:x:nh" opt; do
     a) ADB_PORT=$OPTARG ;;
     x) EXTRA=$OPTARG ;;
     n) KVM=0 ;;
+    S) SECURE_BOOT=1 ;;
+    V) VARS_FILE=$OPTARG ;;
     *) sed -n '2,/^set -E/p' "$0" | sed '$d'; exit 1 ;;
   esac
 done
@@ -62,15 +68,37 @@ LOG=${LOG:-$(dirname "$IMAGE")/serial-live.log}
 command -v qemu-system-x86_64 >/dev/null || die "install qemu-system-x86"
 
 OVMF_CODE=""
-for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/x64/OVMF_CODE.4m.fd; do
-  [[ -f $f ]] && { OVMF_CODE=$f; break; }
-done
+# secureboot: select enrolled-Microsoft-key OVMF and retain VARS for MOK enrollment.
+if (( SECURE_BOOT )); then
+  for f in /usr/share/OVMF/OVMF_CODE_4M.secboot.fd /usr/share/OVMF/OVMF_CODE.secboot.fd /usr/share/edk2/x64/OVMF_CODE.secboot.4m.fd; do
+    [[ -f $f ]] && { OVMF_CODE=$f; break; }
+  done
+else
+  for f in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/x64/OVMF_CODE.4m.fd; do
+    [[ -f $f ]] && { OVMF_CODE=$f; break; }
+  done
+fi
 [[ -n $OVMF_CODE ]] || die "OVMF not found (install ovmf)"
-OVMF_VARS_SRC=${OVMF_CODE/CODE/VARS}
+if (( SECURE_BOOT )); then
+  if [[ -n ${MATON_OVMF_VARS_TEMPLATE:-} ]]; then
+    OVMF_VARS_SRC=$MATON_OVMF_VARS_TEMPLATE
+  else
+    OVMF_VARS_SRC=/usr/share/OVMF/OVMF_VARS_4M.ms.fd
+    [[ -f $OVMF_VARS_SRC ]] || OVMF_VARS_SRC=/usr/share/OVMF/OVMF_VARS.ms.fd
+  fi
+else
+  OVMF_VARS_SRC=${OVMF_CODE/CODE/VARS}
+fi
 [[ -f $OVMF_VARS_SRC ]] || die "missing $OVMF_VARS_SRC"
-vars=$(mktemp --tmpdir ovmf-vars.XXXXXX.fd)
-trap 'rm -f "$vars"' EXIT
-cp "$OVMF_VARS_SRC" "$vars"
+if [[ -n $VARS_FILE ]]; then
+  mkdir -p "$(dirname "$VARS_FILE")"
+  [[ -e $VARS_FILE ]] || cp "$OVMF_VARS_SRC" "$VARS_FILE"
+  vars=$VARS_FILE
+else
+  vars=$(mktemp --tmpdir ovmf-vars.XXXXXX.fd)
+  trap 'rm -f "$vars"' EXIT
+  cp "$OVMF_VARS_SRC" "$vars"
+fi
 
 machine=q35,vmport=on  # vmport: VMware absolute mouse (see input below)
 if [[ $GFX == venus ]]; then
@@ -92,7 +120,10 @@ args=(
   # (vmmouse, PS/2 AUX), not usb-kbd/usb-tablet. QEMU's xHCI can't wake the
   # guest (no PME/ACPI wake), but the i8042 PS/2 controller can, so keys and
   # the mouse wake MatonOS from s2idle (power/pc-wakeup.sh enables them).
-  # vmmouse is absolute: no pointer grab (patches/frameworks/native).
+  # vmmouse reports absolute evdev coordinates when CONFIG_MOUSE_PS2_VMMOUSE
+  # binds. matonos-inputd maps those coordinates onto its stable Android
+  # pointer; the host cursor remains ungrabbed, and the PS/2 AUX port remains
+  # available to pc-wakeup.sh for s2idle wake.
   -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:$ADB_PORT-:5555"
   -device "virtio-net-pci,netdev=net0"
   # Serial console: logged to $LOG and also reachable as a unix socket
@@ -112,7 +143,7 @@ fi
 # avoids opening a 640x480 GTK window during POST and changing the guest mode
 # before SurfaceFlinger picks its boot-time display size. zoom-to-fit keeps the
 # EDID-selected guest mode independent from later host window resizes.
-gtk_gl="gtk,gl=on,zoom-to-fit=on,full-screen=on" gtk_plain="gtk,full-screen=on"
+gtk_gl="gtk,gl=on,zoom-to-fit=on" gtk_plain="gtk,zoom-to-fit=on"  # windowed: GTK full-screen spans every monitor
 # MATON_QEMU_HEADLESS=1: no window (unattended runs; a GTK GL window stalls
 # the guest while the host display is off or locked).
 [[ ${MATON_QEMU_HEADLESS:-0} == 1 ]] && gtk_gl=egl-headless gtk_plain=none
