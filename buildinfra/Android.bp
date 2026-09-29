@@ -33,19 +33,38 @@ aidl_interface {
 
 android_app_import {
     name: "MatonOSSettings",
+    optional_uses_libs: [
+        "androidx.window.extensions",
+        "androidx.window.sidecar",
+    ],
     apk: "apps-built/Settings.apk",
     system_ext_specific: true,
     privileged: true,
     // Keep the APK byte-for-byte so the package retains its own app key.
     preprocessed: true,
-    dex_preopt: {
-        enabled: false,
-    },
     required: ["privapp-permissions-org.matonos.settings"],
 }
 
 android_app_import {
+    name: "MatonOSFlathub",
+    optional_uses_libs: [
+        "androidx.window.extensions",
+        "androidx.window.sidecar",
+    ],
+    apk: "apps-built/Flathub.apk",
+    system_ext_specific: true,
+    privileged: true,
+    // Keep the APK byte-for-byte so the package retains its own app key.
+    preprocessed: true,
+    required: ["privapp-permissions-org.matonos.flathub"],
+}
+
+android_app_import {
     name: "MatonOSShell",
+    optional_uses_libs: [
+        "androidx.window.extensions",
+        "androidx.window.sidecar",
+    ],
     apk: "apps-built/MatonOSShell.apk",
     system_ext_specific: true,
     privileged: true,
@@ -57,39 +76,45 @@ android_app_import {
         "Launcher3",
         "Launcher3QuickStep",
     ],
-    dex_preopt: {
-        enabled: false,
-    },
     required: ["privapp-permissions-org.matonos.shell"],
 }
 
 android_app_import {
     name: "MatonOSShelf",
+    optional_uses_libs: [
+        "androidx.window.extensions",
+        "androidx.window.sidecar",
+    ],
     apk: "apps-built/MatonOSShelf.apk",
     system_ext_specific: true,
     privileged: true,
     preprocessed: true,
-    dex_preopt: {
-        enabled: false,
-    },
     required: ["privapp-permissions-org.matonos.shelf"],
 }
 
 android_app_import {
     name: "MatonOSRecents",
+    optional_uses_libs: [
+        "androidx.window.extensions",
+        "androidx.window.sidecar",
+    ],
     apk: "apps-built/MatonOSRecents.apk",
     system_ext_specific: true,
     privileged: true,
     preprocessed: true,
-    dex_preopt: {
-        enabled: false,
-    },
     required: ["privapp-permissions-org.matonos.recents"],
 }
 
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.settings",
     src: "privapp-permissions/privapp-permissions-org.matonos.settings.xml",
+    sub_dir: "permissions",
+    system_ext_specific: true,
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-org.matonos.flathub",
+    src: "privapp-permissions/privapp-permissions-org.matonos.flathub.xml",
     sub_dir: "permissions",
     system_ext_specific: true,
 }
@@ -120,4 +145,14 @@ prebuilt_etc {
     src: "privapp-permissions/privapp-permissions-org.matonos.systembridge.xml",
     sub_dir: "permissions",
     system_ext_specific: true,
+}
+
+// compositor: v4 Wayland compositor host app (Java). Its native libraries
+// (wlroots, wayland, pixman, xkbcommon, libdrm, libmaton_compositor) are
+// packaged inside the APK by linux/compositor/build-compositor.sh + Gradle.
+android_app_import {
+    name: "MatonWaylandHost",
+    apk: "apps-built/MatonWaylandHost.apk",
+    system_ext_specific: true,
+    preprocessed: true,
 }
