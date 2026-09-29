@@ -1,7 +1,7 @@
 From 4a220113d25101ad7c89105ed947cf0462995883 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Sun, 27 Sep 2026 07:39:34 +0200
-Subject: [PATCH 2/3] minigbm: use vgem for software rendering buffers
+Subject: [PATCH 2/5] minigbm: use vgem for software rendering buffers
 
 ---
  gbm_mesa_driver/gbm_mesa_internals.cpp | 42 ++++++++++++++++++++++++--
@@ -110,3 +110,6 @@ index 3a08d02..3ad3f63 100644
  	err = wr->alloc(&alloc_args);
  
  	if (err && !scanout_strong) {
+-- 
+2.43.0
+

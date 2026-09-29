@@ -1,4 +1,17 @@
-# AOSP dependency forks
+# AOSP project forks
+
+Every AOSP project MatonOS changes lives on a local `matonos/v1.2` branch,
+extended in both local manifest copies. This folder holds each fork's exported
+patch series (`git format-patch <base>..HEAD`, numbered continuously) and a
+`BASE` file recording the AOSP (or upstream) base:
+
+| Project | What we change |
+| --- | --- |
+| `external/minigbm` | Mesa GBM allocator/mapper, vgem software rendering, dma-heap buffers, llvmpipe tile padding |
+| `external/drm_hwcomposer` | DRM node scan, software copy to dumb buffers, no-RTTI, errno include |
+| `hardware/baylibre/audio` | AIDL audio IModule/StreamDescriptor V4 compatibility |
+
+## Dependency bumps for wlroots
 
 These local forks keep AOSP's existing Soong module names and import only the
 upstream releases needed by the wlroots 0.21.0-dev snapshot. The local branches

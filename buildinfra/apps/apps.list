@@ -1,6 +1,9 @@
 # key-id<TAB>project-path-from-device-tree<TAB>gradle-task<TAB>staged-apk-name
-matonos-settings	buildinfra/apps/MatonOSSettings	:app:assembleRelease	Settings.apk
-# parked (stock Launcher3, 2026-09-27): matonos-shell	../../../apps/launchme	expo	MatonOSShell.apk
-# parked (stock Launcher3, 2026-09-27): matonos-shelf	../../../apps/shelf	expo	MatonOSShelf.apk
-# parked (stock Launcher3, 2026-09-27): matonos-recents	../../../apps/recents	expo	MatonOSRecents.apk
+matonos-settings	rn-apps/settings	expo	Settings.apk
+matonos-flathub	rn-apps/flathub	expo	Flathub.apk
+# parked (stock Launcher3, 2026-09-27): matonos-shell	rn-apps/launchme	expo	MatonOSShell.apk
+# parked (stock Launcher3, 2026-09-27): matonos-shelf	rn-apps/shelf	expo	MatonOSShelf.apk
+# parked (stock Launcher3, 2026-09-27): matonos-recents	rn-apps/recents	expo	MatonOSRecents.apk
 matonos-audio-tone-test	audio/testapp	:app:assembleRelease	AudioToneTest.apk
+# compositor: v4 Wayland compositor host (Java; libmaton_compositor.so from linux/compositor/build-compositor.sh)
+matonos-wayland-host	linux/compositor/host	:app:assembleRelease	MatonWaylandHost.apk

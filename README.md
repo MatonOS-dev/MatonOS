@@ -1,9 +1,20 @@
 # MatonOS
 
-An AOSP-based operating system for generic x86_64 UEFI PCs, running a
-mainline Linux kernel and Mesa graphics.
-
 (android → Automaton → maton → MatonOS)
+
+MatonOS is a desktop operating system for generic x86_64 UEFI PCs, based on
+AOSP (Android 17). It runs a mainline Linux kernel with Mesa graphics and
+uses stock Launcher3 in desktop mode. It keeps the AOSP framework as close
+to stock as possible: MatonOS lives in configuration, our own
+daemons/HALs/apps, and one system bridge app.
+
+> **AI disclosure.** MatonOS is developed with heavy use of AI coding
+> assistants: Anthropic's Claude (Claude Code) as coordinator, plus
+> OpenAI Codex agents for individual areas. A human (the project owner)
+> sets direction, makes the design decisions and tests on real hardware,
+> but much of the code, build tooling and documentation in this repository
+> was written by AI agents and may contain mistakes. Review before you rely
+> on it, especially anything touching disks, security or signing.
 
 ## Disclaimer
 
@@ -11,11 +22,6 @@ mainline Linux kernel and Mesa graphics.
 wanted: Android apps on ordinary PCs, on a mainline kernel with proper
 open-source graphics drivers. There is no company behind it, no support
 guarantee and no schedule.
-
-**This project heavily uses AI.** Much of the code, build scripts,
-configuration and documentation was written with an AI coding assistant
-(Anthropic's Claude), under my direction and with my review and testing.
-Expect the kinds of mistakes that come with that, and please report them.
 
 **Use at your own risk.** This software is provided as is, without warranty
 of any kind. Installer tools in this project **erase entire disks**. Double
@@ -26,19 +32,74 @@ MatonOS is **not affiliated with, endorsed by or certified by Google**.
 Android is a trademark of Google LLC; MatonOS is *based on* the Android Open
 Source Project (AOSP). It ships without Google apps or services.
 
+## Contributing
+
+See [CONTRIBUTE.md](CONTRIBUTE.md). In short: human code and assets are
+welcome; AI image, video and music generation is not; and you are
+responsible for any code you submit, however it was produced.
+
 ## Status
 
-Early bring-up. See the roadmap and bring-up notes in [NOTES.md](NOTES.md).
+Work in progress, not yet ready for daily use.
 
-- **v1**: live image that boots to the UI on generic PCs
-- **v2**: installer app, display settings app
-- **v3**: over-the-air updates
-- **v4**: optional Google Play via add-ons, Linux app sandbox, and more
+- **Boots on real PCs and in QEMU.** The live image runs from USB or network
+  boot, with Mesa (Intel, AMD, NVIDIA via nouveau/NVK, virtio), a software
+  fallback for machines without a supported GPU, and Launcher3 desktop mode.
+- **Hardware glue.** Our own daemons handle Wi-Fi, Bluetooth, audio card
+  selection, sleep/wake (including forwarding Android wake locks) and input.
+  QEMU's absolute mouse tracks the host cursor.
+  Firmware includes linux-firmware, SOF audio
+  and the Wi-Fi regulatory database.
+- **Apps.**
+  - MatonOS Settings is an Expo UI app, opened from Android Settings'
+    homepage.
+  - F-Droid Basic is built by us as a privileged app, so installs are
+    silent.
+  - microG uses LineageOS-style signature spoofing.
+  - Aurora Store and YouTube ship as placeholders that the real apps install
+    over. Aurora is in the MatonOS F-Droid repo.
+- **In progress:** an A/B installer (install from the live image to a
+  disk), Secure Boot via shim with our own keys, signed driver add-ons, and
+  v4 Linux app support (Flatpak on bionic plus a wlroots-based
+  compositor).
+
+The full roadmap (v2 to v8) and every design decision, with the reasons
+behind it, are in
+[`NOTES.md`](NOTES.md).
+
+## Layout
+
+This repository is the device tree; check it out at
+`device/maton/pc_x86_64` inside an AOSP tree.
+
+| Path | What |
+|---|---|
+| `./` | Product config, the ODM driver bundle, daemons, sepolicy, the system bridge (`systembridge/`), the installer service (`install/`), add-ons, Secure Boot, and build/test tools (`tools/`). Start with `CLAUDE.md` (rules) and `NOTES.md` (decisions). |
+| `linux/` | Linux apps: the Flatpak-on-bionic stack (`third_party/`, patches over pinned upstream sources) and the Wayland compositor host. |
+| `rn-apps/settings/` | MatonOS Settings (Expo SDK 57, Expo UI Jetpack Compose only), which also contains the installer. |
+| `rn-apps/flathub/` | The Flathub store app. |
+| `rn-apps/rn-common/` | Shared React Native library. |
+| `rn-apps/launchme`, `rn-apps/shelf`, `rn-apps/recents` | The earlier custom shell. It is parked, not built into the image; Launcher3 replaced it. |
+| `forks/<aosp path>/` | Our commits on forked AOSP projects (minigbm, drm_hwcomposer, BayLibre audio, libdrm, libxkbcommon, pixman, wayland, wayland-protocols) as `git format-patch` series plus `BASE`, applied on local `matonos/v1.2` branches. |
+
+## Building
+
+1. Sync AOSP (`android17-release`), then clone this repository to
+   `device/maton/pc_x86_64`.
+2. Run `cp device/maton/pc_x86_64/manifest/maton.xml .repo/local_manifests/`.
+   Create the `matonos/v1.2` branches from `forks/*/BASE`, `git am` the
+   patches, then `repo sync`.
+3. Put machine-specific paths (NDK, SDK, Node) in the git-ignored
+   `matonos.local.env`. See `tools/local-env.sh`.
+4. Build with `tools/build.sh`. Test with `tools/run-qemu-live.sh`.
+
+Build outputs, downloaded APKs, kernel/Mesa prebuilts and all signing keys
+are not in this repo. The tools rebuild or fetch them.
 
 ## Building: host requirements
 
 - Linux x86_64 build host with the AOSP tree; builds run through
-  `tools/build.sh` (see `HANDOFF.md`).
+  `tools/build.sh` .
 - **zram swap is required**: at least 16 GiB, at the highest swap priority
   (recommended: 32 GiB, zstd). Soong's analysis needs far more memory than a
   typical host has; zram compresses it (~6×) and keeps swapping at RAM speed.
@@ -53,6 +114,15 @@ Early bring-up. See the roadmap and bring-up notes in [NOTES.md](NOTES.md).
 
 - A second, disk-backed swap file on an NVMe drive (e.g. 32–48 GiB, lower
   priority) is a good fallback behind zram.
+
+## Downloads and updates
+
+OS updates, driver add-ons and the MatonOS F-Droid repo are served from
+<https://download.hanro50.net.za/matonos>:
+
+- the F-Droid repo is at `fdroid/repo`;
+- updates are under `updates/<version>/`, with that version's add-ons in
+  `updates/<version>/addons/`.
 
 ## Built on
 

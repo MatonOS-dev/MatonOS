@@ -23,7 +23,7 @@ Expo generates the native Android project; local Expo modules own Home and Drawe
 ## Change the UI
 
 - `src/screens` contains page-sized UI, `src/components` reusable UI, and `src/HomeApp.tsx` / `src/DrawerApp.tsx` are the registered Shell roots. Recents UI is in `../recents/src/screens/RecentsScreen.tsx`; shelf UI is in `../shelf/src/components/Shelf.tsx`. Keep screen and native contracts typed and avoid dynamic code generation, `eval`, `Function`, `with`, and Proxy-based state libraries for Static Hermes compatibility.
-- `../rn-common` (`apps/rn-common`) contains the reusable MD3 dynamic-color theme, common components/API surface, and typed `MatonOS` Expo module wrapper. Its Kotlin adapter delegates to `buildinfra/client`; do not duplicate that client in an app. Pin Expo, React, RN, Hermes, Paper and Material Color Utilities together when adding Settings.
+- `../rn-common` (`rn-apps/rn-common`) contains the reusable MD3 dynamic-color theme, common components/API surface, and typed `MatonOS` Expo module wrapper. Its Kotlin adapter delegates to `buildinfra/client`; do not duplicate that client in an app. Pin Expo, React, RN, Hermes, Paper and Material Color Utilities together when adding Settings.
 - Shell native APIs are in `src/MatonShellNative.ts` and `modules/matonos-shell`; bridge calls/events and shared hooks are in `../rn-common`. Recents tasks, switching, closing and thumbnails use that typed wrapper. Shelf UI and Java fallback are in `../shelf/src` and `../shelf/modules/matonos-shelf`.
 
 ## Using Expo UI (Jetpack Compose)

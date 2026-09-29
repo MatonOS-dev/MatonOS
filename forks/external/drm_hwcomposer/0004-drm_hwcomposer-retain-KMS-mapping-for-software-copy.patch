@@ -1,7 +1,7 @@
 From c0cefb99589b7d75656134360952c5d8ce6f6ce8 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Sun, 27 Sep 2026 12:44:34 +0200
-Subject: [PATCH 4/5] drm_hwcomposer: retain KMS mapping for software copy
+Subject: [PATCH 4/6] drm_hwcomposer: retain KMS mapping for software copy
 
 Change-Id: Ifca9b0269a7b4eefe1cfc28d369f85c086aec72d
 ---

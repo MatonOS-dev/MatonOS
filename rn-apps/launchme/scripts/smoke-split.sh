@@ -5,7 +5,7 @@ usage() { echo "Usage: $0 <adb-serial> <evidence-directory>" >&2; exit 2; }
 [[ $# == 2 ]] || usage
 SERIAL=$1
 EVIDENCE=$2
-. "$(dirname -- "$(readlink -f -- "$0")")/../../../device/maton/pc_x86_64/tools/local-env.sh"
+. "$(dirname -- "$(readlink -f -- "$0")")/../../../tools/local-env.sh"
 ADB=${ADB:-$MATON_ROOT/out/host/linux-x86/bin/adb}
 SHELL_PACKAGE=org.matonos.shell
 SHELF_PACKAGE=org.matonos.shelf

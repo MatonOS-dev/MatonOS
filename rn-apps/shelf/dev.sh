@@ -4,7 +4,7 @@ set -Eeuo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PACKAGE=org.matonos.shelf
 DEVICE=${MATON_ADB_DEVICE:-127.0.0.1:5555}
-. "$(dirname -- "$(readlink -f -- "$0")")/../../device/maton/pc_x86_64/tools/local-env.sh"
+. "$(dirname -- "$(readlink -f -- "$0")")/../../tools/local-env.sh"
 ADB=${ADB:-$MATON_ROOT/out/host/linux-x86/bin/adb}
 SDK=${MATON_ANDROID_SDK:-$HOME/Documents/matonos-android-sdk}
 KEY_DIR=${MATON_KEY_DIR:-$HOME/.config/matonos-keys}

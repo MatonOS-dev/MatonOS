@@ -1,6 +1,6 @@
 # MatonOS launcher and shelf design
 
-MatonOS Shell (`org.matonos.shell`), MatonOS Shelf (`org.matonos.shelf`) and MatonOS Recents (`org.matonos.recents`) are separate Expo SDK 57 CNG apps. They pin the same React Native 0.86.3, React 19.2.3, Hermes, Expo UI and Paper versions and consume shared theme, components and the MatonOS client wrapper from `apps/rn-common`.
+MatonOS Shell (`org.matonos.shell`), MatonOS Shelf (`org.matonos.shelf`) and MatonOS Recents (`org.matonos.recents`) are separate Expo SDK 57 CNG apps. They pin the same React Native 0.86.3, React 19.2.3, Hermes, Expo UI and Paper versions and consume shared theme, components and the MatonOS client wrapper from `rn-apps/rn-common`.
 
 Shell contains only fullscreen Home and App drawer. Native AppCompat activities select the separate roots `MatonHome` and `MatonDrawer`; there is no prop-switched multi-screen root. The AppCompat Recents activity and `MatonRecents` root live in the Recents APK; its exported `RecentsComponentAnchor` is the non-empty component configured for SystemUI. Shell retains a Java Home grid fallback if React initialization fails.
 

@@ -23,6 +23,6 @@ first-boot integration to consume. Installed first boot disables the
 privileged installer package for every user; live mode alone enables it. The
 service remains disabled outside live mode.
 
-See `../../device/maton/pc_x86_64/install/PLAN.md` and `AB-LAYOUT.md` for the
+See `../../install/PLAN.md` and `AB-LAYOUT.md` for the
 build conversion order, disk contract and unresolved systemd-boot/XBOOTLDR
 layout constraint.

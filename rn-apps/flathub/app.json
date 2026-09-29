@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Flathub Store",
+    "slug": "matonos-flathub",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "org.matonos.flathub",
+      "versionCode": 1,
+      "permissions": ["INTERNET", "org.matonos.permission.SYSTEM_BRIDGE"]
+    },
+    "plugins": ["./plugins/withMatonFlathub", "expo-router", "expo-splash-screen", "expo-status-bar"],
+    "experiments": { "autolinkingModuleResolution": true },
+    "autolinking": { "nativeModulesDir": "./modules" },
+    "scheme": "matonos-flathub"
+  }
+}

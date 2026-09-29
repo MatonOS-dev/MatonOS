@@ -12,7 +12,7 @@ module.exports = function withMatonShelf(config) {
   config = withSettingsGradle(config, (mod) => {
     const marker = 'include(":matonos-client")';
     if (!mod.modResults.contents.includes(marker)) {
-      mod.modResults.contents += `\n${marker}\nproject(":matonos-client").projectDir = file("../../../device/maton/pc_x86_64/buildinfra/client")\n`;
+      mod.modResults.contents += `\n${marker}\nproject(":matonos-client").projectDir = file("../../../buildinfra/client")\n`;
     }
     return mod;
   });

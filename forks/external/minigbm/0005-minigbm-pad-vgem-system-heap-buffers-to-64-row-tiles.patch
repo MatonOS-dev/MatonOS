@@ -1,7 +1,7 @@
 From 304af7490052f815db34b347c288d313168653fe Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Tue, 29 Sep 2026 21:18:58 +0200
-Subject: [PATCH] minigbm: pad vgem system-heap buffers to 64-row tiles
+Subject: [PATCH 5/5] minigbm: pad vgem system-heap buffers to 64-row tiles
 
 llvmpipe reads whole tiles past the last row of non-tile-aligned buffers
 (Launcher3 taskbar SIGSEGV on no-GPU VMs).

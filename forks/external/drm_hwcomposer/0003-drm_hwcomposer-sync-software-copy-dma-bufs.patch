@@ -1,7 +1,7 @@
 From 2ca3f04ede1768d0d7c1b3186a664f49a1739eb9 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Sun, 27 Sep 2026 11:25:36 +0200
-Subject: [PATCH 3/5] drm_hwcomposer: sync software copy dma-bufs
+Subject: [PATCH 3/6] drm_hwcomposer: sync software copy dma-bufs
 
 Change-Id: I91e6c6191f1bd2e17f81f20f07af9c7852bdd0a4
 ---

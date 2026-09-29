@@ -1,7 +1,7 @@
 From a61d9bc7dd9ff6c99fe5c92c4a47da2ecfdb5459 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Tue, 29 Sep 2026 00:33:41 +0200
-Subject: [PATCH] gbm: include errno for errno assignment
+Subject: [PATCH 4/5] gbm: include errno for errno assignment
 
 ---
  gbm.c | 1 +

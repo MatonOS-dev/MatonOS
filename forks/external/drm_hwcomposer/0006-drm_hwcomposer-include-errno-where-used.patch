@@ -1,7 +1,7 @@
 From 2d61fa689318e346be30ead9cc2ea5500076ed9d Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Tue, 29 Sep 2026 00:42:26 +0200
-Subject: [PATCH] drm_hwcomposer: include errno where used
+Subject: [PATCH 6/6] drm_hwcomposer: include errno where used
 
 Change-Id: Ib6df718790b683401332bba508b6f75f3824deeb
 ---

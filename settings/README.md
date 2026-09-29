@@ -1,6 +1,6 @@
 # MatonOS Settings
 
-MatonOS Settings is the v2 system app in `apps/settings`, built as an Expo SDK
+MatonOS Settings is the v2 system app in `rn-apps/settings`, built as an Expo SDK
 57 / React Native 0.86 CNG project with Hermes and Expo UI Jetpack Compose
 (Material 3). It uses package `org.matonos.settings` and the existing
 `matonos-settings` development key. The previous Java stub remains parked
@@ -37,7 +37,7 @@ dark setting; system-bar text uses Expo's automatic contrast style.
 - **Install MatonOS** appears only when the live marker is set. The app requires an executor readiness response, successful dry-run and
 target-disk readback flags before it lists targets or enables installation.
 The app owns the v1 operation request model and layout plan copied from the former
-`apps/installer` project. It presents a separate-drive warning, lists drives
+`rn-apps/installer` project. It presents a separate-drive warning, lists drives
 through the `install` channel, and submits one typed primitive at a time.
 - **Sleep** reads `get_state` from the existing `sleep` channel and presents
 idle-timeout and mode controls. The current daemon implements only
@@ -51,7 +51,7 @@ intent action.
 - **About** shows Android build/device fields and identifies MatonOS as based
 on AOSP.
 
-`apps/settings/modules/matonos-settings` contains the locally absorbed Expo
+`rn-apps/settings/modules/matonos-settings` contains the locally absorbed Expo
 native module sources: MatonOS bridge client adapter, SystemIcon/Symbol and
 Hardware API. The React Native Paper components and theme were not copied.
 
@@ -61,7 +61,7 @@ After the coordinating build is no longer RUNNING, the app can be built with
 `device/maton/pc_x86_64/tools/build-apps.sh`; the registry keeps the app id
 `matonos-settings`, fixed import name `MatonOSSettings`, staged APK name
 `Settings.apk` and existing signing key. For development, start the agent VM
-on adb port 5564 and run `apps/settings/dev.sh`. It rebuilds the debug client,
+on adb port 5564 and run `rn-apps/settings/dev.sh`. It rebuilds the debug client,
 then starts Metro with cache clear on port 8084; QEMU clients use host
 `10.0.2.2:8084`.
 

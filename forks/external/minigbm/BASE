@@ -1,1 +1,4 @@
-058236dee66a474f1e87fe9e395531a2bda21718
+project: external/minigbm
+upstream: https://github.com/android-generic/external_minigbm branch 14-x86
+base: 03a48bc (intel: Add PCI IDs for ARL)
+branch: matonos/v1.2

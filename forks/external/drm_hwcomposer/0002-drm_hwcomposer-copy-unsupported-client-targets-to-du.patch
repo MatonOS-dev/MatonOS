@@ -1,7 +1,7 @@
 From a0ddb5b57bfe1b6308540179c9aa7d6412210021 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Sun, 27 Sep 2026 07:39:46 +0200
-Subject: [PATCH 2/5] drm_hwcomposer: copy unsupported client targets to dumb
+Subject: [PATCH 2/6] drm_hwcomposer: copy unsupported client targets to dumb
  buffers
 
 Change-Id: I77579c5589abcb4dccd3101c867f8aef91e82dab

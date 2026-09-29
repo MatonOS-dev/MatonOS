@@ -1,0 +1,13 @@
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+node_modules/
+/android/
+.cxx/
+build/
+.metro.log
+.metro.pid
+
+.expo/

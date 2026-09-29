@@ -16,4 +16,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = 'MatonOSShell'
 include ':matonos-client'
-project(':matonos-client').projectDir = file('../../device/maton/pc_x86_64/buildinfra/client')
+project(':matonos-client').projectDir = file('../../buildinfra/client')

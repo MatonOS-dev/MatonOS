@@ -1,7 +1,7 @@
 From 0e6fe0670630fba69ebbd07ae3c819c294c824fb Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Sun, 27 Sep 2026 15:06:41 +0200
-Subject: [PATCH 5/5] drm_hwcomposer: no RTTI - replace dynamic_pointer_cast
+Subject: [PATCH 5/6] drm_hwcomposer: no RTTI - replace dynamic_pointer_cast
  with IsDumbBuffer() check
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

@@ -133,7 +133,7 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   printf '%s %s\n' "$key_id" "$cert_sha" >> "$allow_tmp"
 
   stamp=$DEVICE_DIR/prebuilt/apps-built/.$key_id.inputs
-  fingerprint=$(inputs_hash "$project" "$AOSP/apps/rn-common" "$DEVICE_DIR/buildinfra/client")-$cert_sha
+  fingerprint=$(inputs_hash "$project" "$DEVICE_DIR/rn-apps/rn-common" "$DEVICE_DIR/buildinfra/client")-$cert_sha
   if [[ ${MATON_APPS_FORCE:-0} != 1 && -s $stamp && $(cat "$stamp") == "$fingerprint" &&
         -s $DEVICE_DIR/prebuilt/apps-built/$apk_name && -s $DEVICE_DIR/buildinfra/apps-built/$apk_name ]]; then
     info "Skipping $key_id: inputs unchanged since the staged $apk_name"

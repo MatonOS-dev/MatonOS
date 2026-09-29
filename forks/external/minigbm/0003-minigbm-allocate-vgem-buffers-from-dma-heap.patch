@@ -1,7 +1,7 @@
 From 058236dee66a474f1e87fe9e395531a2bda21718 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Sun, 27 Sep 2026 11:25:32 +0200
-Subject: [PATCH 3/3] minigbm: allocate vgem buffers from dma heap
+Subject: [PATCH 3/5] minigbm: allocate vgem buffers from dma heap
 
 ---
  gbm_mesa_driver/gbm_mesa_internals.cpp | 93 +++++++++++++++++++++++---
@@ -182,3 +182,6 @@ index 3ad3f63..c4fb5bb 100644
  	if (vma->priv == nullptr || priv->gbm_bo == nullptr) {
  		drv_loge("Buffer internal state is invalid");
  		return -EINVAL;
+-- 
+2.43.0
+
