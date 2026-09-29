@@ -43,4 +43,25 @@
   <!-- Audio HAL: BayLibre's generic AIDL HAL (fork, + IModule V4 fixes) -->
   <project path="hardware/baylibre/audio" name="android_hardware_baylibre_audio"
            remote="matonos-dev" revision="matonos/v1.2" />
+
+  <!-- Linux apps (Flatpak on bionic): patched components, nested inside the
+       device tree where linux/third_party/<name>/Android.bp expects them -->
+  <project path="device/maton/pc_x86_64/linux/third_party/flatpak/upstream" name="flatpak"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/ostree/upstream" name="ostree"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/bubblewrap/upstream" name="bubblewrap"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/glib/upstream" name="glib"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/gnupg/upstream" name="gnupg"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/npth/upstream" name="npth"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libgpg-error/upstream" name="libgpg-error"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libfyaml/upstream" name="libfyaml"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/appstream/upstream" name="appstream"
+           remote="matonos-dev" revision="matonos/v1.2" />
 </manifest>

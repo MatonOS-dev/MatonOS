@@ -16,6 +16,24 @@ check them out in place of the stock projects.
 | `external/wayland` | [android_external_wayland](https://github.com/MatonOS-dev/android_external_wayland) | AOSP | 1.26.0 for wlroots |
 | `external/wayland-protocols` | [android_external_wayland-protocols](https://github.com/MatonOS-dev/android_external_wayland-protocols) | AOSP | 1.48 for wlroots |
 
+### Linux apps (Flatpak on bionic)
+
+These check out nested inside the device tree, where `linux/third_party/<name>/Android.bp`
+expects them. Each branch = upstream tag + the tested release snapshot + one commit per fix
+(see `linux/third_party/FORKS-PLAN.md`). The 13 unpatched components are listed there too.
+
+| Path | Repository | Based on | What we change |
+| --- | --- | --- | --- |
+| `linux/third_party/flatpak/upstream` | [flatpak](https://github.com/MatonOS-dev/flatpak) | fork of flatpak/flatpak `1.14.10` | bionic build fixes |
+| `linux/third_party/ostree/upstream` | [ostree](https://github.com/MatonOS-dev/ostree) | fork of ostreedev/ostree `v2024.5` | bionic build fixes |
+| `linux/third_party/bubblewrap/upstream` | [bubblewrap](https://github.com/MatonOS-dev/bubblewrap) | fork of containers/bubblewrap `v0.10.0` | bionic build fixes |
+| `linux/third_party/glib/upstream` | [glib](https://github.com/MatonOS-dev/glib) | fork of GNOME/glib `2.84.4` | bionic build fixes |
+| `linux/third_party/gnupg/upstream` | [gnupg](https://github.com/MatonOS-dev/gnupg) | fork of gpg/gnupg `gnupg-2.5.2` | bionic build fixes |
+| `linux/third_party/npth/upstream` | [npth](https://github.com/MatonOS-dev/npth) | fork of gpg/npth `npth-1.8` | bionic build fixes |
+| `linux/third_party/libgpg-error/upstream` | [libgpg-error](https://github.com/MatonOS-dev/libgpg-error) | fork of gpg/libgpg-error `libgpg-error-1.51` | bionic build fixes |
+| `linux/third_party/libfyaml/upstream` | [libfyaml](https://github.com/MatonOS-dev/libfyaml) | fork of pantoniou/libfyaml `v0.9.6` | bionic build fixes |
+| `linux/third_party/appstream/upstream` | [appstream](https://github.com/MatonOS-dev/appstream) | fork of ximion/appstream `v1.2.0` | bionic build fixes |
+
 Changing a fork: commit on `matonos/v1.2` in the project checkout, push to its
 MatonOS-dev repository, and upstream the fix where it makes sense.
 
