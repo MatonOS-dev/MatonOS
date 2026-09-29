@@ -654,6 +654,27 @@ Feature work continues, but in this shape from now on.
     helpers allowed. With per-app UIDs the bus is per app (one dbus-daemon
     per running stub, like the per-app compositor); an app's portal calls
     reach its own stub directly. Built after `flatpak --version` works.
+    D-Bus service mapping in the per-stub broker (user, 2026-09-29). Only the
+    names below are served; everything else stays default-deny:
+    - org.freedesktop.Notifications -> Android notifications posted by the
+      stub (actions -> ActionInvoked, dismiss -> NotificationClosed).
+    - org.freedesktop.secrets -> per-app secret store: blobs in the stub's
+      private data, encrypted with a key held in Android Keystore. (gpg is a
+      signing/encryption tool, not a secret service; coordinator suggestion.)
+    - org.freedesktop.FileManager1 (ShowItems/ShowFolders) -> intent to show
+      the file in the Android file manager.
+    - org.freedesktop.UPower -> fed from Android's battery/power APIs
+      (BatteryManager, PowerManager), read-only.
+    - org.freedesktop.portal.FileChooser -> Android file picker (SAF).
+    - org.freedesktop.portal.OpenURI -> ACTION_VIEW, i.e. the default browser
+      for http(s) and the default handler for other schemes.
+    - org.freedesktop.portal.Documents -> OPEN. Needed to hand picked files
+      to the sandbox. Proposed v1: the stub copies the picked content:// file
+      into a per-app doc dir bound into the sandbox and writes it back on
+      save; later a FUSE view (Android has /dev/fuse) instead of copies.
+    - org.mpris.MediaPlayer2 -> Android MediaSession (media notification,
+      lock-screen and hardware media keys). Per-app volume is separate: it
+      comes from the app's PipeWire stream going through the host app.
   - Prototype order (de-risking, scariest first): (1) a CLI Flatpak under
     bwrap on MatonOS (namespaces/seccomp/SELinux); (2) one Wayland window
     (weston-terminal from a Flatpak, its own Mesa) through the Xtr126 path on
