@@ -1,15 +1,18 @@
 // microG upstream APKs remain byte-for-byte so official repo updates retain their signer.
 android_app_import {
     name: "MatonMicroGmsCore",
+    uses_libs: ["com.android.location.provider"],
+    optional_uses_libs: [
+        "org.apache.http.legacy",
+        "androidx.window.extensions",
+        "androidx.window.sidecar",
+    ],
     apk: "apks/MatonMicroGmsCore.apk",
     product_specific: true,
     privileged: true,
     presigned: true,
     preprocessed: true,
     skip_preprocessed_apk_checks: true,
-    dex_preopt: {
-        enabled: false,
-    },
     required: [
         "privapp-permissions-org.microg.gmscore.xml",
         "default-permissions-org.microg.gmscore.xml",
@@ -19,15 +22,16 @@ android_app_import {
 
 android_app_import {
     name: "MatonMicroGCompanion",
+    optional_uses_libs: [
+        "androidx.window.extensions",
+        "androidx.window.sidecar",
+    ],
     apk: "apks/MatonMicroGCompanion.apk",
     product_specific: true,
     privileged: true,
     presigned: true,
     preprocessed: true,
     skip_preprocessed_apk_checks: true,
-    dex_preopt: {
-        enabled: false,
-    },
     required: ["privapp-permissions-com.android.vending.xml"],
 }
 
@@ -44,9 +48,6 @@ android_app_import {
     presigned: true,
     preprocessed: true,
     skip_preprocessed_apk_checks: true,
-    dex_preopt: {
-        enabled: false,
-    },
 }
 
 prebuilt_etc {
