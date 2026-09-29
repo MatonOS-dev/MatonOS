@@ -640,6 +640,13 @@ Feature work continues, but in this shape from now on.
     in-process portal objects. The broker IS the policy point (default-deny;
     replaces xdg-dbus-proxy). New code: test against GTK/Qt/Electron apps;
     add bus features as real apps need them. Superseded below: dbus-daemon.
+    Bus socket in the owning user's runtime dir; "only the
+    bus owner's UID may connect" does the isolation; the config uses NUMERIC
+    UIDs only (bionic getpwnam() knows Android IDs, not Linux users — no fake
+    passwd db); default-deny policy with only our portal backend + Flatpak
+    helpers allowed. With per-app UIDs the bus is per app (one dbus-daemon
+    per running stub, like the per-app compositor); an app's portal calls
+    reach its own stub directly. Built after `flatpak --version` works.
     Intents -> Linux apps (user, 2026-09-29; enabled by the per-stub broker):
     the stub declares intent filters from the app's .desktop MimeType= (and
     x-scheme-handler/*); an ACTION_VIEW/SEND to the stub becomes a D-Bus call
@@ -647,13 +654,7 @@ Feature work continues, but in this shape from now on.
     Activate / ActivateAction for D-Bus-activatable apps, else a
     `flatpak run --file-forwarding <id> @@ <uri> @@` launch with a
     document-portal path for content:// URIs. So Android's share sheet and
-    "open with" list Linux apps like any Android app. Bus socket in the owning user's runtime dir; "only the
-    bus owner's UID may connect" does the isolation; the config uses NUMERIC
-    UIDs only (bionic getpwnam() knows Android IDs, not Linux users — no fake
-    passwd db); default-deny policy with only our portal backend + Flatpak
-    helpers allowed. With per-app UIDs the bus is per app (one dbus-daemon
-    per running stub, like the per-app compositor); an app's portal calls
-    reach its own stub directly. Built after `flatpak --version` works.
+    "open with" list Linux apps like any Android app.
     D-Bus service mapping in the per-stub broker (user, 2026-09-29). Only the
     names below are served; everything else stays default-deny:
     - org.freedesktop.Notifications -> Android notifications posted by the
