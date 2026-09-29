@@ -1,4 +1,4 @@
-# Software Centre
+# Software Center
 
 An Expo app for browsing Flathub's public v2 API and installing system Flatpaks
 through MatonOS System Bridge. The UI uses Expo UI's Jetpack Compose primitives.
