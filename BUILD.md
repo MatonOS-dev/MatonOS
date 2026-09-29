@@ -36,7 +36,7 @@ mkdir aosp && cd aosp
 repo init -u https://android.googlesource.com/platform/manifest -b android-latest-release
 mkdir -p .repo/local_manifests
 curl -o .repo/local_manifests/maton.xml \
-  https://raw.githubusercontent.com/Hanro50/MatonOS/main/manifest/maton.xml
+  https://raw.githubusercontent.com/MatonOS-dev/MatonOS/main/manifest/maton.xml
 repo sync -c -j8
 ```
 

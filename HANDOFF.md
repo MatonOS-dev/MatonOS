@@ -7,5 +7,5 @@ and `NOTES.md` (decisions, roadmap) first.
 Paths: scripts derive the root; per-machine settings in matonos.local.env (git-ignored).
 Build: `out/pc-logs/agents/coord-build.sh -K -M` (coordinator only).
 Test: `tools/run-qemu-live.sh -g virgl -r 1920x1080` (adb 127.0.0.1:5555).
-Repo: the AOSP root is the git working copy of github.com/Hanro50/MatonOS.
+Repo: device/maton/pc_x86_64 is the git working copy of github.com/MatonOS-dev/MatonOS.
 Zero AOSP patches (forks via local manifest + `forks/` patch series).

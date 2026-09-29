@@ -3,17 +3,16 @@
   MatonOS local manifest. Install with:
     mkdir -p .repo/local_manifests
     curl -o .repo/local_manifests/maton.xml \
-      https://raw.githubusercontent.com/Hanro50/MatonOS/main/manifest/maton.xml
+      https://raw.githubusercontent.com/MatonOS-dev/MatonOS/main/manifest/maton.xml
     repo sync -c
   Brings in the MatonOS device tree and our forks of AOSP / third-party
   projects (github.com/MatonOS-dev, branch matonos/v1.2).
 -->
 <manifest>
   <remote name="matonos-dev" fetch="https://github.com/MatonOS-dev" />
-  <remote name="matonos" fetch="https://github.com/Hanro50" />
 
   <!-- Device tree (this repository) -->
-  <project path="device/maton/pc_x86_64" name="MatonOS" remote="matonos"
+  <project path="device/maton/pc_x86_64" name="MatonOS" remote="matonos-dev"
            revision="main" />
 
   <!-- Graphics: minigbm (fork of android-generic's), drm_hwcomposer -->
