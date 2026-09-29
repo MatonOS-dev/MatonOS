@@ -15,4 +15,4 @@ MATON_APPS_ONLY=matonos-flathub MATON_APPS_FORCE=1 "$DEVICE_TREE/tools/build-app
 "$ADB" -s "$DEVICE" get-state >/dev/null
 "$ADB" -s "$DEVICE" install -r "$APK"
 "$ADB" -s "$DEVICE" shell am start -n org.matonos.flathub/.MainActivity
-echo "Flathub Store installed on $DEVICE."
+echo "Software Centre installed on $DEVICE."

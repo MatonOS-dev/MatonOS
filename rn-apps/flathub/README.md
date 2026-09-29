@@ -1,4 +1,4 @@
-# Flathub Store
+# Software Centre
 
 An Expo app for browsing Flathub's public v2 API and installing system Flatpaks
 through MatonOS System Bridge. The UI uses Expo UI's Jetpack Compose primitives.
@@ -25,16 +25,15 @@ and `npm run lint` from this directory for source checks.
 - `npm run typecheck`, `npm run lint`, and `node --check` for the config and
   release-linkage scripts pass.
 - Preflight passes. Expo release packaging and the release-linkage check
-  succeeded; `app-release.apk` was produced at about 66 MB.
-- The full image build stopped on duplicate `uses_libs` and
-  `optional_uses_libs` properties in shared `buildinfra/Android.bp` and
-  `gms/Android.bp`. A later module build passed Soong analysis but stopped at
-  `MatonAuroraPlaceholder` dexpreopt because that placeholder APK has no
-  `classes.dex`. Neither failure is in this app.
-- QEMU testing and requested screenshots are pending a successful image build.
-  The coordinator's build status explicitly says no VMs until an OK image.
-- Image import and bridge use still require the shared buildinfra and
-  `flatpak` target allowlist additions described in `SHARED-CHANGES.md`.
+  succeeded; `apps-built/Flathub.apk` is staged, its permission XML is present,
+  and its signing certificate is registered.
+- The 2026-09-29 22:00 full image build completed successfully, but the image
+  has no Flathub APK. `buildinfra/Android.bp` and `buildinfra/buildinfra.mk`
+  do not import or package the app. The `flatpak` caller allowlist also still
+  authorizes only Settings. See `SHARED-CHANGES.md` for the exact additions.
+- QEMU screenshots were not captured because this OK image does not include
+  Flathub; the user instruction is to report the missing buildinfra wiring
+  instead of editing it.
 
 ## Real PC checks
 

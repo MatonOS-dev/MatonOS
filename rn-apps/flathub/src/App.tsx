@@ -200,7 +200,7 @@ export default function App() {
     <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b">
       <Column modifiers={[fillMaxSize()]}>
         <Row horizontalArrangement={{ spacedBy: 12 }} modifiers={[paddingAll(14)]}>
-          <Text style={{ typography: "titleLarge" }} modifiers={[weight(1)]}>Flathub Store</Text>
+          <Text style={{ typography: "titleLarge" }} modifiers={[weight(1)]}>Software Centre</Text>
           <Button onClick={() => void selectPage("browse")}><Text>Browse</Text></Button>
           <Button onClick={() => void selectPage("installed")}><Text>Installed</Text></Button>
         </Row>
