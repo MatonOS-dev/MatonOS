@@ -84,14 +84,8 @@ This repository is the device tree; check it out at
 
 ## Building
 
-1. Sync AOSP (`android17-release`), then clone this repository to
-   `device/maton/pc_x86_64`.
-2. Run `cp device/maton/pc_x86_64/manifest/maton.xml .repo/local_manifests/`.
-   Create the `matonos/v1.2` branches from `forks/*/BASE`, `git am` the
-   patches, then `repo sync`.
-3. Put machine-specific paths (NDK, SDK, Node) in the git-ignored
-   `matonos.local.env`. See `tools/local-env.sh`.
-4. Build with `tools/build.sh`. Test with `tools/run-qemu-live.sh`.
+See **[BUILD.md](BUILD.md)** for the full setup: host requirements, AOSP
+sync, the forked projects, machine settings, building and testing in QEMU.
 
 Build outputs, downloaded APKs, kernel/Mesa prebuilts and all signing keys
 are not in this repo. The tools rebuild or fetch them.
