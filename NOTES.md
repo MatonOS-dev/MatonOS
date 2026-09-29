@@ -676,6 +676,23 @@ Feature work continues, but in this shape from now on.
     - org.mpris.MediaPlayer2 -> Android MediaSession (media notification,
       lock-screen and hardware media keys). Per-app volume is separate: it
       comes from the app's PipeWire stream going through the host app.
+    - org.freedesktop.portal.GlobalShortcuts -> only if the stub holds
+      "display over other apps" (SYSTEM_ALERT_WINDOW, user-granted in
+      Settings); without it the portal reports no shortcuts (user).
+    Further mappings (coordinator list, 2026-09-29; v1 = marked *):
+    - portal.Settings* -> night mode, Material You accent, fonts.
+    - portal.Inhibit* / org.freedesktop.ScreenSaver* -> wake lock via bridge.
+    - portal.NetworkMonitor* -> ConnectivityManager (online/metered).
+    - org.a11y.Bus* -> stub bus or NO_AT_BRIDGE=1 so GTK doesn't wait.
+    - portal.Notification -> same backend as org.freedesktop.Notifications.
+    - portal.Email -> ACTION_SENDTO mailto:. portal.Print -> PrintManager.
+    - portal.Screenshot/ScreenCast -> MediaProjection (per-use consent).
+    - portal.Camera -> camera runtime permission; frames via PipeWire.
+    - portal.Location -> location runtime permission.
+    - portal.Background -> foreground service on the stub.
+    - portal.Trash -> MediaStore trash. portal.Account -> name/picture.
+    - org.freedesktop.login1 -> read-only PrepareForSleep signals only.
+    Never served: NetworkManager, systemd, Avahi, PackageKit, BlueZ, GeoClue.
   - Prototype order (de-risking, scariest first): (1) a CLI Flatpak under
     bwrap on MatonOS (namespaces/seccomp/SELinux); (2) one Wayland window
     (weston-terminal from a Flatpak, its own Mesa) through the Xtr126 path on
