@@ -1,0 +1,5 @@
+<permissions>
+    <privapp-permissions package="org.matonos.settings">
+        <permission name="org.matonos.permission.SYSTEM_BRIDGE" />
+    </privapp-permissions>
+</permissions>

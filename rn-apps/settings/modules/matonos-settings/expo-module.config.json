@@ -1,0 +1,12 @@
+{
+  "platforms": [
+    "android"
+  ],
+  "android": {
+    "modules": [
+      "org.matonos.settings.nativebridge.MatonOSExpoModule",
+      "org.matonos.settings.nativebridge.SystemIconModule",
+      "org.matonos.settings.nativebridge.HardwareModule"
+    ]
+  }
+}

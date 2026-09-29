@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "MatonOS Settings",
+    "slug": "matonos-settings",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "android": {
+      "package": "org.matonos.settings",
+      "versionCode": 1,
+      "permissions": [
+        "org.matonos.permission.SYSTEM_BRIDGE",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ]
+    },
+    "plugins": [
+      "./plugins/withMatonSettings",
+      "expo-splash-screen",
+      "expo-router",
+      "expo-localization",
+      "expo-status-bar"
+    ],
+    "experiments": {
+      "autolinkingModuleResolution": true
+    },
+    "autolinking": {
+      "nativeModulesDir": "./modules"
+    },
+    "scheme": "matonos-settings"
+  }
+}
