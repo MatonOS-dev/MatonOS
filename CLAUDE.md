@@ -29,6 +29,9 @@ GitHub org (branch `matonos/v1.2`, listed in FORKS.md and pulled in by
 `manifest/maton.xml`), not in patch series inside this tree. Existing patch
 series (`patches/`, `linux/third_party/*/patches`) are transitional: move them
 to forks when touched. Don't start new patch series.
+Our own code (daemons, HALs, sepolicy, the bridge, installer, rn-apps,
+compositor, D-Bus broker, tools, docs) stays in this one MatonOS repository;
+forks are only for other people's code.
 
 ## Long-term goal: no AOSP modifications except the system bridge
 

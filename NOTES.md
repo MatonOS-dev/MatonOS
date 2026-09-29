@@ -996,7 +996,8 @@ Each entry: what, why no non-patch way, what it would need.
   linux/third_party/<name>/upstream so our Android.bp files stay put. Later:
   the AOSP patches under patches/ (frameworks/base 0001-0003, …) become forks
   of those AOSP projects. True GitHub forks where upstream is on GitHub,
-  plain repos with full history otherwise.
+  plain repos with full history otherwise. Our own code stays in the
+  MatonOS mono-repo; forks are only for other people's code.
 
 | Area | Decision | Why |
 |---|---|---|
