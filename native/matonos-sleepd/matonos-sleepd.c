@@ -52,6 +52,7 @@
 #define DEFAULT_IDLE_S 900
 #define SHORT_PRESS_MS 800
 #define RETRY_MS 30000
+#define ANDROID_WAKE_STATE_TTL_MS 10000
 /* The key that woke the PC (e.g. the power button) is delivered after resume. */
 #define RESUME_GRACE_MS 2000
 #define MAX_DEVICES 64
@@ -66,6 +67,11 @@ static int epfd;
 static int inotify_fd;
 static MatonosIpcServer *ipc_server;
 static _Atomic bool is_sleeping;
+static _Atomic bool android_awake_blocked;
+static _Atomic int android_wake_lock_count;
+static _Atomic bool android_audio_active;
+static _Atomic bool android_stay_awake;
+static _Atomic long long android_wake_state_updated_ms;
 
 static long long now_ms(void) {
     struct timespec ts;
@@ -140,8 +146,10 @@ static void publish_state(void) {
     ssize_t power_len = power_fd >= 0 ? read(power_fd, power_states, sizeof(power_states) - 1) : -1;
     if (power_fd >= 0) close(power_fd);
     bool supported = power_len > 0 && strstr(power_states, "mem") != NULL;
-    snprintf(state, sizeof(state), "{\"idleTimeoutSeconds\":%d,\"suspendSupported\":%s,\"sleeping\":%s}",
-             timeout > 0 ? timeout : 0, supported ? "true" : "false", is_sleeping ? "true" : "false");
+    snprintf(state, sizeof(state), "{\"idleTimeoutSeconds\":%d,\"suspendSupported\":%s,\"sleeping\":%s,\"androidWakeBlocked\":%s,\"wakeLockCount\":%d,\"audioActive\":%s,\"stayAwake\":%s}",
+             timeout > 0 ? timeout : 0, supported ? "true" : "false", is_sleeping ? "true" : "false",
+             android_awake_blocked ? "true" : "false", android_wake_lock_count,
+             android_audio_active ? "true" : "false", android_stay_awake ? "true" : "false");
     matonos_ipc_publish(ipc_server, "state", state);
 }
 
@@ -156,13 +164,78 @@ static int handle_get_state(const char *args, char *result, size_t capacity, voi
     ssize_t power_len = power_fd >= 0 ? read(power_fd, power_states, sizeof(power_states) - 1) : -1;
     if (power_fd >= 0) close(power_fd);
     bool supported = power_len > 0 && strstr(power_states, "mem") != NULL;
-    snprintf(result, capacity, "{\"idleTimeoutSeconds\":%d,\"suspendSupported\":%s,\"sleeping\":%s}",
-             timeout > 0 ? timeout : 0, supported ? "true" : "false", is_sleeping ? "true" : "false");
+    snprintf(result, capacity, "{\"idleTimeoutSeconds\":%d,\"suspendSupported\":%s,\"sleeping\":%s,\"androidWakeBlocked\":%s,\"wakeLockCount\":%d,\"audioActive\":%s,\"stayAwake\":%s}",
+             timeout > 0 ? timeout : 0, supported ? "true" : "false", is_sleeping ? "true" : "false",
+             android_awake_blocked ? "true" : "false", android_wake_lock_count,
+             android_audio_active ? "true" : "false", android_stay_awake ? "true" : "false");
+    return 0;
+}
+
+static bool json_bool(const char *args, const char *key, bool *out) {
+    char needle[64];
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
+    const char *p = strstr(args, needle);
+    if (!p) return false;
+    p += strlen(needle);
+    while (*p == ' ' || *p == '\t') p++;
+    if (strncmp(p, "true", 4) == 0) { *out = true; return true; }
+    if (strncmp(p, "false", 5) == 0) { *out = false; return true; }
+    return false;
+}
+
+static bool json_int(const char *args, const char *key, int *out) {
+    char needle[64];
+    snprintf(needle, sizeof(needle), "\"%s\":", key);
+    const char *p = strstr(args, needle);
+    if (!p) return false;
+    p += strlen(needle);
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p < '0' || *p > '9') return false;
+    char *end = NULL;
+    long value = strtol(p, &end, 10);
+    if (end == p || value > 100000) return false;
+    *out = (int)value;
+    return true;
+}
+
+/* Called only by the privileged System Bridge over the fixed Binder channel. */
+static int handle_set_wake_state(const char *args, char *result, size_t capacity, void *context) {
+    (void)context;
+    bool blocked, audio, stay_awake;
+    int locks;
+    if (!json_bool(args, "blocked", &blocked) || !json_bool(args, "audioActive", &audio) ||
+        !json_bool(args, "stayAwake", &stay_awake) || !json_int(args, "wakeLockCount", &locks)) {
+        return -1;
+    }
+    bool old = android_awake_blocked;
+    int old_locks = android_wake_lock_count;
+    bool old_audio = android_audio_active;
+    bool old_stay_awake = android_stay_awake;
+    android_wake_lock_count = locks;
+    android_audio_active = audio;
+    android_stay_awake = stay_awake;
+    android_awake_blocked = blocked;
+    android_wake_state_updated_ms = now_ms();
+    if (old != blocked || old_locks != locks || old_audio != audio || old_stay_awake != stay_awake) {
+        ALOGI("Android wake state %s (wake locks=%d audio=%s stay-awake=%s)",
+              blocked ? "holds suspend" : "released suspend", locks,
+              audio ? "active" : "inactive", stay_awake ? "enabled" : "disabled");
+        publish_state();
+    }
+    if (capacity < 12) return -1;
+    snprintf(result, capacity, "{\"ok\":true,\"blocked\":%s}", blocked ? "true" : "false");
     return 0;
 }
 
 /* Returns false if the suspend was refused (e.g. an active wakeup source). */
 static bool suspend_system(const char *reason) {
+    if (android_awake_blocked) {
+        ALOGI("suspend deferred (%s): Android wake state is active (wake locks=%d audio=%s stay-awake=%s)",
+              reason, android_wake_lock_count, android_audio_active ? "active" : "inactive",
+              android_stay_awake ? "enabled" : "disabled");
+        publish_state();
+        return false;
+    }
     ALOGI("suspending (%s)", reason);
     is_sleeping = true;
     publish_state();
@@ -192,6 +265,7 @@ static bool suspend_system(const char *reason) {
 int main(void) {
     ipc_server = matonos_ipc_create("sleep");
     if (!ipc_server || matonos_ipc_register(ipc_server, "get_state", handle_get_state, NULL) != 0 ||
+        matonos_ipc_register(ipc_server, "set_wake_state", handle_set_wake_state, NULL) != 0 ||
         matonos_ipc_start(ipc_server) != 0) {
         ALOGE("cannot register MatonOS channel service");
         return 1;
@@ -216,6 +290,14 @@ int main(void) {
     long long announced_limit = idle_limit_ms();
 
     for (;;) {
+        if (android_awake_blocked && now_ms() - android_wake_state_updated_ms > ANDROID_WAKE_STATE_TTL_MS) {
+            android_awake_blocked = false;
+            android_wake_lock_count = 0;
+            android_audio_active = false;
+            android_stay_awake = false;
+            ALOGW("Android wake-state updates expired; allowing sleep until the bridge reconnects");
+            publish_state();
+        }
         if (idle_limit_ms() != announced_limit) {
             announced_limit = idle_limit_ms();
             publish_state();
@@ -228,6 +310,7 @@ int main(void) {
             long long left = due - now_ms();
             timeout = left > 0 ? (int)(left > 60000 ? 60000 : left) : 0;
         }
+        if (android_awake_blocked && (timeout < 0 || timeout > 1000)) timeout = 1000;
 
         struct epoll_event events[16];
         int n = epoll_wait(epfd, events, 16, timeout);
@@ -279,6 +362,8 @@ int main(void) {
                 retry_until = 0;
                 resumed_at = now_ms();
                 power_down_at = -1;
+            } else if (android_awake_blocked) {
+                retry_until = 0;
             } else {
                 retry_until = now_ms() + RETRY_MS;
             }
