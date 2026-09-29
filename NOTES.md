@@ -260,8 +260,7 @@ Feature work continues, but in this shape from now on.
 - **v3** (OS updates moved to v2; v3 keeps system-app updates via our own
   F-Droid repo). OS update design, now built in v2: reuse AOSP `update_engine` (SELinux-confined,
   downloads signed payload.bin from our server, writes inactive slot) + a
-  client app. Needs A/B: "A/B with dynamic partitions" (both slots fit in
-  the 8 GiB super; no Virtual A/B, whose dm-user is ACK-only), kernel +
+  client app. Needs A/B: "A/B with dynamic partitions" (superseded 2026-09-29: plain Virtual A/B, see below), kernel +
   ramdisks in two XBOOTLDR partitions (boot_a/boot_b, FAT) that systemd-boot
   reads natively, systemd-boot boot counting for automatic fallback, and a
   custom boot-control HAL driving the loader entries + androidboot.slot_suffix.
@@ -285,7 +284,15 @@ Feature work continues, but in this shape from now on.
   privapp allowlist; keep native services thin (only OTA can update them);
   app updates can't gain new privileged permissions (allowlist is per OS
   release).
-  **Decided: installed systems use A/B from v2** (super for two slots +
+  **Decided 2026-09-29 (user): installed systems use plain Virtual A/B**
+  (Android 11 style, build/make/target/product/virtual_ab_ota/launch.mk):
+  one set of partitions in super, the update is written as a dm-snapshot COW
+  in /data, merged after the first successful boot; rollback until then.
+  dm-snapshot is mainline (CONFIG_DM_SNAPSHOT), no dm-user/snapuserd, so no
+  compression (COW = size of changed blocks). Compressed VAB later only via a
+  snapuserd port from dm-user to mainline ublk (not FUSE: loop+FUSE under
+  /system is slow and can deadlock). Boot counting/per-slot UKIs stay.
+  Earlier (superseded): **installed systems use A/B from v2** (super for two slots +
   boot_a/boot_b); the live image stays single-slot. One A/B build serves
   both: make-live.sh repacks only the _a partitions and passes
   androidboot.slot_suffix=_a. v1 stays non-A/B; installer.sh/make-payload.sh
