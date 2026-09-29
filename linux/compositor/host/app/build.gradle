@@ -1,0 +1,29 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'org.matonos.compositor'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'org.matonos.compositor'; minSdk 30; targetSdk 35; versionCode 1; versionName '1.0'
+        ndk { abiFilters 'x86_64' }
+        externalNativeBuild { cmake { arguments '-DMATON_COMPOSITOR_ROOT=' + projectDir.absolutePath + '/../..' } }
+    }
+    buildFeatures { aidl true }
+    signingConfigs {
+        release {
+            storeFile file(System.getenv('MATON_SIGNING_STORE_FILE'))
+            storePassword System.getenv('MATON_SIGNING_STORE_PASSWORD')
+            keyAlias System.getenv('MATON_SIGNING_KEY_ALIAS')
+            keyPassword System.getenv('MATON_SIGNING_KEY_PASSWORD')
+        }
+    }
+    buildTypes { release { signingConfig signingConfigs.release; minifyEnabled false } }
+    externalNativeBuild { cmake { path '../../native/CMakeLists.txt' } }
+    ndkVersion '30.0.16248370'
+    ndkPath System.getenv('MATON_NDK') ?: "${System.getProperty('user.home')}/Documents/android-ndk-r30"
+    sourceSets {
+        main {
+            jniLibs.srcDirs += file("$rootDir/../../../../../../out/matonos/compositor/jniLibs")
+        }
+    }
+}

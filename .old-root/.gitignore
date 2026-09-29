@@ -46,3 +46,6 @@ framework-stubs.jar
 /device/maton/pc_x86_64/tools/payload/
 /device/maton/pc_x86_64/audio/native-hal/deps/
 /device/maton/pc_x86_64/**/libs/*.jar
+
+# Pristine upstream sources for the Linux-apps stack (fetched, not committed)
+/device/maton/pc_x86_64/linux/third_party/*/upstream/

@@ -1,0 +1,70 @@
+# Clean-room compositor source inputs
+#
+# No GPL sources are used. Upstream source trees, archives and build products
+# are kept in /mnt/data/aosp/out/matonos/compositor, not in the device tree.
+# Pinned sources and build products stay under /mnt/data/aosp/out, outside the
+# device tree. They are built for bionic x86_64 by build-compositor.sh.
+# Do not replace the supplied wlroots source with Xtr126 or labwc.
+
+wlroots 0.20.2 (latest stable release selected 2026-09-29)
+  source: https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/0.20.2/wlroots-0.20.2.tar.gz
+  archive SHA-256: 972c7ac44b17828f4702bfae7cd8347346a3fb5b2c1076cfa2c3fcedac5ec343
+  license: MIT (upstream LICENSE)
+  archive size: 700,802 bytes
+  unpacked source size: 3,537,798 bytes (472 files)
+
+wayland 1.24.0
+  source: https://gitlab.freedesktop.org/wayland/wayland/-/archive/1.24.0/wayland-1.24.0.tar.gz
+  SHA-256: 7800858844751fc7113d7df3678dc6b58b26a056176a65c49a059763045bffd5
+  license: MIT; archive 375,087 bytes; unpacked 1,646,186 bytes
+
+wayland-protocols 1.48
+  source: https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/1.48/wayland-protocols-1.48.tar.gz
+  SHA-256: c563af8e2e784f9599fe23819a3fc5e7d946e76db9f90a2e3ba6c9a869a52911
+  license: MIT/Expat; archive 237,481 bytes; unpacked source 1,087,168 bytes
+
+pixman 0.46.0
+  source: https://gitlab.freedesktop.org/pixman/pixman/-/archive/pixman-0.46.0/pixman-pixman-0.46.0.tar.gz
+  SHA-256: 92c1b08db747ff17f9028da3e63168c8ac23204ce62b1a0437607847c8ad6c36
+  license: MIT; archive 828,858 bytes; unpacked 3,109,638 bytes
+
+libxkbcommon 1.8.0
+  source: https://github.com/xkbcommon/libxkbcommon/archive/refs/tags/xkbcommon-1.8.0.tar.gz
+  SHA-256: 025c53032776ed850fbfb92683a703048cd70256df4ac1a1ec41ed3455d5d39c
+  license: MIT; archive 995,648 bytes; unpacked 5,799,288 bytes
+
+libdrm 2.4.134
+  source: https://gitlab.freedesktop.org/mesa/drm/-/archive/libdrm-2.4.134/drm-libdrm-2.4.134.tar.gz
+  SHA-256: 6b18e4834b0c061232cb5c11e98a6ecdc72ebc6bc282d124406b7a9d4e089ce2
+  license: MIT; archive 601,504 bytes; unpacked 2,945,856 bytes
+
+libffi 3.4.8 (static build dependency of wayland-server)
+  source: https://github.com/libffi/libffi/releases/download/v3.4.8/libffi-3.4.8.tar.gz
+  SHA-256: bc9842a18898bfacb0ed1252c4febcc7e78fa139fd27fdc7a3e30d9d9356119b
+  license: MIT; archive 1,397,992 bytes; unpacked source 5,517,940 bytes
+
+minigbm (AOSP external/minigbm, cros-gralloc handle ABI)
+  source: AOSP in-tree source; the allocator only consumes the cros-gralloc
+  handle layout and does not replace the normal AOSP gralloc module
+  license: BSD-3-Clause; AOSP source tree 989,002 bytes; only the in-tree
+  handle field layout is mirrored in C (the upstream declaration is C++)
+
+xkeyboard-config 2.41
+  source: host xkb-data 2.41-2ubuntu1.1; generated US keymap embedded in
+  assets/us-keymap.xkb and native/us_keymap.h
+  license: permissive XKB/X.Org notices in assets/XKB-LICENSE; generated map
+  61,032 bytes; embedded header 61,117 bytes
+
+NDK r30/API 35 bionic x86_64 ELF sizes from the successful local build
+(`stat -c %s`, bytes; 2026-09-29):
+  libwlroots-0.20.so       948,368 (MIT)
+  libwayland-server.so     132,872 (MIT; libffi 3.4.8 is statically linked)
+  libwayland-client.so     114,384 (MIT)
+  libpixman-1.so           790,168 (MIT)
+  libxkbcommon.so          312,208 (MIT)
+  libdrm.so                103,016 (MIT)
+  libwayland-cursor.so      31,592 (MIT; staged but not a direct NEEDED dependency)
+  libwayland-egl.so          5,952 (MIT; staged but not a direct NEEDED dependency)
+  libmaton_compositor.so   286,168 (our code, MIT)
+The Wayland-protocols package is build-time XML/headers only, not a runtime
+library. APK size remains to be recorded after Gradle completes.

@@ -1,0 +1,16 @@
+--- a/libglnx/glnx-dirfd.c
++++ b/libglnx/glnx-dirfd.c
+@@ -23,6 +23,13 @@
+ 
+ #include <string.h>
+ 
++#ifndef IFTODT
++#define IFTODT(mode) (S_ISREG (mode) ? DT_REG : S_ISDIR (mode) ? DT_DIR : \
++                      S_ISLNK (mode) ? DT_LNK : S_ISFIFO (mode) ? DT_FIFO : \
++                      S_ISSOCK (mode) ? DT_SOCK : S_ISCHR (mode) ? DT_CHR : \
++                      S_ISBLK (mode) ? DT_BLK : DT_UNKNOWN)
++#endif
++
+ #include <glnx-dirfd.h>
+ #include <glnx-fdio.h>
+ #include <glnx-errors.h>

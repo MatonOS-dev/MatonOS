@@ -1,0 +1,97 @@
+--- a/configure.ac
++++ b/configure.ac
+@@ -363,7 +363,7 @@
+ #   We test for pthread_cancel because in glibc 2.34, libc includes
+ #   pthread_create and pthread_detach, but not pthread_cancel.
+ if test "$have_w32_system" = no; then
+-  AC_SEARCH_LIBS([pthread_cancel],[pthread])
++  AC_SEARCH_LIBS([pthread_create],[pthread])
+   case "x$ac_cv_search_pthread_cancel" in
+     xno)
+       have_pthread=no
+--- a/configure
++++ b/configure
+@@ -14341,12 +14341,12 @@
+ #
+ # Checks for libraries and functions.
+ #
+-#   We test for pthread_cancel because in glibc 2.34, libc includes
+-#   pthread_create and pthread_detach, but not pthread_cancel.
++#   We test for pthread_create because in glibc 2.34, libc includes
++#   pthread_create and pthread_detach, but not pthread_create.
+ if test "$have_w32_system" = no; then
+-  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing pthread_cancel" >&5
+-printf %s "checking for library containing pthread_cancel... " >&6; }
+-if test ${ac_cv_search_pthread_cancel+y}
++  { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for library containing pthread_create" >&5
++printf %s "checking for library containing pthread_create... " >&6; }
++if test ${ac_cv_search_pthread_create+y}
+ then :
+   printf %s "(cached) " >&6
+ else $as_nop
+@@ -14357,11 +14357,11 @@
+ /* Override any GCC internal prototype to avoid an error.
+    Use char because int might match the return type of a GCC
+    builtin and then its argument prototype would still apply.  */
+-char pthread_cancel ();
++char pthread_create ();
+ int
+ main (void)
+ {
+-return pthread_cancel ();
++return pthread_create ();
+   ;
+   return 0;
+ }
+@@ -14376,34 +14376,34 @@
+   fi
+   if ac_fn_c_try_link "$LINENO"
+ then :
+-  ac_cv_search_pthread_cancel=$ac_res
++  ac_cv_search_pthread_create=$ac_res
+ fi
+ rm -f core conftest.err conftest.$ac_objext conftest.beam \
+     conftest$ac_exeext
+-  if test ${ac_cv_search_pthread_cancel+y}
++  if test ${ac_cv_search_pthread_create+y}
+ then :
+   break
+ fi
+ done
+-if test ${ac_cv_search_pthread_cancel+y}
++if test ${ac_cv_search_pthread_create+y}
+ then :
+ 
+ else $as_nop
+-  ac_cv_search_pthread_cancel=no
++  ac_cv_search_pthread_create=no
+ fi
+ rm conftest.$ac_ext
+ LIBS=$ac_func_search_save_LIBS
+ fi
+-{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_pthread_cancel" >&5
+-printf "%s\n" "$ac_cv_search_pthread_cancel" >&6; }
+-ac_res=$ac_cv_search_pthread_cancel
++{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ac_cv_search_pthread_create" >&5
++printf "%s\n" "$ac_cv_search_pthread_create" >&6; }
++ac_res=$ac_cv_search_pthread_create
+ if test "$ac_res" != no
+ then :
+   test "$ac_res" = "none required" || LIBS="$ac_res $LIBS"
+ 
+ fi
+ 
+-  case "x$ac_cv_search_pthread_cancel" in
++  case "x$ac_cv_search_pthread_create" in
+     xno)
+       have_pthread=no
+       ;;
+@@ -14412,7 +14412,7 @@
+       ;;
+     *)
+       have_pthread=yes
+-      config_libs="$config_libs $ac_cv_search_pthread_cancel"
++      config_libs="$config_libs $ac_cv_search_pthread_create"
+       ;;
+   esac
+   if test "$have_pthread" != no; then

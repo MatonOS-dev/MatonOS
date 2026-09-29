@@ -1,0 +1,14 @@
+# MatonOS patch: C23 defines bool as a built-in type; guard the legacy typedef.
+# This lets the pinned upstream source compile with AOSP's gnu23 compiler.
+--- a/utils.h
++++ b/utils.h
+@@ -43,7 +43,9 @@
+ 
+ #define TRUE 1
+ #define FALSE 0
++#if __STDC_VERSION__ < 202311L
+ typedef int bool;
++#endif
+ 
+ #define PIPE_READ_END 0
+ #define PIPE_WRITE_END 1

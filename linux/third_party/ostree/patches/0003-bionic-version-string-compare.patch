@@ -1,0 +1,46 @@
+--- a/src/libostree/ostree-sysroot.c
++++ b/src/libostree/ostree-sysroot.c
+@@ -574,6 +574,34 @@
+   return TRUE;
+ }
+ 
++/* strverscmp is a glibc extension and is absent from bionic. */
++static int
++ostree_strverscmp (const char *a, const char *b)
++{
++  while (*a && *b)
++    {
++      if (g_ascii_isdigit (*a) && g_ascii_isdigit (*b))
++        {
++          const char *a_num = a, *b_num = b;
++          while (*a_num == '0') a_num++;
++          while (*b_num == '0') b_num++;
++          const char *a_end = a_num, *b_end = b_num;
++          while (g_ascii_isdigit (*a_end)) a_end++;
++          while (g_ascii_isdigit (*b_end)) b_end++;
++          gsize a_len = a_end - a_num, b_len = b_end - b_num;
++          if (a_len != b_len) return a_len < b_len ? -1 : 1;
++          int cmp = strncmp (a_num, b_num, a_len);
++          if (cmp != 0) return cmp;
++          while (g_ascii_isdigit (*a)) a++;
++          while (g_ascii_isdigit (*b)) b++;
++          continue;
++        }
++      if (*a != *b) return (unsigned char)*a < (unsigned char)*b ? -1 : 1;
++      a++; b++;
++    }
++  return *a ? 1 : *b ? -1 : 0;
++}
++
+ static gint
+ compare_boot_loader_configs (OstreeBootconfigParser *a, OstreeBootconfigParser *b)
+ {
+@@ -582,7 +610,7 @@
+ 
+   if (a_version && b_version)
+     {
+-      int r = strverscmp (a_version, b_version);
++      int r = ostree_strverscmp (a_version, b_version);
+       /* Reverse */
+       return -r;
+     }

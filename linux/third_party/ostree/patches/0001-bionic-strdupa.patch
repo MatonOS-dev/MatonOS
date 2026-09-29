@@ -1,0 +1,14 @@
+--- a/libglnx/glnx-backports.h
++++ b/libglnx/glnx-backports.h
+@@ -30,6 +30,11 @@
+ 
+ #include <gio/gio.h>
+ 
++/* Bionic has no strdupa; preserve its stack-copy semantics. */
++#ifndef strdupa
++#define strdupa(s) strcpy ((char *) g_alloca (strlen (s) + 1), (s))
++#endif
++
+ G_BEGIN_DECLS
+ 
+ #if !GLIB_CHECK_VERSION(2, 34, 0)
