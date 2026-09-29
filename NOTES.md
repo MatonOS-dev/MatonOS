@@ -700,7 +700,11 @@ Feature work continues, but in this shape from now on.
       permission prompt.
     - BlueZ -> not served (Android has no BlueZ); an Android Bluetooth API
       bridge can be exposed later if developers want it.
-    - PackageKit / systemd -> never (no equivalent on MatonOS).
+    - PackageKit -> minimal read-only stub: reports an atomic/immutable
+      distro (no system packages to install); any install/remove call,
+      including Flatpak refs, returns a permission-denied error. Apps install
+      through the MatonOS store, never via the bus (user).
+    - systemd -> never (no equivalent on MatonOS).
   - Prototype order (de-risking, scariest first): (1) a CLI Flatpak under
     bwrap on MatonOS (namespaces/seccomp/SELinux); (2) one Wayland window
     (weston-terminal from a Flatpak, its own Mesa) through the Xtr126 path on
