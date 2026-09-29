@@ -11,6 +11,13 @@ endif
 
 PRODUCT_PACKAGES += $(MATON_APPS)
 
+# Empty, MatonOS-signed placeholders reserve these package names for store updates.
+PRODUCT_PACKAGES += MatonAuroraPlaceholder MatonYoutubePlaceholder
+
+# Source-built, MatonOS-signed F-Droid Basic is not fetched from the F-Droid
+# APK lockfile. Its APK is staged by apps/fdroid-basic/build.sh.
+PRODUCT_PACKAGES += MatonFdroidBasic
+
 # Native libraries that an APK stores compressed (e.g. Fennec): preinstalled
 # apps get no extraction at install time, so tools/fetch-apps.sh extracts them
 # to apks/<module>.lib/ and they go next to the APK, where the package
