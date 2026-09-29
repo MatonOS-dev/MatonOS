@@ -692,6 +692,14 @@ Feature work continues, but in this shape from now on.
     - portal.Background -> foreground service on the stub.
     - portal.Trash -> MediaStore trash. portal.Account -> name/picture.
     - org.freedesktop.login1 -> read-only PrepareForSleep signals only.
+    Cross-app D-Bus (user, 2026-09-29): buses stay per app; apps reach each
+    other only via names declared in their Flatpak metadata. --own-name ->
+    the stub registers the name with the bridge; --talk-name call -> the
+    broker asks the bridge which stub owns it and relays stub-to-stub over
+    binder, checking both UIDs. Talk-names are shown at install like
+    permissions; wildcards (org.freedesktop.*, org.kde.*) and system-service
+    names are refused; org.freedesktop.Flatpak is never reachable. In effect
+    the brokers + bridge are a D-Bus <-> binder bridge.
     System services (user, 2026-09-29):
     - Avahi / NetworkManager -> limited subset, only after the app asks for
       the matching Android permission (Avahi -> NsdManager mDNS browse/
