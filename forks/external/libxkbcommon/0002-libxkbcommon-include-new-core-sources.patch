@@ -1,0 +1,35 @@
+From fb10ea84651cc2a72a163d5fba6209c2d661ed1b Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Mon, 28 Sep 2026 21:43:51 +0200
+Subject: [PATCH 2/3] libxkbcommon: include new core sources
+
+Change-Id: I3542a5dff7d50431e4c881fb05099d796d5469f6
+
+diff --git a/Android.bp b/Android.bp
+index a62bcb7..ff10073 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -54,6 +54,7 @@ cc_library_static {
+         "src/compose/paths.c",
+         "src/compose/state.c",
+         "src/compose/table.c",
++        "src/keysym-case-mappings.c",
+         "src/xkbcomp/action.c",
+         "src/xkbcomp/ast-build.c",
+         "src/xkbcomp/compat.c",
+@@ -65,6 +66,7 @@ cc_library_static {
+         "src/xkbcomp/keywords.c",
+         "src/xkbcomp/rules.c",
+         "src/xkbcomp/scanner.c",
++        "src/scanner-utils.c",
+         "src/xkbcomp/symbols.c",
+         "src/xkbcomp/types.c",
+         "src/xkbcomp/vmod.c",
+@@ -82,6 +84,7 @@ cc_library_static {
+         "src/utf8.c",
+         "src/util-list.c",
+         "src/utils.c",
++        "src/utils-paths.c",
+     ],
+     c_std: "c11",
+     cflags: [

@@ -1,4 +1,1 @@
-project: external/drm_hwcomposer
-upstream: https://android.googlesource.com/platform/external/drm_hwcomposer (AOSP manifest revision)
-base: 87daba8 (Snap for 15106092 from 2c5660fa2bd7474b4dffe095d7b92ee6e6ffa757 to 26Q2-release)
-branch: matonos/v1.2
+0e6fe0670630fba69ebbd07ae3c819c294c824fb

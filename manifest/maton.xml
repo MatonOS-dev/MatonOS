@@ -11,6 +11,16 @@
        the branches before syncing a fresh checkout. -->
   <extend-project name="platform/external/drm_hwcomposer"
                   revision="refs/heads/matonos/v1.2" />
+  <extend-project name="platform/external/libdrm"
+                  revision="refs/heads/matonos/v1.2" />
+  <extend-project name="platform/external/libxkbcommon"
+                  revision="refs/heads/matonos/v1.2" />
+  <extend-project name="platform/external/pixman"
+                  revision="refs/heads/matonos/v1.2" />
+  <extend-project name="platform/external/wayland"
+                  revision="refs/heads/matonos/v1.2" />
+  <extend-project name="platform/external/wayland-protocols"
+                  revision="refs/heads/matonos/v1.2" />
 
   <remove-project name="platform/external/minigbm" />
   <project path="external/minigbm" name="external_minigbm" remote="android-generic"
