@@ -630,6 +630,16 @@ Feature work continues, but in this shape from now on.
     The D-Bus session bus is heavily locked down: default-deny policy,
     only our portal backend names and explicitly allowed services are
     reachable; Flatpak's own bus proxy (xdg-dbus-proxy) filters per app.
+    D-Bus + UIDs (user, 2026-09-29): each Linux app runs as its STUB's Android
+    UID (per-app; makes forwarding to that app's stub simple). dbus-daemon
+    (reference implementation, bionic port, no systemd) + xdg-dbus-proxy
+    (~0.6-0.8 MB). Bus socket in the owning user's runtime dir; "only the
+    bus owner's UID may connect" does the isolation; the config uses NUMERIC
+    UIDs only (bionic getpwnam() knows Android IDs, not Linux users — no fake
+    passwd db); default-deny policy with only our portal backend + Flatpak
+    helpers allowed. With per-app UIDs the bus is per app (one dbus-daemon
+    per running stub, like the per-app compositor); an app's portal calls
+    reach its own stub directly. Built after `flatpak --version` works.
   - Prototype order (de-risking, scariest first): (1) a CLI Flatpak under
     bwrap on MatonOS (namespaces/seccomp/SELinux); (2) one Wayland window
     (weston-terminal from a Flatpak, its own Mesa) through the Xtr126 path on
