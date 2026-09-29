@@ -639,7 +639,15 @@ Feature work continues, but in this shape from now on.
     ListNames...) and routes between the app's own processes and the stub's
     in-process portal objects. The broker IS the policy point (default-deny;
     replaces xdg-dbus-proxy). New code: test against GTK/Qt/Electron apps;
-    add bus features as real apps need them. Superseded below: dbus-daemon. Bus socket in the owning user's runtime dir; "only the
+    add bus features as real apps need them. Superseded below: dbus-daemon.
+    Intents -> Linux apps (user, 2026-09-29; enabled by the per-stub broker):
+    the stub declares intent filters from the app's .desktop MimeType= (and
+    x-scheme-handler/*); an ACTION_VIEW/SEND to the stub becomes a D-Bus call
+    on the app's own bus — org.freedesktop.Application.Open(uris) /
+    Activate / ActivateAction for D-Bus-activatable apps, else a
+    `flatpak run --file-forwarding <id> @@ <uri> @@` launch with a
+    document-portal path for content:// URIs. So Android's share sheet and
+    "open with" list Linux apps like any Android app. Bus socket in the owning user's runtime dir; "only the
     bus owner's UID may connect" does the isolation; the config uses NUMERIC
     UIDs only (bionic getpwnam() knows Android IDs, not Linux users — no fake
     passwd db); default-deny policy with only our portal backend + Flatpak
