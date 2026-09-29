@@ -292,6 +292,8 @@ Feature work continues, but in this shape from now on.
   compression (COW = size of changed blocks). Compressed VAB later only via a
   snapuserd port from dm-user to mainline ublk (not FUSE: loop+FUSE under
   /system is slow and can deadlock). Boot counting/per-slot UKIs stay.
+  Downloads stay compressed regardless: payload.bin ops are brotli/xz/zstd
+  (+ deltas); VAB "compression" only shrinks the on-disk COW in /data.
   Earlier (superseded): **installed systems use A/B from v2** (super for two slots +
   boot_a/boot_b); the live image stays single-slot. One A/B build serves
   both: make-live.sh repacks only the _a partitions and passes
