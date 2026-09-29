@@ -14,6 +14,12 @@ daemons/HALs/apps, and one system bridge app.
 > was written by AI agents and may contain mistakes. Review before you rely
 > on it, especially anything touching disks, security or signing.
 
+## Contributing
+
+See [CONTRIBUTE.md](CONTRIBUTE.md). In short: human code and assets are
+welcome; AI image, video and music generation is not; and you are
+responsible for any code you submit, however it was produced.
+
 ## Status
 
 Work in progress, not yet ready for daily use.
