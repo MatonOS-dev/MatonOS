@@ -14,10 +14,10 @@ better than hacks threaded through framework code. In order of preference:
    `power/matonos-sleepd.c`, which owns sleep so Android's broken sleep path
    is never used), system_ext helpers (`setup/`), and later our own apps and
    services.
-3. Only when there's no other way: a small, self-contained patch under
-   `patches/<project>/` (one concern per patch, gated by a `ro.matonos.*`
+3. Only when there's no other way: a small, self-contained commit in our
+   fork of that project (see "forks, not patch series" below; one concern per commit, gated by a `ro.matonos.*`
    property where it changes behaviour, with a comment saying why). Expect
-   to re-check every patch on each AOSP release.
+   to re-check every such commit on each AOSP release.
 
 Before patching Android, ask whether we can switch the behaviour off and
 provide it ourselves instead.
