@@ -22,6 +22,14 @@ better than hacks threaded through framework code. In order of preference:
 Before patching Android, ask whether we can switch the behaviour off and
 provide it ourselves instead.
 
+## Rule: forks, not patch series (user, 2026-09-29)
+
+Changes to other people's code go in real repository forks in the MatonOS-dev
+GitHub org (branch `matonos/v1.2`, listed in FORKS.md and pulled in by
+`manifest/maton.xml`), not in patch series inside this tree. Existing patch
+series (`patches/`, `linux/third_party/*/patches`) are transitional: move them
+to forks when touched. Don't start new patch series.
+
 ## Long-term goal: no AOSP modifications except the system bridge
 
 **Rule (user, 2026-09-24): if something can't be done without patching AOSP,

@@ -984,6 +984,20 @@ Each entry: what, why no non-patch way, what it would need.
 
 ## Decisions
 
+- **Forks, not patch series (user, 2026-09-29, long-term goal)**: every
+  change to someone else's code lives in a real repository fork in the
+  MatonOS-dev GitHub org (branch `matonos/v1.2`), pulled in by
+  `manifest/maton.xml`; patch series in this tree are transitional. Done:
+  minigbm, drm_hwcomposer, BayLibre audio, libdrm, libxkbcommon, pixman,
+  wayland, wayland-protocols (FORKS.md). Next: the 9 patched Linux-apps
+  components (flatpak, ostree, bubblewrap, glib, gnupg, npth, libgpg-error,
+  libfyaml, appstream), with the 13 unpatched ones fetched from upstream git at
+  pinned tags; sources check out as nested projects at
+  linux/third_party/<name>/upstream so our Android.bp files stay put. Later:
+  the AOSP patches under patches/ (frameworks/base 0001-0003, …) become forks
+  of those AOSP projects. True GitHub forks where upstream is on GitHub,
+  plain repos with full history otherwise.
+
 | Area | Decision | Why |
 |---|---|---|
 | Lunch | `pc_x86_64-aosp_current-userdebug` | `aosp_current` alias exists in `build/release/release_config_map.textproto` |
