@@ -9,7 +9,7 @@ MatonOS repository.
 
 | Project | Branch | Fix commit |
 | --- | --- | --- |
-| `external/drm_hwcomposer` | `matonos/v1.2` | `139968a9db60618007d2e08a15b76ebca899ad6f` |
+| `external/drm_hwcomposer` | `matonos/v1.2` | `a0a805598b127214877e8acc493dadf3ca4748ff` |
 | `external/minigbm` | `matonos/v1.2` | `ad5e09a4c8a3d66fd3fcf22ba41ce69760cb7d83` |
 
 ## Fix descriptions for upstream
@@ -24,6 +24,32 @@ selection behavior while allowing the real DRM device to be found after a gap.
 The bound prevents an unbounded filesystem scan.
 
 Suggested upstream commit subject: `drm_hwcomposer: continue scanning DRM card nodes after gaps`.
+
+### drm_hwcomposer: copy unsupported client targets into dumb buffers
+
+QEMU's std VGA (`bochs-drm`) and other VRAM-helper KMS drivers cannot import
+the client target dma-buf or scan out SurfaceFlinger's RGBA8888 buffers. When
+the client target fails to import, copy it into a KMS-local dumb buffer and
+map that instead. The copy is limited to the already-composited client target;
+hardware layer imports and scan-out stay zero-copy. Follow-up commits sync the
+software copy's dma-bufs, retain the KMS mapping, and replace a
+`dynamic_pointer_cast` with an `IsDumbBuffer()` check so the code also builds
+without RTTI. A compatibility commit adds direct `<cerrno>` includes where
+`errno` is used so the build does not depend on libdrm's former transitive
+include.
+
+### drm_hwcomposer: negotiate a scan-out-able client target format
+
+SurfaceFlinger composites the client target as RGBA_8888
+(DRM_FORMAT_ABGR8888). Drivers that advertise neither ABGR8888 nor XBGR8888 on
+their planes reject it, which previously forced the whole client target
+through the dumb-buffer copy above. Emit a composer3 client target property
+during validate so SurfaceFlinger renders the client target in a format the
+display can scan out: RGBX_8888 (XBGR8888, the same bytes with alpha ignored),
+then BGRA_8888 (ARGB8888), then RGB_565. Nothing is emitted when the default
+is supported, so GPU-backed displays are unaffected.
+
+Suggested upstream commit subject: `drm_hwcomposer: request a scan-out-able client target format`.
 
 ### minigbm: use Mesa GBM for the AIDL allocator and stable C mapper
 
@@ -59,7 +85,7 @@ committed changeset from the AOSP root:
 
 ```sh
 git -C external/drm_hwcomposer switch -c matonos/v1.2
-git -C external/drm_hwcomposer am device/maton/pc_x86_64/vendorforks/changesets/drm_hwcomposer-139968a.patch
+git -C external/drm_hwcomposer am device/maton/pc_x86_64/vendorforks/changesets/drm_hwcomposer-a0a8055.patch
 git -C external/minigbm remote add android-generic https://github.com/android-generic/external_minigbm
 git -C external/minigbm fetch android-generic 14-x86
 git -C external/minigbm switch -c matonos/v1.2 FETCH_HEAD

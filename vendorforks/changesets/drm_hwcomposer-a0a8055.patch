@@ -1,0 +1,716 @@
+From 139968a9db60618007d2e08a15b76ebca899ad6f Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Thu, 24 Sep 2026 23:19:38 +0200
+Subject: [PATCH 1/7] drm_hwcomposer: scan DRM card nodes past gaps
+
+Change-Id: I684304d8f24bca71600fd89c43944bbf0cfd8f7f
+---
+ drm/ResourceManager.cpp | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/drm/ResourceManager.cpp b/drm/ResourceManager.cpp
+index defec12..392f47b 100644
+--- a/drm/ResourceManager.cpp
++++ b/drm/ResourceManager.cpp
+@@ -53,7 +53,7 @@ void ResourceManager::Init() {
+   force_p3_support_ = Properties::ForceP3Support();
+ 
+   // Could be a valid path or it can have at the end of it the wildcard %
+-  // which means that it will try open all devices until an error is met.
++  // which means that it will try to open all matching devices.
+   std::string path_pattern = Properties::GetDevicePath();
+   if (path_pattern.empty()) {
+     path_pattern = "/dev/dri/card%";
+@@ -65,13 +65,17 @@ void ResourceManager::Init() {
+     }
+   } else {
+     path_pattern.resize(path_pattern.size() - 1);
+-    for (int idx = 0;; ++idx) {
++    // Card numbers can have gaps: on PCs the firmware framebuffer (simpledrm)
++    // takes card0 and goes away when the real GPU driver loads as card1+.
++    // Scan a fixed range instead of stopping at the first missing node.
++    constexpr int kMaxCards = 16;
++    for (int idx = 0; idx < kMaxCards; ++idx) {
+       std::ostringstream path;
+       path << path_pattern << idx;
+ 
+       struct stat buf {};
+       if (stat(path.str().c_str(), &buf) != 0)
+-        break;
++        continue;
+ 
+       auto dev = DrmDevice::CreateInstance(path.str(), this, idx);
+       if (dev) {
+-- 
+2.43.0
+
+
+From a0ddb5b57bfe1b6308540179c9aa7d6412210021 Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Sun, 27 Sep 2026 07:39:46 +0200
+Subject: [PATCH 2/7] drm_hwcomposer: copy unsupported client targets to dumb
+ buffers
+
+Change-Id: I77579c5589abcb4dccd3101c867f8aef91e82dab
+---
+ drm/DrmDevice.cpp       | 70 +++++++++++++++++++++++++++++++++++++++++
+ drm/DrmDevice.h         |  4 +++
+ hwc3/ComposerClient.cpp | 21 +++++++++++++
+ 3 files changed, 95 insertions(+)
+
+diff --git a/drm/DrmDevice.cpp b/drm/DrmDevice.cpp
+index 7816e02..d92c5a3 100644
+--- a/drm/DrmDevice.cpp
++++ b/drm/DrmDevice.cpp
+@@ -21,8 +21,10 @@
+ #include <xf86drm.h>
+ #include <xf86drmMode.h>
+ 
++#include <algorithm>
+ #include <cinttypes>
+ #include <cstdint>
++#include <cstring>
+ #include <string>
+ 
+ #include "bufferinfo/BufferInfo.h"
+@@ -473,6 +475,74 @@ done:
+ 
+   return result;
+ }
++
++auto DrmDevice::CopyBufferToDumb(const BufferInfo &source)
++    -> std::optional<BufferInfo> {
++  if (source.width == 0 || source.height == 0 || source.prime_fds[0] < 0 ||
++      (source.modifiers[0] != DRM_FORMAT_MOD_NONE &&
++       source.modifiers[0] != DRM_FORMAT_MOD_INVALID) ||
++      source.pitches[0] < source.width * 4) {
++    return {};
++  }
++
++  // Bochs and similar VRAM-helper KMS drivers accept XRGB8888 dumb buffers,
++  // but cannot import vgem's shmem dma-bufs. Limit the slow copy path to the
++  // common 32-bit client-target formats so ordinary layer imports stay fast.
++  bool swap_red_blue = false;
++  switch (source.format) {
++    case DRM_FORMAT_XRGB8888:
++    case DRM_FORMAT_ARGB8888:
++      break;
++    case DRM_FORMAT_XBGR8888:
++    case DRM_FORMAT_ABGR8888:
++      swap_red_blue = true;
++      break;
++    default:
++      return {};
++  }
++
++  auto target = CreateBufferForModeset(source.width, source.height);
++  if (!target || target->prime_fds[0] < 0 ||
++      target->pitches[0] < source.width * 4) {
++    return {};
++  }
++
++  const size_t source_size = static_cast<size_t>(source.pitches[0]) *
++                             source.height;
++  const size_t target_size = static_cast<size_t>(target->pitches[0]) *
++                             target->height;
++  void *source_map = mmap(nullptr, source_size, PROT_READ, MAP_SHARED,
++                          source.prime_fds[0], 0);
++  if (source_map == MAP_FAILED) {
++    ALOGE("Unable to map client-target dma-buf for software display copy");
++    return {};
++  }
++  void *target_map = mmap(nullptr, target_size, PROT_READ | PROT_WRITE,
++                          MAP_SHARED, target->prime_fds[0], 0);
++  if (target_map == MAP_FAILED) {
++    ALOGE("Unable to map KMS dumb buffer for software display copy");
++    munmap(source_map, source_size);
++    return {};
++  }
++
++  const auto *src = static_cast<const uint8_t *>(source_map);
++  auto *dst = static_cast<uint8_t *>(target_map);
++  const size_t row_bytes = static_cast<size_t>(source.width) * 4;
++  for (uint32_t y = 0; y < source.height; ++y) {
++    const uint8_t *src_row = src + static_cast<size_t>(y) * source.pitches[0];
++    uint8_t *dst_row = dst + static_cast<size_t>(y) * target->pitches[0];
++    std::memcpy(dst_row, src_row, row_bytes);
++    if (swap_red_blue) {
++      for (size_t x = 0; x < row_bytes; x += 4) {
++        std::swap(dst_row[x], dst_row[x + 2]);
++      }
++    }
++  }
++
++  munmap(target_map, target_size);
++  munmap(source_map, source_size);
++  return target;
++}
+ // NOLINTEND(cppcoreguidelines-avoid-goto)
+ 
+ }  // namespace android::drm_hwcomposer
+diff --git a/drm/DrmDevice.h b/drm/DrmDevice.h
+index 5e60a2d..cda0b26 100644
+--- a/drm/DrmDevice.h
++++ b/drm/DrmDevice.h
+@@ -87,6 +87,10 @@ class DrmDevice {
+   auto CreateBufferForModeset(uint32_t width, uint32_t height)
+       -> std::optional<BufferInfo>;
+ 
++  // Copy a client target into a KMS-local dumb buffer when the display driver
++  // cannot import the allocator's dma-buf (for example bochs-drm in QEMU).
++  auto CopyBufferToDumb(const BufferInfo &source) -> std::optional<BufferInfo>;
++
+   auto &GetDefaultFbImporter() {
+     return *drm_fb_importer_;
+   }
+diff --git a/hwc3/ComposerClient.cpp b/hwc3/ComposerClient.cpp
+index 0e5d7d9..a17b7cf 100644
+--- a/hwc3/ComposerClient.cpp
++++ b/hwc3/ComposerClient.cpp
+@@ -39,6 +39,7 @@
+ #include <android/binder_auto_utils.h>
+ #include <android/binder_ibinder_platform.h>
+ #include <cutils/native_handle.h>
++#include <sync/sync.h>
+ #include <ui/GraphicBufferMapper.h>
+ #include <utils/Trace.h>
+ 
+@@ -1710,6 +1711,26 @@ void ComposerClient::ExecuteSetDisplayClientTarget(
+                                            fence),
+                                        command.buffer.slot);
+ 
++  // The client target is the final, already-composited frame. If the display
++  // KMS driver rejects its dma-buf, copy it to a KMS-local dumb buffer. This
++  // is intentionally limited to the client target; normal hardware layer
++  // imports and scanout remain zero-copy.
++  if (buffer && !buffer->fb && buffer->bi.prime_fds[0] >= 0) {
++    const int acquire_fence = buffer->fence ? *buffer->fence : -1;
++    if (acquire_fence < 0 || sync_wait(acquire_fence, 3000) == 0) {
++      auto copied = display->GetPipe().device->CopyBufferToDumb(buffer->bi);
++      if (copied) {
++        auto fb = ImportFb(display, *copied);
++        if (fb) {
++          buffer->bi = std::move(*copied);
++          buffer->fb = std::move(fb);
++        }
++      }
++    } else {
++      ALOGE("Client-target acquire fence did not signal for software copy");
++    }
++  }
++
+   if (!buffer) {
+     ALOGE("Failed to import client target buffer.");
+     /* Here, sending an error would be the natural way to do the thing.
+-- 
+2.43.0
+
+
+From 2ca3f04ede1768d0d7c1b3186a664f49a1739eb9 Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Sun, 27 Sep 2026 11:25:36 +0200
+Subject: [PATCH 3/7] drm_hwcomposer: sync software copy dma-bufs
+
+Change-Id: I91e6c6191f1bd2e17f81f20f07af9c7852bdd0a4
+---
+ drm/DrmDevice.cpp | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/drm/DrmDevice.cpp b/drm/DrmDevice.cpp
+index d92c5a3..4ead116 100644
+--- a/drm/DrmDevice.cpp
++++ b/drm/DrmDevice.cpp
+@@ -17,11 +17,14 @@
+ #include "DrmDevice.h"
+ 
+ #include <drm_fourcc.h>
++#include <linux/dma-buf.h>
++#include <sys/ioctl.h>
+ #include <sys/mman.h>
+ #include <xf86drm.h>
+ #include <xf86drmMode.h>
+ 
+ #include <algorithm>
++#include <cerrno>
+ #include <cinttypes>
+ #include <cstdint>
+ #include <cstring>
+@@ -43,6 +46,13 @@
+ 
+ namespace android::drm_hwcomposer {
+ 
++static bool DmaBufSync(int fd, uint64_t flags) {
++  struct dma_buf_sync sync = {.flags = flags};
++  // Some coherent DRM exporters do not implement the optional sync ioctl.
++  // Their buffers remain CPU-mappable, so keep the copy path usable there.
++  return ioctl(fd, DMA_BUF_IOCTL_SYNC, &sync) == 0;
++}
++
+ DrmDevice::~DrmDevice() = default;
+ 
+ auto DrmDevice::CreateInstance(std::string const &path,
+@@ -511,17 +521,30 @@ auto DrmDevice::CopyBufferToDumb(const BufferInfo &source)
+                              source.height;
+   const size_t target_size = static_cast<size_t>(target->pitches[0]) *
+                              target->height;
++  const bool source_sync =
++      DmaBufSync(source.prime_fds[0], DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ);
+   void *source_map = mmap(nullptr, source_size, PROT_READ, MAP_SHARED,
+                           source.prime_fds[0], 0);
+   if (source_map == MAP_FAILED) {
+     ALOGE("Unable to map client-target dma-buf for software display copy");
++    if (source_sync) {
++      DmaBufSync(source.prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
++    }
+     return {};
+   }
++  const bool target_sync =
++      DmaBufSync(target->prime_fds[0], DMA_BUF_SYNC_START | DMA_BUF_SYNC_WRITE);
+   void *target_map = mmap(nullptr, target_size, PROT_READ | PROT_WRITE,
+                           MAP_SHARED, target->prime_fds[0], 0);
+   if (target_map == MAP_FAILED) {
+     ALOGE("Unable to map KMS dumb buffer for software display copy");
++    if (target_sync) {
++      DmaBufSync(target->prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_WRITE);
++    }
+     munmap(source_map, source_size);
++    if (source_sync) {
++      DmaBufSync(source.prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
++    }
+     return {};
+   }
+ 
+@@ -539,6 +562,12 @@ auto DrmDevice::CopyBufferToDumb(const BufferInfo &source)
+     }
+   }
+ 
++  if (target_sync) {
++    DmaBufSync(target->prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_WRITE);
++  }
++  if (source_sync) {
++    DmaBufSync(source.prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
++  }
+   munmap(target_map, target_size);
+   munmap(source_map, source_size);
+   return target;
+-- 
+2.43.0
+
+
+From c0cefb99589b7d75656134360952c5d8ce6f6ce8 Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Sun, 27 Sep 2026 12:44:34 +0200
+Subject: [PATCH 4/7] drm_hwcomposer: retain KMS mapping for software copy
+
+Change-Id: Ifca9b0269a7b4eefe1cfc28d369f85c086aec72d
+---
+ drm/DrmDevice.cpp | 35 +++++++++++++++++++++--------------
+ 1 file changed, 21 insertions(+), 14 deletions(-)
+
+diff --git a/drm/DrmDevice.cpp b/drm/DrmDevice.cpp
+index 4ead116..064baaf 100644
+--- a/drm/DrmDevice.cpp
++++ b/drm/DrmDevice.cpp
+@@ -400,7 +400,15 @@ auto DrmDevice::GetEncoders()
+ 
+ class DumbBufferFd : public PrimeFdsSharedBase {
+  public:
++  ~DumbBufferFd() override {
++    if (mapping != MAP_FAILED) {
++      munmap(mapping, mapping_size);
++    }
++  }
++
+   SharedFd fd;
++  void *mapping = MAP_FAILED;
++  size_t mapping_size = 0;
+ };
+ 
+ // NOLINTBEGIN(cppcoreguidelines-avoid-goto)
+@@ -461,9 +469,11 @@ auto DrmDevice::CreateBufferForModeset(uint32_t width, uint32_t height)
+ 
+   memset(ptr, 0, create.size);
+ 
+-  if (munmap(ptr, create.size) != 0) {
+-    ALOGE("Failed to unmap dumb buffer: %d", errno);
+-  }
++  // Keep the KMS-fd mapping alive with the shared dumb BO. Some VRAM-backed
++  // drivers cannot mmap the exported dma-buf, even though MODE_MAP_DUMB works.
++  dumb_buffer_fd->mapping = ptr;
++  dumb_buffer_fd->mapping_size = create.size;
++  ptr = MAP_FAILED;
+ 
+   ret = drmPrimeHandleToFD(*fd_, create.handle, 0, &buffer_info.prime_fds[0]);
+   if (ret != 0) {
+@@ -532,24 +542,22 @@ auto DrmDevice::CopyBufferToDumb(const BufferInfo &source)
+     }
+     return {};
+   }
+-  const bool target_sync =
+-      DmaBufSync(target->prime_fds[0], DMA_BUF_SYNC_START | DMA_BUF_SYNC_WRITE);
+-  void *target_map = mmap(nullptr, target_size, PROT_READ | PROT_WRITE,
+-                          MAP_SHARED, target->prime_fds[0], 0);
+-  if (target_map == MAP_FAILED) {
+-    ALOGE("Unable to map KMS dumb buffer for software display copy");
+-    if (target_sync) {
+-      DmaBufSync(target->prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_WRITE);
+-    }
++
++  auto dumb_buffer = std::dynamic_pointer_cast<DumbBufferFd>(target->fds_shared);
++  if (!dumb_buffer || dumb_buffer->mapping == MAP_FAILED ||
++      dumb_buffer->mapping_size < target_size) {
++    ALOGE("KMS dumb buffer has no valid MODE_MAP_DUMB mapping");
+     munmap(source_map, source_size);
+     if (source_sync) {
+       DmaBufSync(source.prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
+     }
+     return {};
+   }
++  const bool target_sync =
++      DmaBufSync(target->prime_fds[0], DMA_BUF_SYNC_START | DMA_BUF_SYNC_WRITE);
+ 
+   const auto *src = static_cast<const uint8_t *>(source_map);
+-  auto *dst = static_cast<uint8_t *>(target_map);
++  auto *dst = static_cast<uint8_t *>(dumb_buffer->mapping);
+   const size_t row_bytes = static_cast<size_t>(source.width) * 4;
+   for (uint32_t y = 0; y < source.height; ++y) {
+     const uint8_t *src_row = src + static_cast<size_t>(y) * source.pitches[0];
+@@ -568,7 +576,6 @@ auto DrmDevice::CopyBufferToDumb(const BufferInfo &source)
+   if (source_sync) {
+     DmaBufSync(source.prime_fds[0], DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
+   }
+-  munmap(target_map, target_size);
+   munmap(source_map, source_size);
+   return target;
+ }
+-- 
+2.43.0
+
+
+From 0e6fe0670630fba69ebbd07ae3c819c294c824fb Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Sun, 27 Sep 2026 15:06:41 +0200
+Subject: [PATCH 5/7] drm_hwcomposer: no RTTI - replace dynamic_pointer_cast
+ with IsDumbBuffer() check
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Change-Id: If5107c3533ea1e5a460b1314312a09425763302f
+---
+ bufferinfo/BufferInfo.h | 2 ++
+ drm/DrmDevice.cpp       | 6 +++++-
+ 2 files changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/bufferinfo/BufferInfo.h b/bufferinfo/BufferInfo.h
+index 29c40a3..db45828 100644
+--- a/bufferinfo/BufferInfo.h
++++ b/bufferinfo/BufferInfo.h
+@@ -46,6 +46,8 @@ enum class BufferBlendMode : int32_t {
+ class PrimeFdsSharedBase {
+  public:
+   virtual ~PrimeFdsSharedBase() = default;
++  // AOSP builds without RTTI: a type check instead of dynamic_pointer_cast.
++  virtual bool IsDumbBuffer() const { return false; }
+ };
+ 
+ struct BufferInfo {
+diff --git a/drm/DrmDevice.cpp b/drm/DrmDevice.cpp
+index 064baaf..0530970 100644
+--- a/drm/DrmDevice.cpp
++++ b/drm/DrmDevice.cpp
+@@ -406,6 +406,8 @@ class DumbBufferFd : public PrimeFdsSharedBase {
+     }
+   }
+ 
++  bool IsDumbBuffer() const override { return true; }
++
+   SharedFd fd;
+   void *mapping = MAP_FAILED;
+   size_t mapping_size = 0;
+@@ -543,7 +545,9 @@ auto DrmDevice::CopyBufferToDumb(const BufferInfo &source)
+     return {};
+   }
+ 
+-  auto dumb_buffer = std::dynamic_pointer_cast<DumbBufferFd>(target->fds_shared);
++  auto dumb_buffer = target->fds_shared && target->fds_shared->IsDumbBuffer()
++                         ? std::static_pointer_cast<DumbBufferFd>(target->fds_shared)
++                         : nullptr;
+   if (!dumb_buffer || dumb_buffer->mapping == MAP_FAILED ||
+       dumb_buffer->mapping_size < target_size) {
+     ALOGE("KMS dumb buffer has no valid MODE_MAP_DUMB mapping");
+-- 
+2.43.0
+
+
+From 2d61fa689318e346be30ead9cc2ea5500076ed9d Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Tue, 29 Sep 2026 00:42:26 +0200
+Subject: [PATCH 6/7] drm_hwcomposer: include errno where used
+
+Change-Id: Ib6df718790b683401332bba508b6f75f3824deeb
+---
+ drm/DrmAtomicStateManager.cpp      | 1 +
+ drm/DrmFbImporter.cpp              | 1 +
+ hwc3/service.cpp                   | 1 +
+ utils/SysfsBacklightController.cpp | 1 +
+ 4 files changed, 4 insertions(+)
+
+diff --git a/drm/DrmAtomicStateManager.cpp b/drm/DrmAtomicStateManager.cpp
+index 99d646f..5f862fa 100644
+--- a/drm/DrmAtomicStateManager.cpp
++++ b/drm/DrmAtomicStateManager.cpp
+@@ -26,6 +26,7 @@
+ 
+ #include <algorithm>
+ #include <cassert>
++#include <cerrno>
+ 
+ #include "compositor/LayerData.h"
+ #include "compositor/LayerToPlaneJoiningPlan.h"
+diff --git a/drm/DrmFbImporter.cpp b/drm/DrmFbImporter.cpp
+index d8f5e1b..f6aa2c0 100644
+--- a/drm/DrmFbImporter.cpp
++++ b/drm/DrmFbImporter.cpp
+@@ -25,6 +25,7 @@
+ #include <xf86drm.h>
+ #include <xf86drmMode.h>
+ 
++#include <cerrno>
+ #include <cinttypes>
+ #include <system_error>
+ 
+diff --git a/hwc3/service.cpp b/hwc3/service.cpp
+index 7d2eb43..5652932 100644
+--- a/hwc3/service.cpp
++++ b/hwc3/service.cpp
+@@ -18,6 +18,7 @@
+ 
+ #include <android/binder_manager.h>
+ #include <android/binder_process.h>
++#include <cerrno>
+ #include <sched.h>
+ 
+ #include "hwc3/Composer.h"
+diff --git a/utils/SysfsBacklightController.cpp b/utils/SysfsBacklightController.cpp
+index 4135785..4ffe083 100644
+--- a/utils/SysfsBacklightController.cpp
++++ b/utils/SysfsBacklightController.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include "SysfsBacklightController.h"
+ 
++#include <cerrno>
+ #include <limits>
+ #include <linux/fb.h>
+ #include <set>
+-- 
+2.43.0
+
+
+From a0a805598b127214877e8acc493dadf3ca4748ff Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Wed, 30 Sep 2026 21:13:48 +0200
+Subject: [PATCH 7/7] drm_hwcomposer: negotiate a scan-out-able client target
+ format
+
+SurfaceFlinger always composites the client target as RGBA_8888
+(DRM_FORMAT_ABGR8888). Drivers that advertise neither ABGR8888 nor
+XBGR8888 on their planes reject it, which previously forced the whole
+client target through the copy-to-dumb-buffer fallback.
+
+Emit a composer3 client target property during validate so SurfaceFlinger
+renders the client target in a format the display can scan out:
+prefer RGBX_8888 (XBGR8888, same bytes as RGBA with alpha ignored), then
+BGRA_8888 (ARGB8888), then RGB_565. Nothing is emitted when the default
+is supported, so GPU-backed displays are unaffected; where no mapped
+alternative exists (e.g. bochs, XRGB8888/BGRX8888 only) the existing
+dumb-buffer copy still applies.
+
+Change-Id: I7336fc9ed20c865d336a7dc3ad887c77d36e41e9
+---
+ hwc/HwcDisplay.cpp         | 61 ++++++++++++++++++++++++++++++++++++++
+ hwc/HwcDisplay.h           | 10 +++++++
+ hwc3/CommandResultWriter.h | 22 ++++++++++++++
+ hwc3/ComposerClient.cpp    | 11 +++++++
+ 4 files changed, 104 insertions(+)
+
+diff --git a/hwc/HwcDisplay.cpp b/hwc/HwcDisplay.cpp
+index 7f3b7ee..f757533 100644
+--- a/hwc/HwcDisplay.cpp
++++ b/hwc/HwcDisplay.cpp
+@@ -27,6 +27,7 @@
+ #include <utils/Trace.h>
+ 
+ #include "backend/BackendManager.h"
++#include "bufferinfo/BufferInfoGetter.h"
+ #include "compositor/CompositionPlanner.h"
+ #include "compositor/DisplayInfo.h"
+ #include "compositor/FlatteningController.h"
+@@ -39,6 +40,7 @@
+ #include "drm/DrmDisplayPipeline.h"
+ #include "drm/DrmFbImporter.h"
+ #include "drm/DrmHwc.h"
++#include "drm/DrmPlane.h"
+ #include "drm/VSyncWorker.h"
+ #include "hwc/HwcLayer.h"
+ #include "stats/DisplayConfigurationResultReporter.h"
+@@ -1263,6 +1265,65 @@ std::shared_ptr<BindingOwner<DrmPlane>> HwcDisplay::GetCursorPlane() const {
+   return pipeline_->GetUsablePlanes().second;
+ }
+ 
++bool HwcDisplay::IsClientTargetFormatSupported(uint32_t drm_format) const {
++  if (!pipeline_) {
++    return false;
++  }
++
++  if (pipeline_->primary_plane &&
++      pipeline_->primary_plane->Get()->IsFormatSupported(drm_format)) {
++    return true;
++  }
++
++  if (!Properties::UseOverlayPlanes() || !pipeline_->crtc) {
++    return false;
++  }
++
++  for (const auto &plane : pipeline_->device->GetPlanes()) {
++    if (plane->GetType() == DRM_PLANE_TYPE_OVERLAY &&
++        plane->IsCrtcSupported(*pipeline_->crtc->Get()) &&
++        plane->IsFormatSupported(drm_format)) {
++      return true;
++    }
++  }
++
++  return false;
++}
++
++std::optional<uint32_t> HwcDisplay::GetClientTargetFallbackFormat() const {
++  if (!pipeline_ || !pipeline_->primary_plane) {
++    return std::nullopt;
++  }
++
++  // SurfaceFlinger's default client target format. If the display can scan it
++  // out, leave SurfaceFlinger's choice untouched by not emitting a client
++  // target property at all.
++  if (IsClientTargetFormatSupported(DRM_FORMAT_ABGR8888)) {
++    return std::nullopt;
++  }
++
++  // Alternatives in preference order. RGBX_8888 has the same byte layout as
++  // RGBA_8888 (only the alpha byte is interpreted differently) so it changes
++  // nothing visually; RGB_565 is a last resort that keeps the display working
++  // at reduced color depth.
++  static constexpr uint32_t kFallbackHalFormats[] = {
++      HAL_PIXEL_FORMAT_RGBX_8888,
++      HAL_PIXEL_FORMAT_BGRA_8888,
++      HAL_PIXEL_FORMAT_RGB_565,
++  };
++
++  for (uint32_t hal_format : kFallbackHalFormats) {
++    uint32_t drm_format =
++        LegacyBufferInfoGetter::ConvertHalFormatToDrm(hal_format);
++    if (drm_format != DRM_FORMAT_INVALID &&
++        IsClientTargetFormatSupported(drm_format)) {
++      return hal_format;
++    }
++  }
++
++  return std::nullopt;
++}
++
+ bool HwcDisplay::CtmByGpu() const {
+   if (color_transform_is_identity_)
+     return false;
+diff --git a/hwc/HwcDisplay.h b/hwc/HwcDisplay.h
+index efbeb49..0ad7ba1 100644
+--- a/hwc/HwcDisplay.h
++++ b/hwc/HwcDisplay.h
+@@ -237,6 +237,12 @@ class HwcDisplay : public ICompositorDisplay {
+ 
+   bool ForcedScalingWithGpu() const override;
+ 
++  // Returns the HAL pixel format SurfaceFlinger should use for the client
++  // target buffer when its default (RGBA_8888) cannot be scanned out by this
++  // display's planes. std::nullopt means the default is usable (or no better
++  // alternative is supported), so SurfaceFlinger's choice is left untouched.
++  std::optional<uint32_t> GetClientTargetFallbackFormat() const;
++
+   const std::map<CompositionAttributes, CompositionStats> &comp_stats() const {
+     return comp_stats_;
+   }
+@@ -337,6 +343,10 @@ class HwcDisplay : public ICompositorDisplay {
+ 
+   bool Init();
+ 
++  // Returns whether any plane that could be used to scan out a client target
++  // supports the given DRM format.
++  bool IsClientTargetFormatSupported(uint32_t drm_format) const;
++
+   void SetHdrOutputMetadata(ui::Hdr hdrType);
+   void SetOutputType(OutputType hdr_output_type);
+ 
+diff --git a/hwc3/CommandResultWriter.h b/hwc3/CommandResultWriter.h
+index 43999c4..e138e90 100644
+--- a/hwc3/CommandResultWriter.h
++++ b/hwc3/CommandResultWriter.h
+@@ -17,8 +17,12 @@
+ #include <unordered_map>
+ #include <vector>
+ 
++#include <aidl/android/hardware/graphics/common/Dataspace.h>
++#include <aidl/android/hardware/graphics/common/PixelFormat.h>
++#include <aidl/android/hardware/graphics/composer3/ClientTargetPropertyWithBrightness.h>
+ #include <aidl/android/hardware/graphics/composer3/CommandError.h>
+ #include <aidl/android/hardware/graphics/composer3/CommandResultPayload.h>
++#include <aidl/android/hardware/graphics/composer3/DimmingStage.h>
+ #include <aidl/android/hardware/graphics/composer3/PresentFence.h>
+ #include <aidl/android/hardware/graphics/composer3/PresentOrValidate.h>
+ #include <aidl/android/hardware/graphics/composer3/ReleaseFences.h>
+@@ -136,6 +140,24 @@ class CommandResultWriter {
+     results_->emplace_back(pov_command);
+   }
+ 
++  // Tells SurfaceFlinger which pixel format and dataspace it should use for
++  // the client target buffer of |display_handle|. Emitting this lets the
++  // client target be scanned out zero-copy when the display's planes reject
++  // SurfaceFlinger's default format (RGBA_8888).
++  void AddClientTargetProperty(int64_t display_handle,
++                               common::PixelFormat pixel_format,
++                               common::Dataspace dataspace, float brightness,
++                               DimmingStage dimming_stage) {
++    ClientTargetPropertyWithBrightness property;
++    property.display = display_handle;
++    property.clientTargetProperty.pixelFormat = pixel_format;
++    property.clientTargetProperty.dataspace = dataspace;
++    property.brightness = brightness;
++    property.dimmingStage = dimming_stage;
++
++    results_->emplace_back(std::move(property));
++  }
++
+  private:
+   size_t index_{0};
+   bool has_error_{false};
+diff --git a/hwc3/ComposerClient.cpp b/hwc3/ComposerClient.cpp
+index a17b7cf..40c4c14 100644
+--- a/hwc3/ComposerClient.cpp
++++ b/hwc3/ComposerClient.cpp
+@@ -798,6 +798,17 @@ void ComposerClient::ExecuteDisplayCommand(const DisplayCommand& command) {
+                                             composition_type));
+     }
+     cmd_result_writer_->AddChanges(changes);
++
++    // If SurfaceFlinger's default client target format (RGBA_8888) cannot be
++    // scanned out by this display's planes, ask it to render into a format
++    // that can. Getting this right keeps the client target zero-copy instead
++    // of falling back to the dumb-buffer copy in ExecuteSetDisplayClientTarget.
++    if (auto client_target_format =
++            display->GetClientTargetFallbackFormat()) {
++      cmd_result_writer_->AddClientTargetProperty(
++          display_handle, static_cast<AidlPixelFormat>(*client_target_format),
++          common::Dataspace::SRGB, /*brightness=*/1.0f, DimmingStage::NONE);
++    }
+     auto hwc3_display = DrmHwcThree::GetHwc3Display(*display);
+     hwc_->ClearMustValidateDisplay(display_handle);
+     hwc3_display->desired_present_time = AidlToPresentTimeNs(
+-- 
+2.43.0
+

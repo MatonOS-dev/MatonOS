@@ -8,7 +8,7 @@ check them out in place of the stock projects.
 | Path | Repository | Based on | What we change |
 | --- | --- | --- | --- |
 | `external/minigbm` | [android_external_minigbm](https://github.com/MatonOS-dev/android_external_minigbm) | fork of android-generic `14-x86` | Mesa GBM allocator/mapper, vgem software rendering, dma-heap buffers, llvmpipe tile padding |
-| `external/drm_hwcomposer` | [android_external_drm_hwcomposer](https://github.com/MatonOS-dev/android_external_drm_hwcomposer) | AOSP | DRM node scan, software copy to dumb buffers, no-RTTI, errno include |
+| `external/drm_hwcomposer` | [android_external_drm_hwcomposer](https://github.com/MatonOS-dev/android_external_drm_hwcomposer) | AOSP | DRM node scan, software copy to dumb buffers, client-target format negotiation, no-RTTI, errno include |
 | `hardware/baylibre/audio` | [android_hardware_baylibre_audio](https://github.com/MatonOS-dev/android_hardware_baylibre_audio) | fork of BayLibre `main` | AIDL IModule/StreamDescriptor V4 compatibility |
 | `external/libdrm` | [android_external_libdrm](https://github.com/MatonOS-dev/android_external_libdrm) | AOSP | 2.4.134 for wlroots |
 | `external/libxkbcommon` | [android_external_libxkbcommon](https://github.com/MatonOS-dev/android_external_libxkbcommon) | AOSP | 1.8.0 for wlroots |
@@ -71,12 +71,13 @@ The Android module names and the existing module definitions remain in place.
   used by minigbm's Linux host build. The one-line fix is committed on its
   existing `matonos/v1.2` branch on base
   `058236dee66a474f1e87fe9e395531a2bda21718` and exported under
-  `forks/external/minigbm/`.
+  `vendorforks/changesets/minigbm-ad5e09a.patch`.
 - `external/drm_hwcomposer`: added direct `<cerrno>` includes in the four
   translation units that use `errno`, so they do not depend on libdrm's former
   transitive include. This compatibility commit is on the existing
-  `matonos/v1.2` branch on base `0e6fe0670630fba69ebbd07ae3c819c294c824fb`
-  and exported under `forks/external/drm_hwcomposer/`.
+  `matonos/v1.2` branch (tip `a0a805598b127214877e8acc493dadf3ca4748ff`)
+  and exported with the rest of the branch under
+  `vendorforks/changesets/drm_hwcomposer-a0a8055.patch`.
 - `external/libxkbcommon`: added the three new core source files from 1.8.0
   (`keysym-case-mappings.c`, `scanner-utils.c`, and `utils-paths.c`) to the
   existing `libxkbcommon` source list. Regenerated AOSP's checked-in Bison
@@ -128,4 +129,4 @@ Repeat on the Surface Pro 3 to check the no-RX-6600 fallback still boots. Keep
 the machines' existing disks untouched and capture the boot log if a graphics
 check fails.
 Each local branch's base-to-branch commits are exported as numbered patches in
-the matching `forks/external/<project>/` directory.
+the matching `vendorforks/changesets/<project>-<tip-short-hash>.patch`.
