@@ -73,13 +73,12 @@ if [ -n "$primary" ]; then
             # virtio-gpu (0x1050); Mesa's venus needs host Vulkan (QEMU venus=on)
             [ "$device" = "0x1050" ] && vk=virtio ;;
     esac
-    setprop vendor.pc.gpu "$vendor:$device"
+    setprop vendor.maton.graphics.gpu "$vendor:$device"
 fi
 
-# Wait at most 1.5 seconds for a known GPU's expected render node. The wait
-# is only a startup grace period; if node creation is slower, still keep the
-# hardware path and let Android's normal driver startup continue. A recognized
-# GPU driver that is staged/configured is never replaced with vgem.
+# Wait at most 1.5 seconds for the expected render node. A missing node after
+# this grace period means the configured driver did not start; use vgem so EGL
+# still has a render node and SurfaceFlinger can boot.
 attempt=0
 while [ -n "$supported_drivers" ] && [ "$attempt" -lt 15 ] &&
       ! has_render_node "$supported_drivers"; do
@@ -87,19 +86,33 @@ while [ -n "$supported_drivers" ] && [ "$attempt" -lt 15 ] &&
     attempt=$((attempt + 1))
 done
 
-if [ -z "$supported_drivers" ]; then
-    # Do not override a render node from another supported adapter.
-    if ! has_render_node "i915 xe amdgpu radeon nouveau virtio_gpu vmwgfx"; then
-        # vgem is a shmem-backed DRM render node. Mesa's kms_swrast/llvmpipe
-        # renders into its buffers; drm_hwcomposer sends frames to real KMS.
-        # Mesa reads this vendor-owned option to select software rendering.
-        setprop vendor.mesa.libgl.always.software true
-        if [ -x /vendor/bin/modprobe ]; then
-            /vendor/bin/modprobe -d /vendor/lib/modules vgem >/dev/null 2>&1 || :
+# A GPU-specific Vulkan HAL cannot create a device without its kernel render
+# node. Match the software EGL fallback in that case.
+if [ -n "$supported_drivers" ] && ! has_render_node "$supported_drivers"; then
+    vk=swrast
+fi
+
+if { [ -z "$supported_drivers" ] || ! has_render_node "$supported_drivers"; } &&
+   ! has_render_node "vgem"; then
+    # vgem is a shmem-backed DRM render node. Mesa's kms_swrast/llvmpipe
+    # renders into its buffers; drm_hwcomposer sends frames to real KMS.
+    setprop vendor.maton.graphics.software true
+    if [ -x /vendor/bin/modprobe ]; then
+        if [ -x /vendor/bin/timeout ]; then
+            /vendor/bin/timeout 3 /vendor/bin/modprobe -d /vendor/lib/modules vgem >/dev/null 2>&1 || :
+        else
+            /vendor/bin/modprobe -d /vendor/lib/modules vgem >/dev/null 2>&1 &
+            modprobe_pid=$!
+            attempt=0
+            while kill -0 "$modprobe_pid" 2>/dev/null && [ "$attempt" -lt 30 ]; do
+                sleep 0.1
+                attempt=$((attempt + 1))
+            done
+            kill "$modprobe_pid" 2>/dev/null || :
         fi
     fi
 fi
 
 # No hardware Vulkan driver for this GPU (old Intel, VMware, unknown): swrast
 # is Mesa's LLVM software Vulkan implementation.
-setprop ro.hardware.vulkan "${vk:-swrast}"
+setprop vendor.maton.graphics.vulkan "${vk:-swrast}"

@@ -1,6 +1,10 @@
 # Graphics setup for pc_x86_64 (installed to /vendor/etc/init/).
 
 on early-init
-    # Choose the Vulkan HAL from the primary GPU's PCI IDs before anything
-    # graphics-related starts (ro.hardware.vulkan can only be set once).
-    exec -- /vendor/bin/pc-gpu-detect.sh
+    # Detection/modprobe are bounded; run in the background so boot proceeds.
+    exec_background -- /vendor/bin/pc-gpu-detect.sh
+
+# Only init may set ro.hardware.*. The detector publishes the selected HAL
+# through the vendor property namespace, then this trigger commits the choice.
+on property:vendor.maton.graphics.vulkan=*
+    setprop ro.hardware.vulkan ${vendor.maton.graphics.vulkan}

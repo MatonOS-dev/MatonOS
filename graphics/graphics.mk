@@ -7,6 +7,10 @@
 PC_GRAPHICS_PATH := device/maton/pc_x86_64/graphics
 PC_MESA_PREBUILT := device/maton/pc_x86_64/prebuilt/mesa
 
+ifeq ($(wildcard $(PC_MESA_PREBUILT)/lib64),)
+$(error Mesa prebuilts missing at $(PC_MESA_PREBUILT); run tools/build-mesa.sh)
+endif
+
 # ---------------------------------------------------------------- HALs
 PRODUCT_PACKAGES += \
     android.hardware.graphics.allocator-service.minigbm \

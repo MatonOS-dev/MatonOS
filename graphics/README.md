@@ -32,6 +32,22 @@ No graphics configuration change was made because this run provides no
 failure to fix. The windowed GTK path remains unverified: agent VMs are
 forced to `egl-headless` by the VM rule.
 
+## GPU detection and fallback
+
+At early-init, init starts `pc-gpu-detect.sh` in the background. The bounded
+detector chooses the Vulkan HAL from the primary display PCI ID and writes
+`vendor.maton.graphics.vulkan`; an init property trigger sets
+`ro.hardware.vulkan`, which the loader uses. It waits up to 1.5 seconds for
+the selected kernel driver, then attempts a three-second vgem load and enables
+Mesa software rendering if no expected render node appears. Detection errors
+leave Android's boot path free to continue; the software Vulkan HAL is the
+default when no GPU-specific Vulkan driver is selected.
+
+The vgem/llvmpipe no-GPU path has not been verified on physical hardware. Its
+DMA-BUF import and scanout behavior depends on the active KMS driver; keep
+the boot fallback report and test checklist below current as that path is
+validated.
+
 ## Real hardware checks
 
 1. Boot on a PC with an Intel, AMD or NVIDIA GPU and confirm Android reaches
