@@ -30,4 +30,10 @@
          press is the sleep daemon's; a long press stays the power menu. -->
     <bool name="config_useAutoSuspend">false</bool>
     <integer name="config_shortPressOnPowerBehavior">0</integer>
+    <!-- sleep: PowerManager clamps even WindowManager's 10-second keyguard
+         override to this minimum. Sleepd alone handles idle suspend. -->
+    <integer name="config_minimumScreenOffTimeout">2147483647</integer>
+    <!-- sleep: A live session starts without an unsecured keyguard. A user-set
+         credential still enables the normal secure lock screen on installs. -->
+    <bool name="config_disableLockscreenByDefault">true</bool>
 </resources>

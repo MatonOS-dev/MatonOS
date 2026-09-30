@@ -1,5 +1,44 @@
 # Sleep bridge
 
+## Display timeout ownership
+
+`matonos-sleepd` watches input devices and alone decides idle, power-button,
+and lid-close suspend by writing `mem` to `/sys/power/state`. Its idle setting
+is `persist.vendor.maton.sleep_idle_s` (900 seconds by default, 0 disables
+idle suspend). The existing framework overlay disables Android autosuspend
+and ignores a short power-button press; SettingsProvider seeds
+`screen_off_timeout` to 2147483647 ms. Those two settings did not prevent
+PowerManager from accepting SystemUI's keyguard window
+`userActivityTimeout=10000` as a shorter display-off timer.
+
+The framework overlay now sets `config_minimumScreenOffTimeout` to the maximum
+resource integer. PowerManager clamps the keyguard window override and user
+screen-off settings to that minimum, leaving the display awake across normal
+idle periods. `config_disableLockscreenByDefault` prevents the unsecured
+keyguard from appearing in a fresh live session. It also leaves an unsecured
+installed session unlocked; Android's `LockPatternUtils` checks whether the
+user has a credential first, so a PIN, pattern, or password still enables the
+normal secure lock screen on an installed system. These defaults apply on new
+boots; existing user data may retain a prior lock-screen preference.
+
+The resource integer is finite (about 24.8 days). A continuously awake PC
+with no input for longer than that still needs a future policy solution that
+does not involve an AOSP patch. No framework patch or new SELinux policy is
+used here.
+
+On the fresh 2026-09-30 image, a headless QEMU boot on port 5568 confirmed
+`ro.boot.matonos.live=1`, `locksettings get-disabled=true`, and
+`mMinimumScreenOffTimeoutConfig=2147483647`. With sleepd idle disabled, no
+input for five minutes left PowerManager at `Awake` and the display at `ON`;
+the log had no `Going to sleep due to timeout` entry. I then set sleepd's idle
+property to 15 seconds and sent a QEMU keyboard event. After its idle timer
+fired, logcat recorded `matonos-sleepd: suspending (idle)`; a second QEMU
+keyboard event produced
+`matonos-sleepd: resumed`. This exercises the daemon's suspend and wake path
+in QEMU, not physical-PC suspend hardware. Evidence is in
+`out/pc-logs/sleep-idle/idle-monitor.txt`, `timeout-lines.txt`, and
+`sleepd-idle-path.txt`.
+
 The system bridge polls the stock PowerManager service every two seconds from
 its own handler thread. It uses the bridge's platform privilege and `DUMP`
 permission to read PowerManager's live `Wake Locks` section, counts active
@@ -49,6 +88,20 @@ parse failure and shared sepolicy failure are resolved in the later successful
 coordinated build and are no longer blockers for this test.
 
 ## Fresh-boot checks
+
+For the display timeout change, boot a fresh live image and confirm
+`getprop ro.boot.matonos.live` is `1`. Check `dumpsys power` for
+`mMinimumScreenOffTimeoutConfig=2147483647`, and use
+`locksettings get-disabled` to verify the default lock screen is disabled.
+Set `persist.vendor.maton.sleep_idle_s` to `0`, clear logcat, and leave the
+VM untouched for five minutes. The display should stay on and logcat should
+contain no `Going to sleep due to timeout`. Then set sleepd's idle interval
+to 15 seconds; it should log `suspending (idle)` or a wake-state deferral,
+depending on Android's current blockers. On an installed system, set a PIN
+and check that the normal secure lock screen appears after an explicit lock
+action, while idle display off remains under sleepd's control. Repeat on
+the Ryzen, Surface Pro 3, and HP ProDesk with the real keyboard/mouse and
+power button; confirm wake input still reaches the desktop.
 
 1. Boot a freshly built image. Set `persist.vendor.maton.sleep_idle_s` to `0`
    during setup, then choose a short positive timeout for the test.
