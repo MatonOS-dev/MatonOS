@@ -995,6 +995,18 @@ Each entry: what, why no non-patch way, what it would need.
 
 ## Decisions
 
+- **Release images (user, 2026-09-30)**: releases ship the GPT live disk as
+  `.img.xz` (works written to USB and as a VM disk), published as GitHub
+  pre-releases on MatonOS-dev/MatonOS (fallback: han-mc-server). Future: a
+  hybrid ISO that boots when written to USB or attached as a disk (no CD
+  boot). Real optical/CD boot is not planned: Android's first-stage init
+  resets /dev and loses a loop-mounted super, and fixing that would mean an
+  AOSP init fork (tools/README.md records the blocker).
+- **Flatpak ships as NDK prebuilts for now (user, 2026-09-30)**: the tested
+  bionic Flatpak bundle (flatpak, gpg, libraries, ~26 MB) goes into
+  system_ext as prebuilts so linuxd/Software Center can install apps; the
+  Soong port replaces it later.
+
 - **Forks, not patch series (user, 2026-09-29, long-term goal)**: every
   change to someone else's code lives in a real repository fork in the
   MatonOS-dev GitHub org (branch `matonos/v1.2`), pulled in by
