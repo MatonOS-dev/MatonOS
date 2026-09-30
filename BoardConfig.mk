@@ -10,7 +10,11 @@ DEVICE_PATH := device/maton/pc_x86_64
 
 # ---------------------------------------------------------------- arch
 TARGET_ARCH := x86_64
-TARGET_ARCH_VARIANT := x86_64
+# x86_64-v2 baseline (user, 2026-09-30): SSE3/SSSE3/SSE4.1/SSE4.2/POPCNT
+# (2009+). Soong maps the x86_64 arch variant "sandybridge" to -march=corei7,
+# which is exactly x86-64-v2. Out-of-tree builds add -march=x86-64-v2
+# directly (see tools/build-mesa.sh, build-native.sh, build-pipewire.sh).
+TARGET_ARCH_VARIANT := sandybridge
 TARGET_CPU_ABI := x86_64
 TARGET_CPU_VARIANT := generic
 # 64-bit only userspace (see pc_x86_64.mk: core_64_bit_only.mk)

@@ -228,7 +228,7 @@ ar = '$TOOLCHAIN/bin/llvm-ar'
 strip = '$TOOLCHAIN/bin/llvm-strip'
 pkg-config = 'pkg-config'
 # NVK (nouveau Vulkan) is Rust: rustup's x86_64-linux-android std, NDK linker.
-rust = ['$HOME/.cargo/bin/rustc', '--target', 'x86_64-linux-android', '-C', 'linker=$TOOLCHAIN/bin/x86_64-linux-android$API-clang']
+rust = ['$HOME/.cargo/bin/rustc', '--target', 'x86_64-linux-android', '-C', 'target-cpu=x86-64-v2', '-C', 'linker=$TOOLCHAIN/bin/x86_64-linux-android$API-clang']
 bindgen = '$HOME/.cargo/bin/bindgen'
 llvm-config = '$DEVICE_DIR/tools/llvm-config-android.sh'
 
@@ -239,6 +239,8 @@ bindgen_clang_arguments = ['--target=x86_64-linux-android$API', '--sysroot=$TOOL
 pkg_config_libdir = ['$PKGCONFIG_DIR']
 
 [built-in options]
+c_args = ['-march=x86-64-v2']
+cpp_args = ['-march=x86-64-v2']
 cpp_link_args = ['-static-libstdc++']
 
 [host_machine]

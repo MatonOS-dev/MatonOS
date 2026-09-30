@@ -125,10 +125,14 @@ endian = 'little'
 
 [properties]
 needs_exe_wrapper = true
+
+[built-in options]
+c_args = ['-march=x86-64-v2']
+cpp_args = ['-march=x86-64-v2']
 EOF
 export CC CXX AR STRIP
-export CFLAGS="-O2 -fPIC -D_FILE_OFFSET_BITS=64 -I$DEVICE_DIR/audio/compat/include"
-export CXXFLAGS="-O2 -fPIC -D_FILE_OFFSET_BITS=64"
+export CFLAGS="-O2 -march=x86-64-v2 -fPIC -D_FILE_OFFSET_BITS=64 -I$DEVICE_DIR/audio/compat/include"
+export CXXFLAGS="-O2 -march=x86-64-v2 -fPIC -D_FILE_OFFSET_BITS=64"
 export LDFLAGS="-Wl,-z,relro -Wl,-z,now"
 export PKG_CONFIG_PATH="$DEST/vendor/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
