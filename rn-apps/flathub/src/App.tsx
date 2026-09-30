@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Image as ComposeImage, Button, Column, Host, LazyColumn, LazyRow, OutlinedTextField, Row, Text } from "@expo/ui/jetpack-compose";
+import { FlatList } from "react-native";
+import { Image as ComposeImage, Button, Column, Host, LazyColumn, OutlinedTextField, Row, Text } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { background, clickable, fillMaxSize, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import { getAppById, getAppDetails, getCollection, searchApps, type StoreApp } from "./FlathubApi";
@@ -30,11 +31,11 @@ function ProgressLine({ progress }: { progress: string }) {
 
 function Screenshots({ app }: { app: StoreApp }) {
   if (app.screenshots.length === 0) return null;
-  const tiles = screenshotTiles(app);
   return (
     <>
       <Text style={{ typography: "titleMedium" }}>Screenshots</Text>
-      <LazyRow horizontalArrangement={{ spacedBy: 10 }} verticalAlignment="center">{tiles}</LazyRow>
+      <FlatList horizontal data={app.screenshots} keyExtractor={(_, index) => `${app.id}-${index}`}
+        renderItem={({ item: src }) => <ComposeImage source={{ uri: src }} contentDescription={`${app.name} screenshot`} modifiers={[width(620), height(349)]} />} />
     </>
   );
 }
@@ -92,18 +93,6 @@ function DetailContent({ app, installed, busy, progress, onBack, onInstall, onUn
       <Text style={{ typography: "bodySmall" }}>{app.id}</Text>
     </LazyColumn>
   );
-}
-
-function appTiles(apps: StoreApp[], installed: Set<string>, busyRef: string, progress: string,
-    onOpenDetails: (app: StoreApp) => void, onInstall: (app: StoreApp) => void,
-    onLaunch: (app: StoreApp) => void): ReactNode[] {
-  return apps.map((app) => <AppTile key={app.id} app={app} installed={installed.has(app.id)}
-    busy={Boolean(busyRef)} progress={busyRef === app.ref ? progress : ""}
-    onOpenDetails={onOpenDetails} onInstall={onInstall} onLaunch={onLaunch} />);
-}
-
-function screenshotTiles(app: StoreApp): ReactNode[] {
-  return app.screenshots.map((src, index) => <ComposeImage key={`${app.id}-${index}`} source={{ uri: src }} contentDescription={`${app.name} screenshot`} modifiers={[width(620), height(349)]} />);
 }
 
 export default function App() {
@@ -216,24 +205,27 @@ export default function App() {
     } catch (error) { setMessage(errorText(error)); }
   }
 
+  const renderApp = ({ item }: { item: StoreApp }) => (
+    <AppTile app={item} installed={installedIds.has(item.id)} busy={Boolean(busyRef)}
+      progress={busyRef === item.ref ? progress : ""} onOpenDetails={openDetails}
+      onInstall={(app) => void startInstall(app)} onLaunch={(app) => void launchApp(app)} />
+  );
+  const keyApp = (app: StoreApp) => app.id;
+
   let content: ReactNode;
   if (selected) {
     const currentDetail = selected;
     content = <DetailContent app={currentDetail} installed={installedIds.has(currentDetail.id)} busy={Boolean(busyRef)} progress={busyRef === currentDetail.ref ? progress : ""}
       onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} />;
   } else if (page === "installed") {
-    const tiles = appTiles(installedApps, installedIds, busyRef, progress, (app) => void openDetails(app),
-      (app) => void startInstall(app), (app) => void launchApp(app));
     content = <Column modifiers={[weight(1)]}>
       <Text style={{ typography: "headlineSmall" }} modifiers={[paddingAll(20)]}>Installed apps</Text>
       <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading installed apps…</Text></Show>
       <Show when={Boolean(installedError) && !loading}><Text modifiers={[paddingAll(20)]}>{installedError}</Text></Show>
-      <Show when={installedApps.length === 0 && !installedError && !loading}><Text modifiers={[paddingAll(20)]}>No installed apps are listed yet.</Text></Show>
-      <LazyColumn verticalArrangement={{ spacedBy: 4 }} contentPadding={{ bottom: 20 }}>{tiles}</LazyColumn>
+      <FlatList style={{ flex: 1 }} data={installedApps} renderItem={renderApp} keyExtractor={keyApp}
+        ListEmptyComponent={!loading && !installedError ? <Text modifiers={[paddingAll(20)]}>No installed apps are listed yet.</Text> : null} />
     </Column>;
   } else {
-    const tiles = appTiles(apps, installedIds, busyRef, progress, (app) => void openDetails(app),
-      (app) => void startInstall(app), (app) => void launchApp(app));
     content = <Column modifiers={[weight(1)]}>
       <Text style={{ typography: "headlineSmall" }} modifiers={[padding(20, 18, 20, 0)]}>Explore Flathub</Text>
       <Row horizontalArrangement={{ spacedBy: 10 }} modifiers={[padding(16, 10, 16, 10)]}>
@@ -243,8 +235,9 @@ export default function App() {
       <OutlinedTextField onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 0, 16, 0)]}>
         <OutlinedTextField.Label>Search apps</OutlinedTextField.Label>
       </OutlinedTextField>
-      <Show when={loading}><Text modifiers={[paddingAll(16)]}>Loading Flathub…</Text></Show>
-      <LazyColumn verticalArrangement={{ spacedBy: 4 }} contentPadding={{ bottom: 20 }}>{tiles}</LazyColumn>
+      <FlatList style={{ flex: 1 }} data={apps} renderItem={renderApp} keyExtractor={keyApp}
+        ListHeaderComponent={loading ? <Text modifiers={[paddingAll(16)]}>Loading Flathub…</Text> : null}
+        ListEmptyComponent={!loading ? <Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text> : null} />
     </Column>;
   }
 

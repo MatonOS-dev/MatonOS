@@ -74,6 +74,42 @@ export function Shelf(): React.JSX.Element {
     setExpanded(true);
     MatonShelf.setShelfExpanded(true);
   };
+  const shelfItems = shelfApps.map((app) => (
+    <Pressable
+      key={app.packageName}
+      onPress={() =>
+        void (runningPackages.includes(app.packageName)
+          ? MatonOS.getRecentTasks()
+              .then((tasks) => tasks.find((task) => task.packageName === app.packageName))
+              .then((task) =>
+                task
+                  ? MatonOS.moveTaskToFront(task.taskId)
+                  : MatonShelf.launchApp(app.component),
+              )
+          : MatonShelf.launchApp(app.component))
+      }
+      onLongPress={() => {
+        void MatonShelf.togglePinnedApp(app.packageName).then((isPinned) => {
+          setPinned((current) =>
+            isPinned
+              ? [...current, app.packageName]
+              : current.filter((pkg) => pkg !== app.packageName),
+          );
+        });
+      }}
+      style={[
+        styles.appButton,
+        focusedPackage === app.packageName && {
+          borderColor: theme.colors.primary,
+          borderWidth: 2,
+        },
+      ]}
+      accessibilityRole="button"
+      accessibilityLabel={app.label}
+    >
+      {!!app.iconUri && <Image source={{uri: app.iconUri}} style={styles.icon} />}
+    </Pressable>
+  ));
   return (
     <Pressable
       style={[
@@ -149,43 +185,7 @@ export function Shelf(): React.JSX.Element {
           />
         </Menu>
       )}
-      {expanded &&
-        shelfApps.map((app) => (
-          <Pressable
-            key={app.packageName}
-            onPress={() =>
-              void (runningPackages.includes(app.packageName)
-                ? MatonOS.getRecentTasks()
-                    .then((tasks) => tasks.find((task) => task.packageName === app.packageName))
-                    .then((task) =>
-                      task
-                        ? MatonOS.moveTaskToFront(task.taskId)
-                        : MatonShelf.launchApp(app.component),
-                    )
-                : MatonShelf.launchApp(app.component))
-            }
-            onLongPress={() => {
-              void MatonShelf.togglePinnedApp(app.packageName).then((isPinned) => {
-                setPinned((current) =>
-                  isPinned
-                    ? [...current, app.packageName]
-                    : current.filter((pkg) => pkg !== app.packageName),
-                );
-              });
-            }}
-            style={[
-              styles.appButton,
-              focusedPackage === app.packageName && {
-                borderColor: theme.colors.primary,
-                borderWidth: 2,
-              },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel={app.label}
-          >
-            {!!app.iconUri && <Image source={{uri: app.iconUri}} style={styles.icon} />}
-          </Pressable>
-        ))}
+      {expanded ? shelfItems : null}
       <View style={styles.spacer} />
       {expanded && threeButtonMode && (
         <IconButton

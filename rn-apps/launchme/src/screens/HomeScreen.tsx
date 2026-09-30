@@ -18,6 +18,25 @@ export function HomeScreen(): React.JSX.Element {
     };
   }, []);
   const now = new Date();
+  const shortcuts = apps.map((app) => (
+    <Pressable
+      key={app.component}
+      accessibilityRole="button"
+      focusable
+      accessibilityLabel={`Open ${app.label}`}
+      onPress={() => void MatonShell.launchApp(app.component)}
+      style={({pressed}) => [
+        styles.shortcut,
+        {backgroundColor: theme.dark ? 'rgba(0,0,0,0.76)' : 'rgba(255,255,255,0.9)'},
+        pressed && styles.pressed,
+      ]}
+    >
+      {!!app.iconUri && <Image source={{uri: app.iconUri}} style={styles.icon} />}
+      <Text numberOfLines={1} style={[styles.label, {color: theme.colors.onSurface}]}>
+        {app.label}
+      </Text>
+    </Pressable>
+  ));
   return (
     <View style={styles.home}>
       <View
@@ -34,25 +53,7 @@ export function HomeScreen(): React.JSX.Element {
         </Text>
       </View>
       <View style={styles.shortcuts}>
-        {apps.map((app) => (
-          <Pressable
-            key={app.component}
-            accessibilityRole="button"
-            focusable
-            accessibilityLabel={`Open ${app.label}`}
-            onPress={() => void MatonShell.launchApp(app.component)}
-            style={({pressed}) => [
-              styles.shortcut,
-              {backgroundColor: theme.dark ? 'rgba(0,0,0,0.76)' : 'rgba(255,255,255,0.9)'},
-              pressed && styles.pressed,
-            ]}
-          >
-            {!!app.iconUri && <Image source={{uri: app.iconUri}} style={styles.icon} />}
-            <Text numberOfLines={1} style={[styles.label, {color: theme.colors.onSurface}]}>
-              {app.label}
-            </Text>
-          </Pressable>
-        ))}
+        {shortcuts}
       </View>
     </View>
   );

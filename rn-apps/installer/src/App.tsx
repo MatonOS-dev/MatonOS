@@ -123,6 +123,29 @@ export default function App(): React.JSX.Element {
       );
   };
 
+  const driveCards = listedDrives.map((drive) => (
+    <Card key={drive.id} border={{ width: 1, color: "#79716B" }}>
+      <Column verticalArrangement={{ spacedBy: 8 }}>
+        <Text style={{ typography: "titleMedium" }}>{drive.model}</Text>
+        <Text style={{ typography: "bodyMedium" }}>
+          {formatSize(drive.sizeBytes)} · {drive.transport}{drive.removable ? " · removable" : ""}
+        </Text>
+        <Text style={{ typography: "bodySmall" }}>{drive.path}</Text>
+        {!drive.safe && drive.reason ? <Text color="#B3261E">Unavailable: {drive.reason}</Text> : null}
+        <Button
+          enabled={drive.safe}
+          onClick={() => {
+            setSelected(drive);
+            setError("");
+            setScreen("confirm");
+          }}
+        >
+          Select drive
+        </Button>
+      </Column>
+    </Card>
+  ));
+
   return (
     <SafeAreaView style={styles.root}>
       <Host style={styles.host} colorScheme="light">
@@ -167,35 +190,7 @@ export default function App(): React.JSX.Element {
               {!loading && listedDrives.length === 0 ? (
                 <Text>No safe target drives are available.</Text>
               ) : null}
-              {listedDrives.map((drive) => (
-                <Card key={drive.id} border={{ width: 1, color: "#79716B" }}>
-                  <Column verticalArrangement={{ spacedBy: 8 }}>
-                    <Text style={{ typography: "titleMedium" }}>
-                      {drive.model}
-                    </Text>
-                    <Text style={{ typography: "bodyMedium" }}>
-                      {formatSize(drive.sizeBytes)} · {drive.transport}
-                      {drive.removable ? " · removable" : ""}
-                    </Text>
-                    <Text style={{ typography: "bodySmall" }}>
-                      {drive.path}
-                    </Text>
-                    {!drive.safe && drive.reason ? (
-                      <Text color="#B3261E">Unavailable: {drive.reason}</Text>
-                    ) : null}
-                    <Button
-                      enabled={drive.safe}
-                      onClick={() => {
-                        setSelected(drive);
-                        setError("");
-                        setScreen("confirm");
-                      }}
-                    >
-                      Select drive
-                    </Button>
-                  </Column>
-                </Card>
-              ))}
+              {driveCards}
             </Column>
           ) : null}
 
