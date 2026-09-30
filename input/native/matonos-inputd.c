@@ -35,6 +35,8 @@
 #define UINPUT_NODE "/dev/uinput"
 #define MAX_DEVICES 128
 #define MAX_EVENTS 32
+#define DISPLAY_SIZE_MIN 64
+#define DISPLAY_SIZE_MAX 32768
 #define PROP_PRESENT "vendor.maton.input.present"
 #define PROP_KEYBOARD "vendor.maton.input.keyboard"
 #define PROP_POINTER "vendor.maton.input.pointer"
@@ -43,12 +45,11 @@
 #define PROP_ABSOLUTE "vendor.maton.input.absolute"
 #define DRM_DIR "/sys/class/drm"
 
-enum kind { KIND_NONE = 0, KIND_KEYBOARD = 1, KIND_POINTER = 2 };
 struct source {
     int fd;
     char node[32];
     char name[128];
-    enum kind kind;
+    bool keyboard, pointer, touchpad;
     bool absolute;
     bool mt;
     bool have_x, have_y;
@@ -70,6 +71,7 @@ static int epfd = -1, inotify_fd = -1, keyboard_fd = -1, pointer_fd = -1;
 static _Atomic int touchpad_fd = -1;
 static _Atomic unsigned int keyboards, pointers;
 static _Atomic unsigned int absolute_pointers;
+static _Atomic unsigned int touchpads;
 static MatonosIpcServer *ipc;
 static bool pointer_wheel_hi_res, pointer_hwheel_hi_res;
 static _Atomic uint64_t requested_display_size;
@@ -180,7 +182,7 @@ static void state_update(void) {
         snprintf(abs_buf, sizeof(abs_buf), "%u", abs_count);
         (void)__system_property_set(PROP_ABSOLUTE, abs_buf);
     }
-    if (present && keyboards && pointers && touchpad_fd < 0) {
+    if (present && keyboards && pointers && touchpads && touchpad_fd < 0) {
         int fd = open(UINPUT_NODE, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd >= 0) {
             if (ioctl(fd, UI_SET_EVBIT, EV_ABS) == 0 &&
@@ -190,18 +192,18 @@ static void state_update(void) {
                 ioctl(fd, UI_SET_ABSBIT, ABS_MT_POSITION_Y) == 0 &&
                 ioctl(fd, UI_SET_PROPBIT, INPUT_PROP_POINTER) == 0) {
                 struct uinput_abs_setup abs = {.code = ABS_MT_SLOT, .absinfo = {.minimum=0,.maximum=0}};
-                (void)ioctl(fd, UI_ABS_SETUP, &abs);
+                bool abs_ok = ioctl(fd, UI_ABS_SETUP, &abs) == 0;
                 abs.code = ABS_MT_TRACKING_ID; abs.absinfo.minimum = 0; abs.absinfo.maximum = 1;
-                (void)ioctl(fd, UI_ABS_SETUP, &abs);
+                abs_ok = ioctl(fd, UI_ABS_SETUP, &abs) == 0 && abs_ok;
                 abs.code = ABS_MT_POSITION_X; abs.absinfo.minimum = 0; abs.absinfo.maximum = 32767;
-                (void)ioctl(fd, UI_ABS_SETUP, &abs);
+                abs_ok = ioctl(fd, UI_ABS_SETUP, &abs) == 0 && abs_ok;
                 abs.code = ABS_MT_POSITION_Y; abs.absinfo.maximum = 32767;
-                (void)ioctl(fd, UI_ABS_SETUP, &abs);
+                abs_ok = ioctl(fd, UI_ABS_SETUP, &abs) == 0 && abs_ok;
                 struct uinput_setup setup = {0};
                 setup.id.bustype = BUS_VIRTUAL; setup.id.vendor = 0x4d54;
                 setup.id.product = 3; setup.id.version = 1;
                 snprintf(setup.name, UINPUT_MAX_NAME_SIZE, "MatonOS Desktop Touchpad");
-                if (ioctl(fd, UI_DEV_SETUP, &setup) == 0 && ioctl(fd, UI_DEV_CREATE) == 0) {
+                if (abs_ok && ioctl(fd, UI_DEV_SETUP, &setup) == 0 && ioctl(fd, UI_DEV_CREATE) == 0) {
                     touchpad_fd = fd;
                     ALOGI("desktop touchpad present (keyboard and mouse available)");
                     fd = -1;
@@ -209,7 +211,7 @@ static void state_update(void) {
             }
             if (fd >= 0) close(fd);
         }
-    } else if (!(present && keyboards && pointers) && touchpad_fd >= 0) {
+    } else if (!(present && keyboards && pointers && touchpads) && touchpad_fd >= 0) {
         (void)ioctl(touchpad_fd, UI_DEV_DESTROY);
         close(touchpad_fd);
         touchpad_fd = -1;
@@ -279,14 +281,16 @@ static int allocate_source(const char *node) {
 }
 
 static void release_keys(struct source *s) {
-    int out = s->kind == KIND_KEYBOARD ? keyboard_fd : pointer_fd;
     for (unsigned int k = 1; k <= KEY_MAX; k++) {
         if (bit_test(s->keys, k)) {
-            (void)emit(out, EV_KEY, (unsigned short)k, 0);
+            int out = k >= BTN_MISC ? pointer_fd : keyboard_fd;
+            if (emit(out, EV_KEY, (unsigned short)k, 0) < 0)
+                ALOGW("failed to release key %u from %s", k, s->node);
             s->keys[k / (sizeof(unsigned long)*8)] &= ~(1UL << (k % (sizeof(unsigned long)*8)));
         }
     }
-    sync_out(out);
+    if (s->keyboard) sync_out(keyboard_fd);
+    if (s->pointer) sync_out(pointer_fd);
 }
 
 static void remove_source(int i) {
@@ -294,11 +298,13 @@ static void remove_source(int i) {
     if (s->fd < 0) return;
     (void)ioctl(s->fd, EVIOCGRAB, 0);
     release_keys(s);
-    epoll_ctl(epfd, EPOLL_CTL_DEL, s->fd, NULL);
+    if (epoll_ctl(epfd, EPOLL_CTL_DEL, s->fd, NULL) < 0 && errno != ENOENT && errno != EBADF)
+        ALOGW("epoll remove %s: %s", s->node, strerror(errno));
     close(s->fd);
-    if (s->kind == KIND_KEYBOARD && keyboards) keyboards--;
-    if (s->kind == KIND_POINTER && pointers) pointers--;
-    if (s->kind == KIND_POINTER && s->absolute && absolute_pointers) absolute_pointers--;
+    if (s->keyboard && keyboards) keyboards--;
+    if (s->pointer && pointers) pointers--;
+    if (s->pointer && s->absolute && absolute_pointers) absolute_pointers--;
+    if (s->touchpad && touchpads) touchpads--;
     ALOGI("removed %s (%s)", s->node, s->name);
     s->fd = -1;
     state_update();
@@ -333,8 +339,14 @@ static void add_source(const char *node) {
               (bit_test(key_bits, BTN_TOUCH) || bit_test(key_bits, BTN_TOOL_FINGER)) &&
               (pointer_property || bit_test(key_bits, BTN_TOOL_FINGER));
     if (mt) {
-        (void)has_abs_range(fd, ABS_MT_POSITION_X, &min_x, &max_x);
-        (void)has_abs_range(fd, ABS_MT_POSITION_Y, &min_y, &max_y);
+        int mt_min_x, mt_max_x, mt_min_y, mt_max_y;
+        if (has_abs_range(fd, ABS_MT_POSITION_X, &mt_min_x, &mt_max_x) &&
+            has_abs_range(fd, ABS_MT_POSITION_Y, &mt_min_y, &mt_max_y)) {
+            min_x = mt_min_x; max_x = mt_max_x;
+            min_y = mt_min_y; max_y = mt_max_y;
+        } else {
+            mt = false; /* Keep ABS_X/Y ranges for the fallback absolute path. */
+        }
     }
     bool rel = bit_test(rel_bits, REL_X) && bit_test(rel_bits, REL_Y);
     bool mouse = bit_test(key_bits, BTN_MOUSE) || bit_test(key_bits, BTN_LEFT) ||
@@ -345,11 +357,12 @@ static void add_source(const char *node) {
     int i = allocate_source(node);
     if (i < 0) { (void)ioctl(fd, EVIOCGRAB, 0); close(fd); return; }
     struct source *s = &sources[i];
-    s->fd = fd; s->kind = kb ? KIND_KEYBOARD : KIND_POINTER;
+    s->fd = fd; s->keyboard = kb; s->pointer = ptr;
     snprintf(s->name, sizeof(s->name), "%s", name);
     /* Only bare absolute pointer sources need InputReader's cursor transform
      * flattened. Multitouch touchpads keep their normal touchpad settings. */
     s->absolute = !rel && abs_xy && !mt; s->mt = mt;
+    s->touchpad = ptr && mt && bit_test(key_bits, BTN_TOOL_FINGER);
     s->has_wheel_hi_res = bit_test(rel_bits, REL_WHEEL_HI_RES);
     s->has_hwheel_hi_res = bit_test(rel_bits, REL_HWHEEL_HI_RES);
     s->has_hardware_buttons = bit_test(key_bits, BTN_MOUSE) || bit_test(key_bits, BTN_LEFT);
@@ -358,6 +371,7 @@ static void add_source(const char *node) {
     if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) < 0) { (void)ioctl(fd, EVIOCGRAB,0); close(fd); s->fd=-1; return; }
     if (kb) keyboards++;
     if (ptr) pointers++;
+    if (s->touchpad) touchpads++;
     if (s->absolute && ptr) absolute_pointers++;
     ALOGI("grabbed %s (%s)%s%s wheel=%s%s hwheel=%s%s (virtual hi-res=%s/%s)",
           node, name, kb ? " keyboard" : "", ptr ? " pointer" : "",
@@ -385,13 +399,16 @@ static void emit_scroll(struct source *s, bool horizontal, bool high_res, int va
     if (high_res && output_high_res) {
         (void)emit(pointer_fd, EV_REL, (unsigned short)high_res_code, value);
     } else if (output_high_res) {
-        (void)emit(pointer_fd, EV_REL, (unsigned short)high_res_code,
-                   high_res ? value : value * 120);
+        int64_t units = high_res ? value : (int64_t)value * 120;
+        if (units > INT32_MAX) units = INT32_MAX;
+        if (units < INT32_MIN) units = INT32_MIN;
+        (void)emit(pointer_fd, EV_REL, (unsigned short)high_res_code, (int)units);
     } else {
-        int units = high_res ? value : value * 120;
-        *remainder += units;
-        int detents = *remainder / 120;
-        *remainder -= detents * 120;
+        int64_t units = high_res ? value : (int64_t)value * 120;
+        int64_t total = (int64_t)*remainder + units;
+        int64_t detents64 = total / 120;
+        *remainder = (int)(total - detents64 * 120);
+        int detents = detents64 > INT32_MAX ? INT32_MAX : detents64 < INT32_MIN ? INT32_MIN : (int)detents64;
         if (detents) (void)emit(pointer_fd, EV_REL, (unsigned short)legacy_code, detents);
     }
     bool *logged = horizontal ? &s->hwheel_logged : &s->wheel_logged;
@@ -452,19 +469,23 @@ static void emit_absolute_axis(unsigned int code, int value, int min, int max) {
 static void forward_event(struct source *s, const struct input_event *e) {
     if (e->type == EV_SYN) {
         if (e->code == SYN_REPORT) {
-            if (s->kind == KIND_POINTER) flush_legacy_wheel(s);
-            sync_out(s->kind == KIND_KEYBOARD ? keyboard_fd : pointer_fd);
+            if (s->pointer) flush_legacy_wheel(s);
+            if (s->keyboard) sync_out(keyboard_fd);
+            if (s->pointer) sync_out(pointer_fd);
         }
         return;
     }
-    if (s->kind == KIND_KEYBOARD) {
+    if (s->keyboard && ((e->type == EV_KEY && e->code < BTN_MISC) ||
+                        (e->type == EV_MSC && e->code == MSC_SCAN))) {
         if (e->type == EV_KEY && e->code <= KEY_MAX) {
-            if (e->value) s->keys[e->code/(sizeof(unsigned long)*8)] |= 1UL << (e->code%(sizeof(unsigned long)*8));
-            else s->keys[e->code/(sizeof(unsigned long)*8)] &= ~(1UL << (e->code%(sizeof(unsigned long)*8)));
-            (void)emit(keyboard_fd, EV_KEY, e->code, e->value);
+            if (emit(keyboard_fd, EV_KEY, e->code, e->value) == 0) {
+                if (e->value) s->keys[e->code/(sizeof(unsigned long)*8)] |= 1UL << (e->code%(sizeof(unsigned long)*8));
+                else s->keys[e->code/(sizeof(unsigned long)*8)] &= ~(1UL << (e->code%(sizeof(unsigned long)*8)));
+            } else ALOGW("failed to emit key from %s", s->node);
         } else if (e->type == EV_MSC && e->code == MSC_SCAN) (void)emit(keyboard_fd, EV_MSC, MSC_SCAN, e->value);
         return;
     }
+    if (!s->pointer) return;
     if (e->type == EV_REL) {
         if (e->code == REL_WHEEL) {
             if (s->has_wheel_hi_res && !s->wheel_hi_res_this_frame)
@@ -539,12 +560,14 @@ static void forward_event(struct source *s, const struct input_event *e) {
             if (down != s->finger_down && !s->has_hardware_buttons) {
                 /* Touchpad contact acts as a left-button press/release. */
                 if (down && !s->left_down) {
-                    (void)emit(pointer_fd, EV_KEY, BTN_LEFT, 1);
-                    s->keys[BTN_LEFT/(sizeof(unsigned long)*8)] |= 1UL << (BTN_LEFT%(sizeof(unsigned long)*8));
+                    if (emit(pointer_fd, EV_KEY, BTN_LEFT, 1) == 0)
+                        s->keys[BTN_LEFT/(sizeof(unsigned long)*8)] |= 1UL << (BTN_LEFT%(sizeof(unsigned long)*8));
+                    else ALOGW("failed to emit touchpad press from %s", s->node);
                 }
                 if (!down && s->left_down) {
-                    (void)emit(pointer_fd, EV_KEY, BTN_LEFT, 0);
-                    s->keys[BTN_LEFT/(sizeof(unsigned long)*8)] &= ~(1UL << (BTN_LEFT%(sizeof(unsigned long)*8)));
+                    if (emit(pointer_fd, EV_KEY, BTN_LEFT, 0) == 0)
+                        s->keys[BTN_LEFT/(sizeof(unsigned long)*8)] &= ~(1UL << (BTN_LEFT%(sizeof(unsigned long)*8)));
+                    else ALOGW("failed to emit touchpad release from %s", s->node);
                 }
                 s->left_down = down;
             }
@@ -552,9 +575,10 @@ static void forward_event(struct source *s, const struct input_event *e) {
             return;
         }
         if (e->code >= BTN_MOUSE) {
-            if (e->value) s->keys[e->code/(sizeof(unsigned long)*8)] |= 1UL << (e->code%(sizeof(unsigned long)*8));
-            else s->keys[e->code/(sizeof(unsigned long)*8)] &= ~(1UL << (e->code%(sizeof(unsigned long)*8)));
-            (void)emit(pointer_fd, EV_KEY, e->code, e->value);
+            if (emit(pointer_fd, EV_KEY, e->code, e->value) == 0) {
+                if (e->value) s->keys[e->code/(sizeof(unsigned long)*8)] |= 1UL << (e->code%(sizeof(unsigned long)*8));
+                else s->keys[e->code/(sizeof(unsigned long)*8)] &= ~(1UL << (e->code%(sizeof(unsigned long)*8)));
+            } else ALOGW("failed to emit pointer button from %s", s->node);
         }
     }
 }
@@ -590,13 +614,36 @@ static int get_state(const char *args, char *result, size_t capacity, void *cont
 }
 
 static bool json_int_field(const char *json, const char *key, int *value) {
-    char needle[40];
-    snprintf(needle, sizeof(needle), "\"%s\"", key);
-    const char *p = strstr(json, needle);
-    if (!p || !(p = strchr(p + strlen(needle), ':'))) return false;
+    const char *p = json;
+    int depth = 0;
+    while (*p) {
+        if (*p == '"') {
+            const char *start = ++p;
+            bool escaped = false;
+            while (*p && (*p != '"' || escaped)) {
+                if (!escaped && *p == '\\') escaped = true;
+                else escaped = false;
+                p++;
+            }
+            if (!*p) return false;
+            size_t length = (size_t)(p - start);
+            p++;
+            if (depth == 1 && length == strlen(key) && !memcmp(start, key, length)) {
+                const char *colon = p;
+                while (*colon == ' ' || *colon == '\t' || *colon == '\n' || *colon == '\r') colon++;
+                if (*colon == ':') { p = colon + 1; break; }
+            }
+            continue;
+        }
+        if (*p == '{' || *p == '[') depth++;
+        else if (*p == '}' || *p == ']') depth--;
+        p++;
+    }
+    if (!*p) return false;
     char *end = NULL;
-    long parsed = strtol(p + 1, &end, 10);
-    if (end == p + 1 || parsed < 64 || parsed > 32768) return false;
+    long parsed = strtol(p, &end, 10);
+    if (end == p || parsed < DISPLAY_SIZE_MIN || parsed > DISPLAY_SIZE_MAX ||
+        (*end && *end != ',' && *end != '}' && *end != ' ' && *end != '\t' && *end != '\r' && *end != '\n')) return false;
     *value = (int)parsed;
     return true;
 }
@@ -639,7 +686,7 @@ int main(void) {
     for (;;) {
         int n = epoll_wait(epfd, events, MAX_EVENTS, 1000);
         refresh_display_geometry();
-        if (n == 0) continue;
+        if (n == 0) { scan_devices(); continue; }
         if (n < 0) { if (errno == EINTR) continue; ALOGE("epoll_wait: %s", strerror(errno)); return 1; }
         for (int e=0;e<n;e++) {
             unsigned int idx=events[e].data.u32;
@@ -652,7 +699,7 @@ int main(void) {
                 size_t count=(size_t)bytes/sizeof(buf[0]);
                 for (size_t j=0;j<count;j++) forward_event(&sources[idx], &buf[j]);
             }
-            if (bytes < 0 && errno != EAGAIN && errno != EINTR) remove_source((int)idx);
+            if (bytes == 0 || (bytes < 0 && errno != EAGAIN && errno != EINTR)) remove_source((int)idx);
         }
     }
 }

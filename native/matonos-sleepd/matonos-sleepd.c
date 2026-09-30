@@ -39,12 +39,10 @@
 #include <stdatomic.h>
 #include <matonos_ipc.h>
 
+#define LOG_TAG "matonos-sleepd"
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define ALOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 #define ALOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
-
-#undef LOG_TAG
-#define LOG_TAG "matonos-sleepd"
 
 #define INPUT_DIR "/dev/input"
 #define POWER_STATE "/sys/power/state"
@@ -81,15 +79,21 @@ static long long now_ms(void) {
 
 static long long idle_limit_ms(void) {
     char value[PROP_VALUE_MAX];
-    int s = __system_property_get(IDLE_PROP, value) > 0
-                ? (int)strtol(value, NULL, 10) : DEFAULT_IDLE_S;
+    int s = DEFAULT_IDLE_S;
+    if (__system_property_get(IDLE_PROP, value) > 0) {
+        char *end = NULL;
+        errno = 0;
+        long parsed = strtol(value, &end, 10);
+        if (errno || end == value || *end || parsed < 0 || parsed > 86400) parsed = DEFAULT_IDLE_S;
+        s = (int)parsed;
+    }
     return s > 0 ? (long long)s * 1000 : -1;
 }
 
 static void add_device(const char *name) {
     if (strncmp(name, "event", 5) != 0) return;
     for (int i = 0; i < MAX_DEVICES; i++) {
-        if (devices[i].fd > 0 && strcmp(devices[i].name, name) == 0) return;
+        if (devices[i].fd >= 0 && strcmp(devices[i].name, name) == 0) return;
     }
     char path[128];
     snprintf(path, sizeof(path), INPUT_DIR "/%s", name);
@@ -99,11 +103,15 @@ static void add_device(const char *name) {
         return;
     }
     for (int i = 0; i < MAX_DEVICES; i++) {
-        if (devices[i].fd <= 0) {
+        if (devices[i].fd < 0) {
             devices[i].fd = fd;
             snprintf(devices[i].name, sizeof(devices[i].name), "%s", name);
             struct epoll_event ev = {.events = EPOLLIN, .data.u32 = (uint32_t)i};
-            epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev);
+            if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) == 0) return;
+            ALOGW("epoll add %s: %s", name, strerror(errno));
+            devices[i].fd = -1;
+            devices[i].name[0] = '\0';
+            close(fd);
             return;
         }
     }
@@ -114,7 +122,7 @@ static void add_device(const char *name) {
 static void remove_device(int i) {
     epoll_ctl(epfd, EPOLL_CTL_DEL, devices[i].fd, NULL);
     close(devices[i].fd);
-    devices[i].fd = 0;
+    devices[i].fd = -1;
     devices[i].name[0] = '\0';
 }
 
@@ -136,39 +144,31 @@ static void handle_inotify(void) {
     }
 }
 
-static void publish_state(void) {
-    if (!ipc_server) return;
-    char state[256];
-    char prop[PROP_VALUE_MAX];
-    int timeout = __system_property_get(IDLE_PROP, prop) > 0 ? (int)strtol(prop, NULL, 10) : DEFAULT_IDLE_S;
+static int make_state(char *state, size_t capacity) {
+    long long idle_ms = idle_limit_ms();
+    int timeout = idle_ms > 0 ? (int)(idle_ms / 1000) : 0;
     int power_fd = open(POWER_STATE, O_RDONLY | O_CLOEXEC);
     char power_states[256] = {0};
     ssize_t power_len = power_fd >= 0 ? read(power_fd, power_states, sizeof(power_states) - 1) : -1;
     if (power_fd >= 0) close(power_fd);
     bool supported = power_len > 0 && strstr(power_states, "mem") != NULL;
-    snprintf(state, sizeof(state), "{\"idleTimeoutSeconds\":%d,\"suspendSupported\":%s,\"sleeping\":%s,\"androidWakeBlocked\":%s,\"wakeLockCount\":%d,\"audioActive\":%s,\"stayAwake\":%s}",
+    return snprintf(state, capacity, "{\"idleTimeoutSeconds\":%d,\"suspendSupported\":%s,\"sleeping\":%s,\"androidWakeBlocked\":%s,\"wakeLockCount\":%d,\"audioActive\":%s,\"stayAwake\":%s}",
              timeout > 0 ? timeout : 0, supported ? "true" : "false", is_sleeping ? "true" : "false",
              android_awake_blocked ? "true" : "false", android_wake_lock_count,
              android_audio_active ? "true" : "false", android_stay_awake ? "true" : "false");
+}
+
+static void publish_state(void) {
+    if (!ipc_server) return;
+    char state[256];
+    make_state(state, sizeof(state));
     matonos_ipc_publish(ipc_server, "state", state);
 }
 
 static int handle_get_state(const char *args, char *result, size_t capacity, void *context) {
     (void)args; (void)context;
     if (capacity < 2) return -1;
-    publish_state();
-    char prop[PROP_VALUE_MAX];
-    int timeout = __system_property_get(IDLE_PROP, prop) > 0 ? (int)strtol(prop, NULL, 10) : DEFAULT_IDLE_S;
-    int power_fd = open(POWER_STATE, O_RDONLY | O_CLOEXEC);
-    char power_states[256] = {0};
-    ssize_t power_len = power_fd >= 0 ? read(power_fd, power_states, sizeof(power_states) - 1) : -1;
-    if (power_fd >= 0) close(power_fd);
-    bool supported = power_len > 0 && strstr(power_states, "mem") != NULL;
-    snprintf(result, capacity, "{\"idleTimeoutSeconds\":%d,\"suspendSupported\":%s,\"sleeping\":%s,\"androidWakeBlocked\":%s,\"wakeLockCount\":%d,\"audioActive\":%s,\"stayAwake\":%s}",
-             timeout > 0 ? timeout : 0, supported ? "true" : "false", is_sleeping ? "true" : "false",
-             android_awake_blocked ? "true" : "false", android_wake_lock_count,
-             android_audio_active ? "true" : "false", android_stay_awake ? "true" : "false");
-    return 0;
+    return make_state(result, capacity) < (int)capacity ? 0 : -1;
 }
 
 static bool json_bool(const char *args, const char *key, bool *out) {
@@ -246,12 +246,21 @@ static bool suspend_system(const char *reason) {
         publish_state();
         return false;
     }
+    if (android_awake_blocked) {
+        close(fd);
+        ALOGI("suspend cancelled (%s): Android wake state became active", reason);
+        is_sleeping = false;
+        publish_state();
+        return false;
+    }
     /* Blocks until the system has resumed. */
-    ssize_t n = write(fd, "mem", 3);
+    ssize_t n;
+    do { n = write(fd, "mem", 3); } while (n < 0 && errno == EINTR);
     int err = errno;
     close(fd);
-    if (n < 0) {
-        ALOGW("suspend failed: %s", strerror(err));
+    if (n != 3) {
+        if (n < 0) ALOGW("suspend failed: %s", strerror(err));
+        else ALOGW("suspend failed: short write (%zd of 3 bytes)", n);
         is_sleeping = false;
         publish_state();
         return false;
@@ -276,16 +285,23 @@ int main(void) {
         ALOGE("epoll/inotify: %s", strerror(errno));
         return 1;
     }
-    inotify_add_watch(inotify_fd, INPUT_DIR, IN_CREATE);
+    if (inotify_add_watch(inotify_fd, INPUT_DIR, IN_CREATE) < 0) {
+        ALOGW("inotify watch unavailable; initial devices still work: %s", strerror(errno));
+    }
     struct epoll_event iev = {.events = EPOLLIN, .data.u32 = MAX_DEVICES};
-    epoll_ctl(epfd, EPOLL_CTL_ADD, inotify_fd, &iev);
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, inotify_fd, &iev) < 0) {
+        ALOGW("inotify epoll add unavailable; initial devices still work: %s", strerror(errno));
+    }
+    for (int i = 0; i < MAX_DEVICES; i++) devices[i].fd = -1;
     scan_devices();
 
     long long last_activity = now_ms();
     long long power_down_at = -1;
     long long retry_until = 0;
     long long resumed_at = -RESUME_GRACE_MS;
-    ALOGI("started, idle timeout %llds", idle_limit_ms() / 1000);
+    long long startup_limit = idle_limit_ms();
+    if (startup_limit < 0) ALOGI("started, idle timeout never");
+    else ALOGI("started, idle timeout %llds", startup_limit / 1000);
     publish_state();
     long long announced_limit = idle_limit_ms();
 
@@ -303,7 +319,7 @@ int main(void) {
             publish_state();
         }
         long long limit = idle_limit_ms();
-        int timeout = -1;
+        int timeout = 1000; /* Also retries nodes missed during a udev create race. */
         if (limit > 0) {
             long long due = last_activity + limit;
             if (due < retry_until) due = retry_until;
@@ -326,10 +342,12 @@ int main(void) {
                 handle_inotify();
                 continue;
             }
+            if (idx >= MAX_DEVICES || devices[idx].fd < 0) continue;
             struct input_event in[64];
             ssize_t len = read(devices[idx].fd, in, sizeof(in));
+            if (len == 0) { remove_device((int)idx); continue; }
             if (len < 0) {
-                if (errno == ENODEV) remove_device((int)idx);
+                if (errno != EAGAIN && errno != EINTR) remove_device((int)idx);
                 continue;
             }
             for (size_t i = 0; i < (size_t)len / sizeof(in[0]); i++) {
@@ -356,6 +374,10 @@ int main(void) {
         if (!reason && limit > 0 && now_ms() >= last_activity + limit &&
             now_ms() >= retry_until) {
             reason = "idle";
+        }
+        if (reason) {
+            /* The Binder callback may have blocked sleep after the loop's prior check. */
+            if (android_awake_blocked) reason = NULL;
         }
         if (reason) {
             if (suspend_system(reason)) {

@@ -9,9 +9,11 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #define LOG_TAG "MatonosIpc"
@@ -21,6 +23,8 @@ namespace {
 constexpr size_t kMaxMessage = 64 * 1024;
 constexpr int kMaxDepth = 32;
 constexpr int kMaxNodes = 8192;
+constexpr size_t kMaxListenersPerTopic = 64;
+constexpr size_t kMaxListenersTotal = 256;
 
 struct JsonValue {
     enum class Type { kObject, kArray, kString, kNumber, kBool, kNull } type;
@@ -140,6 +144,7 @@ class JsonParser {
                     } else if (value >= 0xdc00 && value <= 0xdfff) {
                         return false;
                     }
+                    if (value == 0) return false;  // Handlers receive decoded values as C strings.
                     if (value <= 0x7f) decoded->push_back(static_cast<char>(value));
                     else if (value <= 0x7ff) {
                         decoded->push_back(static_cast<char>(0xc0 | (value >> 6)));
@@ -181,7 +186,6 @@ class JsonParser {
             while (pos_ < s_.size() && s_[pos_] >= '0' && s_[pos_] <= '9') ++pos_;
             if (exponent == pos_) return false;
         }
-        if (start == pos_) return false;
         *value = s_.substr(start, pos_ - start);
         return true;
     }
@@ -249,6 +253,7 @@ struct MatonosIpcServer {
     std::mutex listeners_mutex;
     std::unordered_map<std::string, std::vector<std::shared_ptr<IChannelListener>>> listeners;
     std::shared_ptr<void> service_lifetime;
+    std::string instance;
 };
 
 namespace {
@@ -257,7 +262,7 @@ class Channel final : public BnChannel {
     explicit Channel(MatonosIpcServer *server) : server_(server) {}
     ScopedAStatus call(const std::string &command, const std::string &jsonArgs,
                        std::string *jsonResult) override {
-        if (command.empty() || command.size() > 64 || jsonArgs.size() > kMaxMessage)
+        if (!ValidName(command) || jsonArgs.size() > kMaxMessage)
             return ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
         JsonValue args;
         if (!ValidJson(jsonArgs, &args) || args.type != JsonValue::Type::kObject)
@@ -284,9 +289,18 @@ class Channel final : public BnChannel {
                             const std::shared_ptr<IChannelListener> &listener) override {
         if (!ValidName(topic) || !listener) return ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
         std::lock_guard<std::mutex> lock(server_->listeners_mutex);
-        auto &items = server_->listeners[topic];
-        for (const auto &item : items) if (item->asBinder() == listener->asBinder()) return ScopedAStatus::ok();
-        items.push_back(listener);
+        auto found = server_->listeners.find(topic);
+        if (found != server_->listeners.end()) {
+            for (const auto &item : found->second)
+                if (item->asBinder() == listener->asBinder()) return ScopedAStatus::ok();
+            if (found->second.size() >= kMaxListenersPerTopic)
+                return ScopedAStatus::fromServiceSpecificError(4);
+        }
+        size_t total = 0;
+        for (const auto &entry : server_->listeners) total += entry.second.size();
+        if (total >= kMaxListenersTotal)
+            return ScopedAStatus::fromServiceSpecificError(4);
+        server_->listeners[topic].push_back(listener);
         return ScopedAStatus::ok();
     }
     ScopedAStatus unsubscribe(const std::string &topic,
@@ -310,11 +324,11 @@ class Channel final : public BnChannel {
 
 extern "C" MatonosIpcServer *matonos_ipc_create(const char *target) {
     if (!target || !ValidName(target)) return nullptr;
-    return new MatonosIpcServer(target);
+    return new (std::nothrow) MatonosIpcServer(target);
 }
 extern "C" int matonos_ipc_register(MatonosIpcServer *server, const char *command,
                                      matonos_ipc_handler handler, void *context) {
-    if (!server || !command || !handler || !*command || std::strlen(command) > 64) return -1;
+    if (!server || !command || !handler || !ValidName(command)) return -1;
     std::lock_guard<std::mutex> lock(server->handlers_mutex);
     return server->handlers.emplace(command, std::make_pair(handler, context)).second ? 0 : -1;
 }
@@ -323,8 +337,8 @@ extern "C" int matonos_ipc_start(MatonosIpcServer *server) {
     ABinderProcess_setThreadPoolMaxThreadCount(4);
     auto service = ndk::SharedRefBase::make<Channel>(server);
     server->service_lifetime = service;
-    std::string instance = std::string(BnChannel::descriptor) + "/" + server->target;
-    if (AServiceManager_addService(service->asBinder().get(), instance.c_str()) != STATUS_OK) return -1;
+    server->instance = std::string(BnChannel::descriptor) + "/" + server->target;
+    if (AServiceManager_addService(service->asBinder().get(), server->instance.c_str()) != STATUS_OK) return -1;
     ABinderProcess_startThreadPool();
     return 0;
 }
@@ -349,15 +363,32 @@ extern "C" int matonos_ipc_publish(MatonosIpcServer *server, const char *topic,
         else dead.push_back(listener);
     }
     if (!dead.empty()) {
+        std::unordered_set<AIBinder *> dead_binders;
+        for (const auto &listener : dead) dead_binders.insert(listener->asBinder().get());
         std::lock_guard<std::mutex> lock(server->listeners_mutex);
         auto it = server->listeners.find(topic);
         if (it != server->listeners.end()) {
             auto &items = it->second;
             items.erase(std::remove_if(items.begin(), items.end(), [&](const auto &item) {
-                return std::find(dead.begin(), dead.end(), item) != dead.end();
+                return dead_binders.count(item->asBinder().get()) != 0;
             }), items.end());
             if (items.empty()) server->listeners.erase(it);
         }
     }
     return delivered;
+}
+
+extern "C" int matonos_ipc_destroy(MatonosIpcServer *server) {
+    if (!server) return 0;
+    if (server->service_lifetime) {
+        /* Channel retains a raw pointer and stable NDK Binder has no public
+         * remove-service API. Keep the inert server alive until process exit. */
+        std::lock_guard<std::mutex> handlers_lock(server->handlers_mutex);
+        std::lock_guard<std::mutex> listeners_lock(server->listeners_mutex);
+        server->handlers.clear();
+        server->listeners.clear();
+        return -1;
+    }
+    delete server;
+    return 0;
 }
