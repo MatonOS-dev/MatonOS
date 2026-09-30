@@ -1,34 +1,22 @@
-# Shared changes required
+# Conditional shared change
 
-The v1 stub test proved that the current single-APK layout cannot register its
-dynamic shared library: stock PackageManager rejects packages that both
-declare a dynamic library and contain JNI libraries. Do not patch PackageManager.
+No split is requested while the `android:multiArch="true"` host APK test is
+pending. The current host APK contains JNI libraries and declares the dynamic
+library `org.matonos.linuxhost`; its rebuilt manifest now enables multiarch.
+The next image build and QEMU install test will determine whether stock
+PackageManager accepts it.
 
-Split the current host into:
-
-- A Java-only `MatonWaylandHost` provider APK, package
-  `org.matonos.compositor`, declaring the dynamic library
-  `org.matonos.linuxhost` and containing the host-facing stub classes and
-  launcher UI. Keep its existing `buildinfra/apps/apps.list` row,
-  `android_app_import` in `buildinfra/Android.bp`, and product package entry in
-  `buildinfra/buildinfra.mk`.
-- A JNI-bearing engine APK, package `org.matonos.compositor.engine`, containing
-  the current native libraries and compositor service. Add its Gradle project
-  to `buildinfra/apps/apps.list`, an `android_app_import` to
-  `buildinfra/Android.bp` (`system_ext_specific: true`, `preprocessed: true`),
-  and `MatonWaylandEngine` to `PRODUCT_PACKAGES` in `buildinfra/buildinfra.mk`.
-  Connect the Java provider to the engine with an explicit bound service.
-
-Reason: AOSP `frameworks/base/services/core/java/com/android/server/pm/PackageAbiHelperImpl.java`
-throws `INSTALL_FAILED_INTERNAL_ERROR` for a package recognized as a dynamic
-shared-library provider when that package also has native libraries. The
-current host APK bundles JNI libraries, so PackageManager does not register
-the provider and generated stubs fail with `INSTALL_FAILED_MISSING_SHARED_LIBRARY`.
-The source APK is under `/system_ext/app/MatonWaylandHost`, but presence on the
-partition does not make it a registered package. The host provider must be
-Java-only; the native engine needs its own package. These registry edits are
-shared ownership and must be applied by the coordinator after the provider and
-engine split is implemented.
+If PackageManager still rejects the provider with
+`Shared library with native libs must be multiarch`, the stock-compatible
+fallback is a Java-only `MatonWaylandHost` provider package
+`org.matonos.compositor`, plus a JNI-bearing engine package
+`org.matonos.compositor.engine`. That fallback would require shared registry
+changes: add the engine Gradle project to `buildinfra/apps/apps.list`, import
+`MatonWaylandEngine` from `buildinfra/Android.bp` with
+`system_ext_specific: true` and `preprocessed: true`, and add it to
+`PRODUCT_PACKAGES` in `buildinfra/buildinfra.mk`. Move the JNI/native service
+into that engine package and connect it to the Java provider with an explicit
+bound service. Do not make these changes unless the multiarch attempt fails.
 
 The system bridge and Flathub store still need a narrow trusted-call surface
 to invoke `MatonLinuxStubGenerator`, plus policy defining which signed callers

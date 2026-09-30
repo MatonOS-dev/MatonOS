@@ -84,28 +84,24 @@ module built successfully and ran on-device using Android Keystore, producing
 a signed APK with the empty resource table, uncompressed binary XML, and valid
 empty DEX map list. A fresh-image test exposed an unclosed `<uses-sdk>` in the
 binary manifest; that is fixed and the rebuilt module parses through manifest
-reconciliation. The remaining install failure is a stock PackageManager
-constraint: a dynamic shared-library provider cannot contain JNI libraries.
-The host APK is present in `/system_ext`, but PackageManager does not register
-it; therefore the stub fails with `INSTALL_FAILED_MISSING_SHARED_LIBRARY`.
-No AOSP patch will be added. A Java-only library-provider APK plus a separate
-JNI-bearing compositor engine package is needed before stubs can install and
-launch. The requested split and integration changes are listed in
-[SHARED-CHANGES.md](SHARED-CHANGES.md) and [STUBS.md](STUBS.md).
+reconciliation. The first host APK lacked `android:multiArch`, so the stock
+PackageManager's single-ABI path rejected it as a JNI-bearing dynamic-library
+provider. The host manifest now sets `android:multiArch="true"`, confirmed in
+the staged APK by AAPT2. Its image build and a fresh-boot stub install/launch
+retest are queued. If multiarch does not satisfy PackageManager, the Java-only
+provider/native-engine split is documented as a contingency in
+[SHARED-CHANGES.md](SHARED-CHANGES.md); no AOSP patch will be added.
 
 The full image build and separate `MatonLinuxStubGenerator` module build both
-passed on 2026-09-30. The host APK is staged in the image but is unusable as a
-dynamic-library provider until the native payload is split. The
+passed on 2026-09-30. The host APK staged for the next image now declares
+`android:multiArch`; fresh-boot PackageManager verification is pending. The
 dependency build was verified with
 `MATON_BUILD_JOBS=4 bash linux/compositor/build-compositor.sh`. The native
 shared library was verified with Android NDK r30's CMake toolchain targeting
 `x86_64`/API 35 and Ninja `-j4`; the Gradle app build is complete. Stub APK
-installation and host launch are blocked until the Java-provider/native-engine
-split is implemented; the host APK as currently packaged is not registered by
-stock PackageManager.
+installation and host launch verification require the next image build.
 
-After implementing the Java-provider/native-engine split and rebuilding the
-image:
+After the multiarch host APK is included in a newly built image:
 
 1. Start one fresh QEMU VM with virgl, `-m 4096`, and an adb port of 5556 or
    higher; confirm no other agent VM is active and never use port 5555.

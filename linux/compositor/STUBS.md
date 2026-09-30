@@ -50,35 +50,27 @@ signs with `apksig`. The Android Keystore alias
 `matonos_flatpak_stub_v1` is created on first use as a non-exportable EC
 P-256 signing key.
 
-## Stock PackageManager constraint
+## Stock PackageManager multiarch handling
 
-The requested provider layout cannot ship as one APK while the compositor
-host contains its JNI libraries. AOSP's stock `PackageAbiHelperImpl` rejects
-any package that declares a dynamic shared library and also contains native
-libraries (`Shared library with native libs must be multiarch`). On the test
-image the host APK was present under `/system_ext/app/MatonWaylandHost`, but
-PackageManager did not register `org.matonos.compositor`; installing the
-generated stub then failed with `INSTALL_FAILED_MISSING_SHARED_LIBRARY`.
-This is a stock framework restriction, so this project will not patch it.
-
-The stock-compatible follow-up is to split the Java dynamic-library provider
-from the JNI-bearing compositor engine APK. Keep the provider package
-`org.matonos.compositor` Java-only, including `StubActivity`, `StubService`,
-`MainActivity`, `WindowActivity`, and `HostContract`; move the JNI libraries
-and native compositor service into a companion package and connect the UI to
-it through an explicit app-local bound service. Add the companion APK to the
-shared app/build registries. Until that split is implemented and tested, a
-generated stub can be signed and parsed, but it cannot be installed against
-the host library or launched. See [SHARED-CHANGES.md](SHARED-CHANGES.md).
+The first on-device attempt used a host APK without `android:multiArch` and
+PackageManager rejected that library provider because it contained JNI
+libraries. AOSP's `PackageAbiHelperImpl` handles `pkg.isMultiArch()` in a
+separate ABI path before the single-ABI branch that throws
+`Shared library with native libs must be multiarch`. The host manifest now
+sets `<application android:multiArch="true"/>`; AAPT2 confirms the flag is
+present. A fresh-image build and stub-install retest are pending. If the
+multiarch APK still cannot register as a shared-library provider, use the
+Java-only provider/native-engine split documented as a contingency in
+[SHARED-CHANGES.md](SHARED-CHANGES.md), without patching AOSP.
 
 ## Verification status
 
-On a fresh QEMU boot, the latest generator produced a signed APK using
-Android Keystore. The fixed manifest parsed through reconciliation; install
-then failed because the host shared library was unavailable. The host APK
-was present on `/system_ext`, but PackageManager did not register it. The
-follow-up split documented above must land before PackageManager can resolve
-the stub's `<uses-library>` and the launcher can run.
+On a fresh QEMU boot, the generator produced a signed APK using Android
+Keystore. The fixed manifest parsed through reconciliation. That image's host
+APK did not yet declare `android:multiArch="true"`, so PackageManager did not
+register the dynamic library and the stub failed with
+`INSTALL_FAILED_MISSING_SHARED_LIBRARY`. The rebuilt host APK now sets the
+flag; install and launcher verification on an image containing it are pending.
 
 After the provider/engine split, repeat on a freshly built and booted image:
 
