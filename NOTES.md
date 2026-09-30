@@ -1025,12 +1025,15 @@ Each entry: what, why no non-patch way, what it would need.
   2026-09-30)**: the `matonos-btd` daemon and its `/dev/vhci` "empty radio"
   emulator are removed. With no controller the Bluetooth HAL reports
   unavailable and Bluetooth stays off — honest, no crash; the
-  "toggle/scans-work-with-no-radio" goal is given up. The `IBluetoothHci` HAL
-  itself discovers and selects the real controller (persisted choice,
-  built-in before USB), owns rfkill, and opens the selected HCI user channel —
-  one process, no property coordination. Rationale: Android's stack aborts on
-  the hand-rolled emulator (`hci_layer.cc:493`, COMMAND_COMPLETE with an empty
-  command queue), and neither spoof maps onto AOSP's HALs cleanly. WiFi
+  "toggle/scans-work-with-no-radio" goal is given up. We ship AOSP's **stock**
+  `android.hardware.bluetooth-service.default` HAL
+  (`hardware/interfaces/bluetooth/aidl/default`): it already unblocks rfkill via
+  MGMT, finds the controller (`READ_INDEX_LIST`) and binds the HCI user
+  channel, and reports `UNABLE_TO_OPEN_INTERFACE` when there is none. Our
+  custom `matonos-bluetooth-service` HAL, `matonos-btd` and the emulator are
+  deleted; the controller-choice/list API is dropped (the stock HAL uses
+  `hci0`). Rationale: our custom HAL duplicated AOSP and the hand-rolled
+  emulator aborted the stack (`hci_layer.cc:493`). WiFi
   likewise drops `matonos-wifid`'s rename/rfkill/2 s-poll machinery:
   `mac80211_hwsim` (module param) covers the no-radio case and the stock
   `wpa_supplicant`/`wificond`/nl80211 path owns `wlan0`. See
