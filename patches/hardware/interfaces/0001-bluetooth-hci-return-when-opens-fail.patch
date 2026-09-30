@@ -1,0 +1,12 @@
+diff --git a/bluetooth/aidl/default/BluetoothHci.cpp b/bluetooth/aidl/default/BluetoothHci.cpp
+index f64438068f..7d8f18b205 100644
+--- a/bluetooth/aidl/default/BluetoothHci.cpp
++++ b/bluetooth/aidl/default/BluetoothHci.cpp
+@@ -169,6 +169,7 @@ void BluetoothHci::initialize(const std::shared_ptr<hal::IBluetoothHciCallbacks>
+         if (mFd < 0) {
+             mState = HalState::READY;
+             cb->initializationComplete(Status::UNABLE_TO_OPEN_INTERFACE);
++            return;
+         }
+     }
+ 
