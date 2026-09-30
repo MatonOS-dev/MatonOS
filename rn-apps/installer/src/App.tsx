@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SafeAreaView, StyleSheet } from "react-native";
+import { FlatList, SafeAreaView, StyleSheet } from "react-native";
 import {
   Button,
   Card,
@@ -22,6 +22,60 @@ function formatSize(bytes: number): string {
 
 function stageLabel(progress: OperationProgress | null): string {
   return progress?.message ?? "Preparing install request";
+}
+
+function DrivesStatus({ loading, count }: { loading: boolean; count: number }) {
+  if (loading) {
+    return <Text>Finding available drives…</Text>;
+  }
+  if (count === 0) {
+    return <Text>No safe target drives are available.</Text>;
+  }
+  return null;
+}
+
+function DriveCard({
+  drive,
+  onSelect,
+}: {
+  drive: InstallDrive;
+  onSelect: (drive: InstallDrive) => void;
+}) {
+  return (
+    <Card border={{ width: 1, color: "#79716B" }}>
+      <Column verticalArrangement={{ spacedBy: 8 }}>
+        <Text style={{ typography: "titleMedium" }}>{drive.model}</Text>
+        <Text style={{ typography: "bodyMedium" }}>
+          {formatSize(drive.sizeBytes)} · {drive.transport}
+          {drive.removable ? " · removable" : ""}
+        </Text>
+        <Text style={{ typography: "bodySmall" }}>{drive.path}</Text>
+        {!drive.safe && drive.reason ? (
+          <Text color="#B3261E">Unavailable: {drive.reason}</Text>
+        ) : null}
+        <Button enabled={drive.safe} onClick={() => onSelect(drive)}>
+          Select drive
+        </Button>
+      </Column>
+    </Card>
+  );
+}
+
+function DriveList({
+  drives,
+  onSelect,
+}: {
+  drives: InstallDrive[];
+  onSelect: (drive: InstallDrive) => void;
+}) {
+  return (
+    <FlatList
+      style={{ height: 320 }}
+      data={drives}
+      keyExtractor={(drive) => drive.id}
+      renderItem={({ item }) => <DriveCard drive={item} onSelect={onSelect} />}
+    />
+  );
 }
 
 export default function App(): React.JSX.Element {
@@ -123,29 +177,6 @@ export default function App(): React.JSX.Element {
       );
   };
 
-  const driveCards = listedDrives.map((drive) => (
-    <Card key={drive.id} border={{ width: 1, color: "#79716B" }}>
-      <Column verticalArrangement={{ spacedBy: 8 }}>
-        <Text style={{ typography: "titleMedium" }}>{drive.model}</Text>
-        <Text style={{ typography: "bodyMedium" }}>
-          {formatSize(drive.sizeBytes)} · {drive.transport}{drive.removable ? " · removable" : ""}
-        </Text>
-        <Text style={{ typography: "bodySmall" }}>{drive.path}</Text>
-        {!drive.safe && drive.reason ? <Text color="#B3261E">Unavailable: {drive.reason}</Text> : null}
-        <Button
-          enabled={drive.safe}
-          onClick={() => {
-            setSelected(drive);
-            setError("");
-            setScreen("confirm");
-          }}
-        >
-          Select drive
-        </Button>
-      </Column>
-    </Card>
-  ));
-
   return (
     <SafeAreaView style={styles.root}>
       <Host style={styles.host} colorScheme="light">
@@ -186,11 +217,15 @@ export default function App(): React.JSX.Element {
                   Refresh
                 </Button>
               </Row>
-              {loading ? <Text>Finding available drives…</Text> : null}
-              {!loading && listedDrives.length === 0 ? (
-                <Text>No safe target drives are available.</Text>
-              ) : null}
-              {driveCards}
+              <DrivesStatus loading={loading} count={listedDrives.length} />
+              <DriveList
+                drives={listedDrives}
+                onSelect={(drive) => {
+                  setSelected(drive);
+                  setError("");
+                  setScreen("confirm");
+                }}
+              />
             </Column>
           ) : null}
 

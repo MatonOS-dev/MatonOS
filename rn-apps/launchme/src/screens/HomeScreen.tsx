@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Image, Pressable, StyleSheet, Text, View} from 'react-native';
+import {FlatList, Image, Pressable, StyleSheet, Text, View} from 'react-native';
 import {useTheme} from 'react-native-paper';
 import {MatonShell, type LauncherApp} from '../MatonShellNative';
 
@@ -18,25 +18,24 @@ export function HomeScreen(): React.JSX.Element {
     };
   }, []);
   const now = new Date();
-  const shortcuts = apps.map((app) => (
+  const renderShortcut = ({item}: {item: LauncherApp}) => (
     <Pressable
-      key={app.component}
       accessibilityRole="button"
       focusable
-      accessibilityLabel={`Open ${app.label}`}
-      onPress={() => void MatonShell.launchApp(app.component)}
+      accessibilityLabel={`Open ${item.label}`}
+      onPress={() => void MatonShell.launchApp(item.component)}
       style={({pressed}) => [
         styles.shortcut,
         {backgroundColor: theme.dark ? 'rgba(0,0,0,0.76)' : 'rgba(255,255,255,0.9)'},
         pressed && styles.pressed,
       ]}
     >
-      {!!app.iconUri && <Image source={{uri: app.iconUri}} style={styles.icon} />}
+      {!!item.iconUri && <Image source={{uri: item.iconUri}} style={styles.icon} />}
       <Text numberOfLines={1} style={[styles.label, {color: theme.colors.onSurface}]}>
-        {app.label}
+        {item.label}
       </Text>
     </Pressable>
-  ));
+  );
   return (
     <View style={styles.home}>
       <View
@@ -52,9 +51,15 @@ export function HomeScreen(): React.JSX.Element {
           {now.toLocaleDateString([], {weekday: 'long', month: 'long', day: 'numeric'})}
         </Text>
       </View>
-      <View style={styles.shortcuts}>
-        {shortcuts}
-      </View>
+      <FlatList
+        data={apps}
+        keyExtractor={(app) => app.component}
+        renderItem={renderShortcut}
+        numColumns={4}
+        columnWrapperStyle={styles.shortcutRow}
+        contentContainerStyle={styles.shortcuts}
+        scrollEnabled={false}
+      />
     </View>
   );
 }
@@ -70,7 +75,8 @@ const styles = StyleSheet.create({
   },
   clock: {fontSize: 74, fontWeight: '300'},
   date: {fontSize: 23},
-  shortcuts: {flexDirection: 'row', flexWrap: 'wrap', gap: 14, marginTop: 32},
+  shortcuts: {gap: 14, marginTop: 32},
+  shortcutRow: {gap: 14},
   shortcut: {width: 96, alignItems: 'center', gap: 6, borderRadius: 12, padding: 10},
   pressed: {opacity: 0.8},
   icon: {width: 48, height: 48},

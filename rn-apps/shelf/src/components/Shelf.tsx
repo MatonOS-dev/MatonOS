@@ -1,5 +1,5 @@
 import React, {useEffect, useRef, useState} from 'react';
-import {Image, Pressable, StyleSheet, Text, View} from 'react-native';
+import {FlatList, Image, Pressable, StyleSheet, Text, View} from 'react-native';
 import {IconButton, Menu, useTheme} from 'react-native-paper';
 import {MatonOS} from '@matonos/rn-common';
 import {MatonShelf, type LauncherApp} from '../ShelfNative';
@@ -74,42 +74,41 @@ export function Shelf(): React.JSX.Element {
     setExpanded(true);
     MatonShelf.setShelfExpanded(true);
   };
-  const shelfItems = shelfApps.map((app) => (
+  const renderShelfApp = ({item}: {item: LauncherApp}) => (
     <Pressable
-      key={app.packageName}
       onPress={() =>
-        void (runningPackages.includes(app.packageName)
+        void (runningPackages.includes(item.packageName)
           ? MatonOS.getRecentTasks()
-              .then((tasks) => tasks.find((task) => task.packageName === app.packageName))
+              .then((tasks) => tasks.find((task) => task.packageName === item.packageName))
               .then((task) =>
                 task
                   ? MatonOS.moveTaskToFront(task.taskId)
-                  : MatonShelf.launchApp(app.component),
+                  : MatonShelf.launchApp(item.component),
               )
-          : MatonShelf.launchApp(app.component))
+          : MatonShelf.launchApp(item.component))
       }
       onLongPress={() => {
-        void MatonShelf.togglePinnedApp(app.packageName).then((isPinned) => {
+        void MatonShelf.togglePinnedApp(item.packageName).then((isPinned) => {
           setPinned((current) =>
             isPinned
-              ? [...current, app.packageName]
-              : current.filter((pkg) => pkg !== app.packageName),
+              ? [...current, item.packageName]
+              : current.filter((pkg) => pkg !== item.packageName),
           );
         });
       }}
       style={[
         styles.appButton,
-        focusedPackage === app.packageName && {
+        focusedPackage === item.packageName && {
           borderColor: theme.colors.primary,
           borderWidth: 2,
         },
       ]}
       accessibilityRole="button"
-      accessibilityLabel={app.label}
+      accessibilityLabel={item.label}
     >
-      {!!app.iconUri && <Image source={{uri: app.iconUri}} style={styles.icon} />}
+      {!!item.iconUri && <Image source={{uri: item.iconUri}} style={styles.icon} />}
     </Pressable>
-  ));
+  );
   return (
     <Pressable
       style={[
@@ -185,7 +184,15 @@ export function Shelf(): React.JSX.Element {
           />
         </Menu>
       )}
-      {expanded ? shelfItems : null}
+      {expanded ? (
+        <FlatList
+          data={shelfApps}
+          horizontal
+          keyExtractor={(app) => app.packageName}
+          renderItem={renderShelfApp}
+          showsHorizontalScrollIndicator={false}
+        />
+      ) : null}
       <View style={styles.spacer} />
       {expanded && threeButtonMode && (
         <IconButton
