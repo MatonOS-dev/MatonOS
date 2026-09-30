@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Image as ComposeImage, Button, Column, Host, LazyColumn, LazyRow, OutlinedTextField, Row, Text } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
-import { background, fillMaxSize, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
+import { background, clickable, fillMaxSize, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import { getAppById, getAppDetails, getCollection, searchApps, type StoreApp } from "./FlathubApi";
-import { getInstalledRefs, installApp, uninstallApp, type ProgressEvent } from "./FlatpakBridge";
+import { getInstalledRefs, installApp, runApp, uninstallApp, type ProgressEvent } from "./FlatpakBridge";
 import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
 
 type Page = "browse" | "installed";
@@ -39,16 +39,26 @@ function Screenshots({ app }: { app: StoreApp }) {
   );
 }
 
-function AppTile({ app, installed, onOpen }: { app: StoreApp; installed: boolean; onOpen: (app: StoreApp) => void }) {
-  const buttonLabel = installed ? "Open" : "View";
+function AppTile({ app, installed, busy, progress, onOpenDetails, onInstall, onLaunch }: {
+  app: StoreApp;
+  installed: boolean;
+  busy: boolean;
+  progress: string;
+  onOpenDetails: (app: StoreApp) => void;
+  onInstall: (app: StoreApp) => void;
+  onLaunch: (app: StoreApp) => void;
+}) {
+  const isBusy = busy && Boolean(progress);
+  const buttonLabel = isBusy ? progress : installed ? "Open" : "Install";
+  const buttonAction = installed ? () => onLaunch(app) : () => onInstall(app);
   return (
-    <Row verticalAlignment="center" modifiers={[paddingAll(12)]}>
+    <Row verticalAlignment="center" modifiers={[paddingAll(12), clickable(() => onOpenDetails(app))]}>
       <AppIcon app={app} imageSize={52} />
       <Column modifiers={[weight(1), padding(12, 0, 12, 0)]}>
         <Text style={{ typography: "titleMedium" }}>{app.name}</Text>
         <Text style={{ typography: "bodyMedium" }} maxLines={2}>{app.summary}</Text>
       </Column>
-      <Button onClick={() => onOpen(app)}><Text>{buttonLabel}</Text></Button>
+      <Button enabled={!busy} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
     </Row>
   );
 }
@@ -84,8 +94,12 @@ function DetailContent({ app, installed, busy, progress, onBack, onInstall, onUn
   );
 }
 
-function appTiles(apps: StoreApp[], installed: Set<string>, onOpen: (app: StoreApp) => void): ReactNode[] {
-  return apps.map((app) => <AppTile key={app.id} app={app} installed={installed.has(app.id)} onOpen={onOpen} />);
+function appTiles(apps: StoreApp[], installed: Set<string>, busyRef: string, progress: string,
+    onOpenDetails: (app: StoreApp) => void, onInstall: (app: StoreApp) => void,
+    onLaunch: (app: StoreApp) => void): ReactNode[] {
+  return apps.map((app) => <AppTile key={app.id} app={app} installed={installed.has(app.id)}
+    busy={Boolean(busyRef)} progress={busyRef === app.ref ? progress : ""}
+    onOpenDetails={onOpenDetails} onInstall={onInstall} onLaunch={onLaunch} />);
 }
 
 function screenshotTiles(app: StoreApp): ReactNode[] {
@@ -144,17 +158,17 @@ export default function App() {
     catch (error) { setMessage(errorText(error)); }
   }
 
-  async function startInstall() {
-    if (!selected) return;
-    setBusyRef(selected.ref); setProgress("Preparing installation…"); setMessage("");
+  async function startInstall(app: StoreApp | null = selected) {
+    if (!app || busyRef) return;
+    setBusyRef(app.ref); setProgress("Preparing installation…"); setMessage("");
     try {
-      await installApp(selected.ref);
+      await installApp(app.ref);
       setProgress("Downloading and installing…");
     } catch (error) { setProgress(""); setMessage(errorText(error)); setBusyRef(""); }
   }
 
   async function startUninstall() {
-    if (!selected) return;
+    if (!selected || busyRef) return;
     setBusyRef(selected.ref); setProgress("Preparing removal…"); setMessage("");
     try {
       await uninstallApp(selected.ref);
@@ -173,7 +187,7 @@ export default function App() {
       if (payload.phase === "complete") {
         const completed = payload.result;
         setBusyRef(""); setProgress("");
-        if (!completed?.ok) setMessage(completed?.error || "The Flatpak operation did not complete.");
+        if (!completed?.ok) setMessage(completed?.error || completed?.output?.trim() || "The Flatpak operation did not complete.");
         else setMessage("Operation complete.");
         void refreshInstalled();
         return;
@@ -194,13 +208,22 @@ export default function App() {
     if (next === "browse") await loadCollection(feed);
   }
 
+  async function launchApp(app: StoreApp) {
+    setMessage("");
+    try {
+      await runApp(app.id);
+      setMessage(`Opening ${app.name}…`);
+    } catch (error) { setMessage(errorText(error)); }
+  }
+
   let content: ReactNode;
   if (selected) {
     const currentDetail = selected;
-    content = <DetailContent app={currentDetail} installed={installedIds.has(currentDetail.id)} busy={Boolean(busyRef)} progress={busyRef ? progress : ""}
-      onBack={() => setSelected(null)} onInstall={() => void startInstall()} onUninstall={() => void startUninstall()} />;
+    content = <DetailContent app={currentDetail} installed={installedIds.has(currentDetail.id)} busy={Boolean(busyRef)} progress={busyRef === currentDetail.ref ? progress : ""}
+      onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} />;
   } else if (page === "installed") {
-    const tiles = appTiles(installedApps, installedIds, (app) => void openDetails(app));
+    const tiles = appTiles(installedApps, installedIds, busyRef, progress, (app) => void openDetails(app),
+      (app) => void startInstall(app), (app) => void launchApp(app));
     content = <Column modifiers={[weight(1)]}>
       <Text style={{ typography: "headlineSmall" }} modifiers={[paddingAll(20)]}>Installed apps</Text>
       <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading installed apps…</Text></Show>
@@ -209,7 +232,8 @@ export default function App() {
       <LazyColumn verticalArrangement={{ spacedBy: 4 }} contentPadding={{ bottom: 20 }}>{tiles}</LazyColumn>
     </Column>;
   } else {
-    const tiles = appTiles(apps, installedIds, (app) => void openDetails(app));
+    const tiles = appTiles(apps, installedIds, busyRef, progress, (app) => void openDetails(app),
+      (app) => void startInstall(app), (app) => void launchApp(app));
     content = <Column modifiers={[weight(1)]}>
       <Text style={{ typography: "headlineSmall" }} modifiers={[padding(20, 18, 20, 0)]}>Explore Flathub</Text>
       <Row horizontalArrangement={{ spacedBy: 10 }} modifiers={[padding(16, 10, 16, 10)]}>

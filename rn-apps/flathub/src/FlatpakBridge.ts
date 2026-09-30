@@ -11,7 +11,10 @@ export async function callFlatpak(command: string, args: unknown = {}) {
   const result = await MatonOS.call("flatpak", command, args);
   if (!result.available) throw new Error(result.reason || "The Flatpak service is unavailable.");
   const response = decode(result.value);
-  if (!response.ok) throw new Error(response.error || "The Flatpak operation failed.");
+  if (!response.ok) {
+    const output = response.output?.trim();
+    throw new Error(response.error || output || "The Flatpak operation failed.");
+  }
   return response;
 }
 
@@ -22,6 +25,10 @@ export async function installApp(ref: string) {
 
 export async function uninstallApp(ref: string) {
   return callFlatpak("uninstall", { ref });
+}
+
+export async function runApp(appId: string) {
+  return callFlatpak("run", { appId });
 }
 
 export async function getInstalledRefs(): Promise<string[]> {
