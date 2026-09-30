@@ -102,6 +102,17 @@ adb connect localhost:5555
 Or write the image to a USB stick with `dd` and boot a PC from it (UEFI).
 The live image keeps nothing between boots.
 
+## Troubleshooting
+
+- If the serial log stays blank after the systemd-boot menu on the normal
+  (non-debug) entry, that's normal. Wait up to ~5 minutes and poll adb; use
+  `MatonOS Live (debug)` to see the kernel log.
+- Headless test VMs go to sleep after ~10 s on the lock screen. Run
+  `adb shell svc power stayon true`, `adb shell input keyevent KEYCODE_WAKEUP`
+  and `adb shell wm dismiss-keyguard` before taking screenshots.
+- If Soong fails with "provider ... modified after being set", rerun once
+  with `SOONG_INCREMENTAL_ANALYSIS=false`.
+
 ## Where to go next
 
 - `README.md`: what MatonOS is and the repository layout.
