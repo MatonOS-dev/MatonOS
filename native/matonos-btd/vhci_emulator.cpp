@@ -16,8 +16,10 @@ namespace {
 constexpr uint8_t kCommand = 0x01;
 constexpr uint8_t kEvent = 0x04;
 constexpr uint8_t kVendor = 0xff;
+constexpr size_t kMaxHciPacket = 1 + 4 + 65535;
 
 std::vector<uint8_t> Complete(uint16_t opcode, std::vector<uint8_t> params) {
+    if (params.size() > UINT8_MAX - 3) return {};
     std::vector<uint8_t> event{ kEvent, 0x0e,
         static_cast<uint8_t>(3 + params.size()), 1,
         static_cast<uint8_t>(opcode), static_cast<uint8_t>(opcode >> 8) };
@@ -27,6 +29,7 @@ std::vector<uint8_t> Complete(uint16_t opcode, std::vector<uint8_t> params) {
 
 std::vector<uint8_t> Reply(const uint8_t* packet, size_t size) {
     if (size < 4 || packet[0] != kCommand) return {};
+    if (packet[3] != size - 4) return {};
     const uint16_t opcode = packet[1] | (static_cast<uint16_t>(packet[2]) << 8);
     const uint16_t ogf = opcode >> 10;
     const uint16_t ocf = opcode & 0x03ff;
@@ -61,6 +64,9 @@ std::vector<uint8_t> Reply(const uint8_t* packet, size_t size) {
         result.push_back(0x00);
     } else if (ogf == 0x08 && ocf == 0x001c) { // LE Read Supported States
         result.insert(result.end(), {0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff});
+    } else {
+        return {kEvent, 0x0f, 0x04, 0x01, 0x00,
+                static_cast<uint8_t>(opcode), static_cast<uint8_t>(opcode >> 8)};
     }
     return Complete(opcode, std::move(result));
 }
@@ -72,11 +78,15 @@ int RunVhciEmulator() {
     // Bit 7 requests a raw controller. Without it Linux starts its own HCI
     // setup, leaving the device busy when our HAL claims the user channel.
     const uint8_t create[] = {kVendor, 0x80};
-    if (write(fd, create, sizeof(create)) != sizeof(create)) {
-        ALOGE("creating virtual HCI failed: %s", strerror(errno)); close(fd); return 1;
+    size_t written = 0;
+    while (written < sizeof(create)) {
+            ssize_t count = write(fd, create + written, sizeof(create) - written);
+            if (count < 0 && errno == EINTR) continue;
+            if (count <= 0) { ALOGE("creating virtual HCI failed: %s", strerror(errno)); close(fd); return 1; }
+            written += static_cast<size_t>(count);
     }
     ALOGI("VHCI controller created; serving an empty virtual radio");
-    uint8_t packet[4096];
+    uint8_t packet[kMaxHciPacket];
     for (;;) {
         pollfd pfd{fd, POLLIN, 0};
         int ready;
@@ -86,17 +96,21 @@ int RunVhciEmulator() {
         if (count <= 0) { if (errno == EINTR) continue; break; }
         if (count >= 4 && packet[0] == kVendor && packet[1] == 0x80) {
             char index[16];
-            snprintf(index, sizeof(index), "%u", packet[2] | (packet[3] << 8));
+            snprintf(index, sizeof(index), "%u", static_cast<unsigned>(packet[2] | (packet[3] << 8)));
             __system_property_set("vendor.maton.bluetooth.vhci_index", index);
             ALOGI("VHCI assigned HCI index %s", index);
             continue;
         }
         auto response = Reply(packet, static_cast<size_t>(count));
-        if (!response.empty() && write(fd, response.data(), response.size()) !=
-                                   static_cast<ssize_t>(response.size())) {
-            ALOGE("writing VHCI response failed: %s", strerror(errno)); break;
+        size_t offset = 0;
+        while (offset < response.size()) {
+            ssize_t count = write(fd, response.data() + offset, response.size() - offset);
+            if (count < 0 && errno == EINTR) continue;
+            if (count <= 0) { ALOGE("writing VHCI response failed: %s", strerror(errno)); goto done; }
+            offset += static_cast<size_t>(count);
         }
     }
+done:
     close(fd);
-    return 1;
+    return 0;
 }

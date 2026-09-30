@@ -50,6 +50,20 @@ std::string ReadLink(const std::string& path) {
     return realpath(path.c_str(), resolved) ? std::string(resolved) : std::string();
 }
 
+std::string JsonString(const std::string& value) {
+    std::string out = "\"";
+    for (unsigned char c : value) {
+        if (c == '"' || c == '\\') { out.push_back('\\'); out.push_back(static_cast<char>(c)); }
+        else if (c < 0x20) {
+            constexpr char hex[] = "0123456789abcdef";
+            out += "\\u00"; out.push_back(hex[c >> 4]); out.push_back(hex[c & 0x0f]);
+        }
+        else out.push_back(static_cast<char>(c));
+    }
+    out.push_back('"');
+    return out;
+}
+
 std::vector<Adapter> Enumerate() {
     std::vector<Adapter> result;
     DIR* dir = opendir("/sys/class/bluetooth");
@@ -84,7 +98,7 @@ void SetIfChanged(const char* key, const std::string& value) {
     char old[PROPERTY_VALUE_MAX] = {};
     __system_property_get(key, old);
     if (value != old && __system_property_set(key, value.c_str()) != 0)
-        ALOGE("could not set %s: %s", key, strerror(errno));
+        ALOGE("could not set property %s", key);
 }
 
 bool GetChoice(std::string* choice) {
@@ -109,7 +123,6 @@ const Adapter* Choose(const std::vector<Adapter>& adapters, const std::string& o
     // hotplugged later.
     if (const Adapter* preferred = FindChoice(adapters, requested)) return preferred;
     if (const Adapter* current = FindChoice(adapters, old_id)) return current;
-    if (const Adapter* preferred = FindChoice(adapters, requested)) return preferred;
     auto built_in = std::find_if(adapters.begin(), adapters.end(), [](const Adapter& a) {
         return !a.usb;
     });
@@ -132,7 +145,7 @@ int FindRfkillIndex(const std::string& hci) {
         if (!matches) continue;
         char* end = nullptr;
         long index = strtol(e->d_name + 6, &end, 10);
-        if (!end || *end || index < 0 || index > UINT32_MAX) continue;
+        if (!end || *end || index < 0 || index > INT_MAX) continue;
         found = static_cast<int>(index);
         break;
     }
@@ -183,7 +196,7 @@ int ListDevices(const char*, char* result, size_t capacity, void*) {
     for (const auto& a : Enumerate()) {
         if (!first) json += ",";
         first = false;
-        json += "{\"id\":\"" + a.id + "\",\"hci\":\"" + a.hci +
+        json += "{\"id\":" + JsonString(a.id) + ",\"hci\":" + JsonString(a.hci) +
                 "\",\"index\":" + std::to_string(a.index) +
                 ",\"usb\":" + (a.usb ? "true" : "false") + "}";
     }
@@ -194,6 +207,7 @@ int ListDevices(const char*, char* result, size_t capacity, void*) {
 }
 
 int SelectDevice(const char* args, char* result, size_t capacity, void*) {
+    if (!args) return -1;
     const char* key = strstr(args, "\"id\"");
     if (!key || !(key = strchr(key, ':'))) return -1;
     ++key;
@@ -210,7 +224,7 @@ int SelectDevice(const char* args, char* result, size_t capacity, void*) {
     const auto adapters = Enumerate();
     if (!FindChoice(adapters, id)) return -1;
     if (__system_property_set(kChoice, id.c_str()) != 0) return -1;
-    const std::string json = "{\"selected\":\"" + id + "\"}";
+    const std::string json = "{\"selected\":" + JsonString(id) + "}";
     if (json.size() + 1 > capacity) return -1;
     memcpy(result, json.c_str(), json.size() + 1);
     return 0;
@@ -223,10 +237,18 @@ int PropertyInt(const char* key, int fallback) {
 }
 
 void StartVhci() {
-    if (g_vhci_pid > 0 && waitpid(g_vhci_pid, nullptr, WNOHANG) == 0) return;
+    if (g_vhci_pid > 0) {
+        const pid_t result = waitpid(g_vhci_pid, nullptr, WNOHANG);
+        if (result == 0) return;
+        if (result < 0 && errno != ECHILD) { ALOGW("waitpid VHCI: %s", strerror(errno)); return; }
+        g_vhci_pid = -1;
+    }
+    SetIfChanged(kVhciIndex, "-1");
     g_vhci_pid = fork();
     if (g_vhci_pid == 0) {
-        execl("/odm/bin/matonos-btd", "matonos-btd", "--vhci", nullptr);
+        char executable[PATH_MAX];
+        const ssize_t length = readlink("/proc/self/exe", executable, sizeof(executable) - 1);
+        if (length > 0) { executable[length] = '\0'; execl(executable, "matonos-btd", "--vhci", nullptr); }
         _exit(127);
     }
     if (g_vhci_pid < 0) ALOGE("failed to start VHCI emulator: %s", strerror(errno));
@@ -253,11 +275,8 @@ void Manage() {
     GetChoice(&requested);
     const Adapter* selected = Choose(adapters, old_id, requested);
 
-    // Leave the selected adapter's power state to the AOSP HAL, which follows
-    // Android's radio toggle. Only the unused adapters are soft-blocked here.
-    for (const auto& a : adapters) {
-        if (!selected || a.index != selected->index) SetRfkill(a.hci, true);
-    }
+    // The HAL unblocks the selected physical controller during initialization.
+    for (const auto& a : adapters) if (!selected || a.index != selected->index) SetRfkill(a.hci, true);
 
     bool changed = false;
     // Keep Android's Bluetooth stack alive with a VHCI controller when no
@@ -287,7 +306,6 @@ void Manage() {
             usleep(500000);
         }
         StopVhci();
-        if (old_id.empty() || changed) SetRfkill(selected->hci, true);
         SetIfChanged(kIndex, index);
         SetIfChanged(kSelected, selected->id);
         SetIfChanged(kRfkillIndex, std::to_string(FindRfkillIndex(selected->hci)));
@@ -326,7 +344,12 @@ int main(int argc, char** argv) {
         pollfd pfd{fd, POLLIN, 0};
         (void)poll(&pfd, 1, 500);
         char event[4096];
-        while (recv(fd, event, sizeof(event), MSG_DONTWAIT) > 0) {}
+        for (;;) {
+            if (recv(fd, event, sizeof(event), MSG_DONTWAIT) >= 0) continue;
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+                ALOGW("uevent recv: %s", strerror(errno));
+            break;
+        }
     }
     for (;;) {
         pollfd pfd{fd, POLLIN, 0};
@@ -334,7 +357,12 @@ int main(int argc, char** argv) {
         do { result = poll(&pfd, 1, 1000); } while (result < 0 && errno == EINTR);
         if (result > 0) {
             char event[4096];
-            while (recv(fd, event, sizeof(event), MSG_DONTWAIT) > 0) {}
+            for (;;) {
+                if (recv(fd, event, sizeof(event), MSG_DONTWAIT) >= 0) continue;
+                if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+                    ALOGW("uevent recv: %s", strerror(errno));
+                break;
+            }
         }
         // Polling also observes a v2 persisted device choice without requiring
         // a separate binder API; that API can write the same stable device ID.

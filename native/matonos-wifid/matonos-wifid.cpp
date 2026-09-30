@@ -50,6 +50,8 @@ constexpr char kHwsimRadiosProp[] = "vendor.maton.wifi.hwsim.radios";
 constexpr char kHwsimTestReadyProp[] = "vendor.maton.wifi.hwsim.test_ready";
 constexpr char kPersistHwsimRadiosProp[] = "persist.vendor.maton.wifi.hwsim_radios";
 constexpr char kWifiIfname[] = "wlan0";
+constexpr size_t kRfkillPrefixLength = sizeof("rfkill") - 1;
+constexpr size_t kMaxDeviceArgumentLength = 512;
 
 struct Adapter {
     std::string ifname;
@@ -108,17 +110,20 @@ bool IsUsb(const std::string& path) {
 std::vector<Adapter> Enumerate() {
     std::vector<Adapter> adapters;
     std::error_code error;
-    for (const auto& entry : fs::directory_iterator(kSysNet, error)) {
+    fs::directory_iterator entry(kSysNet, error), end;
+    while (!error && entry != end) {
+        const auto current = entry;
+        entry.increment(error);
         if (error) break;
-        const std::string name = entry.path().filename().string();
-        if (!fs::exists(entry.path() / "phy80211", error)) continue;
-        std::string device = Canonical(entry.path() / "phy80211" / "device");
+        const std::string name = current->path().filename().string();
+        if (!fs::exists(current->path() / "phy80211", error)) { error.clear(); continue; }
+        std::string device = Canonical(current->path() / "phy80211" / "device");
         if (device.empty()) {
-            const std::string phy_path = Canonical(entry.path() / "phy80211");
+            const std::string phy_path = Canonical(current->path() / "phy80211");
             if (!phy_path.empty()) device = Canonical(fs::path(phy_path).parent_path() / "device");
         }
-        const std::string phy_path = Canonical(entry.path() / "phy80211");
-        const std::string address = Read(entry.path() / "address");
+        const std::string phy_path = Canonical(current->path() / "phy80211");
+        const std::string address = Read(current->path() / "address");
         const std::string key = !address.empty() ? Lower(address) : device;
         if (key.empty()) continue;
 
@@ -129,7 +134,7 @@ std::vector<Adapter> Enumerate() {
         });
         const bool simulated = device.find("mac80211_hwsim") != std::string::npos ||
                                phy_path.find("mac80211_hwsim") != std::string::npos;
-        Adapter candidate{name, key, device, phy_path, !IsUsb(device), simulated};
+        Adapter candidate{name, key, device, phy_path, !device.empty() && !IsUsb(device), simulated};
         if (existing == adapters.end()) {
             adapters.push_back(std::move(candidate));
         } else if ((name.rfind("wlan", 0) == 0) || existing->ifname.rfind("wlan", 0) != 0) {
@@ -221,14 +226,17 @@ bool SetSoftBlock(unsigned int index, bool block) {
 void ApplyRfkill(const std::vector<Adapter>& adapters, const std::string& selected_key,
                  const std::string& test_ap_key = {}) {
     std::error_code error;
-    for (const auto& entry : fs::directory_iterator(kSysRfkill, error)) {
-        if (error) return;
-        const std::string name = entry.path().filename().string();
+    fs::directory_iterator entry(kSysRfkill, error), end;
+    while (!error && entry != end) {
+        const auto current = entry;
+        entry.increment(error);
+        if (error) break;
+        const std::string name = current->path().filename().string();
         if (name.rfind("rfkill", 0) != 0) continue;
-        const std::string type = Read(entry.path() / "type");
+        const std::string type = Read(current->path() / "type");
         if (type != "wlan" && type != "wifi") continue;
 
-        const std::string rf_device = Canonical(entry.path() / "device");
+        const std::string rf_device = Canonical(current->path() / "device");
         bool belongs_to_selected = false;
         bool belongs_to_any = false;
         for (const auto& adapter : adapters) {
@@ -245,7 +253,7 @@ void ApplyRfkill(const std::vector<Adapter>& adapters, const std::string& select
         if (!belongs_to_any) continue;
         unsigned int index = 0;
         try {
-            index = static_cast<unsigned int>(std::stoul(name.substr(6)));
+            index = static_cast<unsigned int>(std::stoul(name.substr(kRfkillPrefixLength)));
         } catch (...) {
             continue;
         }
@@ -256,14 +264,15 @@ void ApplyRfkill(const std::vector<Adapter>& adapters, const std::string& select
 }
 
 std::string TemporaryName(size_t index) {
-    // IFNAMSIZ is 16: mtnw + eleven decimal digits fits without truncation.
-    return "mtnw" + std::to_string(index % 100000000000ULL);
+    // Stable unique name within this enumeration; Linux itself rejects collisions.
+    return "mtnw" + std::to_string(index);
 }
 
 std::string KeepOthersOut(const std::vector<Adapter>& adapters, const std::string& selected_key,
                           bool reserve_hwsim_test_radio) {
     std::string test_ap_key;
-    for (const auto& adapter : adapters) {
+    for (size_t i = 0; i < adapters.size(); ++i) {
+        const auto& adapter = adapters[i];
         if (adapter.mac == selected_key) continue;
         // Two-radio hwsim is an opt-in QEMU test fixture. Leave its second
         // nl80211 interface available as wlan1 for a guest hostapd process.
@@ -276,7 +285,7 @@ std::string KeepOthersOut(const std::vector<Adapter>& adapters, const std::strin
             continue;
         }
         if (adapter.ifname.rfind("wlan", 0) == 0) {
-            Rename(adapter.ifname, TemporaryName(std::hash<std::string>{}(adapter.mac)));
+            if (!Rename(adapter.ifname, TemporaryName(i))) SetInterfaceDown(adapter.ifname);
         } else {
             SetInterfaceDown(adapter.ifname);
         }
@@ -285,6 +294,7 @@ std::string KeepOthersOut(const std::vector<Adapter>& adapters, const std::strin
 }
 
 bool Publish(const char* key, const std::string& value) {
+    if (value.size() >= PROP_VALUE_MAX) { ALOGW("property value too long for %s", key); return false; }
     char current[PROP_VALUE_MAX] = {};
     __system_property_get(key, current);
     if (value == current) return true;
@@ -343,7 +353,7 @@ bool ParseDeviceArgument(const char* json, std::string* device) {
         } else {
             device->push_back(static_cast<char>(c));
         }
-        if (device->size() > 512) return false;
+        if (device->size() > kMaxDeviceArgumentLength) return false;
     }
     if (position >= input.size() || input[position++] != '"') return false;
     SkipWhitespace(input, &position);
@@ -391,6 +401,7 @@ int HandleListDevices(const char*, char* result, size_t capacity, void*) {
 int HandleSelectDevice(const char* args, char* result, size_t capacity, void*) {
     std::string choice;
     if (!ParseDeviceArgument(args, &choice)) return -1;
+    if (choice.size() >= PROP_VALUE_MAX) return -1;
     {
         std::lock_guard<std::mutex> lock(gStateMutex);
         const auto found = std::find_if(gAdapters.begin(), gAdapters.end(), [&](const Adapter& a) {
@@ -430,6 +441,8 @@ void PublishSnapshot(const std::vector<Adapter>& adapters, const std::string& se
         char json[1024];
         if (HandleGetState(nullptr, json, sizeof(json), nullptr) == 0) {
             matonos_ipc_publish(gIpcServer, "state", json);
+        } else {
+            ALOGW("Wi-Fi state snapshot exceeded IPC buffer");
         }
     }
 }
@@ -549,12 +562,14 @@ int main() {
             continue;
         }
 
-        selected_key = selected->mac;
+        const std::string candidate_key = selected->mac;
         const bool reserve_hwsim_test_radio = selected->simulated &&
                                                RequestedHwsimRadios() == "2";
-        const std::string test_ap_key = KeepOthersOut(adapters, selected_key,
+        const std::string test_ap_key = KeepOthersOut(adapters, candidate_key,
                                                        reserve_hwsim_test_radio);
         if (selected->ifname != kWifiIfname && !Rename(selected->ifname, kWifiIfname)) {
+            selected_key.clear();
+            SetInterfaceDown(selected->ifname);
             Publish(kPresentProp, "0");
             Publish(kSelectedProp, "");
             Publish(kHwsimTestReadyProp, "0");
@@ -563,6 +578,7 @@ int main() {
             continue;
         }
 
+        selected_key = candidate_key;
         ApplyRfkill(adapters, selected_key, test_ap_key);
         Publish(kSelectedProp, selected->simulated ? "hwsim:" + selected_key : selected_key);
         Publish(kPresentProp, "1");
