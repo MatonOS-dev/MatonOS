@@ -47,6 +47,9 @@ prop vendor.maton.wifi.present=0
 prop vendor.maton.wifi.hwsim.load=0
 prop ro.soc.manufacturer=MatonOS
 prop ro.soc.model=pc_x86_64
+# MatonOS release identity (Ubuntu-style YY.MM, see NOTES.md "Versioning").
+# Read by the add-ons/updater tooling (addons/README.md) and Settings.
+prop ro.matonos.version=26.9
 # Audio policy (ODM copy, read before /vendor/etc). Bluetooth audio policy is
 # intentionally omitted; the bundle config enables primary, r_submix, USB,
 # and stub modules only.
