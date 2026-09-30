@@ -1,7 +1,9 @@
 #include <org/matonos/systembridge/BnLinuxd.h>
 #include <org/matonos/systembridge/ILinuxdListener.h>
 #include <binder/IServiceManager.h>
+#include <binder/IBinder.h>
 #include <binder/IPCThreadState.h>
+#include <binder/PermissionCache.h>
 #include <binder/ProcessState.h>
 #include <binder/Status.h>
 #include <json/json.h>
@@ -11,11 +13,15 @@
 
 #include <algorithm>
 #include <cctype>
+#include <condition_variable>
+#include <deque>
 #include <initializer_list>
 #include <memory>
 #include <mutex>
+#include <pthread.h>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 using org::matonos::systembridge::BnLinuxd;
@@ -24,8 +30,24 @@ using org::matonos::systembridge::ILinuxdListener;
 namespace {
 constexpr char kInstance[] = "org.matonos.systembridge.ILinuxd/default";
 constexpr size_t kInputLimit = 64 * 1024;
+constexpr size_t kListenerLimit = 64;
 std::mutex g_listener_mutex;
 std::vector<android::sp<ILinuxdListener>> g_progress_listeners;
+std::mutex g_event_mutex;
+std::condition_variable g_event_condition;
+std::deque<std::string> g_events;
+
+class ListenerDeathRecipient final : public android::IBinder::DeathRecipient {
+  public:
+    void binderDied(const android::wp<android::IBinder>& who) override {
+        std::lock_guard<std::mutex> guard(g_listener_mutex);
+        g_progress_listeners.erase(std::remove_if(g_progress_listeners.begin(), g_progress_listeners.end(),
+                [&who](const android::sp<ILinuxdListener>& listener) {
+                    return listener->asBinder().get() == who.unsafe_get();
+                }), g_progress_listeners.end());
+    }
+};
+android::sp<ListenerDeathRecipient> g_listener_death = new ListenerDeathRecipient();
 
 bool Parse(const std::string& text, Json::Value* root) {
     if (text.size() > kInputLimit) return false;
@@ -40,6 +62,52 @@ std::string Encode(const Json::Value& value) {
     Json::StreamWriterBuilder builder;
     builder["indentation"] = "";
     return Json::writeString(builder, value);
+}
+
+void* DispatchEvents(void*) {
+    for (;;) {
+        std::string body;
+        {
+            std::unique_lock<std::mutex> lock(g_event_mutex);
+            g_event_condition.wait(lock, [] { return !g_events.empty(); });
+            body = std::move(g_events.front());
+            g_events.pop_front();
+        }
+        std::vector<android::sp<ILinuxdListener>> listeners;
+        { std::lock_guard<std::mutex> guard(g_listener_mutex); listeners = g_progress_listeners; }
+        std::vector<android::sp<ILinuxdListener>> dead;
+        for (const auto& listener : listeners)
+            if (!listener->onEvent(android::String16("progress"), android::String16(body.c_str())).isOk()) dead.push_back(listener);
+        if (!dead.empty()) {
+            for (const auto& listener : dead) listener->asBinder()->unlinkToDeath(g_listener_death);
+            std::lock_guard<std::mutex> guard(g_listener_mutex);
+            g_progress_listeners.erase(std::remove_if(g_progress_listeners.begin(), g_progress_listeners.end(),
+                    [&dead](const android::sp<ILinuxdListener>& listener) {
+                        return std::find(dead.begin(), dead.end(), listener) != dead.end();
+                    }), g_progress_listeners.end());
+        }
+    }
+    return nullptr;
+}
+
+void NotifyListeners(const std::string& body) {
+    {
+        std::lock_guard<std::mutex> guard(g_event_mutex);
+        if (g_events.size() >= 256) g_events.pop_front();
+        g_events.push_back(body);
+    }
+    g_event_condition.notify_one();
+}
+
+/*
+ * Binder callbacks run on this independent worker. A stalled bridge listener
+ * cannot hold the Flatpak operation mutex or delay draining the CLI pipe.
+ */
+bool StartEventDispatcher() {
+    pthread_t thread;
+    if (pthread_create(&thread, nullptr, DispatchEvents, nullptr) != 0) return false;
+    (void)pthread_detach(thread);
+    return true;
 }
 
 Json::Value Error(const std::string& message) {
@@ -71,6 +139,7 @@ Json::Value EncodeResult(const FlatpakResult& result) {
         cleanup["exitCode"] = result.unused_cleanup_exit_code;
         value["unusedCleanup"] = cleanup;
     }
+    if (result.operation_id) value["operationId"] = result.operation_id;
     return value;
 }
 
@@ -84,18 +153,13 @@ void PublishProgress(const std::string& text) {
         if (begin < i) {
             unsigned percent = 0;
             for (size_t j = begin; j < i; ++j)
-                percent = std::min(100u, percent * 10u + static_cast<unsigned>(text[j] - '0'));
+                percent = std::min(100u, percent > 10u ? 100u : percent * 10u + static_cast<unsigned>(text[j] - '0'));
             event["percent"] = percent;
         }
         break;
     }
     const std::string body = Encode(event);
-    std::lock_guard<std::mutex> guard(g_listener_mutex);
-    auto listener = g_progress_listeners.begin();
-    while (listener != g_progress_listeners.end()) {
-        if ((*listener)->onEvent(android::String16("progress"), android::String16(body.c_str())).isOk()) ++listener;
-        else listener = g_progress_listeners.erase(listener);
-    }
+    NotifyListeners(body);
 }
 
 void PublishCompletion(const FlatpakResult& result) {
@@ -103,12 +167,13 @@ void PublishCompletion(const FlatpakResult& result) {
     event["phase"] = "complete";
     event["result"] = EncodeResult(result);
     const std::string body = Encode(event);
-    std::lock_guard<std::mutex> guard(g_listener_mutex);
-    auto listener = g_progress_listeners.begin();
-    while (listener != g_progress_listeners.end()) {
-        if ((*listener)->onEvent(android::String16("progress"), android::String16(body.c_str())).isOk()) ++listener;
-        else listener = g_progress_listeners.erase(listener);
-    }
+    NotifyListeners(body);
+}
+
+bool IsTrustedCaller() {
+    android::IPCThreadState* state = android::IPCThreadState::self();
+    return android::PermissionCache::checkPermission(android::String16("org.matonos.permission.SYSTEM_BRIDGE"),
+            state->getCallingPid(), state->getCallingUid());
 }
 
 void OnProgress(const char* line, void*) {
@@ -132,6 +197,7 @@ class LinuxdService final : public BnLinuxd {
     android::binder::Status call(const android::String16& command16,
                                  const android::String16& args16,
                                  android::String16* aidl_return) override {
+        if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         const std::string command = ToUtf8(command16);
         const std::string args = ToUtf8(args16);
         auto reply = [aidl_return](const std::string& value) {
@@ -147,16 +213,24 @@ class LinuxdService final : public BnLinuxd {
         std::string app_id_storage;
         const char* ref = nullptr;
         const char* app_id = nullptr;
+        int delete_data = 0;
+        std::string operation_id_storage;
+        const char* operation_id = nullptr;
         std::vector<std::string> run_arg_storage;
         std::vector<const char*> run_args;
         if (command == "install" || command == "uninstall") {
-            if (!OnlyKeys(request, {"ref"}) || !request["ref"].isString() ||
+            const bool uninstall = command == "uninstall";
+            if (!(uninstall ? OnlyKeys(request, {"ref", "deleteData", "operationId"}) : OnlyKeys(request, {"ref", "operationId"})) || !request["ref"].isString() ||
+                    (request.isMember("deleteData") && !request["deleteData"].isBool()) ||
+                    (request.isMember("operationId") && (!request["operationId"].isString() || request["operationId"].asString().size() > 128 || HasEmbeddedNul(request["operationId"].asString()))) ||
                     HasEmbeddedNul(request["ref"].asString())) {
                 reply(Encode(Error("a complete Flatpak ref is required")));
                 return android::binder::Status::ok();
             }
             ref_storage = request["ref"].asString();
             ref = ref_storage.c_str();
+            delete_data = request.get("deleteData", false).asBool() ? 1 : 0;
+            if (request.isMember("operationId")) { operation_id_storage = request["operationId"].asString(); operation_id = operation_id_storage.c_str(); }
         } else if (command == "run") {
             if (!OnlyKeys(request, {"appId", "args"}) || !request["appId"].isString() ||
                     HasEmbeddedNul(request["appId"].asString())) {
@@ -200,7 +274,7 @@ class LinuxdService final : public BnLinuxd {
 
         if (command == "install" || command == "uninstall") PublishProgress(command + " started");
         FlatpakResult result{};
-        flatpak_manager_call(command.c_str(), ref, app_id, run_args.data(), run_args.size(), &result);
+        flatpak_manager_call(command.c_str(), ref, app_id, run_args.data(), run_args.size(), delete_data, operation_id, &result);
         reply(Encode(EncodeResult(result)));
         flatpak_manager_result_clear(&result);
         return android::binder::Status::ok();
@@ -208,20 +282,39 @@ class LinuxdService final : public BnLinuxd {
 
     android::binder::Status subscribe(const android::String16& topic16,
             const android::sp<ILinuxdListener>& listener) override {
+        if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         if (ToUtf8(topic16) != "progress" || !listener) return android::binder::Status::ok();
-        std::lock_guard<std::mutex> guard(g_listener_mutex);
-        if (std::find(g_progress_listeners.begin(), g_progress_listeners.end(), listener) ==
-                g_progress_listeners.end()) g_progress_listeners.push_back(listener);
+        android::sp<ILinuxdListener> evicted;
+        {
+            std::lock_guard<std::mutex> guard(g_listener_mutex);
+            if (std::find(g_progress_listeners.begin(), g_progress_listeners.end(), listener) ==
+                    g_progress_listeners.end()) {
+                if (listener->asBinder()->linkToDeath(g_listener_death) != android::OK) return android::binder::Status::ok();
+                g_progress_listeners.push_back(listener);
+            }
+            if (g_progress_listeners.size() > kListenerLimit) {
+                evicted = g_progress_listeners.front();
+                g_progress_listeners.erase(g_progress_listeners.begin());
+            }
+        }
+        if (evicted) evicted->asBinder()->unlinkToDeath(g_listener_death);
         return android::binder::Status::ok();
     }
 
     android::binder::Status unsubscribe(const android::String16& topic16,
             const android::sp<ILinuxdListener>& listener) override {
+        if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         const std::string topic = ToUtf8(topic16);
-        std::lock_guard<std::mutex> guard(g_listener_mutex);
-        if (topic == "progress") g_progress_listeners.erase(
-                std::remove(g_progress_listeners.begin(), g_progress_listeners.end(), listener),
-                g_progress_listeners.end());
+        bool removed = false;
+        {
+            std::lock_guard<std::mutex> guard(g_listener_mutex);
+            if (topic == "progress") {
+                removed = std::find(g_progress_listeners.begin(), g_progress_listeners.end(), listener) != g_progress_listeners.end();
+                g_progress_listeners.erase(std::remove(g_progress_listeners.begin(), g_progress_listeners.end(), listener),
+                        g_progress_listeners.end());
+            }
+        }
+        if (removed) listener->asBinder()->unlinkToDeath(g_listener_death);
         return android::binder::Status::ok();
     }
 };
@@ -230,6 +323,7 @@ class LinuxdService final : public BnLinuxd {
 int main() {
     flatpak_manager_init();
     flatpak_manager_set_callbacks(OnProgress, OnComplete, nullptr);
+    if (!StartEventDispatcher()) return 1;
     android::sp<LinuxdService> service = new LinuxdService();
     if (android::defaultServiceManager()->addService(android::String16(kInstance), service) != android::OK)
         return 1;

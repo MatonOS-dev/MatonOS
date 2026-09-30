@@ -19,6 +19,7 @@ typedef struct FlatpakResult {
     int has_unused_cleanup;
     int unused_cleanup_ok;
     int unused_cleanup_exit_code;
+    char* operation_id;
 } FlatpakResult;
 
 typedef void (*FlatpakProgressCallback)(const char* line, void* context);
@@ -30,7 +31,8 @@ void flatpak_manager_set_callbacks(FlatpakProgressCallback progress,
 int flatpak_manager_valid_ref(const char* value);
 int flatpak_manager_valid_app_id(const char* value);
 void flatpak_manager_call(const char* command, const char* ref, const char* app_id,
-        const char* const* run_args, size_t run_arg_count, FlatpakResult* result);
+        const char* const* run_args, size_t run_arg_count, int delete_data,
+        const char* operation_id, FlatpakResult* result);
 void flatpak_manager_result_clear(FlatpakResult* result);
 
 #ifdef __cplusplus
