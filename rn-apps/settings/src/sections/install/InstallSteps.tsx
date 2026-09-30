@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { FlatList } from "react-native";
 import {
@@ -66,6 +65,33 @@ function TextError({ message }: { message: string }) {
   );
 }
 
+function ReadinessControl({
+  readiness,
+  onContinue,
+  onRefresh,
+}: {
+  readiness: InstallReadiness;
+  onContinue: () => void;
+  onRefresh: () => void;
+}) {
+  if (readiness === "loading") {
+    return (
+      <Text style={{ typography: "bodySmall" }}>
+        Checking installer and available drives…
+      </Text>
+    );
+  }
+  if (readiness === "ready") {
+    return <ActionButton label="Choose a drive" onClick={onContinue} />;
+  }
+  if (readiness === "unavailable") {
+    return (
+      <ActionButton label={copy.refresh} variant="text" onClick={onRefresh} />
+    );
+  }
+  return null;
+}
+
 export function InstallWelcomeStep({
   readiness,
   message,
@@ -81,30 +107,6 @@ export function InstallWelcomeStep({
   onRefresh: () => void;
   onPreview?: () => void;
 }) {
-  let readinessControl: ReactNode = null;
-  if (readiness === "loading") {
-    readinessControl = (
-      <Text style={{ typography: "bodySmall" }}>
-        Checking installer and available drives…
-      </Text>
-    );
-  } else if (readiness === "ready") {
-    readinessControl = (
-      <ActionButton label="Choose a drive" onClick={onContinue} />
-    );
-  } else if (readiness === "unavailable") {
-    readinessControl = (
-      <ActionButton label={copy.refresh} variant="text" onClick={onRefresh} />
-    );
-  }
-  const previewControl: ReactNode =
-    __DEV__ && onPreview ? (
-      <ActionButton
-        label="Preview screens (no install)"
-        variant="text"
-        onClick={onPreview}
-      />
-    ) : null;
   return (
     <SettingsCard title={copy.installProfileHeading}>
       <Text style={{ typography: "bodyMedium" }}>
@@ -122,9 +124,75 @@ export function InstallWelcomeStep({
         storage.
       </Text>
       {message ? <TextError message={message} /> : null}
-      {readinessControl}
-      {previewControl}
+      <ReadinessControl
+        readiness={readiness}
+        onContinue={onContinue}
+        onRefresh={onRefresh}
+      />
+      {__DEV__ && onPreview ? (
+        <ActionButton
+          label="Preview screens (no install)"
+          variant="text"
+          onClick={onPreview}
+        />
+      ) : null}
     </SettingsCard>
+  );
+}
+
+function DrivesStatus({
+  ready,
+  error,
+  count,
+}: {
+  ready: boolean;
+  error: string;
+  count: number;
+}) {
+  if (!ready && !error) {
+    return (
+      <Text style={{ typography: "bodySmall" }}>Loading drive list…</Text>
+    );
+  }
+  if (error) {
+    return <TextError message={error} />;
+  }
+  if (ready && count === 0) {
+    return (
+      <Text style={{ typography: "bodyMedium" }}>{copy.noSafeDrives}</Text>
+    );
+  }
+  return null;
+}
+
+function DriveList({
+  drives,
+  preview,
+  selectedId,
+  onSelect,
+  formatSize,
+}: {
+  drives: InstallDrive[];
+  preview: boolean;
+  selectedId: string;
+  onSelect: (drive: InstallDrive) => void;
+  formatSize: (bytes: number) => string;
+}) {
+  const data = preview ? drives.slice(0, 1) : drives;
+  return (
+    <FlatList
+      style={{ height: 320 }}
+      data={data}
+      keyExtractor={(drive) => drive.id}
+      renderItem={({ item }) => (
+        <DriveCard
+          drive={item}
+          selected={item.id === selectedId}
+          onSelect={onSelect}
+          formatSize={formatSize}
+        />
+      )}
+    />
   );
 }
 
@@ -147,26 +215,6 @@ export function InstallDrivesStep({
   onRefresh: () => void;
   formatSize: (bytes: number) => string;
 }) {
-  const renderItem = ({ item }: { item: InstallDrive }) => (
-    <DriveCard
-      drive={item}
-      selected={item.id === selectedId}
-      onSelect={onSelect}
-      formatSize={formatSize}
-    />
-  );
-  let statusControl: ReactNode = null;
-  if (!ready && !error) {
-    statusControl = (
-      <Text style={{ typography: "bodySmall" }}>Loading drive list…</Text>
-    );
-  } else if (error) {
-    statusControl = <TextError message={error} />;
-  } else if (ready && drives.length === 0) {
-    statusControl = (
-      <Text style={{ typography: "bodyMedium" }}>{copy.noSafeDrives}</Text>
-    );
-  }
   return (
     <>
       <SettingsCard title="Choose a target drive">
@@ -174,24 +222,56 @@ export function InstallDrivesStep({
           Select the drive to install to. MatonOS will erase every partition
           and file on that drive.
         </Text>
-        {statusControl}
+        <DrivesStatus ready={ready} error={error} count={drives.length} />
         <ActionButton label={copy.refresh} variant="text" onClick={onRefresh} />
       </SettingsCard>
-      {preview && drives[0] ? (
-        <DriveCard
-          drive={drives[0]}
-          selected={drives[0].id === selectedId}
-          onSelect={onSelect}
-          formatSize={formatSize}
-        />
-      ) : (
-        <FlatList
-          style={{ height: 320 }}
-          data={drives}
-          keyExtractor={(drive) => drive.id}
-          renderItem={renderItem}
-        />
-      )}
+      <DriveList
+        drives={drives}
+        preview={preview}
+        selectedId={selectedId}
+        onSelect={onSelect}
+        formatSize={formatSize}
+      />
+    </>
+  );
+}
+
+function ConfirmBody({
+  drive,
+  preview,
+  confirmed,
+  onConfirmChange,
+  formatSize,
+}: {
+  drive: InstallDrive | null;
+  preview: boolean;
+  confirmed: boolean;
+  onConfirmChange: (value: boolean) => void;
+  formatSize: (bytes: number) => string;
+}) {
+  const colors = useMaterialColors();
+  if (!drive) {
+    return <TextError message="No target drive is selected." />;
+  }
+  const eraseText = `This will erase ${drive.model} (${formatSize(drive.sizeBytes)}) and all data on it.`;
+  return (
+    <>
+      {preview ? (
+        <Text style={{ typography: "bodyMedium" }} color={colors.primary}>
+          Preview only. No drive will be changed.
+        </Text>
+      ) : null}
+      <Text style={{ typography: "titleMedium" }} color={colors.error}>
+        {eraseText}
+      </Text>
+      <StatusRow label={copy.device} value={drive.path} />
+      <StatusRow label={copy.capacity} value={formatSize(drive.sizeBytes)} />
+      <ToggleRow
+        title="I understand this drive will be erased"
+        supporting="This confirmation is required before installation starts."
+        value={confirmed}
+        onChange={onConfirmChange}
+      />
     </>
   );
 }
@@ -213,37 +293,17 @@ export function InstallConfirmStep({
   onStart: () => void;
   formatSize: (bytes: number) => string;
 }) {
-  const colors = useMaterialColors();
-  const eraseText = drive
-    ? `This will erase ${drive.model} (${formatSize(drive.sizeBytes)}) and all data on it.`
-    : "No target drive is selected.";
   const cardTitle = preview ? "Preview confirmation" : "Confirm installation";
   const confirmLabel = preview ? "Start preview" : copy.confirmInstall;
-  const confirmBody: ReactNode = drive ? (
-    <>
-      {preview ? (
-        <Text style={{ typography: "bodyMedium" }} color={colors.primary}>
-          Preview only. No drive will be changed.
-        </Text>
-      ) : null}
-      <Text style={{ typography: "titleMedium" }} color={colors.error}>
-        {eraseText}
-      </Text>
-      <StatusRow label={copy.device} value={drive.path} />
-      <StatusRow label={copy.capacity} value={formatSize(drive.sizeBytes)} />
-      <ToggleRow
-        title="I understand this drive will be erased"
-        supporting="This confirmation is required before installation starts."
-        value={confirmed}
-        onChange={onConfirmChange}
-      />
-    </>
-  ) : (
-    <TextError message={eraseText} />
-  );
   return (
     <SettingsCard title={cardTitle}>
-      {confirmBody}
+      <ConfirmBody
+        drive={drive}
+        preview={preview}
+        confirmed={confirmed}
+        onConfirmChange={onConfirmChange}
+        formatSize={formatSize}
+      />
       <ActionButton label={copy.goBack} variant="text" onClick={onBack} />
       <ActionButton
         label={confirmLabel}

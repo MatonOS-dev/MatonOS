@@ -56,8 +56,34 @@ function operationTitle(operation: InstallerOperation) {
   return labels[operation.kind];
 }
 
-export function InstallSection() {
+function ProgressSummary({
+  step,
+  progress,
+}: {
+  step: InstallStep;
+  progress: OperationProgress | null;
+}) {
   const colors = useMaterialColors();
+  if (step !== "progress" || !progress) {
+    return null;
+  }
+  return (
+    <>
+      <Text style={{ typography: "bodySmall" }} color={colors.onSurfaceVariant}>
+        {progress.message}
+      </Text>
+      <LinearProgressIndicator
+        progress={
+          progress.bytesTotal > 0
+            ? progress.bytesDone / progress.bytesTotal
+            : null
+        }
+      />
+    </>
+  );
+}
+
+export function InstallSection() {
   const { live } = useMatonSettings();
   const [step, setStep] = useState<InstallStep>("welcome");
   const [drives, setDrives] = useState<InstallDrive[]>([]);
@@ -357,20 +383,7 @@ export function InstallSection() {
         horizontalAlignment="start"
       >
         <StepContent />
-        {step === "progress" && progress ? (
-          <Text style={{ typography: "bodySmall" }} color={colors.onSurfaceVariant}>
-            {progress.message}
-          </Text>
-        ) : null}
-        {step === "progress" && progress ? (
-          <LinearProgressIndicator
-            progress={
-              progress.bytesTotal > 0
-                ? progress.bytesDone / progress.bytesTotal
-                : null
-            }
-          />
-        ) : null}
+        <ProgressSummary step={step} progress={progress} />
       </Column>
     </>
   );
