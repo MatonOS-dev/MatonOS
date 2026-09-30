@@ -60,39 +60,6 @@ android_app_import {
 }
 
 android_app_import {
-    name: "MatonOSShell",
-    optional_uses_libs: [
-        "androidx.window.extensions",
-        "androidx.window.sidecar",
-    ],
-    apk: "apps-built/MatonOSShell.apk",
-    system_ext_specific: true,
-    privileged: true,
-    // Keep the APK byte-for-byte so the package retains its own app key.
-    preprocessed: true,
-    overrides: [
-        "Home",
-        "Launcher2",
-        "Launcher3",
-        "Launcher3QuickStep",
-    ],
-    required: ["privapp-permissions-org.matonos.shell"],
-}
-
-android_app_import {
-    name: "MatonOSShelf",
-    optional_uses_libs: [
-        "androidx.window.extensions",
-        "androidx.window.sidecar",
-    ],
-    apk: "apps-built/MatonOSShelf.apk",
-    system_ext_specific: true,
-    privileged: true,
-    preprocessed: true,
-    required: ["privapp-permissions-org.matonos.shelf"],
-}
-
-android_app_import {
     name: "MatonOSRecents",
     optional_uses_libs: [
         "androidx.window.extensions",
@@ -115,20 +82,6 @@ prebuilt_etc {
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.flathub",
     src: "privapp-permissions/privapp-permissions-org.matonos.flathub.xml",
-    sub_dir: "permissions",
-    system_ext_specific: true,
-}
-
-prebuilt_etc {
-    name: "privapp-permissions-org.matonos.shell",
-    src: "privapp-permissions/privapp-permissions-org.matonos.shell.xml",
-    sub_dir: "permissions",
-    system_ext_specific: true,
-}
-
-prebuilt_etc {
-    name: "privapp-permissions-org.matonos.shelf",
-    src: "privapp-permissions/privapp-permissions-org.matonos.shelf.xml",
     sub_dir: "permissions",
     system_ext_specific: true,
 }

@@ -116,10 +116,9 @@ rules, but no native Soong module.
 ## Fixed Soong imports and privileges
 
 `buildinfra/Android.bp` contains one `android_app_import` per image app
-(Settings, MatonOSShell, MatonOSShelf, MatonOSRecents) and each associated `prebuilt_etc` permission
+(Settings, MatonOSRecents) and each associated `prebuilt_etc` permission
 file. Sleepd, Wi-Fi, input, Bluetooth, PipeWire, and `libmatonos-ipc` are in
-the ODM bundle. The shell import overrides Home, Launcher2, Launcher3 and
-Launcher3QuickStep. AudioToneTest is in the Gradle registry for `adb install`
+the ODM bundle. AudioToneTest is in the Gradle registry for `adb install`
 testing only; it is not an image package. Imported APKs are privileged on
 `system_ext`, set `preprocessed: true`, and use their own app-specific signing
 keys. Do not set `certificate: "PRESIGNED"`; Soong interprets that Make
@@ -356,7 +355,7 @@ that machine.
 
 ## Developing system apps
 
-`MatonOSSettings`, `MatonOSShell`, `MatonOSShelf` and `MatonOSRecents` use the shared `MatonosClient` Gradle
+`MatonOSSettings` and `MatonOSRecents` use the shared `MatonosClient` Gradle
 library. The default is `BridgeMode.REQUIRED`: call
 `MatonOS.requireBridge(activity, accessTargets, requiredChannelTargets,
 client -> ...)` before building the app UI. It checks installation, permission,
