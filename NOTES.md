@@ -284,6 +284,17 @@ Feature work continues, but in this shape from now on.
   privapp allowlist; keep native services thin (only OTA can update them);
   app updates can't gain new privileged permissions (allowlist is per OS
   release).
+  **Update 2026-09-30 (coordinator, from installexec's VAB-FEASIBILITY.md):
+  plain dm-snapshot VAB is REMOVED in this AOSP** (libsnapshot
+  CreateUpdateSnapshots returns an error for the legacy mode,
+  system/fs/fs_mgr/libsnapshot/snapshot.cpp:3559). But AOSP ships the ublk
+  route officially: vabc_features.mk sets ro.virtual_ab.ublk.enabled=true and
+  snapuserd serves snapshots over mainline ublk (snapuserd/ublk_block_server.cpp;
+  first-stage init: first_stage_mount_android.cpp:194). So installed systems
+  use **VABC over ublk** (inherit virtual_ab_ota/vabc_features.mk, ublk on;
+  compression allowed): no dm-user, no porting. Kernel: CONFIG_BLK_DEV_UBLK
+  must be available in first stage (built-in or first-stage module).
+  Everything else below (tight super, COW in /data, rollback) still holds.
   **Decided 2026-09-29 (user): installed systems use plain Virtual A/B**
   (Android 11 style, build/make/target/product/virtual_ab_ota/launch.mk):
   one set of partitions in super, the update is written as a dm-snapshot COW
