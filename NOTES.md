@@ -453,6 +453,13 @@ Feature work continues, but in this shape from now on.
   firmware, Mesa driver set, pc-gpu-detect rules, boot path). Remove the
   hard-coded x86_64 bits (Expo abiFilters, NDK triples, QEMU harness) as
   part of the split. Scheduled right after the 2026-09-30 release.
+  **UEFI is always required (user, 2026-09-30).** Hardware description:
+  firmware ACPI when present (arm64 servers, Pi UEFI firmware); otherwise a
+  devicetree delivered through UEFI — our signed UKIs carry the mainline DTBs
+  and systemd-stub picks one by hardware ID (.dtbauto), so Secure Boot still
+  covers it (DtbLoader-style UEFI driver as an alternative). ACPI-dependent
+  code (sleepd wake sources, battery/lid, thermal, power button) gets a
+  devicetree discovery path in the split.
 - **v8 (user, 2026-09-29): Nix packages** as a Linux app source beside
   Flatpak/AppImage: closures under /nix/store carry their own glibc/Mesa, so
   they run under bwrap with a read-only store at /data/matonos/linux/nix
