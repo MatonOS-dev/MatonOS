@@ -995,6 +995,17 @@ Each entry: what, why no non-patch way, what it would need.
 
 ## Decisions
 
+- **PipeWire moves to system_ext (user, 2026-09-30)**: it was placed in
+  /vendor when it was going to be the audio HAL; Android audio now uses
+  BayLibre's HAL, and PipeWire's job is Linux-app audio (v4): Flatpak apps
+  talk to it over sockets and it outputs through AAudio (public NDK API,
+  system side). So it is a platform-side service next to linuxd and the
+  compositor host, built by the same after-Soong script approach as the
+  Flatpak stack and sharing its GLib/D-Bus libraries instead of bundling
+  them. Mesa stays vendor-side (Android only loads GPU drivers from
+  /vendor or /odm through the sphal namespace); it may later move into the
+  ODM bundle and link our vendor libdrm fork.
+
 - **Release images (user, 2026-09-30)**: releases ship the GPT live disk as
   `.img.xz` (works written to USB and as a VM disk), published as GitHub
   pre-releases on MatonOS-dev/MatonOS (fallback: han-mc-server). Future: a
