@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FlatList } from "react-native";
 import { Image as ComposeImage, Button, Column, Host, LazyColumn, OutlinedTextField, Row, Text } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
@@ -108,6 +108,8 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [busyRef, setBusyRef] = useState("");
   const [progress, setProgress] = useState("");
+  const operationToken = useRef(0);
+  const operationIdRef = useRef("");
   const installedIds = useMemo(() => new Set(installedRefs.map((ref) => ref.split("/")[1])), [installedRefs]);
 
   async function refreshInstalled() {
@@ -149,20 +151,38 @@ export default function App() {
 
   async function startInstall(app: StoreApp | null = selected) {
     if (!app || busyRef) return;
+    const token = ++operationToken.current;
+    const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    operationIdRef.current = operationId;
     setBusyRef(app.ref); setProgress("Preparing installation…"); setMessage("");
     try {
-      await installApp(app.ref);
+      await installApp(app.ref, operationId);
+      if (operationIdRef.current !== operationId) return;
       setProgress("Downloading and installing…");
-    } catch (error) { setProgress(""); setMessage(errorText(error)); setBusyRef(""); }
+      setTimeout(() => {
+        if (operationToken.current !== token) return;
+        operationIdRef.current = "";
+        setBusyRef(""); setProgress(""); setMessage("The operation timed out. Check Installed before trying again.");
+      }, 10 * 60 * 1000);
+    } catch (error) { operationIdRef.current = ""; setProgress(""); setMessage(errorText(error)); setBusyRef(""); }
   }
 
   async function startUninstall() {
     if (!selected || busyRef) return;
+    const token = ++operationToken.current;
+    const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    operationIdRef.current = operationId;
     setBusyRef(selected.ref); setProgress("Preparing removal…"); setMessage("");
     try {
-      await uninstallApp(selected.ref);
-      setProgress("Removing app and its data…");
-    } catch (error) { setProgress(""); setMessage(errorText(error)); setBusyRef(""); }
+      await uninstallApp(selected.ref, operationId);
+      if (operationIdRef.current !== operationId) return;
+      setProgress("Removing app…");
+      setTimeout(() => {
+        if (operationToken.current !== token) return;
+        operationIdRef.current = "";
+        setBusyRef(""); setProgress(""); setMessage("The operation timed out. Check Installed before trying again.");
+      }, 10 * 60 * 1000);
+    } catch (error) { operationIdRef.current = ""; setProgress(""); setMessage(errorText(error)); setBusyRef(""); }
   }
 
   useEffect(() => {
@@ -174,6 +194,9 @@ export default function App() {
       let payload: ProgressEvent;
       try { payload = JSON.parse(event.json) as ProgressEvent; } catch { return; }
       if (payload.phase === "complete") {
+        if (!payload.result?.operationId || payload.result.operationId !== operationIdRef.current) return;
+        operationToken.current++;
+        operationIdRef.current = "";
         const completed = payload.result;
         setBusyRef(""); setProgress("");
         if (!completed?.ok) setMessage(completed?.error || completed?.output?.trim() || "The Flatpak operation did not complete.");

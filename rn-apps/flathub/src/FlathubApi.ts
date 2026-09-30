@@ -35,7 +35,11 @@ const API = "https://flathub.org/api/v2";
 const FALLBACK_REF = (id: string) => `app/${id}/x86_64/stable`;
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API}${path}`, init);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  let response: Response;
+  try { response = await fetch(`${API}${path}`, { ...init, signal: controller.signal }); }
+  finally { clearTimeout(timer); }
   if (!response.ok) throw new Error(`Flathub returned ${response.status}.`);
   return response.json() as Promise<T>;
 }
