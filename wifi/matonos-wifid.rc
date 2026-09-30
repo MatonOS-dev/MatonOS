@@ -7,7 +7,16 @@ service vendor.matonos-wifid /odm/bin/matonos-wifid
     priority -10
 
 on post-fs-data
+    mkdir /data/vendor/wifi 0770 wifi wifi
+    mkdir /data/vendor/wifi/wpa 0770 wifi wifi
+    mkdir /data/vendor/wifi/wpa/sockets 0770 wifi wifi
     start vendor.matonos-wifid
+
+# The stock AIDL supplicant expects these vendor-data paths for its config and
+# control sockets. It lazily starts after APEX activation, so create them before
+# WifiService first requests the supplicant.
+# post-fs-data runs before system_server asks for Wi-Fi, regardless of APEX
+# activation order.
 
 # Let init load the trusted, staged kernel modules. Dependencies must precede
 # mac80211_hwsim; this keeps CAP_SYS_MODULE out of the long-running daemon.

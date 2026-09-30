@@ -26,6 +26,13 @@ Wi-Fi service, scans, toggles, and Settings UI therefore remain active and
 show no available networks. `virt_wifi`, which displays Ethernet as a
 connected Wi-Fi AP, is reserved for QEMU-specific tests.
 
+The stock AIDL supplicant lazily copies `/vendor/etc/wifi/wpa_supplicant.conf`
+to `/data/vendor/wifi/wpa/wpa_supplicant.conf` when WifiService creates its
+STA interface. The vendor image supplies that template, and init creates the
+vendor-data directories on `apex.all.ready` before the supplicant is requested.
+Without the template, `addStaInterface(wlan0)` fails and WifiService drops back
+to DisabledState even though hwsim and wificond are running.
+
 ### Adapter policy and controls
 
 At boot the daemon allows ten seconds for driver coldplug. It honors
@@ -42,9 +49,10 @@ The daemon discovers radios from their `phy80211` sysfs links and identifies
 hwsim by its sysfs device path. Other Wi-Fi netdevs are brought down; unused
 `wlan*` names are changed to private `mtnw*` names. It reads
 `/sys/class/rfkill` and writes `/dev/rfkill`: unused real adapters are
-soft-blocked, and the selected adapter follows Android's interface state
-(blocked while administratively down, unblocked while up). Physical rfkill
-remains controlled by the hardware switch or firmware. A driver-created
+soft-blocked, while the selected adapter stays unblocked so Android can bring
+`wlan0` up. Blocking the selected radio while the interface was down prevented
+Wi-Fi enable from bringing it up. Physical rfkill remains controlled by the
+hardware switch or firmware. A driver-created
 nl80211 phy/netdev indicates that firmware initialization completed.
 
 The daemon publishes `vendor.maton.wifi.present=0|1` and
@@ -102,6 +110,10 @@ After a fresh boot, check `getprop vendor.maton.wifi.present`,
 status`. In Settings, confirm the Internet panel shows Wi-Fi and Ethernet
 separately. With a real AP, scan and connect with WPA2-Personal and
 WPA3-Personal; verify DHCP, DNS, internet access, and Ethernet coexistence.
+For a no-radio test, run `svc wifi enable`, confirm `cmd wifi status` reports
+STA enabled, then run `cmd wifi start-scan` and `cmd wifi list-scan-results`.
+The empty hwsim airspace should return an empty scan list without disabling
+Wi-Fi.
 
 ### QEMU tests
 
@@ -140,7 +152,7 @@ firmware or WPA3 interoperability.
 ## Open issues
 
 - Physical Wi-Fi hardware and the hwsim QEMU paths have not yet been tested
-  against a fresh image.
+  against a fresh image after adding the vendor supplicant template.
 - Adapter discovery polls sysfs every two seconds instead of subscribing to
   kernel uevents.
 - The WPA2 fixture still needs a standalone guest hostapd harness; the image

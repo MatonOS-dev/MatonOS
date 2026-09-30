@@ -156,16 +156,6 @@ std::string ReadChoice() {
     return __system_property_get(kPersistChoice, value) > 0 ? value : "";
 }
 
-bool InterfaceUp(const std::string& name) {
-    const int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
-    if (fd < 0) return false;
-    struct ifreq request {};
-    CopyIfreqName(request.ifr_name, sizeof(request.ifr_name), name);
-    const bool up = ioctl(fd, SIOCGIFFLAGS, &request) == 0 && (request.ifr_flags & IFF_UP);
-    close(fd);
-    return up;
-}
-
 void SetInterfaceDown(const std::string& name) {
     const int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return;
@@ -229,7 +219,7 @@ bool SetSoftBlock(unsigned int index, bool block) {
 }
 
 void ApplyRfkill(const std::vector<Adapter>& adapters, const std::string& selected_key,
-                 bool selected_enabled, const std::string& test_ap_key = {}) {
+                 const std::string& test_ap_key = {}) {
     std::error_code error;
     for (const auto& entry : fs::directory_iterator(kSysRfkill, error)) {
         if (error) return;
@@ -259,7 +249,9 @@ void ApplyRfkill(const std::vector<Adapter>& adapters, const std::string& select
         } catch (...) {
             continue;
         }
-        SetSoftBlock(index, !belongs_to_selected || !selected_enabled);
+        // Android brings wlan0 up after it starts Wi-Fi. Blocking the chosen
+        // radio while wlan0 is down prevents that transition from succeeding.
+        SetSoftBlock(index, !belongs_to_selected);
     }
 }
 
@@ -552,7 +544,7 @@ int main() {
             Publish(kSelectedProp, "");
             Publish(kHwsimTestReadyProp, "0");
             PublishSnapshot(adapters, "", false, false);
-            ApplyRfkill(adapters, "", false);
+            ApplyRfkill(adapters, "");
             std::this_thread::sleep_for(2s);
             continue;
         }
@@ -571,8 +563,7 @@ int main() {
             continue;
         }
 
-        const bool enabled = InterfaceUp(kWifiIfname);
-        ApplyRfkill(adapters, selected_key, enabled, test_ap_key);
+        ApplyRfkill(adapters, selected_key, test_ap_key);
         Publish(kSelectedProp, selected->simulated ? "hwsim:" + selected_key : selected_key);
         Publish(kPresentProp, "1");
         const bool test_ap_ready = !test_ap_key.empty() && if_nametoindex("wlan1") != 0;
