@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { FlatList } from "react-native";
 import {
@@ -80,6 +81,30 @@ export function InstallWelcomeStep({
   onRefresh: () => void;
   onPreview?: () => void;
 }) {
+  let readinessControl: ReactNode = null;
+  if (readiness === "loading") {
+    readinessControl = (
+      <Text style={{ typography: "bodySmall" }}>
+        Checking installer and available drives…
+      </Text>
+    );
+  } else if (readiness === "ready") {
+    readinessControl = (
+      <ActionButton label="Choose a drive" onClick={onContinue} />
+    );
+  } else if (readiness === "unavailable") {
+    readinessControl = (
+      <ActionButton label={copy.refresh} variant="text" onClick={onRefresh} />
+    );
+  }
+  const previewControl: ReactNode =
+    __DEV__ && onPreview ? (
+      <ActionButton
+        label="Preview screens (no install)"
+        variant="text"
+        onClick={onPreview}
+      />
+    ) : null;
   return (
     <SettingsCard title={copy.installProfileHeading}>
       <Text style={{ typography: "bodyMedium" }}>
@@ -97,24 +122,8 @@ export function InstallWelcomeStep({
         storage.
       </Text>
       {message ? <TextError message={message} /> : null}
-      {readiness === "loading" ? (
-        <Text style={{ typography: "bodySmall" }}>
-          Checking installer and available drives…
-        </Text>
-      ) : null}
-      {readiness === "ready" ? (
-        <ActionButton label="Choose a drive" onClick={onContinue} />
-      ) : null}
-      {readiness === "unavailable" ? (
-        <ActionButton label={copy.refresh} variant="text" onClick={onRefresh} />
-      ) : null}
-      {__DEV__ && onPreview ? (
-        <ActionButton
-          label="Preview screens (no install)"
-          variant="text"
-          onClick={onPreview}
-        />
-      ) : null}
+      {readinessControl}
+      {previewControl}
     </SettingsCard>
   );
 }
@@ -146,6 +155,18 @@ export function InstallDrivesStep({
       formatSize={formatSize}
     />
   );
+  let statusControl: ReactNode = null;
+  if (!ready && !error) {
+    statusControl = (
+      <Text style={{ typography: "bodySmall" }}>Loading drive list…</Text>
+    );
+  } else if (error) {
+    statusControl = <TextError message={error} />;
+  } else if (ready && drives.length === 0) {
+    statusControl = (
+      <Text style={{ typography: "bodyMedium" }}>{copy.noSafeDrives}</Text>
+    );
+  }
   return (
     <>
       <SettingsCard title="Choose a target drive">
@@ -153,17 +174,7 @@ export function InstallDrivesStep({
           Select the drive to install to. MatonOS will erase every partition
           and file on that drive.
         </Text>
-        {!ready && !error ? (
-          <Text style={{ typography: "bodySmall" }}>
-            Loading drive list…
-          </Text>
-        ) : null}
-        {error ? <TextError message={error} /> : null}
-        {ready && drives.length === 0 ? (
-          <Text style={{ typography: "bodyMedium" }}>
-            {copy.noSafeDrives}
-          </Text>
-        ) : null}
+        {statusControl}
         <ActionButton label={copy.refresh} variant="text" onClick={onRefresh} />
       </SettingsCard>
       {preview && drives[0] ? (
@@ -208,33 +219,31 @@ export function InstallConfirmStep({
     : "No target drive is selected.";
   const cardTitle = preview ? "Preview confirmation" : "Confirm installation";
   const confirmLabel = preview ? "Start preview" : copy.confirmInstall;
+  const confirmBody: ReactNode = drive ? (
+    <>
+      {preview ? (
+        <Text style={{ typography: "bodyMedium" }} color={colors.primary}>
+          Preview only. No drive will be changed.
+        </Text>
+      ) : null}
+      <Text style={{ typography: "titleMedium" }} color={colors.error}>
+        {eraseText}
+      </Text>
+      <StatusRow label={copy.device} value={drive.path} />
+      <StatusRow label={copy.capacity} value={formatSize(drive.sizeBytes)} />
+      <ToggleRow
+        title="I understand this drive will be erased"
+        supporting="This confirmation is required before installation starts."
+        value={confirmed}
+        onChange={onConfirmChange}
+      />
+    </>
+  ) : (
+    <TextError message={eraseText} />
+  );
   return (
     <SettingsCard title={cardTitle}>
-      {drive ? (
-        <>
-          {preview ? (
-            <Text style={{ typography: "bodyMedium" }} color={colors.primary}>
-              Preview only. No drive will be changed.
-            </Text>
-          ) : null}
-          <Text
-            style={{ typography: "titleMedium" }}
-            color={colors.error}
-          >
-            {eraseText}
-          </Text>
-          <StatusRow label={copy.device} value={drive.path} />
-          <StatusRow label={copy.capacity} value={formatSize(drive.sizeBytes)} />
-          <ToggleRow
-            title="I understand this drive will be erased"
-            supporting="This confirmation is required before installation starts."
-            value={confirmed}
-            onChange={onConfirmChange}
-          />
-        </>
-      ) : (
-        <TextError message={eraseText} />
-      )}
+      {confirmBody}
       <ActionButton label={copy.goBack} variant="text" onClick={onBack} />
       <ActionButton
         label={confirmLabel}
@@ -281,6 +290,23 @@ export function InstallProgressStep({
   const renderItem = ({ item }: { item: OperationState }) => (
     <OperationRow operation={item} />
   );
+  const operationList: ReactNode = preview ? (
+    operations
+      .slice(0, 4)
+      .map((operation, index) => (
+        <OperationRow
+          key={`${index}:${operation.title}`}
+          operation={operation}
+        />
+      ))
+  ) : (
+    <FlatList
+      style={{ height: 240 }}
+      data={operations}
+      keyExtractor={(operation, index) => `${index}:${operation.title}`}
+      renderItem={renderItem}
+    />
+  );
   return (
     <SettingsCard title="Installing MatonOS">
       <Text style={{ typography: "bodyMedium" }}>
@@ -289,21 +315,7 @@ export function InstallProgressStep({
       <Text style={{ typography: "bodySmall" }}>
         {operations.filter((item) => item.status === "complete").length} of {count} operations complete
       </Text>
-      {preview ? (
-        <>
-          {operations[0] ? <OperationRow operation={operations[0]} /> : null}
-          {operations[1] ? <OperationRow operation={operations[1]} /> : null}
-          {operations[2] ? <OperationRow operation={operations[2]} /> : null}
-          {operations[3] ? <OperationRow operation={operations[3]} /> : null}
-        </>
-      ) : (
-        <FlatList
-          style={{ height: 240 }}
-          data={operations}
-          keyExtractor={(operation, index) => `${index}:${operation.title}`}
-          renderItem={renderItem}
-        />
-      )}
+      {operationList}
       {preview ? (
         <>
           <ActionButton
