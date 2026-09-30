@@ -26,9 +26,9 @@ init_daemon_domain(matonos_addon_manager)
 # so no dynamic entrypoint under /mnt/vendor needs a vendor-domain transition.
 
 # HAL servers cannot execute helpers without a domain transition. PipeWire's
-# proxy starts pw-cat; matonos-btd execs itself for its VHCI emulator child.
-# The latter uses the existing driver executable label but always transitions
-# to this non-HAL helper domain when launched by a driver process.
+# proxy starts pw-cat; the installer uses this helper domain for system tools.
+# This transition must happen when a driver process executes the existing
+# driver executable label.
 domain_auto_trans(matonos_driver, matonos_driver_helper_exec, matonos_driver_helper)
 domain_auto_trans(matonos_driver, matonos_driver_exec, matonos_driver_helper)
 allow matonos_driver matonos_driver_helper:process signal;
@@ -62,8 +62,6 @@ typeattribute matonos_driver_helper vendor_executes_system_violators;
 allow matonos_driver_helper system_file:file { execute execute_no_trans getattr map open read };
 allow matonos_driver_helper system_file:dir r_dir_perms;
 
-# Our Bluetooth controller HAL is a server for the platform Bluetooth HAL API.
-hal_server_domain(matonos_driver, hal_bluetooth)
 # (No audio HAL of ours: BayLibre generic AIDL HAL runs as hal_audio_default.)
 
 
@@ -93,10 +91,10 @@ type matonos_vhci_device, dev_type;
 # Keep render access on Android's existing GPU device type; cards retain the
 # graphics-device type so the stock composer policy continues to apply.
 allow matonos_driver matonos_rfkill_device:chr_file rw_file_perms;
+# AOSP's Linux Bluetooth HAL uses the MGMT channel to unblock rfkill before
+# opening the controller's standard HCI user channel.
 allow hal_bluetooth_default matonos_rfkill_device:chr_file rw_file_perms;
 allow matonos_driver matonos_vhci_device:chr_file rw_file_perms;
-# bluetooth: the AIDL HAL owns the selected controller's HCI user socket.
-allow matonos_driver self:bluetooth_socket create_socket_perms_no_ioctl;
 allow matonos_driver self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
 allow matonos_driver sysfs:dir r_dir_perms;
 allow matonos_driver sysfs:file r_file_perms;
@@ -104,7 +102,8 @@ allow matonos_driver sysfs:lnk_file r_file_perms;
 r_dir_file(matonos_driver, sysfs_net)
 r_dir_file(matonos_driver, sysfs_type)
 allow matonos_driver self:udp_socket create_socket_perms;
-allowxperm matonos_driver self:udp_socket ioctl { SIOCGIFFLAGS SIOCSIFFLAGS SIOCSIFNAME };
+# wifi-simplify: no driver-owned interface rename or link-flag management.
+allowxperm matonos_driver self:udp_socket ioctl { SIOCGIFFLAGS SIOCSIFFLAGS };
 allow matonos_driver self:capability net_admin;
 
 # Input merger and sleep manager.
@@ -221,5 +220,4 @@ set_prop(matonos_driver, vendor_maton_prop)
 get_prop(matonos_driver, vendor_maton_prop)
 get_prop(system_server, vendor_maton_prop)
 get_prop(hal_audio_default, vendor_maton_prop)
-get_prop(hal_bluetooth_default, vendor_maton_prop)
 get_prop(matonos_system_bridge, vendor_maton_prop)

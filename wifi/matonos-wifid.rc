@@ -3,8 +3,6 @@ service vendor.matonos-wifid /odm/bin/matonos-wifid
     setenv LD_LIBRARY_PATH /odm/lib64
     user root
     group system
-    capabilities NET_ADMIN
-    priority -10
 
 on post-fs-data
     mkdir /data/vendor/wifi 0770 wifi wifi
@@ -18,12 +16,14 @@ on post-fs-data
 # post-fs-data runs before system_server asks for Wi-Fi, regardless of APEX
 # activation order.
 
-# Let init load the trusted, staged kernel modules. Dependencies must precede
-# mac80211_hwsim; this keeps CAP_SYS_MODULE out of the long-running daemon.
+# One-shot no-radio fallback. The daemon requests this only when its initial
+# boot snapshot finds no real phy80211; the module parameter explicitly limits
+# the fallback to one empty nl80211 radio. Real adapters never get a phantom.
 on property:vendor.maton.wifi.hwsim.load=1
     insmod /vendor/lib/modules/rfkill.ko
     insmod /vendor/lib/modules/cfg80211.ko
     insmod /vendor/lib/modules/libarc4.ko
     insmod /vendor/lib/modules/mac80211.ko
-    insmod /vendor/lib/modules/mac80211_hwsim.ko radios=${vendor.maton.wifi.hwsim.radios}
+    insmod /vendor/lib/modules/mac80211_hwsim.ko radios=1
+    setprop vendor.maton.wifi.present 1
     setprop vendor.maton.wifi.hwsim.load 0

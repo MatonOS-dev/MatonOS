@@ -1,4 +1,6 @@
 LOCAL_PATH := device/maton/pc_x86_64
 
-# This is set by matonos-btd once the selected HCI is known, before
-# audioserver is started. Audio HAL modules use the same property.
+# Use AOSP's generic Linux HCI HAL. It uses the management channel to unblock
+# rfkill and bind the kernel controller through the HCI user channel. With no
+# controller, its initialization failure lets the Bluetooth stack stay off.
+PRODUCT_PACKAGES += android.hardware.bluetooth-service.default

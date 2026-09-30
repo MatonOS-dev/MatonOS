@@ -59,11 +59,12 @@ replacements land:
   Wi-Fi** (user preference): with no real adapter, matonos-wifid creates a
   `mac80211_hwsim` radio (no networks) so Android's own Wi-Fi stack and UI
   always run; `virt_wifi` (Ethernet shown as Wi-Fi) only in QEMU tests;
-- Bluetooth stub + SystemConfig gate → **spoofed Bluetooth** (user, same as
-  Wi-Fi): with no real controller, matonos-btd provides a virtual one
-  (AOSP Rootcanal in-image behind our HAL, or hci_vhci) so Android's own
-  Bluetooth stack and UI always run (toggles, empty scans); real
-  controllers replace it on hotplug;
+- Bluetooth stub + SystemConfig gate → **AOSP's stock Bluetooth HAL**
+  (user, 2026-09-30): `android.hardware.bluetooth-service.default` binds a
+  real controller over the kernel HCI user channel (MGMT discovery) and
+  reports unavailable with no controller, so Bluetooth is cleanly off — the
+  `matonos-btd` vhci emulator spoof is retired (it crashed the stack and hung
+  boot on radio-less PCs);
 - drm_hwcomposer / minigbm → our own forks via the local manifest (vendor
   components), fixes upstreamed;
 - WM Shell desktop behaviours (keyboard+mouse → desktop, maximise =
@@ -151,7 +152,8 @@ present Android with a simple, stable device through its normal HALs/APIs:
 - Keep Android's own stacks and APIs (apps must keep working); replace only
   the "which device, and is it there" part.
 - Existing/planned instances: `pc-gpu-detect.sh` (GPU → Vulkan/HWUI),
-  matonos-sleepd (sleep), maton-audio-select (audio), matonos-wifid, matonos-btd;
+  matonos-sleepd (sleep), maton-audio-select (audio), matonos-wifid (thin
+  channel server only; no spoofing);
   candidates below.
 - Two kinds of hardware:
   - **Dynamic** (daemon decides on the fly what Android sees; changes reach
