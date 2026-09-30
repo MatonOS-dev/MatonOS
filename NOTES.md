@@ -460,6 +460,19 @@ Feature work continues, but in this shape from now on.
   covers it (DtbLoader-style UEFI driver as an alternative). ACPI-dependent
   code (sleepd wake sources, battery/lid, thermal, power button) gets a
   devicetree discovery path in the split.
+  **16 KB page sizes (user, 2026-09-30): deferred to v9/arm64.** Android
+  15+/17 expects 16 KB pages on ARM64; x86_64 is architecturally fixed at
+  4 KB (`arch/x86/Kconfig` selects only `HAVE_PAGE_SIZE_4KB`; no
+  `PAGE_SIZE_16KB` symbol exists under `arch/x86/`, kernel 7.2.7), so
+  pc_x86_64 is unaffected and Android's expectation is arm64-only (plus
+  Play's app-native-library alignment rule). The arm64 knob is
+  `CONFIG_ARM64_16K_PAGES=y` (choice in `arch/arm64/Kconfig`, default
+  `ARM64_4K_PAGES`). Cost when it lands: our NDK r30 binaries and Mesa are
+  already 16 KB-aligned, but the whole AOSP platform/prebuilts must be
+  built 16 KB-aligned, and crucially the **Flatpak glibc runtimes** (Flathub
+  builds are 4 KB) would fail to exec/map unless rebuilt 16 KB-clean —
+  Linux apps break. Keep 4 KB until then; go 16 KB only if hardware
+  mandates it, and prototype on real hardware first.
 - **v8 (user, 2026-09-29): Nix packages** as a Linux app source beside
   Flatpak/AppImage: closures under /nix/store carry their own glibc/Mesa, so
   they run under bwrap with a read-only store at /data/matonos/linux/nix
