@@ -272,6 +272,24 @@ function OperationRow({ operation }: { operation: OperationState }) {
   );
 }
 
+function OperationList({
+  operations,
+  preview,
+}: {
+  operations: OperationState[];
+  preview: boolean;
+}) {
+  const data = preview ? operations.slice(0, 4) : operations;
+  return (
+    <FlatList
+      style={{ height: 240 }}
+      data={data}
+      keyExtractor={(operation, index) => `${index}:${operation.title}`}
+      renderItem={({ item }) => <OperationRow operation={item} />}
+    />
+  );
+}
+
 export function InstallProgressStep({
   operations,
   progress,
@@ -287,26 +305,6 @@ export function InstallProgressStep({
   onPreviewComplete: () => void;
   onPreviewFailure: () => void;
 }) {
-  const renderItem = ({ item }: { item: OperationState }) => (
-    <OperationRow operation={item} />
-  );
-  const operationList: ReactNode = preview ? (
-    operations
-      .slice(0, 4)
-      .map((operation, index) => (
-        <OperationRow
-          key={`${index}:${operation.title}`}
-          operation={operation}
-        />
-      ))
-  ) : (
-    <FlatList
-      style={{ height: 240 }}
-      data={operations}
-      keyExtractor={(operation, index) => `${index}:${operation.title}`}
-      renderItem={renderItem}
-    />
-  );
   return (
     <SettingsCard title="Installing MatonOS">
       <Text style={{ typography: "bodyMedium" }}>
@@ -315,7 +313,7 @@ export function InstallProgressStep({
       <Text style={{ typography: "bodySmall" }}>
         {operations.filter((item) => item.status === "complete").length} of {count} operations complete
       </Text>
-      {operationList}
+      <OperationList operations={operations} preview={preview} />
       {preview ? (
         <>
           <ActionButton
