@@ -2,9 +2,9 @@
 
 This area contains a clean-room wlroots host and Android output bridge. Pinned
 dependencies and the native shared library compile for bionic x86_64; the
-Gradle APK and fresh-image QEMU screenshot remain outstanding. Dependencies
-are built outside Soong by `build-compositor.sh`; all source trees and objects
-stay under `out/`.
+Gradle host APK builds and is staged, while fresh-image QEMU runtime checks
+remain outstanding. Dependencies are built outside Soong by
+`build-compositor.sh`; all source trees and objects stay under `out/`.
 MatonOS is based on AOSP.
 
 ## Architecture and choices
@@ -56,6 +56,12 @@ The shared image integration is listed exactly in
 [SHARED-CHANGES.md](SHARED-CHANGES.md); those shared registries have not been
 edited. The host app does not request privileged permissions.
 
+The app also declares the dynamic shared library `org.matonos.linuxhost`.
+Stub APK activities use `StubActivity`, which reads the Flatpak ref and minimum
+interface version from manifest metadata and forwards the ref to the host
+Activity. `StubService` is reserved for later D-Bus and portal work. The
+generator and v1 APK format are described in [STUBS.md](STUBS.md).
+
 ## Dependencies and licensing
 
 No GPL code is used. The imported wlroots snapshot and our allocator,
@@ -63,27 +69,43 @@ SurfaceControl glue, core, and test client use MIT terms in [LICENSE](LICENSE).
 The bundled US XKB keymap is generated from xkeyboard-config data, whose
 license notices are in [assets/XKB-LICENSE](assets/XKB-LICENSE). The pinned
 dependency source archives and sizes are listed in [UPSTREAMS](UPSTREAMS).
-Native ELF and APK sizes remain to be measured after those builds complete.
+Native ELF sizes are recorded in [UPSTREAMS](UPSTREAMS); the staged host APK
+is 4,407,794 bytes.
 
 ## Verification status and next steps
 
 The native implementation is a C core, C allocator and output glue, a C SHM
 client, and a thin C++ JNI shim. The pinned dependencies and
 `libmaton_compositor.so` compile for bionic x86_64 with NDK r30/API 35; exact
-ELF byte sizes are recorded in [UPSTREAMS](UPSTREAMS). The Gradle APK has not
-yet been built because the shared app registry/import edits in
-`SHARED-CHANGES.md` are pending coordinator integration. No image containing
-this app, boot test, input test, resize test, or screenshot has passed. A
-preceding coordinator batch stopped in another app's `npm ci`; current queued
-builds are for other agents.
+ELF byte sizes are recorded in [UPSTREAMS](UPSTREAMS). `tools/build-apps.sh`
+built and staged `MatonWaylandHost.apk` on 2026-09-30; AAPT2 inspection
+confirmed its dynamic library declaration and stub components. The generator
+module built successfully and ran on-device using Android Keystore, producing
+a signed APK with the empty resource table, uncompressed binary XML, and valid
+empty DEX map list. A fresh-image test exposed an unclosed `<uses-sdk>` in the
+binary manifest; that is fixed and the rebuilt module parses through manifest
+reconciliation. The remaining install failure is a stock PackageManager
+constraint: a dynamic shared-library provider cannot contain JNI libraries.
+The host APK is present in `/system_ext`, but PackageManager does not register
+it; therefore the stub fails with `INSTALL_FAILED_MISSING_SHARED_LIBRARY`.
+No AOSP patch will be added. A Java-only library-provider APK plus a separate
+JNI-bearing compositor engine package is needed before stubs can install and
+launch. The requested split and integration changes are listed in
+[SHARED-CHANGES.md](SHARED-CHANGES.md) and [STUBS.md](STUBS.md).
 
-The dependency build was verified with
+The full image build and separate `MatonLinuxStubGenerator` module build both
+passed on 2026-09-30. The host APK is staged in the image but is unusable as a
+dynamic-library provider until the native payload is split. The
+dependency build was verified with
 `MATON_BUILD_JOBS=4 bash linux/compositor/build-compositor.sh`. The native
 shared library was verified with Android NDK r30's CMake toolchain targeting
-`x86_64`/API 35 and Ninja `-j4`; Gradle app, AOSP image, and device runtime
-verification are still pending.
+`x86_64`/API 35 and Ninja `-j4`; the Gradle app build is complete. Stub APK
+installation and host launch are blocked until the Java-provider/native-engine
+split is implemented; the host APK as currently packaged is not registered by
+stock PackageManager.
 
-After the coordinator adds the app import and the full app/image build succeeds:
+After implementing the Java-provider/native-engine split and rebuilding the
+image:
 
 1. Start one fresh QEMU VM with virgl, `-m 4096`, and an adb port of 5556 or
    higher; confirm no other agent VM is active and never use port 5555.

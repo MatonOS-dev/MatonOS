@@ -28,7 +28,8 @@ public final class StubActivity extends Activity {
             message = "This app needs Linux host interface " + minimum
                     + "; installed host provides " + HostContract.getInterfaceVersion() + ".";
         } else {
-            Intent host = new Intent().setClassName(this, "org.matonos.compositor.MainActivity")
+            Intent host = new Intent().setClassName("org.matonos.compositor",
+                    "org.matonos.compositor.MainActivity")
                     .putExtra(HostContract.EXTRA_FLATPAK_REF, ref);
             startActivity(host);
             finish();

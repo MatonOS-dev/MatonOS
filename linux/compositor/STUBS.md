@@ -21,6 +21,8 @@ The v1 package contains:
 - Activity metadata `org.matonos.linuxhost.FLATPAK_REF` containing the exact
   installed ref and `org.matonos.linuxhost.MIN_INTERFACE_VERSION` containing
   the minimum host interface version (currently `1`).
+- A minimal empty `resources.arsc` table required by Android PackageManager
+  even though the stub declares no compiled resources.
 - The caller-provided PNG at `assets/matonos-stub/icon.png` and an empty,
   valid `classes.dex`. The icon is retained as a package asset; the store can
   decode/resize it when presenting the catalog.
@@ -48,17 +50,46 @@ signs with `apksig`. The Android Keystore alias
 `matonos_flatpak_stub_v1` is created on first use as a non-exportable EC
 P-256 signing key.
 
-## Install and smoke test
+## Stock PackageManager constraint
 
-After the coordinator builds and boots an image containing the compositor
-host, expose `MatonLinuxStubGenerator` to a small trusted test caller (the
-store app or the bridge; this task does not modify either). Generate an APK
-for `app/org.example.Test/x86_64/stable`, with a minimal Desktop Entry file,
-a PNG, and no permissions. Install it with `pm install -r /data/local/tmp/test.apk`.
-Confirm `pm path` succeeds, PackageManager sees the required host library,
-and launching the package's launcher activity opens Maton Wayland. Until the
-runtime hook exists, the host screen should explain that the Flatpak runtime
-launcher is not wired.
+The requested provider layout cannot ship as one APK while the compositor
+host contains its JNI libraries. AOSP's stock `PackageAbiHelperImpl` rejects
+any package that declares a dynamic shared library and also contains native
+libraries (`Shared library with native libs must be multiarch`). On the test
+image the host APK was present under `/system_ext/app/MatonWaylandHost`, but
+PackageManager did not register `org.matonos.compositor`; installing the
+generated stub then failed with `INSTALL_FAILED_MISSING_SHARED_LIBRARY`.
+This is a stock framework restriction, so this project will not patch it.
+
+The stock-compatible follow-up is to split the Java dynamic-library provider
+from the JNI-bearing compositor engine APK. Keep the provider package
+`org.matonos.compositor` Java-only, including `StubActivity`, `StubService`,
+`MainActivity`, `WindowActivity`, and `HostContract`; move the JNI libraries
+and native compositor service into a companion package and connect the UI to
+it through an explicit app-local bound service. Add the companion APK to the
+shared app/build registries. Until that split is implemented and tested, a
+generated stub can be signed and parsed, but it cannot be installed against
+the host library or launched. See [SHARED-CHANGES.md](SHARED-CHANGES.md).
+
+## Verification status
+
+On a fresh QEMU boot, the latest generator produced a signed APK using
+Android Keystore. The fixed manifest parsed through reconciliation; install
+then failed because the host shared library was unavailable. The host APK
+was present on `/system_ext`, but PackageManager did not register it. The
+follow-up split documented above must land before PackageManager can resolve
+the stub's `<uses-library>` and the launcher can run.
+
+After the provider/engine split, repeat on a freshly built and booted image:
+
+1. Expose `MatonLinuxStubGenerator` to a small trusted test caller (the store
+   app or bridge; integration is out of scope here).
+2. Generate a stub for `app/org.example.Test/x86_64/stable` with a minimal
+   Desktop Entry, PNG, and no permissions.
+3. Install it with `pm install -r /data/local/tmp/test.apk`, verify `pm path`
+   and dynamic-library resolution, then launch its launcher activity.
+4. Confirm the host shows the explicit “Flatpak runtime launcher is not
+   wired” message until the runtime hook is connected.
 
 ## Follow-up contract for the bridge and store
 
