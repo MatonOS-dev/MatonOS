@@ -11,12 +11,32 @@
 # Check whether a render node belongs to the driver's expected PCI GPU. This
 # prevents a concurrently loaded vgem node (or a second adapter) from masking
 # the real GPU's not-yet-created node.
+# Does a DRM render node belong to one of the expected GPUs? Match by the
+# node's PCI vendor/device. The old code compared the node's *bus* driver
+# (e.g. virtio-pci) against the *DRM* driver name (virtio_gpu); they differ
+# for virtio-gpu and the faux/vgem node, so a real virtio-gpu render node was
+# never recognised and the detector forced the software (llvmpipe) fallback
+# on QEMU virgl. A node with no PCI parent is the faux/vgem software node.
 has_render_node() {
     expected=$1
     for node in /sys/class/drm/renderD*; do
-        [ -e "$node/device/driver" ] || continue
-        driver=$(basename "$(readlink "$node/device/driver" 2>/dev/null)")
-        case " $expected " in *" $driver "*) return 0 ;; esac
+        [ -e "$node" ] || continue
+        v=""; d=""
+        [ -e "$node/device/vendor" ] && read -r v < "$node/device/vendor" 2>/dev/null
+        [ -e "$node/device/device" ] && read -r d < "$node/device/device" 2>/dev/null
+        if [ -z "$v" ]; then
+            case " $expected " in *" vgem "*) return 0 ;; esac
+            continue
+        fi
+        for want in $expected; do
+            case "$want" in
+                i915|xe)       [ "$v" = "0x8086" ] && return 0 ;;
+                amdgpu|radeon) [ "$v" = "0x1002" ] && return 0 ;;
+                nouveau)       [ "$v" = "0x10de" ] && return 0 ;;
+                virtio_gpu)    [ "$v" = "0x1af4" ] && [ "$d" = "0x1050" ] && return 0 ;;
+                vmwgfx)        [ "$v" = "0x15ad" ] && return 0 ;;
+            esac
+        done
     done
     return 1
 }
