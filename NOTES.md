@@ -1002,10 +1002,19 @@ Each entry: what, why no non-patch way, what it would need.
   boot). Real optical/CD boot is not planned: Android's first-stage init
   resets /dev and loses a loop-mounted super, and fixing that would mean an
   AOSP init fork (tools/README.md records the blocker).
-- **Flatpak ships as NDK prebuilts for now (user, 2026-09-30)**: the tested
-  bionic Flatpak bundle (flatpak, gpg, libraries, ~26 MB) goes into
-  system_ext as prebuilts so linuxd/Software Center can install apps; the
-  Soong port replaces it later.
+- **Flatpak stack build = upstream build systems after Soong (user,
+  2026-09-30; replaces the planned Soong port)**: tools/build-flatpak.sh runs
+  each project's own configure/meson with the NDK, like build-mesa.sh, but
+  AFTER the AOSP build, linking the platform's own libcurl + BoringSSL
+  (libcrypto/libssl) from out/.../system/lib64 with headers from
+  external/curl and external/boringssl. The result ships in system_ext as
+  prebuilts; flatpak is a native system_ext binary, so it may load those
+  /system libraries. Rule: the bundle is rebuilt from the same tree on every
+  image build (build.sh runs it after AOSP), because platform libraries have
+  no stable ABI; OTAs ship system + system_ext together. Wins: no 22
+  hand-written Android.bp files (upgrades = fork bump), no bundled curl/TLS,
+  BoringSSL fixes arrive with Android. Today's release ships the tested
+  self-contained NDK bundle (~26 MB) as a stopgap.
 
 - **Forks, not patch series (user, 2026-09-29, long-term goal)**: every
   change to someone else's code lives in a real repository fork in the
