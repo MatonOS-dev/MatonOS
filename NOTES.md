@@ -1072,7 +1072,7 @@ Each entry: what, why no non-patch way, what it would need.
 |---|---|---|
 | Lunch | `pc_x86_64-aosp_current-userdebug` | `aosp_current` alias exists in `build/release/release_config_map.textproto` |
 | ABI | 64-bit only (`core_64_bit_only.mk`) | Avoid building Mesa/HALs twice; same as cuttlefish `x86_64_only` |
-| Arch variant | `x86_64` (baseline) | Widest PC compatibility |
+| Arch variant | **x86_64-v2** (SSE3/SSSE3/SSE4.1/SSE4.2/POPCNT, ~2009+). Out-of-tree builds add `-march=x86-64-v2` (Mesa, NDK daemons, PipeWire/Flatpak, app JNI); AOSP uses an x86_64 `TARGET_ARCH_VARIANT` (`sandybridge`→`-march=corei7` gives v2 semantics; Soong has alderlake/skylake/haswell/… too). Kernel stays `CONFIG_GENERIC_CPU` for now. | Better codegen (Mesa/llvmpipe especially); all target/test PCs (Haswell 2013/14, Ryzen) are v2+. Deliberate narrowing from baseline: drops pre-2008 Core 2/K8 and restricted-CPUID VMs; the QEMU harness uses `-cpu max`/`host`, so unaffected. |
 | Hardware description | ACPI + PCI enumeration, **no DTB** | x86 firmware provides ACPI; nothing like `dtb.img` is needed |
 | Kernel | `TARGET_NO_KERNEL := true` | Built out-of-tree by `build-kernel.sh`, packaged by `make-payload.sh` |
 | Ramdisks | `BOARD_BOOT_HEADER_VERSION := 4` | Only way to get `vendor_ramdisk.img` built; `vendor_boot.img` is produced but not shipped |
