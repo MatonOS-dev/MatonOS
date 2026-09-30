@@ -101,10 +101,11 @@ allow matonos_driver sysfs:file r_file_perms;
 allow matonos_driver sysfs:lnk_file r_file_perms;
 r_dir_file(matonos_driver, sysfs_net)
 r_dir_file(matonos_driver, sysfs_type)
-allow matonos_driver self:udp_socket create_socket_perms;
-# wifi-simplify: no driver-owned interface rename or link-flag management.
-allowxperm matonos_driver self:udp_socket ioctl { SIOCGIFFLAGS SIOCSIFFLAGS };
-allow matonos_driver self:capability net_admin;
+# matonos_driver is a HAL server (hal_bootctl) and
+# system/sepolicy/private/hal_neverallows.te forbids halserverdomain from
+# udp_socket/net_admin. The wifi-simplify change removed driver-owned interface
+# rename/link-flag management, so these were dead; they had only been tolerated
+# while this domain also carried the exempt hal_bluetooth_server. Dropped.
 
 # Input merger and sleep manager.
 allow matonos_driver input_device:dir r_dir_perms;
