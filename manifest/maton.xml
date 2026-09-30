@@ -64,4 +64,31 @@
            remote="matonos-dev" revision="matonos/v1.2" />
   <project path="device/maton/pc_x86_64/linux/third_party/appstream/upstream" name="appstream"
            remote="matonos-dev" revision="matonos/v1.2" />
+  <!-- Linux apps: unmodified release snapshots (tested tarballs incl. generated files) -->
+  <project path="device/maton/pc_x86_64/linux/third_party/gdk-pixbuf/upstream" name="gdk-pixbuf"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/gpgme/upstream" name="gpgme"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/json-glib/upstream" name="json-glib"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libarchive/upstream" name="libarchive"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libassuan/upstream" name="libassuan"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libgcrypt/upstream" name="libgcrypt"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libjpeg-turbo/upstream" name="libjpeg-turbo"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libksba/upstream" name="libksba"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/liblzma/upstream" name="liblzma"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libpng/upstream" name="libpng"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libseccomp/upstream" name="libseccomp"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libxmlb/upstream" name="libxmlb"
+           remote="matonos-dev" revision="matonos/v1.2" />
+  <project path="device/maton/pc_x86_64/linux/third_party/libyaml/upstream" name="libyaml"
+           remote="matonos-dev" revision="matonos/v1.2" />
 </manifest>

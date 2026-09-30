@@ -34,6 +34,9 @@ expects them. Each branch = upstream tag + the tested release snapshot + one com
 | `linux/third_party/libfyaml/upstream` | [libfyaml](https://github.com/MatonOS-dev/libfyaml) | fork of pantoniou/libfyaml `v0.9.6` | bionic build fixes |
 | `linux/third_party/appstream/upstream` | [appstream](https://github.com/MatonOS-dev/appstream) | fork of ximion/appstream `v1.2.0` | bionic build fixes |
 
+The 13 unpatched components are plain repositories in the org holding the exact release
+snapshot we build (generated files included, no MatonOS changes): [gdk-pixbuf](https://github.com/MatonOS-dev/gdk-pixbuf), [gpgme](https://github.com/MatonOS-dev/gpgme), [json-glib](https://github.com/MatonOS-dev/json-glib), [libarchive](https://github.com/MatonOS-dev/libarchive), [libassuan](https://github.com/MatonOS-dev/libassuan), [libgcrypt](https://github.com/MatonOS-dev/libgcrypt), [libjpeg-turbo](https://github.com/MatonOS-dev/libjpeg-turbo), [libksba](https://github.com/MatonOS-dev/libksba), [liblzma](https://github.com/MatonOS-dev/liblzma), [libpng](https://github.com/MatonOS-dev/libpng), [libseccomp](https://github.com/MatonOS-dev/libseccomp), [libxmlb](https://github.com/MatonOS-dev/libxmlb), [libyaml](https://github.com/MatonOS-dev/libyaml).
+
 Changing a fork: commit on `matonos/v1.2` in the project checkout, push to its
 MatonOS-dev repository, and upstream the fix where it makes sense.
 
