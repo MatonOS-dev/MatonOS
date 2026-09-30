@@ -113,7 +113,16 @@ if [[ -x $HOME/.cargo/bin/rustc ]]; then
 fi
 export PATH
 
-kmake() { make -C "$LINUX" O="$KOUT" ARCH=x86_64 LLVM=1 "${cc_override[@]}" "$@"; }
+# x86_64-v2 baseline (user, 2026-09-30). Mainline 7.2 dropped the 64-bit
+# CPU-family choice (no CONFIG_MCORE2/MNEHALEM, no CONFIG_GENERIC_CPU); only
+# CONFIG_X86_NATIVE_CPU (-march=native, build-machine-specific) is offered, so
+# we pin v2 ourselves. kbuild appends KCFLAGS/KRUSTFLAGS after its default
+# "-march=x86-64" / "-Ctarget-cpu=x86-64", so these win. Keeps the kernel
+# consistent with the v2 userspace (Mesa/daemons/AOSP).
+kmake() {
+  make -C "$LINUX" O="$KOUT" ARCH=x86_64 LLVM=1 "${cc_override[@]}" \
+    KCFLAGS="-march=x86-64-v2" KRUSTFLAGS="-Ctarget-cpu=x86-64-v2" "$@"
+}
 
 # ---------------------------------------------------------------- patches
 # kernel/patches/*.patch are applied to the kernel source as uncommitted
