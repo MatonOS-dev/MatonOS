@@ -800,7 +800,7 @@ public final class SystemBridgeService extends Service {
 
     private static Set<String> knownTargets() {
         return new HashSet<>(java.util.Arrays.asList("launcher", "input", "sleep", "wifi",
-                "bluetooth", "audio", "camera", "flatpak", "status", "nav.back", "nav.home", "nav.recents"));
+                "audio", "camera", "flatpak", "status", "nav.back", "nav.home", "nav.recents"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {
