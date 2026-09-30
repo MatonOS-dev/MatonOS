@@ -99,7 +99,7 @@ export function createV1Plan(
     XBOOTLDR_BYTES,
   );
   addPartition("misc", "0fc63daf-8483-4772-8e79-3d69d8477de4", MISC_BYTES);
-  addPartition(
+  const metadata = addPartition(
     "metadata",
     "0fc63daf-8483-4772-8e79-3d69d8477de4",
     METADATA_BYTES,

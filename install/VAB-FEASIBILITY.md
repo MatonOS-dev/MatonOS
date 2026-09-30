@@ -136,3 +136,129 @@ snapuserd/userspace snapshots and is not plain kernel dm-snapshot. Achieving
 the requested mode would need changes to AOSP `libsnapshot`/update-engine
 snapshot creation, COW writing, mapping, and merge behavior, plus merge-state
 persistence in the project boot-control HAL. No such changes were made here.
+
+## Addendum: VABC over UBLK
+
+**Updated feasibility: the checked-in AOSP stack supports Virtual A/B with
+VABC over UBLK, without the dm-user kernel target.** This is the supported
+replacement direction recorded in `NOTES.md`; it retains `snapuserd` in the
+generic ramdisk. It is a userspace snapshot design backed by kernel UBLK, not
+the previously requested no-snapuserd dm-snapshot design. No conversion was
+made while preparing this addendum.
+
+### Payload/update writer
+
+- [`build/make/target/product/virtual_ab_ota/vabc_features.mk`](../../../../build/make/target/product/virtual_ab_ota/vabc_features.mk#L28)
+  lines 28–34 enable Virtual A/B, VABC and userspace snapshots. Lines 40–44
+  add `ro.virtual_ab.ublk.enabled?=true` when the product release flag
+  `RELEASE_VABC_UBLK_ENABLE_FLAG` is nonempty. The product must inherit this
+  feature file and ensure the release flag is set (or explicitly set the
+  property true for the product configuration). Lines 81–84 select the
+  default no-compression method and package `snapuserd`; compression may
+  instead use a supported algorithm as selected by the OTA/build metadata.
+- Payload generation writes the VABC feature and compression metadata in
+  [`system/update_engine/payload_generator/payload_generation_config.cc`](../../../../system/update_engine/payload_generator/payload_generation_config.cc#L188)
+  lines 188–215. The update consumer routes partition update operations to
+  `VABCPartitionWriter`, which writes COPY/REPLACE/DIFF and merge-sequence COW
+  records using `ICowWriter` ([`vabc_partition_writer.cc`](../../../../system/update_engine/payload_consumer/vabc_partition_writer.cc#L80),
+  lines 80–95, 177–204, 278–345). `vabc_none` changes the COW compression
+  parameter and COW size estimate but leaves `vabc_enabled` set
+  ([`delta_performer.cc:645`](../../../../system/update_engine/payload_consumer/delta_performer.cc#L645),
+  lines 645–704). Thus a no-compression VABC OTA is an available conservative
+  first profile; it still uses VABC COW operations, libsnapshot and snapuserd.
+- [`snapshot.cpp`](../../../../system/fs/fs_mgr/libsnapshot/snapshot.cpp#L3528)
+  lines 3528–3563 accepts the VABC manifest and sets `using_snapuserd`;
+  lines 3683–3690 set the snapshot backend according to `IsUblkEnabled()`
+  unless the manifest explicitly disables UBLK. COW allocation uses available
+  free extents in super first and places the remainder in a userdata-backed
+  image: [`partition_cow_creator.cpp`](../../../../system/fs/fs_mgr/libsnapshot/partition_cow_creator.cpp#L173)
+  lines 173–215 computes the split, and `snapshot.cpp` lines 3821–3848 creates
+  COW logical partitions from free super space. This confirms tight super is
+  feasible as an allocation policy, but its COW reserve/headroom must be sized
+  against OTA estimates; COW overflow fails the update.
+
+### UBLK server and first-stage path
+
+- [`system/fs/fs_mgr/libsnapshot/snapuserd/ublk_block_server.cpp`](../../../../system/fs/fs_mgr/libsnapshot/snapuserd/ublk_block_server.cpp#L26)
+  lines 26–88 registers an `android_snapshot` UBLK target. Lines 90–133
+  initialize the UBLK device/control node; lines 198–235 serve block reads by
+  calling the snapshot delegate. The build includes this source and links
+  `libublksrv` for Android targets in
+  [`snapuserd/Android.bp`](../../../../system/fs/fs_mgr/libsnapshot/snapuserd/Android.bp#L96)
+  lines 96–110 and 124–160.
+- [`system/core/init/first_stage_mount_android.cpp`](../../../../system/core/init/first_stage_mount_android.cpp#L185)
+  lines 185–220 first ensures userdata is available for COW images, asks
+  `IsSnapuserdRequired()`, reads `UpdateUsesUblk()`, and launches the
+  first-stage snapuserd in UBLK mode before creating snapshot logical
+  partitions. It also recreates UBLK and device-mapper nodes via the uevent
+  callback (199–212).
+- For UBLK mapping,
+  [`snapshot.cpp`](../../../../system/fs/fs_mgr/libsnapshot/snapshot.cpp#L840)
+  lines 840–887 ensures snapuserd is in UBLK mode, creates the UBLK device,
+  supplies the COW/base devices to snapuserd, attaches the device, and in
+  first-stage init puts a device-mapper linear layer over the resulting UBLK
+  block device. The `dm-user` name remains in some shared helper methods and
+  IPC calls, but the UBLK data path is UBLK plus dm-linear; it does not require
+  `CONFIG_DM_USER`.
+- The generic ramdisk copy is a hard requirement for installed boots: init
+  must start the static `snapuserd_ramdisk` binary before mounting `/system`
+  through its UBLK snapshot. `snapuserd/Android.bp` lines 171–208 explains the
+  early-boot static executable and defines `snapuserd_ramdisk` as ramdisk
+  available, with the `snapuserd` symlink. The init rc service definitions are
+  [`snapuserd.rc`](../../../../system/fs/fs_mgr/libsnapshot/snapuserd/snapuserd.rc#L1)
+  lines 1–17. Our boot artifacts currently comprise `ramdisk.img` and
+  `vendor_ramdisk.img` (device `BoardConfig.mk` lines 22–35); conversion must
+  ensure the actual ramdisk passed by systemd-boot contains the generic
+  `snapuserd_ramdisk`/symlink and the needed init rc. The build comment in
+  `vabc_features.mk` lines 16–20 says T+ products put snapuserd in generic
+  ramdisk, rather than vendor ramdisk.
+
+### Kernel and boot-control requirements
+
+- UBLK requires `CONFIG_BLK_DEV_UBLK` and its built module, `ublk_drv.ko`, or
+  a built-in driver, **available before first-stage snapshot creation**. The
+  kernel policy in [`kernel/pc.config`](../kernel/pc.config#L8) says all
+  first-stage module dependencies must be built in because there are no
+  first-stage modules. In this checkout, `kernel/base.config:2800` and the
+  merged [`prebuilt/kernel.config`](../prebuilt/kernel.config#L2801) both set
+  `CONFIG_BLK_DEV_UBLK=m`, and `prebuilt/modules/ublk_drv.ko` exists. The
+  normal ueventd module-load path is too late to satisfy first-stage. Either
+  make `CONFIG_BLK_DEV_UBLK=y` in the PC kernel fragment and rebuild the
+  kernel, or explicitly add an early module loading mechanism and include
+  `ublk_drv.ko` plus dependencies in the first-stage ramdisk. Built-in is the
+  simpler aligned choice with the existing `pc.config` rule. Do not set
+  `CONFIG_DM_USER`; the UBLK mode avoids it.
+- The stable AIDL merge contract and state mapping are described above. The
+  project HAL implementation at
+  [`native/matonos-bootctrl/BootControl.cpp`](../native/matonos-bootctrl/BootControl.cpp#L348)
+  still returns `NONE` unconditionally (348–350) and rejects `SNAPSHOTTED` /
+  `MERGING` (455–462). Before enabling VAB, change it to atomically persist
+  and return `NONE`, `SNAPSHOTTED`, `MERGING`, and the bootloader's
+  `CANCELLED` state in its redundant misc records, preserving across reboot.
+  `libsnapshot` writes `SNAPSHOTTED` for unverified snapshots, `MERGING` for
+  active or failed merge, and clears to `NONE` for completed/cleared state
+  (`snapshot.cpp:3322–3362`). Its snapshot progress/state files in metadata
+  remain authoritative for individual snapshot states and merge progress;
+  the HAL value is the bootloader-persistent safety marker. While status is
+  `MERGING`, bootloader flows must not erase userdata/metadata, and should not
+  change active slot per `IBootControl.aidl:128–157`.
+- Merge is driven by libsnapshot after the target slot is booted and accepted:
+  `snapshot.cpp:1159–1173` requires state `Unverified` and current slot equal
+  target; `InitiateMerge` calls snapuserd for each snapshot
+  (`snapshot.cpp:1304–1343`). `ProcessUpdateState` polls and acknowledges
+  completion (`snapshot.cpp:1435–1485`), while `WriteSnapshotUpdateStatus`
+  maintains the HAL merge marker as above. Thus the boot-control HAL must
+  correctly report current/active slot and success, in addition to merge
+  status, so the slot switch and rollback/merge lifecycle agree.
+
+### Feasibility summary
+
+VABC-over-UBLK is a real end-to-end AOSP architecture: product metadata enables
+userspace snapshots; update_engine writes COW operations; libsnapshot allocates
+COW between free super extents and `/data`; snapuserd serves UBLK-backed
+snapshots; first-stage init launches it before mapping partitions; and
+libsnapshot later directs and records merge. **It is not ready in this device
+configuration yet:** the kernel driver is currently modular, generic ramdisk
+contents need confirmation/configuration, and the MatonOS boot-control HAL
+doesn’t yet store VAB merge states. These are device integration gaps, not a
+need to port or patch the AOSP snapshot stack.
