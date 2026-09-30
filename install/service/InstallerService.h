@@ -14,8 +14,10 @@ inline constexpr uint32_t kOperationApiVersion = 1;
 
 struct Partition {
     std::string name;
+    std::string path;  // service-resolved node, never accepted from callers
     std::string part_guid;
     std::string type_guid;
+    std::string backing_part_guid;
     uint64_t start_bytes = 0;
     uint64_t size_bytes = 0;
     bool mounted = false;
@@ -24,9 +26,13 @@ struct Partition {
 };
 
 struct Drive {
-    std::string id;  // kernel major:minor, stable only for this enumeration
+    std::string id;  // current kernel major:minor locator, not authorization identity
+    std::string identity;  // canonical sysfs path + disk sequence + normalized WWID/serial
+    std::string physical_id;  // normalized WWID, else serial; empty when unavailable
+    uint64_t disk_sequence = 0;  // kernel diskseq, rechecked on the opened block device
     std::string path;  // display only; never accepted as an operation operand
     std::string model;
+    std::string serial;
     std::string transport;
     uint64_t size_bytes = 0;
     bool removable = false;
@@ -63,16 +69,24 @@ struct CopyPartition { CopySourceKind source_kind; std::string live_partition_na
 struct ClonePartition { PartitionRef source; PartitionRef target; };
 struct FilePayload { std::string relative_path; std::string live_payload_path; std::string inline_contents; std::string sha256; };
 struct WriteFiles { PartitionRef target; std::string relative_directory; std::vector<FilePayload> files; };
-struct CopyUserFiles { PartitionRef target_userdata; std::vector<std::string> include_paths; std::vector<std::string> exclude_paths; };
 using Operation = std::variant<WriteGpt, CreateLpMetadata, Format, CopyPartition,
-                               ClonePartition, WriteFiles, CopyUserFiles>;
-struct OperationRequest { uint32_t api_version = kOperationApiVersion; std::string target_disk_id; Operation operation; };
+                               ClonePartition, WriteFiles>;
+struct OperationRequest {
+    uint32_t api_version = kOperationApiVersion;
+    std::string target_disk_id;  // current locator
+    std::string target_disk_identity;  // captured at selection and required for every primitive
+    Operation operation;
+};
 struct ValidationResult { bool ok = false; std::string message; Drive target; };
 struct OperationProgress { uint64_t bytes_done = 0; uint64_t bytes_total = 0; std::string message; };
 using ProgressCallback = std::function<void(const OperationProgress&)>;
 using CancelCallback = std::function<bool()>;
 using SnapshotProvider = std::function<std::vector<Drive>()>;
 using PrimitiveExecutor = std::function<bool(const Operation&, const Drive&, ProgressCallback, CancelCallback, std::string*)>;
+// Built-in execution backend used only by the live-gated installer daemon.
+bool ExecutePrimitive(const Operation& operation, const Drive& target,
+                      ProgressCallback progress, CancelCallback cancelled,
+                      std::string* error);
 
 std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
                                    const std::string& dev_block_path,

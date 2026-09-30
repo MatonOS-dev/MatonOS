@@ -1,0 +1,9 @@
+# linuxd: system-side Flatpak service (Treble: platform files are labelled by
+# platform-side policy, never by vendor file_contexts).
+/system_ext/bin/matonos-linuxd u:object_r:matonos_linuxd_exec:s0
+/data/matonos/linux(/.*)? u:object_r:matonos_flatpak_data_file:s0
+# flatpak-spike: NDK runtime files use the existing system_file type, which
+# matonos-linuxd is already allowed to execute/read; no new policy type needed.
+/system_ext/bin/(flatpak|gpg|ostree|matonos-flatpak|revokefs-fuse) u:object_r:system_file:s0
+/system_ext/lib64/lib[^/]+\.so u:object_r:system_file:s0
+/system_ext/share/flatpak(/.*)? u:object_r:system_file:s0

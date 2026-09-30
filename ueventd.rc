@@ -8,6 +8,10 @@ modalias_handling enabled
 # linux-firmware is staged into /vendor/firmware by build-kernel.sh
 firmware_directories /vendor/firmware/
 
+# addons: the manager publishes verified firmware symlinks from the active
+# add-on versions here. ueventd searches each listed directory for FIRMWARE.
+firmware_directories /mnt/vendor/addons/firmware/
+
 /dev/rtc0                 0664   system     system
 
 # bluetooth: the HCI HAL toggles its selected controller through rfkill.

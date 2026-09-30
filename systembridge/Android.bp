@@ -17,7 +17,14 @@ android_app {
     privileged: true,
     system_ext_specific: true,
     required: ["privapp-permissions-org.matonos.systembridge"],
-    dex_preopt: {
-        enabled: false,
-    },
+}
+
+java_test_host {
+    name: "MatonSystemBridgeAuthorizationTests",
+    srcs: [
+        "src/org/matonos/systembridge/BridgeCallerIdentity.java",
+        "tests/src/**/*.java",
+    ],
+    static_libs: ["junit"],
+    test_suites: ["general-tests"],
 }

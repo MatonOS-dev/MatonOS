@@ -1,0 +1,10 @@
+<manifest version="1.0" type="device">
+    <hal format="aidl">
+        <name>vendor.matonos.channel</name>
+        <version>1</version>
+        <interface>
+            <name>IChannel</name>
+            <instance>addons</instance>
+        </interface>
+    </hal>
+</manifest>

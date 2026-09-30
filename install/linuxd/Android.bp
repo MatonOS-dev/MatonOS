@@ -1,0 +1,33 @@
+filegroup {
+    name: "matonos-linuxd-aidl",
+    srcs: [
+        "aidl/org/matonos/systembridge/ILinuxd.aidl",
+        "aidl/org/matonos/systembridge/ILinuxdListener.aidl",
+    ],
+    path: "aidl",
+}
+
+cc_binary {
+    name: "matonos-linuxd",
+    srcs: [
+        "MatonosLinuxd.cpp",
+        "FlatpakManager.c",
+        ":matonos-linuxd-aidl",
+    ],
+    shared_libs: [
+        "libbinder",
+        "libjsoncpp",
+        "libutils",
+    ],
+    aidl: {
+        local_include_dirs: ["aidl"],
+    },
+    init_rc: ["MatonosLinuxd.rc"],
+    system_ext_specific: true,
+    compile_multilib: "64",
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+}

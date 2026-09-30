@@ -72,17 +72,13 @@ BOARD_SYSTEM_EXTIMAGE_FILE_SYSTEM_TYPE := $(TARGET_RO_FILE_SYSTEM_TYPE)
 BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := ext4
 BOARD_USERDATAIMAGE_PARTITION_SIZE := 576716800
 
-# Dynamic partitions, non-A/B. AB_OTA_UPDATER defaults to true in this AOSP
-# (build/make/core/board_config.mk) and then requires groups <= super/2, so
-# say non-A/B explicitly. (Installed systems move to A/B in v2.)
-AB_OTA_UPDATER := false
-# BOARD_SUPER_PARTITION_SIZE must equal SUPER_SIZE_BYTES in
-# tools/make-payload.sh (installer.sh sizes the GPT partition from it).
-BOARD_SUPER_PARTITION_SIZE := 8589934592
+# install: Installed systems use A/B dynamic partitions; make-live.sh packs
+# only slot A for the live USB image. Each 5 GiB group fits in half of super.
+AB_OTA_UPDATER := true
+BOARD_SUPER_PARTITION_SIZE := 11274289152
 BOARD_SUPER_PARTITION_GROUPS := pc_dynamic_partitions
-# super size minus 4 MiB for LP metadata
-BOARD_PC_DYNAMIC_PARTITIONS_SIZE := 8585740288
-BOARD_PC_DYNAMIC_PARTITIONS_PARTITION_LIST := system system_ext product vendor
+BOARD_PC_DYNAMIC_PARTITIONS_SIZE := 5368709120
+BOARD_PC_DYNAMIC_PARTITIONS_PARTITION_LIST := system system_ext product vendor odm
 BOARD_BUILD_SUPER_IMAGE_BY_DEFAULT := true
 
 BOARD_FLASH_BLOCK_SIZE := 4096

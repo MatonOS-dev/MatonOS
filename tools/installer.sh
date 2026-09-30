@@ -49,6 +49,17 @@ done
 # shellcheck source=/dev/null
 source "$PAYLOAD_DIR/payload.conf"
 : "${SUPER_SIZE_BYTES:?} ${SUPER_SHA256:?} ${ESP_SIZE_MIB:?} ${MIN_USERDATA_MIB:?} ${KERNEL_CMDLINE:?}"
+# secureboot: CPU microcode is a required first-initrd asset in every installer profile.
+for f in microcode.cpio licenses/Fedora-shim-x64-BSD-3-Clause.txt \
+         licenses/Intel-Microcode-LICENSE.txt licenses/AMD-WHENCE.txt; do
+  [[ -s $PAYLOAD_DIR/$f ]] || die "payload is missing required CPU microcode asset ($f)"
+done
+if [[ ${SECURE_BOOT:-0} == 1 ]]; then
+  for f in efi/EFI/BOOT/BOOTX64.EFI efi/EFI/BOOT/grubx64.efi efi/EFI/BOOT/mmx64.efi \
+           efi/EFI/BOOT/matonos-dev.der efi/systemd-bootx64.efi efi/EFI/Linux/matonos.efi; do
+    [[ -s $PAYLOAD_DIR/$f ]] || die "Secure Boot payload is incomplete ($f missing)"
+  done
+fi
 
 info "Checking payload integrity"
 ( cd "$PAYLOAD_DIR" && sha256sum -c --quiet SHA256SUMS ) || die "payload is corrupt (checksum mismatch)"
@@ -168,15 +179,32 @@ done
 info "Setting up EFI system partition"
 mkfs.vfat -F 32 -n ANDROIDESP "$ESP" >/dev/null
 mount "$ESP" "$MNT"
+# secureboot: retain microcode source notices beside the installed boot chain.
+mkdir -p "$MNT/EFI/BOOT/licenses"
+install -m 0644 "$PAYLOAD_DIR/licenses/Intel-Microcode-LICENSE.txt" "$MNT/EFI/BOOT/licenses/"
+install -m 0644 "$PAYLOAD_DIR/licenses/AMD-WHENCE.txt" "$MNT/EFI/BOOT/licenses/"
+install -m 0644 "$PAYLOAD_DIR/licenses/Fedora-shim-x64-BSD-3-Clause.txt" "$MNT/EFI/BOOT/licenses/"
 
-install -D -m644 "$PAYLOAD_DIR/efi/systemd-bootx64.efi" "$MNT/EFI/systemd/systemd-bootx64.efi"
-install -D -m644 "$PAYLOAD_DIR/efi/systemd-bootx64.efi" "$MNT/EFI/BOOT/BOOTX64.EFI"
-install -D -m644 "$PAYLOAD_DIR/bzImage"     "$MNT/android/bzImage"
-install -D -m644 "$PAYLOAD_DIR/ramdisk.img" "$MNT/android/ramdisk.img"
-initrds="initrd  /android/ramdisk.img"
-if [[ -f $PAYLOAD_DIR/vendor_ramdisk.img ]]; then
-  install -D -m644 "$PAYLOAD_DIR/vendor_ramdisk.img" "$MNT/android/vendor_ramdisk.img"
-  initrds+=$'\n'"initrd  /android/vendor_ramdisk.img"
+# secureboot: Secure Boot payloads install the shim chain and UKI on the same ESP.
+if [[ ${SECURE_BOOT:-0} == 1 ]]; then
+  install -D -m644 "$PAYLOAD_DIR/efi/EFI/BOOT/BOOTX64.EFI" "$MNT/EFI/BOOT/BOOTX64.EFI"
+  install -D -m644 "$PAYLOAD_DIR/efi/EFI/BOOT/grubx64.efi" "$MNT/EFI/BOOT/grubx64.efi"
+  install -D -m644 "$PAYLOAD_DIR/efi/EFI/BOOT/mmx64.efi" "$MNT/EFI/BOOT/mmx64.efi"
+  install -D -m644 "$PAYLOAD_DIR/efi/EFI/BOOT/matonos-dev.der" "$MNT/EFI/BOOT/matonos-dev.der"
+  install -D -m644 "$PAYLOAD_DIR/efi/systemd-bootx64.efi" "$MNT/EFI/systemd/systemd-bootx64.efi"
+  install -D -m644 "$PAYLOAD_DIR/efi/EFI/Linux/matonos.efi" "$MNT/EFI/Linux/matonos.efi"
+else
+  install -D -m644 "$PAYLOAD_DIR/microcode.cpio" "$MNT/android/microcode.cpio"
+  install -D -m644 "$PAYLOAD_DIR/efi/systemd-bootx64.efi" "$MNT/EFI/systemd/systemd-bootx64.efi"
+  install -D -m644 "$PAYLOAD_DIR/efi/systemd-bootx64.efi" "$MNT/EFI/BOOT/BOOTX64.EFI"
+  install -D -m644 "$PAYLOAD_DIR/bzImage"     "$MNT/android/bzImage"
+  initrds="initrd  /android/microcode.cpio"
+  if [[ -f $PAYLOAD_DIR/vendor_ramdisk.img ]]; then
+    install -D -m644 "$PAYLOAD_DIR/vendor_ramdisk.img" "$MNT/android/vendor_ramdisk.img"
+    initrds+=$'\n'"initrd  /android/vendor_ramdisk.img"
+  fi
+  install -D -m644 "$PAYLOAD_DIR/ramdisk.img" "$MNT/android/ramdisk.img"
+  initrds+=$'\n'"initrd  /android/ramdisk.img"
 fi
 
 mkdir -p "$MNT/loader/entries"
@@ -188,7 +216,19 @@ editor no
 EOF
 
 cmdline="$KERNEL_CMDLINE androidboot.boot_devices=$BOOT_DEVICE"
-cat > "$MNT/loader/entries/android.conf" <<EOF
+if [[ ${SECURE_BOOT:-0} == 1 ]]; then
+  cat > "$MNT/loader/entries/android.conf" <<EOF
+title   $LABEL
+efi     /EFI/Linux/matonos.efi
+options $cmdline
+EOF
+  cat > "$MNT/loader/entries/android-debug.conf" <<EOF
+title   $LABEL (debug)
+efi     /EFI/Linux/matonos.efi
+options $cmdline ${DEBUG_CMDLINE:-}
+EOF
+else
+  cat > "$MNT/loader/entries/android.conf" <<EOF
 title   $LABEL
 linux   /android/bzImage
 $initrds
@@ -200,6 +240,7 @@ linux   /android/bzImage
 $initrds
 options $cmdline ${DEBUG_CMDLINE:-}
 EOF
+fi
 
 sync
 umount "$MNT"
@@ -211,7 +252,9 @@ if command -v efibootmgr >/dev/null; then
   while read -r num; do
     efibootmgr -q -b "$num" -B || true
   done < <(efibootmgr | sed -n "s/^Boot\([0-9A-Fa-f]\{4\}\)\*\{0,1\} $LABEL\(\t.*\)\{0,1\}$/\1/p")
-  efibootmgr -q -c -d "$DISK" -p 1 -L "$LABEL" -l '\EFI\systemd\systemd-bootx64.efi' ||
+  loader_path='\EFI\systemd\systemd-bootx64.efi'
+  [[ ${SECURE_BOOT:-0} == 1 ]] && loader_path='\EFI\BOOT\BOOTX64.EFI'
+  efibootmgr -q -c -d "$DISK" -p 1 -L "$LABEL" -l "$loader_path" ||
     warn "could not create UEFI entry; the fallback loader will still boot"
 fi
 

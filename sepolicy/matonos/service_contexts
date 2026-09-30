@@ -4,3 +4,12 @@ vendor.matonos.channel.IChannel/bluetooth u:object_r:matonos_channel_service:s0
 vendor.matonos.channel.IChannel/input u:object_r:matonos_channel_service:s0
 vendor.matonos.channel.IChannel/audio u:object_r:matonos_channel_service:s0
 vendor.matonos.channel.IChannel/camera u:object_r:matonos_channel_service:s0
+vendor.matonos.channel.IChannel/install u:object_r:matonos_channel_service:s0
+# addons: stable protected bridge endpoint for the package manager.
+vendor.matonos.channel.IChannel/addons u:object_r:matonos_channel_service:s0
+android.hardware.boot.IBootControl/default u:object_r:hal_bootctl_service:s0
+# install: the software Gatekeeper process exports this companion AIDL
+# interface and is authorized to register the Gatekeeper service type.
+android.hardware.security.sharedsecret.ISharedSecret/gatekeeper u:object_r:hal_gatekeeper_service:s0
+# install: drm_hwcomposer discovers the AIDL minigbm mapper by this instance.
+mapper/minigbm u:object_r:hal_graphics_mapper_service:s0

@@ -1,0 +1,18 @@
+# Flatpak management starts after Android has booted; service absence never blocks boot.
+service matonos-linuxd /system_ext/bin/matonos-linuxd
+    class late_start
+    user system
+    group system
+    disabled
+    oneshot
+    seclabel u:r:matonos_linuxd:s0
+
+on property:sys.boot_completed=1
+    mkdir /data/matonos 0771 system system
+    mkdir /data/matonos/linux 0771 system system
+    mkdir /data/matonos/linux/flatpak 0770 system system
+    mkdir /data/matonos/linux/cache 0770 system system
+    mkdir /data/matonos/linux/flatpak-user 0770 system system
+    mkdir /data/matonos/linux/flatpak-data 0770 system system
+    restorecon_recursive /data/matonos/linux
+    start matonos-linuxd

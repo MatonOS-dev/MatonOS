@@ -139,6 +139,8 @@ else
 fi
 # Agent VMs (anything started under a `codex` process) never open a window on
 # the user's desktop and never take the user's adb port 5555 (user rule).
+# MATON_QEMU_WINDOWED=1 is an explicit opt-in for a user-authorized desktop
+# graphics test; it only disables the automatic headless display selection.
 # Start the interactive display full-screen before firmware/Android boot. This
 # avoids opening a 640x480 GTK window during POST and changing the guest mode
 # before SurfaceFlinger picks its boot-time display size. zoom-to-fit keeps the
@@ -149,7 +151,9 @@ gtk_gl="gtk,gl=on,zoom-to-fit=on" gtk_plain="gtk,zoom-to-fit=on"  # windowed: GT
 [[ ${MATON_QEMU_HEADLESS:-0} == 1 ]] && gtk_gl=egl-headless gtk_plain=none
 pid=$$; while [[ $pid -gt 1 ]]; do
   if [[ $(ps -o comm= -p "$pid") == codex* ]]; then
-    gtk_gl=egl-headless gtk_plain=none
+    if [[ ${MATON_QEMU_WINDOWED:-0} != 1 ]]; then
+      gtk_gl=egl-headless gtk_plain=none
+    fi
     [[ $ADB_PORT == 5555 ]] && die "port 5555 is the user's VM; agents use -a 5556+"
     break
   fi

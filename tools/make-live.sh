@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./make-live.sh -o <aosp product out dir> [-k <bzImage>] [-b <systemd-bootx64.efi>]
-#                  [-d <output image>] [-c "<extra kernel cmdline>"]
+#                  [-d <output image>] [-c "<extra kernel cmdline>"] [-S]
 #
 # Layout (GPT, write to a USB stick with dd):
 #   1 esp    FAT32, systemd-boot + bzImage + ramdisks + loader entries
@@ -23,22 +23,29 @@ info() { echo "==> $*"; }
 
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
 AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+# secureboot: early CPU microcode is included for every boot profile.
+source "$DEVICE_DIR/secureboot/microcode.sh"
 PRODUCT_OUT=""
 KERNEL=$DEVICE_DIR/prebuilt/bzImage
 BOOTEFI=/usr/lib/systemd/boot/efi/systemd-bootx64.efi
 IMAGE=""
 EXTRA_CMDLINE=""
-ESP_MIB=128
+# User boot-chain decision: live and installed kernels ship only as signed UKIs.
+SECURE_BOOT=1
+# Four signed UKIs (live/debug/A/B) share the live ESP; initrds make these
+# substantially larger than the old raw-kernel boot files.
+ESP_MIB=1024
 GROUP=pc_dynamic_partitions
 PARTITIONS=(system system_ext product vendor odm)
 
-while getopts "o:k:b:d:c:h" opt; do
+while getopts "o:k:b:d:c:Sh" opt; do
   case $opt in
     o) PRODUCT_OUT=$OPTARG ;;
     k) KERNEL=$OPTARG ;;
     b) BOOTEFI=$OPTARG ;;
     d) IMAGE=$OPTARG ;;
     c) EXTRA_CMDLINE=$OPTARG ;;
+    S) SECURE_BOOT=1 ;;
     *) sed -n '2,19p' "$0"; exit 1 ;;
   esac
 done
@@ -56,6 +63,17 @@ PATH=$path_no_host:/sbin:/usr/sbin:$HOSTBIN
 [[ -d $PRODUCT_OUT ]] || die "product out dir not found (-o)"
 [[ -f $KERNEL ]]      || die "kernel not found: $KERNEL (run build-kernel.sh or pass -k)"
 [[ -f $BOOTEFI ]]     || die "systemd-boot EFI binary not found (-b); install systemd-boot-efi"
+if (( SECURE_BOOT )); then
+  # shellcheck source=../secureboot/secureboot.sh
+  source "$DEVICE_DIR/secureboot/secureboot.sh"
+  # This development host only has the dual-signed 2011 shim. Keep the
+  # development image buildable; release builds can require CA 2023 explicitly.
+  if [[ ${MATON_REQUIRE_2023_SHIM:-0} != 1 ]]; then
+    export MATON_ALLOW_2011_ONLY_SHIM=1
+  fi
+  sb_require_tools
+  sb_ensure_dev_key
+fi
 for f in ramdisk.img vendor_ramdisk.img; do
   [[ -f $PRODUCT_OUT/$f ]] || die "$PRODUCT_OUT/$f missing"
 done
@@ -65,9 +83,12 @@ done
 for t in lpmake simg2img sgdisk mformat mmd mcopy od; do
   command -v "$t" >/dev/null || die "missing tool: $t (lpmake/simg2img come from AOSP's out/host)"
 done
+for t in git cpio; do command -v "$t" >/dev/null || die "missing tool: $t (CPU microcode is required in every boot image)"; done
 
-work=$(mktemp -d --tmpdir pc-live.XXXXXX)
+mkdir -p "$AOSP/out/pc-logs"
+work=$(mktemp -d --tmpdir="$AOSP/out/pc-logs" pc-live.XXXXXX)
 trap 'rm -rf "$work"' EXIT
+sb_build_microcode_cpio "$work/microcode.cpio" "$work"
 
 # ---------------------------------------------------------------- super
 mib() { echo $(( ($1 + 1048575) / 1048576 * 1048576 )); }
@@ -83,12 +104,13 @@ for p in "${PARTITIONS[@]}"; do
   fi
   size=$(mib "$(stat -c %s "$img")")
   total=$((total + size))
-  lp_args+=(--partition "$p:readonly:$size:$GROUP" --image "$p=$img")
+  lp_args+=(--partition "${p}_a:readonly:$size:${GROUP}_a" --image "${p}_a=$img")
 done
-# LP metadata (2 slots x 64 KiB, primary + backup) + alignment headroom.
+# A/B LP metadata (3 metadata slots) plus alignment headroom. The live image
+# stores only the *_a members; the installer creates and clones slot B.
 super_size=$(( total + 4 * 1048576 ))
-lpmake --metadata-size 65536 --super-name super --metadata-slots 2 \
-  --device "super:$super_size" --group "$GROUP:$total" \
+lpmake --metadata-size 65536 --super-name super --metadata-slots 3 \
+  --device "super:$super_size" --group "${GROUP}_a:$total" \
   "${lp_args[@]}" --output "$work/super.img" >/dev/null
 [[ $(stat -c %s "$work/super.img") -eq $super_size ]] ||
   die "lpmake output size mismatch"
@@ -97,28 +119,50 @@ info "super: $((super_size / 1048576)) MiB"
 # ---------------------------------------------------------------- ESP
 esp_uuid=$(cat /proc/sys/kernel/random/uuid)
 cmdline="console=ttyS0,115200 console=tty0 quiet"
+# Keep the screen black until Android's boot animation: no blinking cursor, only
+# real errors, and the kernel console on a VT nobody looks at (serial keeps all).
+cmdline+=" loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6"
 cmdline+=" firmware_class.path=/vendor/firmware"
 cmdline+=" brd.rd_nr=2 brd.rd_size=8388608"
 cmdline+=" androidboot.hardware=pc_x86_64"
 cmdline+=" androidboot.fstab_suffix=pc_x86_64.live"
+cmdline+=" androidboot.slot_suffix=_a"
 # Live-image marker (ro.boot.matonos.live): shows the "Install MatonOS" entry
 # and starts the install service only here, never on installed systems.
 cmdline+=" androidboot.matonos.live=1"
 cmdline+=" androidboot.boot_part_uuid=$esp_uuid"
 cmdline+=" androidboot.selinux=permissive androidboot.verifiedbootstate=orange"
 [[ -n $EXTRA_CMDLINE ]] && cmdline+=" $EXTRA_CMDLINE"
-debug_cmdline="loglevel=7 printk.devkmsg=on androidboot.console=ttyS0"
+debug_cmdline="loglevel=7 printk.devkmsg=on androidboot.console=ttyS0 vt.global_cursor_default=1 fbcon=vc:1-6"
 
 info "Building ESP (${ESP_MIB} MiB)"
 esp=$work/esp.img
 truncate -s "${ESP_MIB}M" "$esp"
 mformat -i "$esp" -F -v MATONOS ::
-mmd -i "$esp" ::/EFI ::/EFI/BOOT ::/EFI/systemd ::/android ::/loader ::/loader/entries
-mcopy -i "$esp" "$BOOTEFI" ::/EFI/BOOT/BOOTX64.EFI
-mcopy -i "$esp" "$BOOTEFI" ::/EFI/systemd/systemd-bootx64.efi
-mcopy -i "$esp" "$KERNEL" ::/android/bzImage
-mcopy -i "$esp" "$PRODUCT_OUT/vendor_ramdisk.img" ::/android/vendor_ramdisk.img
-mcopy -i "$esp" "$PRODUCT_OUT/ramdisk.img" ::/android/ramdisk.img
+mmd -i "$esp" ::/EFI ::/EFI/BOOT ::/EFI/systemd ::/EFI/Linux ::/android ::/loader ::/loader/entries
+# secureboot: keep source notices on the ESP; Secure Boot UKIs also embed this archive.
+mmd -i "$esp" ::/EFI/BOOT/licenses
+mcopy -i "$esp" "$DEVICE_DIR/secureboot/licenses/Fedora-shim-x64-BSD-3-Clause.txt" ::/EFI/BOOT/licenses/
+mcopy -i "$esp" "$DEVICE_DIR/secureboot/licenses/Intel-Microcode-LICENSE.txt" ::/EFI/BOOT/licenses/
+mcopy -i "$esp" "$work/amd-WHENCE.txt" ::/EFI/BOOT/licenses/
+# secureboot: opt-in shim/systemd-boot assets and UKIs; default ESP stays compatible.
+if (( SECURE_BOOT )); then
+  sb_sign_pe "$BOOTEFI" "$work/systemd-bootx64.efi"
+  sb_install_esp_assets "$work/esp-files" "$work/systemd-bootx64.efi"
+  for f in EFI/BOOT/BOOTX64.EFI EFI/BOOT/mmx64.efi EFI/BOOT/grubx64.efi \
+           EFI/BOOT/matonos-dev.der EFI/systemd/systemd-bootx64.efi; do
+    mcopy -i "$esp" "$work/esp-files/$f" "::/$f"
+  done
+else
+  mcopy -i "$esp" "$BOOTEFI" ::/EFI/BOOT/BOOTX64.EFI
+  mcopy -i "$esp" "$BOOTEFI" ::/EFI/systemd/systemd-bootx64.efi
+fi
+if (( ! SECURE_BOOT )); then
+  mcopy -i "$esp" "$work/microcode.cpio" ::/android/microcode.cpio
+  mcopy -i "$esp" "$KERNEL" ::/android/bzImage
+  mcopy -i "$esp" "$PRODUCT_OUT/vendor_ramdisk.img" ::/android/vendor_ramdisk.img
+  mcopy -i "$esp" "$PRODUCT_OUT/ramdisk.img" ::/android/ramdisk.img
+fi
 
 # The final initrd overlays a tiny pre-init shim on top of the two stock
 # ramdisks. It immediately execs the saved Android /init on normal boots.
@@ -144,17 +188,48 @@ EOF
 for entry in live debug; do
   if [[ $entry == live ]]; then title="MatonOS Live"; opts=$cmdline
   else title="MatonOS Live (debug)"; opts="$cmdline $debug_cmdline"; fi
-  cat > "$work/matonos-$entry.conf" <<EOF
+  if (( SECURE_BOOT )); then
+    uki=matonos-live.efi
+    [[ $entry == debug ]] && uki=matonos-live-debug.efi
+    cat > "$work/matonos-$entry.conf" <<EOF
+title   $title
+efi     /EFI/Linux/$uki
+EOF
+  else
+    cat > "$work/matonos-$entry.conf" <<EOF
 title   $title
 linux   /android/bzImage
+initrd  /android/microcode.cpio
 initrd  /android/vendor_ramdisk.img
 initrd  /android/ramdisk.img
 initrd  /android/ventoy-initrd.img
 options $opts
 EOF
+  fi
 mcopy -i "$esp" "$work/matonos-$entry.conf" ::/loader/entries/
 done
-mcopy -i "$esp" "$work/ventoy-initrd.img" ::/android/ventoy-initrd.img
+if (( SECURE_BOOT )); then
+  cat > "$work/matonos.sbat" <<'EOF'
+sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
+matonos,1,MatonOS,matonos,1,https://matonos.org/
+EOF
+  sb_build_uki "$work/matonos-live.efi" "$KERNEL" "$cmdline" "$work/matonos.sbat" "$work" \
+    "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img" "$work/ventoy-initrd.img"
+  sb_build_uki "$work/matonos-live-debug.efi" "$KERNEL" "$cmdline $debug_cmdline" "$work/matonos.sbat" "$work" \
+    "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img" "$work/ventoy-initrd.img"
+  installed_a="console=ttyS0,115200 console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=2 brd.rd_size=8388608 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=permissive androidboot.verifiedbootstate=orange"
+  installed_b=${installed_a/_a /_b }
+  sb_build_uki "$work/matonos-installed-a.efi" "$KERNEL" "$installed_a" "$work/matonos.sbat" "$work" \
+    "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"
+  sb_build_uki "$work/matonos-installed-b.efi" "$KERNEL" "$installed_b" "$work/matonos.sbat" "$work" \
+    "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"
+  mcopy -i "$esp" "$work/matonos-live.efi" ::/EFI/Linux/matonos-live.efi
+  mcopy -i "$esp" "$work/matonos-live-debug.efi" ::/EFI/Linux/matonos-live-debug.efi
+  mcopy -i "$esp" "$work/matonos-installed-a.efi" ::/EFI/Linux/matonos-installed-a.efi
+  mcopy -i "$esp" "$work/matonos-installed-b.efi" ::/EFI/Linux/matonos-installed-b.efi
+else
+  mcopy -i "$esp" "$work/ventoy-initrd.img" ::/android/ventoy-initrd.img
+fi
 mcopy -i "$esp" "$work/loader.conf" ::/loader/loader.conf
 
 # ---------------------------------------------------------------- disk

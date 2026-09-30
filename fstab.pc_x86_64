@@ -1,9 +1,9 @@
 # fstab for pc_x86_64.
 #
 # Installed both into the vendor ramdisk (first-stage mount) and /vendor/etc.
-# Block device names come from GPT partition names created by
-# tools/installer.sh; /dev/block/by-name/* links are created for the disk
-# matching androidboot.boot_devices (also set by installer.sh).
+# Block device names come from GPT partition names created by the installer;
+# systemd-boot slot entries set androidboot.boot_devices from the selected
+# disk's sysfs ancestry so ueventd creates that disk's /dev/block/by-name/*.
 #
 # Mainline-kernel constraints (see NOTES.md):
 #  - no avb flags (AVB disabled)
@@ -12,11 +12,13 @@
 #  - no inlinecrypt (PCs have no inline crypto engine)
 #
 #<src>                     <mnt_point>  <type> <mnt_flags>                         <fs_mgr_flags>
-system                     /system      erofs  ro                                  wait,logical,first_stage_mount
-system_ext                 /system_ext  erofs  ro                                  wait,logical,first_stage_mount
-product                    /product     erofs  ro                                  wait,logical,first_stage_mount
-vendor                     /vendor      erofs  ro                                  wait,logical,first_stage_mount
-odm                        /odm         erofs  ro                                  wait,logical,first_stage_mount
+# install: slotselect resolves these logical names to *_a or *_b from the
+# systemd-boot androidboot.slot_suffix. The live fstab remains separately named.
+system                     /system      erofs  ro                                  wait,logical,first_stage_mount,slotselect
+system_ext                 /system_ext  erofs  ro                                  wait,logical,first_stage_mount,slotselect
+product                    /product     erofs  ro                                  wait,logical,first_stage_mount,slotselect
+vendor                     /vendor      erofs  ro                                  wait,logical,first_stage_mount,slotselect
+odm                        /odm         erofs  ro                                  wait,logical,first_stage_mount,slotselect
 
 /dev/block/by-name/metadata /metadata   ext4   nodev,noatime,nosuid                wait,check,formattable,first_stage_mount
 /dev/block/by-name/userdata /data       ext4   nodev,noatime,nosuid,errors=panic   latemount,wait,check,quota,formattable,reservedsize=128M,fileencryption=aes-256-xts:aes-256-cts:v2

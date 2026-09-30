@@ -45,6 +45,8 @@ std::vector<uint8_t> Reply(const uint8_t* packet, size_t size) {
         result.insert(result.end(), {0x02,0x00,0x00,0x00,0x00,0x01});
     } else if (ogf == 0x08 && ocf == 0x0002) { // LE Read Buffer Size
         result.insert(result.end(), {0xfb,0x00,0x10});
+    } else if (opcode == 0x2060) { // LE Read Buffer Size v2
+        result.insert(result.end(), {0xfb,0x00,0x10,0xfb,0x00,0x10});
     } else if (ogf == 0x08 && ocf == 0x0003) { // LE Read Local Supported Features
         result.insert(result.end(), {0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff});
     } else if (ogf == 0x08 && ocf == 0x000f) { // LE Read Filter Accept List Size
@@ -67,8 +69,9 @@ std::vector<uint8_t> Reply(const uint8_t* packet, size_t size) {
 int RunVhciEmulator() {
     const int fd = open("/dev/vhci", O_RDWR | O_CLOEXEC);
     if (fd < 0) { ALOGE("open /dev/vhci failed: %s", strerror(errno)); return 1; }
-    // The first vendor packet asks hci_vhci to create a virtual controller.
-    const uint8_t create[] = {kVendor, 0x00};
+    // Bit 7 requests a raw controller. Without it Linux starts its own HCI
+    // setup, leaving the device busy when our HAL claims the user channel.
+    const uint8_t create[] = {kVendor, 0x80};
     if (write(fd, create, sizeof(create)) != sizeof(create)) {
         ALOGE("creating virtual HCI failed: %s", strerror(errno)); close(fd); return 1;
     }
@@ -81,7 +84,7 @@ int RunVhciEmulator() {
         if (ready < 0 || (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) break;
         ssize_t count = read(fd, packet, sizeof(packet));
         if (count <= 0) { if (errno == EINTR) continue; break; }
-        if (count >= 4 && packet[0] == kVendor && packet[1] == 0x00) {
+        if (count >= 4 && packet[0] == kVendor && packet[1] == 0x80) {
             char index[16];
             snprintf(index, sizeof(index), "%u", packet[2] | (packet[3] << 8));
             __system_property_set("vendor.maton.bluetooth.vhci_index", index);

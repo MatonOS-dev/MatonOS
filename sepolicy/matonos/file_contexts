@@ -2,13 +2,30 @@
 # domain-transition label even for binaries on a read-only custom image.
 /odm(/.*)? u:object_r:vendor_file:s0
 /odm/etc(/.*)? u:object_r:vendor_configs_file:s0
+/odm/bin/matonos-addons-service u:object_r:matonos_addon_manager_exec:s0
 /odm/bin/(hw/)?(matonos|maton)-.* u:object_r:matonos_driver_exec:s0
 /odm/bin/maton-audio-select\.sh u:object_r:matonos_audio_select_exec:s0
 /odm/bin/(pipewire|wireplumber) u:object_r:matonos_driver_exec:s0
 /odm/bin/pw-cat u:object_r:matonos_driver_helper_exec:s0
 /data/vendor/maton-audio(/.*)? u:object_r:matonos_driver_data_file:s0
+# Add-on ZIP/image intake is mutable only in this private staging directory.
+/data/vendor/matonos-addons(/.*)? u:object_r:matonos_addon_data_file:s0
+# Add-on images are built off-device with immutable SELinux xattrs. The
+# manager's writable intake lives under /data, never on this mount.
+/mnt/vendor/addons(/.*)? u:object_r:vendor_file:s0
+/mnt/vendor/addons/firmware(/.*)? u:object_r:matonos_addon_firmware_lookup:s0
+/mnt/vendor/addons/[^/]+/versions/[^/]+/modules(/.*)? u:object_r:vendor_addon_module_file:s0
+/mnt/vendor/addons/[^/]+/versions/[^/]+/firmware(/.*)? u:object_r:vendor_file:s0
 /dev/rfkill u:object_r:matonos_rfkill_device:s0
 /dev/vhci u:object_r:matonos_vhci_device:s0
+# addons: installer GPT entries 6 and 7 are addons_a/addons_b. Match the
+# underlying block node (the by-name paths below are symlinks to these nodes).
+/dev/block/(nvme[0-9]+n[0-9]+p[67]|mmcblk[0-9]+p[67]|sd[a-z]+[67]|vd[a-z]+[67]) u:object_r:matonos_addons_block_device:s0
+/dev/block/by-name/addons_[ab] u:object_r:matonos_addons_block_device:s0
+/dev/block/platform/[^/]+/by-name/addons_[ab] u:object_r:matonos_addons_block_device:s0
+# install: partition writers are labeled specifically instead of using the
+# generic block_device type forbidden to vendor domains by platform policy.
+/dev/block/(nvme[0-9]+n[0-9]+(p[0-9]+)?|mmcblk[0-9]+(p[0-9]+)?|sd[a-z]+[0-9]*|vd[a-z]+[0-9]*) u:object_r:matonos_install_block_device:s0
 # Stable labels for both physical and fallback DRM interfaces. In particular,
 # vgem's render node must be usable by the stock allocator and Mesa SP-HAL.
 /dev/dri u:object_r:graphics_device:s0

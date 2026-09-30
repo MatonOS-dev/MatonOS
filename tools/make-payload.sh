@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./make-payload.sh -o <aosp product out dir> -k <bzImage> [-b <systemd-bootx64.efi>]
-#                     [-s <super partition bytes>] [-c "<kernel cmdline>"] [-d <payload dir>]
+#                     [-s <super partition bytes>] [-c "<kernel cmdline>"] [-d <payload dir>] [-S]
 #
 # Example:
 #   ./make-payload.sh -o ~/aosp/out/target/product/pc_x86_64 \
@@ -17,14 +17,19 @@ set -Eeuo pipefail
 die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
+DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
+# secureboot: pinned AMD/Intel microcode is an always-on early-initrd input.
+source "$DEVICE_DIR/secureboot/microcode.sh"
+
 OUT=""
 KERNEL=""
 BOOTEFI="/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
 SUPER_SIZE_BYTES=8589934592          # must equal BOARD_SUPER_PARTITION_SIZE
-CMDLINE="console=tty0 quiet firmware_class.path=/vendor/firmware androidboot.hardware=pc_x86_64 androidboot.selinux=permissive androidboot.verifiedbootstate=orange"
+CMDLINE="console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware androidboot.hardware=pc_x86_64 androidboot.selinux=permissive androidboot.verifiedbootstate=orange"
 PAYLOAD="./payload"
+SECURE_BOOT=0
 
-while getopts "o:k:b:s:c:d:h" opt; do
+while getopts "o:k:b:s:c:d:Sh" opt; do
   case $opt in
     o) OUT=$OPTARG ;;
     k) KERNEL=$OPTARG ;;
@@ -32,6 +37,7 @@ while getopts "o:k:b:s:c:d:h" opt; do
     s) SUPER_SIZE_BYTES=$OPTARG ;;
     c) CMDLINE=$OPTARG ;;
     d) PAYLOAD=$OPTARG ;;
+    S) SECURE_BOOT=1 ;;
     *) sed -n '2,15p' "$0"; exit 1 ;;
   esac
 done
@@ -42,20 +48,50 @@ done
 [[ -f $OUT/super.img ]]   || die "$OUT/super.img missing (set BOARD_BUILD_SUPER_IMAGE_BY_DEFAULT := true)"
 [[ -f $OUT/ramdisk.img ]] || die "$OUT/ramdisk.img missing"
 (( SUPER_SIZE_BYTES % 1048576 == 0 )) || die "super size must be a multiple of 1 MiB"
-for t in zstd sha256sum od; do command -v "$t" >/dev/null || die "missing tool: $t"; done
+for t in zstd sha256sum od git cpio; do command -v "$t" >/dev/null || die "missing tool: $t"; done
+if (( SECURE_BOOT )); then
+  # shellcheck source=../secureboot/secureboot.sh
+  source "$DEVICE_DIR/secureboot/secureboot.sh"
+  sb_require_tools
+  sb_ensure_dev_key
+fi
 
 rm -rf "$PAYLOAD"
 mkdir -p "$PAYLOAD/efi"
+microcode_work=$(mktemp -d --tmpdir pc-microcode.XXXXXX)
+trap 'rm -rf "$microcode_work"' EXIT
+sb_build_microcode_cpio "$PAYLOAD/microcode.cpio" "$microcode_work"
+mkdir -p "$PAYLOAD/licenses"
+cp "$DEVICE_DIR/secureboot/licenses/Fedora-shim-x64-BSD-3-Clause.txt" "$PAYLOAD/licenses/"
+cp "$DEVICE_DIR/secureboot/licenses/Intel-Microcode-LICENSE.txt" "$PAYLOAD/licenses/"
+cp "$microcode_work/amd-WHENCE.txt" "$PAYLOAD/licenses/AMD-WHENCE.txt"
 
 info "Copying kernel, ramdisks and bootloader"
-cp "$KERNEL" "$PAYLOAD/bzImage"
-cp "$OUT/ramdisk.img" "$PAYLOAD/ramdisk.img"
-[[ -f $OUT/vendor_ramdisk.img ]] && cp "$OUT/vendor_ramdisk.img" "$PAYLOAD/vendor_ramdisk.img"
-cp "$BOOTEFI" "$PAYLOAD/efi/systemd-bootx64.efi"
+# secureboot: emit signed chain/UKI and only the public MOK certificate in the payload.
+if (( SECURE_BOOT )); then
+  sb_sign_pe "$BOOTEFI" "$PAYLOAD/efi/systemd-bootx64.efi"
+  sb_install_esp_assets "$PAYLOAD/efi" "$PAYLOAD/efi/systemd-bootx64.efi"
+  mkdir -p "$PAYLOAD/efi/EFI/Linux"
+  cat > "$PAYLOAD/matonos.sbat" <<'EOF'
+sbat,1,SBAT Version,sbat,1,https://github.com/rhboot/shim/blob/main/SBAT.md
+matonos,1,MatonOS,matonos,1,https://matonos.org/
+EOF
+  initrds=()
+  [[ -f $OUT/vendor_ramdisk.img ]] && initrds+=("$OUT/vendor_ramdisk.img")
+  initrds=("$PAYLOAD/microcode.cpio" "${initrds[@]}" "$OUT/ramdisk.img")
+  sb_build_uki "$PAYLOAD/efi/EFI/Linux/matonos.efi" "$KERNEL" "" "$PAYLOAD/matonos.sbat" "$PAYLOAD" "${initrds[@]}"
+  cp "$SB_KEY_DIR/matonos-dev.der" "$PAYLOAD/efi/EFI/BOOT/matonos-dev.der"
+  rm -f "$PAYLOAD/matonos.sbat"
+else
+  cp "$KERNEL" "$PAYLOAD/bzImage"
+  cp "$OUT/ramdisk.img" "$PAYLOAD/ramdisk.img"
+  [[ -f $OUT/vendor_ramdisk.img ]] && cp "$OUT/vendor_ramdisk.img" "$PAYLOAD/vendor_ramdisk.img"
+  cp "$BOOTEFI" "$PAYLOAD/efi/systemd-bootx64.efi"
+fi
 
 # super.img may be an Android sparse image; the installer needs raw bytes.
 tmp_raw=$(mktemp --tmpdir super.raw.XXXXXX)
-trap 'rm -f "$tmp_raw"' EXIT
+trap 'rm -rf "$microcode_work"; rm -f "$tmp_raw"' EXIT
 magic=$(od -An -tx1 -N4 "$OUT/super.img" | tr -d ' \n')
 if [[ $magic == "3aff26ed" ]]; then
   command -v simg2img >/dev/null || die "super.img is sparse; put AOSP's out/host/linux-x86/bin on PATH for simg2img"
@@ -80,7 +116,8 @@ SUPER_SHA256=$super_sha
 ESP_SIZE_MIB=512
 MIN_USERDATA_MIB=8192
 KERNEL_CMDLINE="$CMDLINE"
-DEBUG_CMDLINE="loglevel=7 printk.devkmsg=on"
+DEBUG_CMDLINE="loglevel=7 printk.devkmsg=on vt.global_cursor_default=1 fbcon=vc:1-6"
+SECURE_BOOT=$SECURE_BOOT
 EOF
 
 info "Writing SHA256SUMS"

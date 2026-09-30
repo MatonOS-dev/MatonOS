@@ -13,7 +13,13 @@
     <!-- This is the audited gatekeeper: certificate checks cover arbitrary third-party
          navigation providers and future trusted capabilities, not a fixed package list. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- input: pointer settings are written for the current user (USER_CURRENT). -->
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- sleep: read PowerManager's held wake locks from its privileged dump. -->
+    <uses-permission android:name="android.permission.DUMP" />
+    <!-- sleep: see system-wide active playback, not only the bridge's own player. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_ROUTING" />
     <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
     <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
     <uses-permission android:name="android.permission.SYSTEM_APPLICATION_OVERLAY" />

@@ -2,3 +2,8 @@
 # app_domain() emits type transitions, which public policy may not contain;
 # it lives in ../private/matonos_system_bridge.te.
 type matonos_system_bridge, domain;
+
+# Public declarations let fixed vendor file_contexts map this system_ext
+# executable and private /data tree without adding policy files.
+type matonos_linuxd_exec, exec_type, file_type, system_file_type;
+type matonos_flatpak_data_file, file_type, data_file_type, core_data_file_type;

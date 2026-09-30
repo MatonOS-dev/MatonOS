@@ -53,9 +53,19 @@ BluetoothHci::~BluetoothHci() { close(); }
 ndk::ScopedAStatus BluetoothHci::initialize(const std::shared_ptr<IBluetoothHciCallbacks>& cb) {
   if (!cb) return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
   std::lock_guard<std::mutex> lock(mutex_);
-  if (fd_ >= 0) { cb->initializationComplete(Status::ALREADY_INITIALIZED); return ndk::ScopedAStatus::ok(); }
+  if (fd_ >= 0) {
+    // Bluetooth can restart after a client crash without restarting this HAL.
+    // Keep the existing exclusive channel and attach the new callback client.
+    callbacks_ = cb;
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
+                        "reusing active HCI user channel for hci%d", hci_index_);
+    cb->initializationComplete(Status::SUCCESS);
+    return ndk::ScopedAStatus::ok();
+  }
   char value[92] = {};
   if (__system_property_get("vendor.maton.bluetooth.hci_index", value) <= 0) {
+    __android_log_print(ANDROID_LOG_ERROR, LOG_TAG,
+                        "Bluetooth manager has not published an HCI index");
     cb->initializationComplete(Status::UNABLE_TO_OPEN_INTERFACE); return ndk::ScopedAStatus::ok();
   }
   const int index = atoi(value);
@@ -63,6 +73,8 @@ ndk::ScopedAStatus BluetoothHci::initialize(const std::shared_ptr<IBluetoothHciC
   __system_property_get("vendor.maton.bluetooth.rfkill_index", rfkill_value);
   char virtual_value[92] = {};
   __system_property_get("vendor.maton.bluetooth.virtual", virtual_value);
+  __android_log_print(ANDROID_LOG_INFO, LOG_TAG,
+                      "initializing hci%d (virtual=%s)", index, virtual_value);
   hci_index_ = index;
   virtual_controller_ = strcmp(virtual_value, "1") == 0;
   rfkill_index_ = virtual_controller_ ? -1 : atoi(rfkill_value);

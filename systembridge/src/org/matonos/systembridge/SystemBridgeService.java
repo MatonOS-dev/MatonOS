@@ -18,6 +18,7 @@ import android.os.ServiceManager;
 import android.os.Binder;
 import android.os.IBinder;
 import android.os.SystemClock;
+import android.os.Build;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.Log;
@@ -47,11 +48,14 @@ import java.util.Locale;
 import java.nio.charset.StandardCharsets;
 import java.io.ByteArrayOutputStream;
 import java.util.Set;
+import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 import vendor.matonos.channel.IChannel;
 import vendor.matonos.channel.IChannelListener;
+import org.matonos.systembridge.ILinuxd;
+import org.matonos.systembridge.ILinuxdListener;
 
 public final class SystemBridgeService extends Service {
     private static final String TAG = "MatonSystemBridge";
@@ -63,7 +67,10 @@ public final class SystemBridgeService extends Service {
     private android.os.Handler geometryHandler;
     private boolean geometryRetryPending;
     private final ConcurrentMap<String, Subscription> subscriptions = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, FlatpakSubscription> flatpakSubscriptions = new ConcurrentHashMap<>();
     private NavigationBarWindow navigationBarWindow;
+    // sleep: forward Android's current suspend blockers to the sleep daemon.
+    private AndroidWakeStateForwarder sleepWakeForwarder;
     private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
         @Override public void onDisplayAdded(int displayId) { publishDisplayGeometry(); }
         @Override public void onDisplayRemoved(int displayId) { publishDisplayGeometry(); }
@@ -101,7 +108,7 @@ public final class SystemBridgeService extends Service {
             JSONArray channels = new JSONArray();
             for (String target : knownTargets()) {
                 if (authorizedPackage(uid, target) != null) allowed.put(target);
-                if (channelFor(target) != null && authorizedPackage(uid, target) != null) channels.put(target);
+                if (channelAvailable(target) && authorizedPackage(uid, target) != null) channels.put(target);
             }
             if (allowed.length() == 0) Log.w(TAG, "Denied getBridgeStatus for uid=" + uid
                     + ": no built-in or developer trust entry matches caller");
@@ -249,16 +256,25 @@ public final class SystemBridgeService extends Service {
             if (task == null || packageName == null || isMatonLauncherPackage(packageName)
                     || "com.android.systemui".equals(packageName)
                     || task.userId != ActivityManager.getCurrentUser()) return new byte[0];
+            // At most one source, one initial scaled bitmap, and four smaller
+            // bitmaps can be allocated. Track them all so failures anywhere in
+            // scaling or compression still release every native pixel buffer.
+            Bitmap[] ownedBitmaps = new Bitmap[6];
+            int ownedBitmapCount = 0;
+            Bitmap source = null;
+            Bitmap scaled = null;
             try {
                 TaskSnapshot snapshot = TaskSnapshotManager.getInstance().getTaskSnapshot(
                         taskId, TaskSnapshotManager.RESOLUTION_LOW);
                 if (snapshot == null || !snapshot.isBufferValid() || snapshot.hasProtectedContent()) return new byte[0];
-                Bitmap source = snapshot.wrapToBitmap();
+                source = snapshot.wrapToBitmap();
                 if (source == null) return new byte[0];
+                ownedBitmaps[ownedBitmapCount++] = source;
                 float scale = Math.min(1f, Math.min(512f / source.getWidth(), 512f / source.getHeight()));
-                Bitmap scaled = Bitmap.createScaledBitmap(source,
+                scaled = Bitmap.createScaledBitmap(source,
                         Math.max(1, Math.round(source.getWidth() * scale)),
                         Math.max(1, Math.round(source.getHeight() * scale)), true);
+                if (scaled != source) ownedBitmaps[ownedBitmapCount++] = scaled;
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 for (int attempt = 0; attempt < 4; attempt++) {
                     out.reset();
@@ -267,16 +283,26 @@ public final class SystemBridgeService extends Service {
                     Bitmap smaller = Bitmap.createScaledBitmap(scaled,
                             Math.max(1, scaled.getWidth() * 3 / 4),
                             Math.max(1, scaled.getHeight() * 3 / 4), true);
-                    if (smaller != scaled) scaled.recycle();
+                    if (smaller != scaled && smaller != source)
+                        ownedBitmaps[ownedBitmapCount++] = smaller;
+                    Bitmap previous = scaled;
                     scaled = smaller;
+                    if (previous != scaled && !previous.isRecycled()) previous.recycle();
                 }
-                if (scaled != source) scaled.recycle();
-                source.recycle();
                 byte[] png = out.toByteArray();
                 return png.length <= 512 * 1024 ? png : new byte[0];
             } catch (Exception e) {
                 Log.w(TAG, "Authorized task thumbnail unavailable taskId=" + taskId, e);
                 return new byte[0];
+            } finally {
+                for (int i = 0; i < ownedBitmapCount; i++) {
+                    Bitmap bitmap = ownedBitmaps[i];
+                    try {
+                        if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
+                    } catch (RuntimeException e) {
+                        Log.w(TAG, "Could not recycle task thumbnail bitmap", e);
+                    }
+                }
             }
         }
 
@@ -300,9 +326,16 @@ public final class SystemBridgeService extends Service {
                 if ("input".equals(target) && "set_absolute_pointer_mode".equals(command)) {
                     return setAbsolutePointerMode(UserHandle.USER_CURRENT).toString();
                 }
-                IChannel channel = channelFor(target);
-                if (channel == null) throw new IllegalStateException("channel instance unavailable: " + target);
-                String result = channel.call(command, args.toString());
+                String result;
+                if ("flatpak".equals(target)) {
+                    ILinuxd service = linuxdFor();
+                    if (service == null) throw new IllegalStateException("Flatpak service is unavailable");
+                    result = service.call(command, args.toString());
+                } else {
+                    IChannel channel = channelFor(target);
+                    if (channel == null) throw new IllegalStateException("channel instance unavailable: " + target);
+                    result = channel.call(command, args.toString());
+                }
                 if (result == null || result.length() > 64 * 1024)
                     throw new IllegalStateException("invalid channel result");
                 org.json.JSONTokener parsed = new org.json.JSONTokener(result);
@@ -321,6 +354,20 @@ public final class SystemBridgeService extends Service {
             validateName(topic, "topic");
             if (listener == null) throw new IllegalArgumentException("listener is required");
             String key = subscriptionKey(listener.asBinder(), target, topic);
+            if ("flatpak".equals(target)) {
+                if (flatpakSubscriptions.containsKey(key)) return;
+                ILinuxd service = linuxdFor();
+                if (service == null) throw new IllegalStateException("Flatpak service is unavailable");
+                FlatpakSubscription subscription = new FlatpakSubscription(key, topic, listener, service);
+                FlatpakSubscription previous = flatpakSubscriptions.putIfAbsent(key, subscription);
+                if (previous != null) return;
+                try { service.subscribe(topic, subscription.serviceListener); }
+                catch (RemoteException e) {
+                    flatpakSubscriptions.remove(key, subscription);
+                    throw new IllegalStateException("Flatpak subscribe failed", e);
+                }
+                return;
+            }
             if (subscriptions.containsKey(key)) return;
             IChannel channel = channelFor(target);
             if (channel == null) throw new IllegalStateException("channel instance unavailable: " + target);
@@ -341,7 +388,13 @@ public final class SystemBridgeService extends Service {
             validateName(target, "target");
             validateName(topic, "topic");
             if (listener == null) return;
-            Subscription subscription = subscriptions.remove(subscriptionKey(listener.asBinder(), target, topic));
+            String key = subscriptionKey(listener.asBinder(), target, topic);
+            if ("flatpak".equals(target)) {
+                FlatpakSubscription subscription = flatpakSubscriptions.remove(key);
+                if (subscription != null) subscription.close();
+                return;
+            }
+            Subscription subscription = subscriptions.remove(key);
             if (subscription != null) subscription.close();
         }
     };
@@ -353,18 +406,16 @@ public final class SystemBridgeService extends Service {
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         applyNavigationProviderSelection();
-        try {
-            Log.i(TAG, "Absolute pointer settings applied: " +
-                    setAbsolutePointerMode(UserHandle.USER_CURRENT));
-        } catch (RuntimeException | JSONException e) {
-            Log.e(TAG, "Cannot apply absolute pointer settings", e);
-        }
+        applyAbsolutePointerModeIfPresent();
         return START_STICKY;
     }
 
     @Override public void onCreate() {
         super.onCreate();
         activeService = this;
+        // sleep: poll off the main thread; failed power inspection keeps sleep blocked.
+        sleepWakeForwarder = new AndroidWakeStateForwarder(this);
+        sleepWakeForwarder.start();
         grantBridgeOverlayAppOps();
         ensureBuiltInShelfDefault();
         navigationBarWindow = new NavigationBarWindow(this);
@@ -376,18 +427,19 @@ public final class SystemBridgeService extends Service {
             publishDisplayGeometry();
         }
         // Absolute VM/tablet input is translated to relative motion by inputd.
-        // Keep InputReader's global cursor transform linear and unit gain.
-        try {
-            JSONObject inputMode = setAbsolutePointerMode(UserHandle.USER_CURRENT);
-            Log.i(TAG, "Absolute pointer settings applied: " + inputMode);
-        } catch (RuntimeException | JSONException e) {
-            Log.e(TAG, "Cannot apply absolute pointer settings", e);
+        // Keep InputReader's global cursor transform linear and unit gain, but
+        // only while such a device exists (inputd may find it after we start).
+        applyAbsolutePointerModeIfPresent();
+        for (long delay : new long[] {5000, 15000, 30000}) {
+            geometryHandler.postDelayed(this::applyAbsolutePointerModeIfPresent, delay);
         }
         // The bridge is bound explicitly by apps. Shell administration is exposed
         // through the UID-gated ContentProvider below, never ServiceManager.
     }
 
     @Override public void onDestroy() {
+        // sleep: stop the poller with the persistent bridge service.
+        if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
         if (navigationBarWindow != null) navigationBarWindow.close();
         if (geometryHandler != null) geometryHandler.removeCallbacksAndMessages(null);
         if (activeService == this) activeService = null;
@@ -430,6 +482,22 @@ public final class SystemBridgeService extends Service {
             geometryRetryPending = false;
             publishDisplayGeometry();
         }, 1000);
+    }
+
+    private boolean absolutePointerModeApplied;
+
+    /** Unit-gain cursor settings only when inputd reports an absolute pointer. */
+    private void applyAbsolutePointerModeIfPresent() {
+        if (absolutePointerModeApplied) return;
+        String count = android.os.SystemProperties.get("vendor.maton.input.absolute", "0");
+        if ("0".equals(count) || count.isEmpty()) return;
+        try {
+            Log.i(TAG, "Absolute pointer settings applied (" + count + " absolute devices): "
+                    + setAbsolutePointerMode(UserHandle.USER_CURRENT));
+            absolutePointerModeApplied = true;
+        } catch (RuntimeException | JSONException e) {
+            Log.e(TAG, "Cannot apply absolute pointer settings", e);
+        }
     }
 
     private JSONObject setAbsolutePointerMode(int userId) throws JSONException {
@@ -563,13 +631,26 @@ public final class SystemBridgeService extends Service {
         if (!prefs.getBoolean("enabled", false) || pinnedCertificate == null)
             deny(operation, uid, "navigation provider capability is not enabled by the user");
         String[] packages = getPackageManager().getPackagesForUid(uid);
-        if (packages != null) for (String pkg : packages) {
-            if (!selected.equals(pkg)) continue;
-            String current = certificateFor(this, pkg);
-            if (!pinnedCertificate.equals(current)) break;
-            Log.i(TAG, "Authorized provider action=" + operation + " target=" + target
-                    + " package=" + pkg + " uid=" + uid);
-            return pkg;
+        String pkg = BridgeCallerIdentity.solePackage(packages);
+        if (pkg == null) {
+            deny(operation, uid, "caller UID does not map to exactly one installed package");
+        }
+        if (selected.equals(pkg)) {
+            try {
+                PackageInfo info = getPackageManager().getPackageInfo(pkg,
+                        PackageManager.GET_SIGNING_CERTIFICATES);
+                String current = certificateFor(this, pkg);
+                String stillSolePackage = BridgeCallerIdentity.solePackage(
+                        getPackageManager().getPackagesForUid(uid));
+                if (info.applicationInfo.uid == uid && pkg.equals(stillSolePackage)
+                        && pinnedCertificate.equals(current)) {
+                    Log.i(TAG, "Authorized provider action=" + operation + " target=" + target
+                            + " package=" + pkg + " uid=" + uid);
+                    return pkg;
+                }
+            } catch (PackageManager.NameNotFoundException ignored) {
+                // Package disappeared between UID attribution and certificate check.
+            }
         }
         deny(operation, uid, "caller is not the selected, certificate-pinned navigation provider");
         return null;
@@ -626,6 +707,10 @@ public final class SystemBridgeService extends Service {
         int uid = Binder.getCallingUid();
         enforcePermission(uid, operation);
         enforceNotBanned(uid, operation);
+        String[] packages = getPackageManager().getPackagesForUid(uid);
+        if (BridgeCallerIdentity.solePackage(packages) == null) {
+            deny(operation, uid, "caller UID does not map to exactly one installed package");
+        }
         String packageName = authorizedPackage(uid, target);
         if (packageName != null) {
             Log.i(TAG, "Authorized action=" + operation + " target=" + target
@@ -655,28 +740,29 @@ public final class SystemBridgeService extends Service {
         Set<String> certs = allowedCerts();
         Set<String> packagesForTarget = targetCallers();
         String[] packages = getPackageManager().getPackagesForUid(uid);
-        if (packages != null) {
-            for (String packageName : packages) {
-                try {
-                    PackageInfo info = getPackageManager().getPackageInfo(packageName,
-                            PackageManager.GET_SIGNING_CERTIFICATES);
-                    if (info.signingInfo == null) continue;
-                    String cert = sha256(info.signingInfo.getApkContentsSigners()[0].toByteArray());
-                    if (isBanned(this, packageName, cert)) {
-                        Log.w(TAG, "Denied banned package=" + packageName + " target=" + target);
-                        continue;
-                    }
-                    boolean builtin = packagesForTarget.contains(target + " " + packageName)
-                            && certs.contains(cert);
-                    boolean trusted = trustedTargets(packageName, cert).contains(target);
-                    if (!builtin && !trusted) continue;
-                    return packageName;
-                } catch (PackageManager.NameNotFoundException ignored) {
-                    // Package disappeared between uid lookup and certificate check.
-                }
+        String packageName = BridgeCallerIdentity.solePackage(packages);
+        if (packageName == null) return null;
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(packageName,
+                    PackageManager.GET_SIGNING_CERTIFICATES);
+            if (info.applicationInfo.uid != uid || info.signingInfo == null) return null;
+            android.content.pm.Signature[] signers = info.signingInfo.getApkContentsSigners();
+            if (signers == null || signers.length != 1) return null;
+            String cert = sha256(signers[0].toByteArray());
+            if (isBanned(this, packageName, cert)) {
+                Log.w(TAG, "Denied banned package=" + packageName + " target=" + target);
+                return null;
             }
+            boolean builtin = packagesForTarget.contains(target + " " + packageName)
+                    && certs.contains(cert);
+            boolean trusted = trustedTargets(packageName, cert).contains(target);
+            return BridgeCallerIdentity.authorizedPackage(
+                    getPackageManager().getPackagesForUid(uid),
+                    builtin || trusted ? packageName : null);
+        } catch (PackageManager.NameNotFoundException ignored) {
+            // Package disappeared between UID attribution and certificate check.
+            return null;
         }
-        return null;
     }
 
     private Set<String> trustedTargets(String packageName, String cert) {
@@ -685,7 +771,8 @@ public final class SystemBridgeService extends Service {
         if (json == null) return java.util.Collections.emptySet();
         try {
             JSONObject entry = new JSONObject(json);
-            if (!cert.equalsIgnoreCase(entry.getString("certSha256"))) return java.util.Collections.emptySet();
+            if (!BridgeCallerIdentity.certificateMatches(cert,
+                    entry.getString("certSha256"))) return java.util.Collections.emptySet();
             JSONArray values = entry.getJSONArray("targets");
             Set<String> result = new HashSet<>();
             for (int i = 0; i < values.length(); i++) result.add(values.getString(i));
@@ -713,7 +800,7 @@ public final class SystemBridgeService extends Service {
 
     private static Set<String> knownTargets() {
         return new HashSet<>(java.util.Arrays.asList("launcher", "input", "sleep", "wifi",
-                "bluetooth", "audio", "camera", "status", "nav.back", "nav.home", "nav.recents"));
+                "bluetooth", "audio", "camera", "flatpak", "status", "nav.back", "nav.home", "nav.recents"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {
@@ -722,6 +809,9 @@ public final class SystemBridgeService extends Service {
                     PackageManager.GET_SIGNING_CERTIFICATES);
             if (info.signingInfo == null || info.signingInfo.getApkContentsSigners().length != 1)
                 throw new IllegalArgumentException("package must have one current signing certificate");
+            String[] packages = context.getPackageManager().getPackagesForUid(info.applicationInfo.uid);
+            if (BridgeCallerIdentity.solePackage(packages) == null)
+                throw new IllegalArgumentException("packages sharing a UID cannot receive package-scoped bridge trust");
             String cert = sha256(info.signingInfo.getApkContentsSigners()[0].toByteArray());
             if (isBanned(context, packageName, cert))
                 throw new SecurityException("package is blocked from MatonOS bridge access");
@@ -929,7 +1019,70 @@ public final class SystemBridgeService extends Service {
                     Log.i(TAG, "User " + (banned ? "blocked" : "unblocked")
                             + " bridge access for " + arg + " by uid=" + uid);
                     result.putString("result", (banned ? "blocked " : "unblocked ") + arg);
-                } else throw new IllegalArgumentException("method must be trust, untrust, or list");
+                } else if ("installer_test_call".equals(method)) {
+                    // Debug-only end-to-end harness. Root must explicitly arm it;
+                    // production app calls still use the normal cert allowlist.
+                    if (uid != 0 || !Build.IS_DEBUGGABLE ||
+                            !"1".equals(android.os.SystemProperties.get("persist.vendor.maton.installer_test")) ||
+                            !"1".equals(android.os.SystemProperties.get("ro.boot.matonos.live")))
+                        throw new SecurityException("installer test channel requires an armed live debug image and root");
+                    if (!Set.of("get_status", "list_drives", "execute_operation", "cancel_operation").contains(arg))
+                        throw new IllegalArgumentException("unsupported installer test command");
+                    String encoded = extras == null ? null : extras.getString("payload_b64");
+                    if (encoded == null || encoded.length() > 90000)
+                        throw new IllegalArgumentException("installer request payload is missing or too large");
+                    String request = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
+                    SystemBridgeService bridge = activeService;
+                    IChannel channel = bridge == null ? null : bridge.channelFor("install");
+                    if (channel == null) throw new IllegalStateException("install service is unavailable");
+                    try {
+                        result.putString("result", channel.call(arg, request));
+                    } catch (RemoteException e) {
+                        throw new IllegalStateException("install service call failed", e);
+                    }
+                } else if ("addons_test_call".equals(method)) {
+                    // addons: debug-only harness, same arming rules as installer_test_call.
+                    if (uid != 0 || !Build.IS_DEBUGGABLE ||
+                            !"1".equals(android.os.SystemProperties.get("persist.vendor.maton.addons_test")) ||
+                            !"1".equals(android.os.SystemProperties.get("ro.boot.matonos.live")))
+                        throw new SecurityException("addons test channel requires an armed live debug image and root");
+                    if (!Set.of("status", "available", "begin_package", "package_chunk", "commit_package",
+                            "begin_image", "commit_image", "uninstall").contains(arg))
+                        throw new IllegalArgumentException("unsupported addons test command");
+                    String encoded = extras == null ? null : extras.getString("payload_b64");
+                    if (encoded == null || encoded.length() > 90000)
+                        throw new IllegalArgumentException("addons request payload is missing or too large");
+                    String request = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
+                    SystemBridgeService bridge = activeService;
+                    IChannel channel = bridge == null ? null : bridge.channelFor("addons");
+                    if (channel == null) throw new IllegalStateException("addons service is unavailable");
+                    try {
+                        result.putString("result", channel.call(arg, request));
+                    } catch (RemoteException e) {
+                        throw new IllegalStateException("addons service call failed", e);
+                    }
+                } else if ("flatpak_test_call".equals(method)) {
+                    // Root-only live debug harness. Production callers use the normal flatpak ACL.
+                    if (uid != 0 || !Build.IS_DEBUGGABLE ||
+                            !"1".equals(android.os.SystemProperties.get("persist.vendor.maton.flatpak_test")) ||
+                            !"1".equals(android.os.SystemProperties.get("ro.boot.matonos.live")))
+                        throw new SecurityException("flatpak test channel requires an armed live debug image and root");
+                    if (!Set.of("list_installed", "list_remotes", "add_flathub", "install",
+                            "uninstall", "run", "kill").contains(arg))
+                        throw new IllegalArgumentException("unsupported flatpak test command");
+                    String encoded = extras == null ? null : extras.getString("payload_b64");
+                    if (encoded == null || encoded.length() > 90000)
+                        throw new IllegalArgumentException("Flatpak request payload is missing or too large");
+                    String request = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
+                    SystemBridgeService bridge = activeService;
+                    ILinuxd linuxd = bridge == null ? null : bridge.linuxdFor();
+                    if (linuxd == null) throw new IllegalStateException("Flatpak service is unavailable");
+                    try {
+                        result.putString("result", linuxd.call(arg, request));
+                    } catch (RemoteException e) {
+                        throw new IllegalStateException("Flatpak service call failed", e);
+                    }
+                } else throw new IllegalArgumentException("unknown bridge shell method");
                 return result;
             } catch (RuntimeException e) {
                 Log.w(TAG, "Bridge trust provider request failed method=" + method
@@ -1078,6 +1231,44 @@ public final class SystemBridgeService extends Service {
         // checkService is deliberately nonblocking: optional hardware instances may be absent.
         IBinder service = ServiceManager.checkService("vendor.matonos.channel.IChannel/" + target);
         return IChannel.Stub.asInterface(service);
+    }
+
+    private ILinuxd linuxdFor() {
+        IBinder service = ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default");
+        return ILinuxd.Stub.asInterface(service);
+    }
+
+    private boolean channelAvailable(String target) {
+        return "flatpak".equals(target) ? linuxdFor() != null : channelFor(target) != null;
+    }
+
+    private final class FlatpakSubscription {
+        final String key;
+        final String topic;
+        final IMatonosListener appListener;
+        final ILinuxd service;
+        final ILinuxdListener serviceListener;
+        FlatpakSubscription(String key, String topic, IMatonosListener appListener, ILinuxd service) {
+            this.key = key;
+            this.topic = topic;
+            this.appListener = appListener;
+            this.service = service;
+            this.serviceListener = new ILinuxdListener.Stub() {
+                @Override public void onEvent(String eventTopic, String json) {
+                    if (!topic.equals(eventTopic) || json == null || json.length() > 64 * 1024) return;
+                    try { appListener.onEvent("flatpak", eventTopic, json); }
+                    catch (RemoteException e) {
+                        Log.w(TAG, "Flatpak listener died for " + topic, e);
+                        close();
+                    }
+                }
+            };
+        }
+        void close() {
+            flatpakSubscriptions.remove(key, this);
+            try { service.unsubscribe(topic, serviceListener); }
+            catch (RemoteException e) { Log.w(TAG, "Flatpak unsubscribe failed", e); }
+        }
     }
 
     private final class Subscription {

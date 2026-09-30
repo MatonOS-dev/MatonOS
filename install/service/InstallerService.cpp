@@ -1,4 +1,5 @@
 #include "InstallerService.h"
+#include "LpMetadata.h"
 
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
@@ -45,6 +46,24 @@ bool ParseDev(const std::string& text, unsigned* maj, unsigned* min) {
 
 std::string DevId(unsigned maj, unsigned min) {
     return std::to_string(maj) + ":" + std::to_string(min);
+}
+
+std::string NormalizeDeviceId(std::string value) {
+    std::string normalized;
+    for (unsigned char c : value) {
+        if (!std::isspace(c)) normalized.push_back(static_cast<char>(std::tolower(c)));
+    }
+    return normalized;
+}
+
+std::string DeviceIdentity(const std::string& sys_path, uint64_t disk_sequence,
+                           const std::string& wwid, const std::string& serial) {
+    if (sys_path.empty() || disk_sequence == 0) return {};
+    // diskseq distinguishes a replacement even when Linux reuses both the
+    // block number and physical bus path. WWID/serial strengthen the binding
+    // across aliases and make the selected device visible to the caller.
+    return "sys=" + sys_path + ";seq=" + std::to_string(disk_sequence) +
+           ";wwid=" + NormalizeDeviceId(wwid) + ";serial=" + NormalizeDeviceId(serial);
 }
 
 bool IsVirtualOrOptical(const std::string& name) {
@@ -208,8 +227,12 @@ const Partition* FindPartition(const Drive& drive, const PartitionRef& ref) {
 
 bool CheckRef(const Drive& drive, const PartitionRef& ref) {
     const Partition* part = FindPartition(drive, ref);
-    return part && !part->mounted && part->size_bytes != 0 &&
-           part->start_bytes <= drive.size_bytes && part->size_bytes <= drive.size_bytes - part->start_bytes;
+    if (!part || part->mounted || part->size_bytes == 0) return false;
+    if (part->logical) {
+        const auto super=std::find_if(drive.partitions.begin(),drive.partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==part->backing_part_guid;});
+        return super!=drive.partitions.end()&&part->start_bytes<=super->size_bytes&&part->size_bytes<=super->size_bytes-part->start_bytes;
+    }
+    return part->start_bytes <= drive.size_bytes && part->size_bytes <= drive.size_bytes - part->start_bytes;
 }
 
 bool CheckGpt(const WriteGpt& gpt, const Drive& disk, std::string* error) {
@@ -222,7 +245,7 @@ bool CheckGpt(const WriteGpt& gpt, const Drive& disk, std::string* error) {
     for (const auto& p : gpt.partitions) {
         if (p.name.empty() || p.name.size() > 36 || !ValidGuid(p.type_guid) || !ValidGuid(p.part_guid) ||
             !names.insert(p.name).second || !guids.insert(p.part_guid).second || p.size_bytes == 0 ||
-            p.start_bytes % (1024 * 1024) != 0 || p.start_bytes > disk.size_bytes ||
+            p.start_bytes < 1024 * 1024 || p.start_bytes % (1024 * 1024) != 0 || p.size_bytes % 512 != 0 || p.start_bytes > disk.size_bytes ||
             p.size_bytes > disk.size_bytes - p.start_bytes ||
             p.start_bytes + p.size_bytes > disk.size_bytes - std::min<uint64_t>(disk.size_bytes, 34 * 512ULL)) {
             *error = "GPT contains an invalid, duplicate, unaligned, or out-of-bounds partition."; return false;
@@ -279,9 +302,18 @@ std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
         drive.removable = ReadBool(entry.path() / "removable");
         drive.model = Read(entry.path() / "device" / "model");
         if (drive.model.empty()) drive.model = name;
+        drive.serial = Read(entry.path() / "device" / "serial");
 
         std::error_code real_error;
         const std::string real_sys = fs::canonical(entry.path(), real_error).string();
+        drive.disk_sequence = std::strtoull(Read(entry.path() / "diskseq").c_str(), nullptr, 10);
+        std::string wwid = Read(entry.path() / "wwid");
+        if (wwid.empty()) wwid = Read(entry.path() / "device" / "wwid");
+        drive.identity = DeviceIdentity(real_sys, drive.disk_sequence, wwid, drive.serial);
+        const std::string normalized_wwid = NormalizeDeviceId(wwid);
+        const std::string normalized_serial = NormalizeDeviceId(drive.serial);
+        if (!normalized_wwid.empty()) drive.physical_id = "wwid=" + normalized_wwid;
+        else if (!normalized_serial.empty()) drive.physical_id = "serial=" + normalized_serial;
         drive.transport = Transport(real_sys, name);
         const auto physical_ids = PhysicalDeviceIds(entry.path());
         drive.mounted = std::any_of(physical_ids.begin(), physical_ids.end(),
@@ -291,6 +323,7 @@ std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
             if (ec) break;
             if (!fs::exists(child.path() / "partition", ec)) continue;
             Partition partition;
+            partition.path=(fs::path(dev_block_path)/child.path().filename()).string();
             partition.start_bytes = std::strtoull(Read(child.path() / "start").c_str(), nullptr, 10) * 512ULL;
             partition.size_bytes = std::strtoull(Read(child.path() / "size").c_str(), nullptr, 10) * 512ULL;
             unsigned pmaj = 0, pmin = 0;
@@ -308,8 +341,58 @@ std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
             }
             if (partition.size_bytes != 0) drive.partitions.push_back(std::move(partition));
         }
+        // Read LP metadata from an unmounted physical super partition. The
+        // executor addresses its validated linear extents directly through
+        // that partition, so it does not need to create temporary dm devices.
+        auto super_it=std::find_if(drive.partitions.begin(),drive.partitions.end(),[](const Partition& p){return !p.logical&&p.name=="super"&&!p.path.empty();});
+        if(super_it!=drive.partitions.end()) {
+            const Partition physical=*super_it;
+            std::vector<Partition> logical;
+            if(ReadLpLogicalPartitions(physical.path,physical.part_guid,physical.name,physical.size_bytes,&logical)) {
+                for(auto& p:logical) {
+                    // Mapper names are global. During a live install, a
+                    // same-named system_a on the live disk must not make the
+                    // unmounted target's system_a look mounted. The mapper
+                    // ancestry pass below associates mounted state only when
+                    // its backing device is this physical disk.
+                    drive.partitions.push_back(std::move(p));
+                }
+            }
+        }
+        // Also expose mapped logical partitions, but only when their device
+        // mapper ancestry resolves to this disk. This prevents a similarly
+        // named logical partition on the live medium being mistaken for the
+        // selected target's member.
+        std::error_code mapper_error;
+        const fs::path mapper_dir = fs::path(dev_block_path) / "mapper";
+        for (const auto& mapped : fs::directory_iterator(mapper_dir, mapper_error)) {
+            if (mapper_error) break;
+            struct stat mapped_stat {};
+            if (::stat(mapped.path().c_str(), &mapped_stat) != 0 || !S_ISBLK(mapped_stat.st_mode)) continue;
+            const std::string mapped_id = DevId(major(mapped_stat.st_rdev), minor(mapped_stat.st_rdev));
+            const fs::path sys_device = fs::canonical(fs::path(sys_block_path).parent_path() / "dev" / "block" / mapped_id, mapper_error);
+            if (mapper_error) { mapper_error.clear(); continue; }
+            bool belongs_to_disk = false;
+            std::error_code slaves_error;
+            const fs::path slaves = sys_device / "slaves";
+            for (const auto& slave : fs::directory_iterator(slaves, slaves_error)) {
+                if (slaves_error) break;
+                unsigned smaj=0,smin=0;
+                if (!ParseDev(Read(slave.path()/"dev"),&smaj,&smin)) continue;
+                const auto slave_ids=PhysicalDeviceIds(fs::canonical(slave.path(),slaves_error));
+                for (const auto& physical_id : physical_ids) if (slave_ids.count(physical_id)) belongs_to_disk=true;
+            }
+            if (!belongs_to_disk) continue;
+            Partition logical;
+            logical.name=mapped.path().filename().string();
+            logical.logical=true;
+            logical.mounted=mounted.count(mapped_id)!=0;
+            logical.size_bytes=std::strtoull(Read(sys_device/"size").c_str(),nullptr,10)*512ULL;
+            if(logical.size_bytes) drive.partitions.push_back(std::move(logical));
+        }
         drive.live_medium = DiskHasPartUuid(entry.path(), live_uuid);
         drive.unsafe_reason = UnsafeReason(drive);
+        if (drive.identity.empty()) drive.unsafe_reason = "A unique physical disk identity could not be established.";
         if (!mountinfo_valid || !swapinfo_valid || !live_uuid_valid) {
             drive.unsafe_reason = "Cannot identify the live source and mounted devices safely.";
         }
@@ -334,6 +417,16 @@ ValidationResult ValidateOperation(const OperationRequest& request,
     const auto it = std::find_if(current_drives.begin(), current_drives.end(),
                                  [&](const Drive& drive) { return drive.id == request.target_disk_id; });
     if (it == current_drives.end()) return {false, "The selected drive is no longer available.", {}};
+    if (request.target_disk_identity.empty() || it->identity != request.target_disk_identity)
+        return {false, "The selected physical drive changed. Refresh the drive list and confirm the target again.", *it};
+    if (std::count_if(current_drives.begin(), current_drives.end(), [&](const Drive& drive) {
+            return drive.identity == request.target_disk_identity;
+        }) != 1)
+        return {false, "The selected physical drive identity is ambiguous.", *it};
+    if (!it->physical_id.empty() && std::count_if(current_drives.begin(), current_drives.end(), [&](const Drive& drive) {
+            return drive.physical_id == it->physical_id;
+        }) != 1)
+        return {false, "Multiple disks report the same WWID or serial; refresh and select an unambiguous target.", *it};
     // Enumeration carries fail-closed errors (including unreadable mountinfo
     // or a missing live-medium UUID) that cannot be reconstructed here.
     if (!it->safe)
@@ -352,22 +445,24 @@ ValidationResult ValidateOperation(const OperationRequest& request,
             });
             if (super == it->partitions.end() || super->mounted || op.metadata_size_bytes == 0 ||
                 op.metadata_slots < 2 || op.groups.empty()) { error = "Invalid LP metadata description or super target."; return false; }
-            uint64_t group_sum = 0;
+            uint64_t allocated_sum = 0;
             for (const auto& group : op.groups) {
                 uint64_t member_sum = 0;
                 if (group.name.empty() || group.partitions.empty()) { error = "LP group is empty."; return false; }
                 for (const auto& member : group.partitions) {
-                    if (member.name.empty() || member.size_bytes == 0 || member_sum > UINT64_MAX - member.size_bytes) {
+                    if (member.name.empty() || member_sum > UINT64_MAX - member.size_bytes) {
                         error = "Invalid or overflowing LP member."; return false;
                     }
                     member_sum += member.size_bytes;
                 }
-                if (member_sum > group.maximum_size_bytes || group_sum > UINT64_MAX - group.maximum_size_bytes) {
+                if (member_sum > group.maximum_size_bytes || allocated_sum > UINT64_MAX - member_sum) {
                     error = "LP group exceeds its declared capacity."; return false;
                 }
-                group_sum += group.maximum_size_bytes;
+                allocated_sum += member_sum;
             }
-            if (group_sum > super->size_bytes || op.metadata_size_bytes > super->size_bytes - group_sum) {
+            // A/B group capacities describe future OTA targets and can each
+            // exceed the physical super when only slot A is allocated.
+            if (allocated_sum > super->size_bytes || op.metadata_size_bytes > super->size_bytes - allocated_sum) {
                 error = "LP metadata and groups exceed the declared super partition."; return false;
             }
             return true;
@@ -390,11 +485,7 @@ ValidationResult ValidateOperation(const OperationRequest& request,
             for (const auto& file : op.files) if (!SafeRelative(file.relative_path) ||
                 (file.live_payload_path.empty() == file.inline_contents.empty())) { error = "Invalid file payload path or source."; return false; }
             return true;
-        } else if constexpr (std::is_same_v<T, CopyUserFiles>) {
-            if (!CheckRef(*it, op.target_userdata)) { error = "Invalid user-data target."; return false; }
-            for (const auto& p : op.include_paths) if (!SafeRelative(p)) { error = "Unsafe include path."; return false; }
-            for (const auto& p : op.exclude_paths) if (!SafeRelative(p)) { error = "Unsafe exclude path."; return false; }
-            return true;
+
         }
         return false;
     }, request.operation);

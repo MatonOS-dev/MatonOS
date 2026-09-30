@@ -216,18 +216,17 @@ made while preparing this addendum.
 ### Kernel and boot-control requirements
 
 - UBLK requires `CONFIG_BLK_DEV_UBLK` and its built module, `ublk_drv.ko`, or
-  a built-in driver, **available before first-stage snapshot creation**. The
-  kernel policy in [`kernel/pc.config`](../kernel/pc.config#L8) says all
-  first-stage module dependencies must be built in because there are no
-  first-stage modules. In this checkout, `kernel/base.config:2800` and the
-  merged [`prebuilt/kernel.config`](../prebuilt/kernel.config#L2801) both set
-  `CONFIG_BLK_DEV_UBLK=m`, and `prebuilt/modules/ublk_drv.ko` exists. The
-  normal ueventd module-load path is too late to satisfy first-stage. Either
-  make `CONFIG_BLK_DEV_UBLK=y` in the PC kernel fragment and rebuild the
-  kernel, or explicitly add an early module loading mechanism and include
-  `ublk_drv.ko` plus dependencies in the first-stage ramdisk. Built-in is the
-  simpler aligned choice with the existing `pc.config` rule. Do not set
-  `CONFIG_DM_USER`; the UBLK mode avoids it.
+  a built-in driver, **available before first-stage snapshot creation**. In
+  this checkout, `kernel/base.config:2800` and the merged
+  [`prebuilt/kernel.config`](../prebuilt/kernel.config#L2801) both set
+  `CONFIG_BLK_DEV_UBLK=m`, and `prebuilt/modules/ublk_drv.ko` exists. Although
+  the device kernel fragment says there are no first-stage modules, AOSP
+  first-stage init actually loads `/lib/modules/.../modules.load` before
+  mounting partitions (`system/core/init/first_stage_init.cpp:190–295,453–476`).
+  `modinfo` lists no dependencies for this UBLK module, so install it through
+  `BOARD_GENERIC_RAMDISK_KERNEL_MODULES` and its load list, or set the driver
+  built-in in a later kernel rebuild. Do not set `CONFIG_DM_USER`; UBLK mode
+  avoids it.
 - The stable AIDL merge contract and state mapping are described above. The
   project HAL implementation at
   [`native/matonos-bootctrl/BootControl.cpp`](../native/matonos-bootctrl/BootControl.cpp#L348)
@@ -258,7 +257,7 @@ userspace snapshots; update_engine writes COW operations; libsnapshot allocates
 COW between free super extents and `/data`; snapuserd serves UBLK-backed
 snapshots; first-stage init launches it before mapping partitions; and
 libsnapshot later directs and records merge. **It is not ready in this device
-configuration yet:** the kernel driver is currently modular, generic ramdisk
-contents need confirmation/configuration, and the MatonOS boot-control HAL
+configuration yet:** the kernel driver must be packed into the early ramdisk,
+generic ramdisk snapuserd contents need confirmation/configuration, and the MatonOS boot-control HAL
 doesn’t yet store VAB merge states. These are device integration gaps, not a
 need to port or patch the AOSP snapshot stack.

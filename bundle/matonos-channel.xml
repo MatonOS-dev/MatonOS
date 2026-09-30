@@ -10,6 +10,8 @@
             <instance>input</instance>
             <instance>audio</instance>
             <instance>camera</instance>
+            <instance>install</instance>
+            <instance>addons</instance>
         </interface>
     </hal>
 </manifest>

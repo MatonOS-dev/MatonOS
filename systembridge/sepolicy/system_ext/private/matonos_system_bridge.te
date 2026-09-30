@@ -1,9 +1,33 @@
 typeattribute matonos_system_bridge coredomain;
 app_domain(matonos_system_bridge)
 
+# linuxd is a system_ext service, so it runs as a system coredomain instead
+# of the ODM matonos_driver vendor domain. Its transport is private Binder.
+type matonos_linuxd, domain;
+typeattribute matonos_linuxd coredomain;
+init_daemon_domain(matonos_linuxd)
+type matonos_linuxd_service, protected_service, service_manager_type;
+allow matonos_linuxd matonos_linuxd_service:service_manager add;
+allow matonos_system_bridge matonos_linuxd_service:service_manager find;
+neverallow { domain -matonos_linuxd } matonos_linuxd_service:service_manager add;
+binder_call(matonos_system_bridge, matonos_linuxd)
+
+# Flatpak and bubblewrap use only fixed system_ext executables and the private
+# data tree. Namespaces are handled by bubblewrap inside the spawned process.
+allow matonos_linuxd system_file:dir r_dir_perms;
+allow matonos_linuxd system_file:file { execute execute_no_trans getattr map open read };
+allow matonos_linuxd matonos_flatpak_data_file:dir create_dir_perms;
+allow matonos_linuxd matonos_flatpak_data_file:file create_file_perms;
+allow matonos_linuxd matonos_flatpak_data_file:lnk_file create_file_perms;
+allow matonos_linuxd self:capability { setuid setgid sys_admin };
+allow matonos_linuxd self:process { fork sigchld signal };
+net_domain(matonos_linuxd)
+
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.
 allow matonos_system_bridge input_service:service_manager find;
+# sleep: inspect the stock PowerManager dump for active wake locks.
+allow matonos_system_bridge power_service:service_manager find;
 binder_call(matonos_system_bridge, system_server)
 allow matonos_system_bridge vendor_configs_file:dir search;
 allow matonos_system_bridge vendor_configs_file:file r_file_perms;

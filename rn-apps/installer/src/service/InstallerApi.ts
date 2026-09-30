@@ -75,12 +75,6 @@ export type InstallerOperation =
         sha256?: string;
       }[];
     }
-  | {
-      kind: "copy_user_files";
-      targetUserdata: PartitionRef;
-      includePaths: string[];
-      excludePaths: string[];
-    };
 
 export type OperationRequestV1 = {
   apiVersion: 1;

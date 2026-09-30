@@ -1,0 +1,12 @@
+# The installer is an optional live-session helper. Its failure never gates boot.
+service matonos-installer-service /odm/bin/matonos-installer-service
+    class late_start
+    user root
+    group root
+    disabled
+    restart_period 10
+
+# The system image remains usable without installer support or target disks.
+on property:ro.boot.matonos.live=1
+    start matonos-installer-service
+

@@ -13,24 +13,10 @@ const ESP_BYTES = 512 * MiB;
 const XBOOTLDR_BYTES = 1024 * MiB;
 const MISC_BYTES = 4 * MiB;
 const METADATA_BYTES = 64 * MiB;
-const SUPER_BYTES = 10.5 * GiB;
+const SUPER_BYTES = 6 * GiB;
 const SLOT_CAPACITY = 5 * GiB;
 const ALIGNMENT = MiB;
 const GPT_BACKUP_RESERVE = MiB;
-const USER_CONTENT = ["Documents", "Download", "Pictures", "Movies", "Music"];
-const USER_EXCLUDES = [
-  "Android/data/org.matonos.installer",
-  "Android/obb/org.matonos.installer",
-  "Android/media/org.matonos.installer",
-  "data/misc",
-  "data/system",
-  "data/system_de",
-  "data/misc/vold",
-  "metadata",
-  "misc",
-  "adb_keys",
-  "lost+found",
-];
 
 function align(value: number): number {
   return Math.ceil(value / ALIGNMENT) * ALIGNMENT;
@@ -50,12 +36,13 @@ function guid(): string {
 }
 
 function slotMembers(suffix: "a" | "b") {
+  const size = (value: number) => (suffix === "a" ? value * MiB : 0);
   return [
-    { name: `system_${suffix}`, sizeBytes: 2048 * MiB },
-    { name: `system_ext_${suffix}`, sizeBytes: 512 * MiB },
-    { name: `product_${suffix}`, sizeBytes: 1536 * MiB },
-    { name: `vendor_${suffix}`, sizeBytes: 960 * MiB },
-    { name: `odm_${suffix}`, sizeBytes: 64 * MiB },
+    { name: `system_${suffix}`, sizeBytes: size(2048) },
+    { name: `system_ext_${suffix}`, sizeBytes: size(512) },
+    { name: `product_${suffix}`, sizeBytes: size(1536) },
+    { name: `vendor_${suffix}`, sizeBytes: size(960) },
+    { name: `odm_${suffix}`, sizeBytes: size(64) },
   ];
 }
 
@@ -203,11 +190,6 @@ export function createV1Plan(diskId: string, diskBytes: number): V1Plan {
         },
       ],
     },
-    ...["system", "system_ext", "product", "vendor", "odm"].map((name) => ({
-      kind: "clone_partition" as const,
-      source: { logicalName: `${name}_a` },
-      target: { logicalName: `${name}_b` },
-    })),
     {
       kind: "write_files" as const,
       target: { partGuid: boot.partGuid },
@@ -234,16 +216,12 @@ export function createV1Plan(diskId: string, diskBytes: number): V1Plan {
           inlineContents: `title MatonOS (slot A)\nlinux /matonos/a/bzImage\ninitrd /matonos/a/vendor_ramdisk.img\ninitrd /matonos/a/ramdisk.img\noptions console=tty0 quiet androidboot.hardware=pc_x86_64 androidboot.boot_part_uuid=${esp.partGuid} androidboot.slot_suffix=_a androidboot.matonos.live=0\n`,
         },
         {
-          relativePath: "matonos-b.conf",
+          // systemd-boot ignores this extension until bootctrl restores it
+          // after an OTA has created the target slot's snapshot metadata.
+          relativePath: "B.DIS",
           inlineContents: `title MatonOS (slot B)\nlinux /matonos/b/bzImage\ninitrd /matonos/b/vendor_ramdisk.img\ninitrd /matonos/b/ramdisk.img\noptions console=tty0 quiet androidboot.hardware=pc_x86_64 androidboot.boot_part_uuid=${esp.partGuid} androidboot.slot_suffix=_b androidboot.matonos.live=0\n`,
         },
       ],
-    },
-    {
-      kind: "copy_user_files" as const,
-      targetUserdata: { partGuid: userdata.partGuid },
-      includePaths: USER_CONTENT,
-      excludePaths: USER_EXCLUDES,
     },
     {
       kind: "write_files" as const,

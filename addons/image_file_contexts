@@ -1,0 +1,6 @@
+# Labels baked into offline-created add-on ext4 images. The image is mounted
+# read-only; these labels let stock modprobe and ueventd read their paths.
+/mnt/vendor/addons(/.*)? u:object_r:vendor_file:s0
+/mnt/vendor/addons/[^/]+/versions/[^/]+/modules(/.*)? u:object_r:vendor_addon_module_file:s0
+/mnt/vendor/addons/[^/]+/versions/[^/]+/firmware(/.*)? u:object_r:vendor_file:s0
+/mnt/vendor/addons/firmware(/.*)? u:object_r:matonos_addon_firmware_lookup:s0

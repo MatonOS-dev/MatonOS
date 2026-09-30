@@ -120,6 +120,7 @@ $(call inherit-product-if-exists, $(LOCAL_PATH)/audio/audio.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/wifi/wifi.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/bluetooth/bluetooth.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/sleep/sleep.mk)
+$(call inherit-product-if-exists, $(LOCAL_PATH)/gms/gms.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/install/install.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/updater/updater.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/fonts/fonts.mk)
@@ -129,6 +130,14 @@ $(call inherit-product-if-exists, $(LOCAL_PATH)/systembridge/systembridge.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/camera/camera.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/input/input.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/bootanim/bootanim.mk)
+
+# flatpak-spike: install the tested bionic CLI/dependency bundle in system_ext
+# until its Android.bp Soong port is ready.
+$(call inherit-product-if-exists, $(LOCAL_PATH)/linux/flatpak/flatpak.mk)
+
+# addons: product properties/hooks for the signed per-slot driver package
+# service. Its executable and init rc are assembled by bundle/contents.list.
+$(call inherit-product-if-exists, $(LOCAL_PATH)/addons/addons.mk)
 
 # ---------------------------------------------------------------- props
 PRODUCT_VENDOR_PROPERTIES += \

@@ -21,6 +21,22 @@ file audio/maton-audio-select.sh bin/maton-audio-select.sh
 file audio/maton-audio-codecs.rc etc/init/maton-audio-codecs.rc
 file audio/maton-audio-codecs.sh bin/maton-audio-codecs.sh
 
+# Live-only raw-disk installer. The channel service stays in matonos_driver.
+file buildinfra/native-built/matonos-installer-service bin/matonos-installer-service
+file install/matonos-installer-service.rc etc/init/matonos-installer-service.rc
+
+# BootControl AIDL HAL for A/B installs; AOSP's generic backend assumes the
+# Android bootloader control block, while MatonOS persists state and selects
+# systemd-boot loader entries.
+file buildinfra/native-built/matonos-bootctrl bin/matonos-bootctrl
+file native/matonos-bootctrl/vintf/matonos-bootctrl.xml etc/vintf/manifest/matonos-bootctrl.xml
+file install/matonos-bootctrl.rc etc/init/matonos-bootctrl.rc
+
+# addons: driver add-on service (signed images into addons_<slot>); stays in matonos_driver.
+file buildinfra/native-built/matonos-addons-service bin/matonos-addons-service
+file addons/matonos-addons-service.rc etc/init/matonos-addons-service.rc
+file addons/repo.pub etc/addons/repo.pub
+
 file bluetooth/matonos-bluetooth-service.xml etc/vintf/manifest/matonos-bluetooth-service.xml
 file bundle/matonos-channel.xml etc/vintf/manifest/matonos-channel.xml
 file buildinfra/bridge-banlist.txt etc/matonos/bridge-banlist.txt

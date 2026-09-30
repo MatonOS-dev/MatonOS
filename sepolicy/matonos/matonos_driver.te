@@ -7,8 +7,23 @@ type matonos_driver_helper, domain;
 type matonos_driver_helper_exec, exec_type, vendor_file_type, file_type;
 type matonos_driver_data_file, file_type, data_file_type;
 type matonos_channel_service, protected_service, hal_service_type, service_manager_type;
+type matonos_install_block_device, dev_type;
+# addons: GPT entries 6/7 hold service-written raw ext4 slot images, mounted RO.
+type matonos_addons_block_device, dev_type;
+type vendor_addon_module_file, file_type, vendor_file_type, contextmount_type;
+type matonos_addon_data_file, file_type, data_file_type;
+type matonos_addon_manager, domain;
+type matonos_addon_manager_exec, exec_type, vendor_file_type, file_type;
+# Firmware lookup symlinks are baked into the signed ext4 image and mounted
+# read-only. vendor_file_type grants ueventd its normal read/search access.
+type matonos_addon_firmware_lookup, file_type, vendor_file_type;
+# Read-only overlay exposing add-on + OS firmware at firmware_class.path.
+type matonos_addon_firmware_overlay, file_type, vendor_file_type, contextmount_type;
 
 init_daemon_domain(matonos_driver)
+init_daemon_domain(matonos_addon_manager)
+# This release accepts modules and firmware only. It rejects package daemons,
+# so no dynamic entrypoint under /mnt/vendor needs a vendor-domain transition.
 
 # HAL servers cannot execute helpers without a domain transition. PipeWire's
 # proxy starts pw-cat; matonos-btd execs itself for its VHCI emulator child.
@@ -18,8 +33,9 @@ domain_auto_trans(matonos_driver, matonos_driver_helper_exec, matonos_driver_hel
 domain_auto_trans(matonos_driver, matonos_driver_exec, matonos_driver_helper)
 allow matonos_driver matonos_driver_helper:process signal;
 
-# Narrow helper permissions: pw-cat reaches PipeWire's private socket, while
-# the VHCI child uses /dev/vhci and publishes the selected virtual HCI index.
+# Narrow helper permissions: pw-cat reaches PipeWire's private socket, the
+# VHCI child uses /dev/vhci, and the installer invokes fixed system format/GPT
+# tools plus BLKRRPART after driver-domain validation.
 allow matonos_driver_helper matonos_driver_data_file:dir search;
 allow matonos_driver_helper matonos_driver_data_file:sock_file write;
 allow matonos_driver_helper matonos_driver:unix_stream_socket connectto;
@@ -28,6 +44,23 @@ set_prop(matonos_driver_helper, vendor_maton_prop)
 get_prop(matonos_driver_helper, vendor_maton_prop)
 allow matonos_driver_helper vendor_file:dir r_dir_perms;
 allow matonos_driver_helper vendor_file:file { getattr map open read };
+allow matonos_driver matonos_install_block_device:blk_file rw_file_perms;
+# The manager stages signed package and compressed image data under /data,
+# then writes only the selected add-on GPT block device. The mounted filesystem is RO.
+allow matonos_addon_manager matonos_addons_block_device:blk_file rw_file_perms;
+allow matonos_addon_manager self:capability sys_admin;
+allow matonos_addon_manager matonos_addon_data_file:dir create_dir_perms;
+allow matonos_addon_manager matonos_addon_data_file:file create_file_perms;
+allow matonos_addon_manager vendor_addon_module_file:file { getattr map open read };
+get_prop(matonos_addon_manager, exported_default_prop)
+# The standard loader reads image-labeled module files through vendor_file_type.
+allow vendor_modprobe vendor_addon_module_file:system module_load;
+allow matonos_driver_helper matonos_install_block_device:blk_file rw_file_perms;
+allow matonos_driver dm_device:blk_file r_file_perms;
+allow matonos_driver_helper self:capability sys_admin;
+typeattribute matonos_driver_helper vendor_executes_system_violators;
+allow matonos_driver_helper system_file:file { execute execute_no_trans getattr map open read };
+allow matonos_driver_helper system_file:dir r_dir_perms;
 
 # Our Bluetooth controller HAL is a server for the platform Bluetooth HAL API.
 hal_server_domain(matonos_driver, hal_bluetooth)
@@ -45,7 +78,7 @@ allow matonos_driver matonos_driver_data_file:sock_file create_file_perms;
 # matonos_driver_data_file (/data/vendor/maton-audio).
 allow matonos_driver self:unix_stream_socket create_stream_socket_perms;
 allow matonos_driver matonos_driver_data_file:dir rw_dir_perms;
-allow matonos_driver matonos_driver_data_file:file create_file_perms;
+allow matonos_driver matonos_driver_data_file:file rw_file_perms;
 allow matonos_driver self:unix_stream_socket connectto;
 # The stock audio HAL may connect to the PipeWire proxy socket.
 allow hal_audio_default matonos_driver_data_file:dir search;
@@ -62,6 +95,8 @@ type matonos_vhci_device, dev_type;
 allow matonos_driver matonos_rfkill_device:chr_file rw_file_perms;
 allow hal_bluetooth_default matonos_rfkill_device:chr_file rw_file_perms;
 allow matonos_driver matonos_vhci_device:chr_file rw_file_perms;
+# bluetooth: the AIDL HAL owns the selected controller's HCI user socket.
+allow matonos_driver self:bluetooth_socket create_socket_perms_no_ioctl;
 allow matonos_driver self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
 allow matonos_driver sysfs:dir r_dir_perms;
 allow matonos_driver sysfs:file r_file_perms;
@@ -79,11 +114,46 @@ allow matonos_driver uhid_device:chr_file { getattr open read write ioctl };
 allow matonos_driver sysfs_power:file rw_file_perms;
 
 # Stable Binder channel is the only cross-partition control path.
-# Only the driver may register instances. The system bridge is the only client
-# granted service-manager find access in matonos_bridge.te.
+# The shared driver domain owns hardware-facing channel instances. The system
+# bridge is the only client granted service-manager find access.
 allow matonos_driver matonos_channel_service:service_manager add;
-neverallow { domain -matonos_driver } matonos_channel_service:service_manager add;
+# addons has a separate narrowly scoped settings channel.
+allow matonos_addon_manager matonos_channel_service:service_manager add;
+neverallow { domain -matonos_driver -matonos_addon_manager } matonos_channel_service:service_manager add;
 binder_call(matonos_driver, matonos_system_bridge)
+
+# The add-on manager writes only intake/extraction files while they carry the
+# data label. init restorecon assigns immutable vendor labels before loading.
+allow matonos_addon_manager matonos_addon_data_file:dir create_dir_perms;
+allow matonos_addon_manager matonos_addon_data_file:file create_file_perms;
+allow matonos_addon_manager matonos_addon_data_file:lnk_file create_file_perms;
+allow matonos_addon_manager vendor_file_type:dir r_dir_perms;
+allow matonos_addon_manager vendor_file_type:file { getattr map open read };
+# The firmware lookup tree and links are read-only image contents.
+# Bounded modprobe children are reaped or terminated after their timeout.
+allow matonos_addon_manager self:process { fork sigchld signal };
+binder_call(matonos_addon_manager, matonos_system_bridge)
+domain_auto_trans(matonos_addon_manager, vendor_toolbox_exec, vendor_modprobe)
+
+# addons: init creates optional mountpoints under /mnt/vendor and overlays
+# immutable firmware trees at the kernel's single firmware_class.path.
+allow init mnt_vendor_file:dir { create_dir_perms mounton };
+allow kernel matonos_addon_firmware_overlay:dir r_dir_perms;
+allow kernel matonos_addon_firmware_overlay:file r_file_perms;
+
+# install: the validated disk-installer operations use a dedicated device
+# type; the daemon remains in the fixed MatonOS driver domain.
+allow matonos_driver proc:lnk_file { getattr read };
+r_dir_file(matonos_driver, proc)
+allow matonos_driver proc_cmdline:file r_file_perms;
+allow matonos_driver proc_swaps:file r_file_perms;
+
+
+# install: BootControl HAL persists A/B state in misc and changes the
+# systemd-boot default on the ESP. It is live-safe: the live image reports one
+# slot and does not write either device.
+hal_server_domain(matonos_driver, hal_bootctl)
+get_prop(matonos_driver, exported_default_prop)
 
 # Read and execute vendor binaries/configuration (including sibling tools).
 allow matonos_driver vendor_file:dir r_dir_perms;
@@ -109,6 +179,19 @@ allow hal_graphics_allocator_default gpu_device:chr_file rw_file_perms;
 allow hal_graphics_allocator_default graphics_device:dir r_dir_perms;
 allow hal_graphics_composer_default graphics_device:chr_file rw_file_perms;
 allow hal_graphics_composer_default graphics_device:dir r_dir_perms;
+# install: generic DRM composer listens for kernel hotplug events. Without this
+# stock HWC cannot initialize on virtio-vga and SurfaceFlinger never starts.
+allow hal_graphics_composer_default self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
+# install: drm_hwcomposer's HWC3 path imports buffers through the AIDL minigbm
+# allocator. Treat the composer as that HAL's client so it can discover and
+# call the allocator on an installed boot as well as the live boot.
+hal_client_domain(hal_graphics_composer_default, hal_graphics_allocator)
+
+# install: the software Gatekeeper APEX also exports ISharedSecret/gatekeeper.
+# Its service_contexts entry uses hal_gatekeeper_service because that is the
+# service type Gatekeeper may register; keystore needs the matching client
+# relationship to discover and call that companion interface.
+hal_client_domain(keystore, hal_gatekeeper)
 allow surfaceflinger gpu_device:chr_file rw_file_perms;
 allow surfaceflinger graphics_device:chr_file rw_file_perms;
 allow surfaceflinger graphics_device:dir r_dir_perms;

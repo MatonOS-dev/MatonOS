@@ -1,0 +1,10 @@
+# Slot metadata and systemd-boot default selection are optional during boot.
+service matonos-bootctrl /odm/bin/matonos-bootctrl
+    class late_start
+    user root
+    group root system
+    interface aidl android.hardware.boot.IBootControl/default
+    disabled
+
+on late-init
+    start matonos-bootctrl

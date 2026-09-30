@@ -27,6 +27,22 @@ spoof: it cannot pair to another Rootcanal process, emulate HID, or transfer
 files. A real controller provides those functions. Pairing and data profiles
 depend on the actual controller and AOSP stack.
 
+The VHCI creation request sets the kernel's raw-device bit (0x80). Otherwise
+Linux starts its own HCI setup before the AIDL HAL can claim the exclusive
+HCI user channel. The 2026-09-30 image exposed this as `bind hci0 user channel:
+Device or resource busy`, followed by `com.android.bluetooth` aborting on the
+HAL's failed initialization callback. After that was fixed, the 10:06 image
+reached controller capability discovery but the emulator returned an
+incomplete Command Complete payload for LE Read Buffer Size v2 (opcode
+`0x2060`); Android then aborted in `le_read_buffer_size_v2_handler` because
+the response view was invalid. The emulator now returns the complete ACL and
+ISO buffer fields for that command. The HAL treats repeated initialization of
+an already-open HCI user channel as success, allowing Android's client retry
+path to reuse it. Fresh-image verification of this response fix is pending.
+The HAL's Bluetooth socket also has an explicit SELinux allow rule; earlier
+permissive logs recorded create/bind denials. Its policy uses the no-ioctl
+socket permission set because this HCI path issues no Bluetooth socket ioctl.
+
 After the early vendor mount, init loads the already-built `rfkill.ko`,
 `bluetooth.ko`, and `hci_vhci.ko` modules; no kernel build or host Bluetooth
 passthrough is required. Firmware loading remains in the kernel. The manager checks
@@ -60,10 +76,17 @@ through fixed buildinfra prebuilts. For the image build and SELinux label
 check, request the build from the coordinating agent; area agents do not run
 AOSP builds.
 
-The manager and HAL both compiled successfully as Android 35 x86_64 NDK PIE
-executables with Clang 21/CMake, using two workers. AIDL generation succeeded
-with the VINTF structured backend flags. This validates compilation only; the
-fresh-image QEMU checks below are pending the coordinator's shared build.
+The manager and HAL compiled successfully as Android 35 x86_64 NDK PIE
+executables with Clang 21/CMake. The 10:06 image confirmed the raw VHCI device
+was selected and exposed the malformed `0x2060` response; that image still
+aborted Bluetooth during controller setup. The complete response has since
+been compiled and preflight passed. A fresh full image was built at 12:37, but
+QEMU immediately restarted into UEFI with `reboot: Restarting system with
+command 'bootloader'` before init or ADB; this prevents Bluetooth verification
+and appears tied to the concurrent A/B installer changes. The image's
+SELinux-label check reported all nine init-started vendor programs labeled.
+Bluetooth binaries live under `/odm` and match the existing
+`/odm/bin/(hw/)?(matonos|maton)-.*` label rule.
 
 On a fresh QEMU boot without host passthrough, check that
 `vendor.maton.bluetooth.present=0`, `vendor.maton.bluetooth.virtual=1`, the
@@ -92,7 +115,9 @@ with this minimal empty-radio fallback.
 
 - The virtual HCI emulator implements the controller initialization and
   command-complete path needed for an empty scan, not a complete Bluetooth
-  controller. Its compatibility must be checked on the fresh QEMU image.
+  controller. The 12:37 image cannot reach Android in QEMU, so the new
+  `0x2060` response and Bluetooth toggle/scan still need verification on a
+  bootable image.
 - The manager blocks unused controllers. The HCI HAL soft-unblocks the selected
   real controller on initialize and blocks it on close, following Android's
   radio lifecycle.

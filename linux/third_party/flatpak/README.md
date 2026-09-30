@@ -47,12 +47,11 @@ verification documented in the final VM results below.
 
 ## Open items
 
-- Product/image integration and a system bridge for settings/control remain
-  outside this portability spike.
+- The settings/control bridge API remains a separate integration concern.
 - D-Bus proxy behavior and graphical apps/compositor integration remain
   untested.
-- The current work remains an NDK portability spike, not Soong/image
-  integration.
+- The Android.bp Soong port remains deferred; the current image uses NDK
+  prebuilts.
 
 ## Bionic consumer-only build (patch 0002)
 
@@ -116,9 +115,49 @@ boot for unprivileged apps that request X11. Full results and errors are in
 
 ## Open items
 
-- Product/image integration and a system bridge for settings/control remain
-  outside this portability spike.
+- The settings/control bridge API remains a separate integration concern.
 - D-Bus proxy behavior and graphical apps/compositor integration remain
   untested.
-- The current work remains an NDK portability spike, not Soong/image
-  integration.
+- The Android.bp Soong port remains deferred; the current image uses NDK
+  prebuilts.
+
+## Release image prebuilt handoff (2026-09-30)
+
+Until the Soong port is ready, `linux/flatpak/flatpak.mk` copies the tested
+NDK runtime into system_ext. `/system_ext/bin/flatpak` is a small launcher
+which sets `LD_LIBRARY_PATH=/system_ext/lib64`, puts `/system_ext/bin` on
+`PATH` for GPGME, selects the image's `/system_ext/bin/bwrap` and
+`/system_ext/bin/revokefs-fuse`, then execs
+`/system_ext/bin/matonos-flatpak`. The integration includes `gpg`,
+`ostree`, 22 shared libraries, and Flatpak trigger data;
+the existing Soong `bwrap` and platform `libcurl`, `libxml2`, and `libz`
+remain image dependencies. The staged files total 26,029,425 bytes after
+moving the payload and helper into `bin` for Soong fsgen compatibility.
+
+`device.mk` includes this product fragment. The existing system_ext
+`file_contexts` assigns these files the existing `system_file` type; no new
+SELinux policy type or policy file was introduced. The Flathub signing key
+is supplied by the signed `.flatpakrepo` and imported into the installation
+under `/data/matonos/linux/flatpak`; no private signing key is bundled.
+
+This integration is pending a release image build and VM verification through
+linuxd. The previously documented NDK VM tests used pushed binaries and do
+not verify this image prebuilt handoff.
+
+### Release image build and VM attempt (2026-09-30 12:37)
+
+The 12:37 full image build succeeded and `installed-files-system_ext.txt`
+contains the launcher, Flatpak payload, `gpg`, `ostree`, `revokefs-fuse`, all
+22 bundled libraries, and the trigger files. The generated
+`system_ext_file_contexts` labels the added paths with the existing
+`system_file` type. `tools/check-selinux-labels.sh -o
+out/target/product/pc_x86_64` passed for all nine init-started vendor
+programs.
+
+The required home-disk image copy was tested at port 5565 with `-g std` and
+4096 MiB. The kernel restarted into the bootloader after about 1.77 seconds,
+repeatedly, before init/ADB/linuxd became available. The bt-fix agent reported
+the same failure on this image at port 5567. Therefore `add_flathub` and the
+Calculator install through linuxd could not be exercised. Serial evidence is
+at `/home/hanro50/matonos/vm/flatpak-spike/serial.log`; the temporary image
+copy is being removed after stopping the VM.

@@ -1,0 +1,27 @@
+on post-fs
+    mkdir /mnt/vendor/addons 0755 root root
+    # Optional immutable per-slot ext4 image. Do not use init's wait flag: a PC
+    # without the GPT add-on partition must continue booting immediately.
+    mount ext4 /dev/block/by-name/addons${ro.boot.slot_suffix} /mnt/vendor/addons ro noatime
+    # The kernel's firmware_class.path is fixed at /vendor/firmware and this
+    # kernel has no usermode helper. Expose both immutable firmware trees at
+    # that path with a lower-only overlay; either mount may fail harmlessly
+    # when the add-on partition is absent.
+    mkdir /mnt/vendor/firmware-base 0755 root root
+    mount none /vendor/firmware /mnt/vendor/firmware-base bind
+    # Keep the bind mount private so the overmount below cannot propagate
+    # back into its own lower firmware path.
+    mount none /mnt/vendor/firmware-base /mnt/vendor/firmware-base private
+    mount overlay overlay /vendor/firmware ro lowerdir=/mnt/vendor/addons/firmware:/mnt/vendor/firmware-base,context=u:object_r:matonos_addon_firmware_overlay:s0
+
+on post-fs-data
+    mkdir /data/vendor/matonos-addons 0700 root root
+    restorecon_recursive /data/vendor/matonos-addons
+    start vendor.matonos-addons
+
+service vendor.matonos-addons /odm/bin/matonos-addons-service
+    class late_start
+    user root
+    group system
+    disabled
+    oneshot
