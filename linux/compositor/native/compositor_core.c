@@ -78,6 +78,8 @@ struct Server {
              .event_fd=-1 };
 
 static atomic_int next_window_id = 1;
+enum { MATON_BUTTON_LEFT = 1, MATON_BUTTON_RIGHT = 2, MATON_ANDROID_LEFT = 11,
+       MATON_ANDROID_RIGHT = 12, BTN_LEFT = 0x110 };
 static struct Window* window_from_listener(struct wl_listener* l, size_t offset) {
   return (struct Window*)((char*)l - offset);
 }
@@ -89,6 +91,7 @@ static void enqueue(struct Command* c) {
   pthread_mutex_lock(&server.mutex);
   if (atomic_load(&server.stopping) && c->kind != CMD_STOP) {
     pthread_mutex_unlock(&server.mutex);
+    if (c->buffer) wlr_buffer_unlock(c->buffer);
     if (c->output) { maton_surface_output_finish(c->output); free(c->output); }
     free(c); return;
   }
@@ -103,7 +106,7 @@ static void command(enum CommandKind kind,int id,int a,int b,int c,int64_t time,
                     float x,float y,float vs,float hs,struct MatonSurfaceOutput* output,
                     struct wlr_buffer* buffer) {
   struct Command* cmd=calloc(1,sizeof(*cmd));
-  if (!cmd) { if(output){maton_surface_output_finish(output);free(output);} return; }
+  if (!cmd) { if(buffer)wlr_buffer_unlock(buffer); if(output){maton_surface_output_finish(output);free(output);} return; }
   cmd->kind=kind;cmd->id=id;cmd->a=a;cmd->b=b;cmd->c=c;cmd->time=time;
   cmd->x=x;cmd->y=y;cmd->vs=vs;cmd->hs=hs;cmd->output=output;cmd->buffer=buffer;enqueue(cmd);
 }
@@ -154,7 +157,10 @@ static void on_new_toplevel(struct wl_listener* l,void* data) {
   if(!w){w=calloc(1,sizeof(*w));if(!w)return;w->id=atomic_fetch_add(&next_window_id,1);w->width=640;w->height=400;w->scene=wlr_scene_create();if(!w->scene){free(w);return;}w->next=server.windows;server.windows=w;}
   request=!w->activity;w->toplevel=t;w->toplevel_destroy.notify=on_toplevel_destroy;
   wl_signal_add(&t->events.destroy,&w->toplevel_destroy);
-  (void)wlr_scene_xdg_surface_create(&w->scene->tree,t->base);
+  if (!wlr_scene_xdg_surface_create(&w->scene->tree,t->base)) {
+    wl_list_remove(&w->toplevel_destroy.link); wl_list_init(&w->toplevel_destroy.link);
+    w->toplevel=NULL; return;
+  }
   if(!t->base->surface->mapped)wlr_xdg_toplevel_set_size(t,w->width,w->height);
   if(request){w->activity=1;maton_java_request_window(w->id,w->width,w->height);}
 }
@@ -182,9 +188,9 @@ static void process_commands(void) {
     switch(c->kind){
     case CMD_ATTACH:attach_output(c);break;
     case CMD_DETACH:if(w){w->activity=0;destroy_output(w);}break;
-    case CMD_RESIZE:if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);(void)wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(w->toplevel)wlr_xdg_toplevel_set_size(w->toplevel,c->a,c->b);wlr_output_schedule_frame(w->output);}}break;
+    case CMD_RESIZE:if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);bool committed=wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(committed){if(w->toplevel)wlr_xdg_toplevel_set_size(w->toplevel,c->a,c->b);wlr_output_schedule_frame(w->output);}}}break;
     case CMD_KEY:if(server.seat&&server.keyboard_initialized){if(w&&w->toplevel&&w->toplevel->base->surface)wlr_seat_keyboard_notify_enter(server.seat,w->toplevel->base->surface,NULL,0,&server.keyboard.modifiers);struct wlr_keyboard_key_event e={.time_msec=(uint32_t)(c->time/1000000),.keycode=(uint32_t)(c->b>0?c->b:c->a+8),.update_state=true,.state=c->c==0?WL_KEYBOARD_KEY_STATE_PRESSED:WL_KEYBOARD_KEY_STATE_RELEASED};wlr_keyboard_notify_key(&server.keyboard,&e);}break;
-    case CMD_MOTION:if(server.seat){uint32_t tm=(uint32_t)(c->time/1000000);double sx=0,sy=0;struct wlr_scene* scene=w?w->scene:NULL;struct wlr_scene_node* node=scene?wlr_scene_node_at(&scene->tree.node,c->x,c->y,&sx,&sy):NULL;struct wlr_scene_buffer* sb=node&&node->type==WLR_SCENE_NODE_BUFFER?wlr_scene_buffer_from_node(node):NULL;struct wlr_scene_surface* ss=sb?wlr_scene_surface_try_from_buffer(sb):NULL;if(ss){if(server.pointer_focus!=ss->surface){server.pointer_focus=ss->surface;wlr_seat_pointer_notify_enter(server.seat,ss->surface,sx,sy);wlr_seat_keyboard_notify_enter(server.seat,ss->surface,NULL,0,&server.keyboard.modifiers);}wlr_seat_pointer_notify_motion(server.seat,tm,sx,sy);}else{server.pointer_focus=NULL;wlr_seat_pointer_notify_clear_focus(server.seat);}if(c->a==11||c->a==12||c->a==0||c->a==1)wlr_seat_pointer_notify_button(server.seat,tm,0x110,(c->a==11||c->a==0)?WL_POINTER_BUTTON_STATE_PRESSED:WL_POINTER_BUTTON_STATE_RELEASED);if(c->vs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_VERTICAL_SCROLL,-c->vs*15.0,(int32_t)-c->vs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);if(c->hs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_HORIZONTAL_SCROLL,-c->hs*15.0,(int32_t)-c->hs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);wlr_seat_pointer_notify_frame(server.seat);}break;
+    case CMD_MOTION:if(server.seat){uint32_t tm=(uint32_t)(c->time/1000000);double sx=0,sy=0;struct wlr_scene* scene=w?w->scene:NULL;struct wlr_scene_node* node=scene?wlr_scene_node_at(&scene->tree.node,c->x,c->y,&sx,&sy):NULL;struct wlr_scene_buffer* sb=node&&node->type==WLR_SCENE_NODE_BUFFER?wlr_scene_buffer_from_node(node):NULL;struct wlr_scene_surface* ss=sb?wlr_scene_surface_try_from_buffer(sb):NULL;if(ss){if(server.pointer_focus!=ss->surface){server.pointer_focus=ss->surface;wlr_seat_pointer_notify_enter(server.seat,ss->surface,sx,sy);wlr_seat_keyboard_notify_enter(server.seat,ss->surface,NULL,0,&server.keyboard.modifiers);}wlr_seat_pointer_notify_motion(server.seat,tm,sx,sy);}else{server.pointer_focus=NULL;wlr_seat_pointer_notify_clear_focus(server.seat);}if(c->a==MATON_ANDROID_LEFT||c->a==MATON_ANDROID_RIGHT||c->a==MATON_BUTTON_LEFT||c->a==MATON_BUTTON_RIGHT)wlr_seat_pointer_notify_button(server.seat,tm,BTN_LEFT,(c->a==MATON_ANDROID_LEFT||c->a==MATON_BUTTON_LEFT)?WL_POINTER_BUTTON_STATE_PRESSED:WL_POINTER_BUTTON_STATE_RELEASED);if(c->vs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_VERTICAL_SCROLL,-c->vs*15.0,(int32_t)-c->vs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);if(c->hs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_HORIZONTAL_SCROLL,-c->hs*15.0,(int32_t)-c->hs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);wlr_seat_pointer_notify_frame(server.seat);}break;
     case CMD_RELEASE:if(c->buffer)wlr_buffer_unlock(c->buffer);break;
     case CMD_STOP:atomic_store(&server.stopping,true);break;
     }free(c);
@@ -192,7 +198,7 @@ static void process_commands(void) {
 }
 static int on_event_fd(int fd,uint32_t mask,void* data){(void)fd;(void)mask;(void)data;process_commands();return 0;}
 static void* server_main(void* unused) {
-  (void)unused;wlr_log_init(WLR_ERROR,NULL);server.display=wl_display_create();
+  (void)unused;bool initialized=false;wlr_log_init(WLR_ERROR,NULL);server.display=wl_display_create();
   if(!server.display)goto done;server.loop=wl_display_get_event_loop(server.display);
   maton_surface_output_set_release_dispatch(release_buffer);
   server.event_fd=eventfd(0,EFD_NONBLOCK|EFD_CLOEXEC);
@@ -200,7 +206,8 @@ static void* server_main(void* unused) {
   server.backend=wlr_headless_backend_create(server.loop);server.renderer=wlr_pixman_renderer_create();
   if(!server.backend||!server.renderer||!maton_ahb_allocator_init(&server.ahb_allocator))goto done;
   if(!wlr_renderer_init_wl_display(server.renderer,server.display))goto done;
-  server.allocator=maton_ahb_allocator_base(&server.ahb_allocator);(void)maton_egl_uploader_init(&server.uploader);
+  server.allocator=maton_ahb_allocator_base(&server.ahb_allocator);
+  if(!maton_egl_uploader_init(&server.uploader))__android_log_print(ANDROID_LOG_WARN,"MatonCompositor","EGL upload fallback unavailable");
   server.xdg_shell=wlr_xdg_shell_create(server.display,6);server.compositor=wlr_compositor_create(server.display,6,server.renderer);server.seat=wlr_seat_create(server.display,"seat0");
   if(!server.xdg_shell||!server.compositor||!server.seat)goto done;
   wlr_keyboard_init(&server.keyboard,NULL,"maton-keyboard");server.keyboard_initialized=1;
@@ -209,9 +216,9 @@ static void* server_main(void* unused) {
   wlr_seat_set_keyboard(server.seat,&server.keyboard);wlr_seat_set_capabilities(server.seat,WL_SEAT_CAPABILITY_KEYBOARD|WL_SEAT_CAPABILITY_POINTER);
   server.new_toplevel.notify=on_new_toplevel;wl_signal_add(&server.xdg_shell->events.new_toplevel,&server.new_toplevel);
   if(!wl_display_add_socket(server.display,server.socket_name)||!wlr_backend_start(server.backend))goto done;
-  server.ok=1;
+  initialized=true;
 done:
-  pthread_mutex_lock(&server.mutex);server.ready=1;pthread_cond_broadcast(&server.ready_cond);pthread_mutex_unlock(&server.mutex);
+  pthread_mutex_lock(&server.mutex);server.ok=initialized;server.ready=1;pthread_cond_broadcast(&server.ready_cond);pthread_mutex_unlock(&server.mutex);
   if(server.ok){while(!atomic_load(&server.stopping))wl_event_loop_dispatch(server.loop,-1);wl_display_destroy_clients(server.display);}
   while(server.windows)destroy_window(server.windows);
   if(server.new_toplevel.link.prev){wl_list_remove(&server.new_toplevel.link);wl_list_init(&server.new_toplevel.link);}
@@ -224,17 +231,18 @@ done:
   if(server.event_fd>=0)close(server.event_fd);server.event_fd=-1;return NULL;
 }
 bool maton_core_start(const char* socket_name,const char* runtime_dir){
-  bool expected=false;if(!atomic_compare_exchange_strong(&server.started,&expected,true))return server.ok;
+  bool expected=false;if(!atomic_compare_exchange_strong(&server.started,&expected,true)){pthread_mutex_lock(&server.mutex);bool ok=server.ok;pthread_mutex_unlock(&server.mutex);return ok;}
   if(!socket_name||!runtime_dir||strlen(socket_name)>=sizeof(server.socket_name)||strlen(runtime_dir)>=sizeof(server.runtime_dir))goto fail;
   strcpy(server.socket_name,socket_name);strcpy(server.runtime_dir,runtime_dir);
   if(mkdir(runtime_dir,0700)&&errno!=EEXIST)goto fail;if(chmod(runtime_dir,0700)||setenv("XDG_RUNTIME_DIR",runtime_dir,1))goto fail;
   char path[640];snprintf(path,sizeof(path),"%s/%s",runtime_dir,socket_name);unlink(path);
-  server.ready=server.ok=0;atomic_store(&server.stopping,false);
+  pthread_mutex_lock(&server.mutex);server.ready=server.ok=0;pthread_mutex_unlock(&server.mutex);
+  atomic_store(&server.stopping,false);
   if(pthread_create(&server.thread,NULL,server_main,NULL))goto fail;
-  pthread_mutex_lock(&server.mutex);struct timespec limit;clock_gettime(CLOCK_REALTIME,&limit);limit.tv_sec+=2;while(!server.ready&&pthread_cond_timedwait(&server.ready_cond,&server.mutex,&limit)==0){}int ok=server.ready&&server.ok;pthread_mutex_unlock(&server.mutex);return ok;
+  pthread_mutex_lock(&server.mutex);struct timespec limit;clock_gettime(CLOCK_REALTIME,&limit);limit.tv_sec+=2;while(!server.ready&&pthread_cond_timedwait(&server.ready_cond,&server.mutex,&limit)==0){}int ok=server.ready&&server.ok;pthread_mutex_unlock(&server.mutex);if(!ok){pthread_join(server.thread,NULL);pthread_mutex_lock(&server.mutex);server.started=false;server.ready=server.ok=0;pthread_mutex_unlock(&server.mutex);}return ok;
 fail:atomic_store(&server.started,false);return false;
 }
-void maton_core_stop(void){if(!atomic_load(&server.started))return;atomic_store(&server.stopping,true);if(server.event_fd>=0){uint64_t one=1;(void)write(server.event_fd,&one,sizeof(one));}pthread_join(server.thread,NULL);atomic_store(&server.started,false);atomic_store(&server.stopping,false);server.ready=server.ok=0;atomic_store(&server.demo_started,false);}
+void maton_core_stop(void){if(!atomic_load(&server.started))return;atomic_store(&server.stopping,true);if(server.event_fd>=0){uint64_t one=1;(void)write(server.event_fd,&one,sizeof(one));}pthread_join(server.thread,NULL);pthread_mutex_lock(&server.mutex);server.ready=server.ok=0;atomic_store(&server.started,false);pthread_mutex_unlock(&server.mutex);atomic_store(&server.stopping,false);atomic_store(&server.demo_started,false);}
 void maton_core_launch_demo(void){bool expected=false;if(atomic_compare_exchange_strong(&server.demo_started,&expected,true)){pthread_t t;if(!pthread_create(&t,NULL,maton_wayland_test_client,NULL))pthread_detach(t);}}
 void maton_core_attach(int id,struct MatonSurfaceOutput* output,int width,int height){command(CMD_ATTACH,id,width,height,0,0,0,0,0,0,output,NULL);}
 void maton_core_detach(int id){command(CMD_DETACH,id,0,0,0,0,0,0,0,0,NULL,NULL);}

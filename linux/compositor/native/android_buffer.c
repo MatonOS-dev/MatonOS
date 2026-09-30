@@ -120,7 +120,7 @@ static struct wlr_buffer* create_buffer(struct wlr_allocator* base, int width, i
     const struct maton_cros_gralloc_handle* gralloc = (const struct maton_cros_gralloc_handle*)native;
     if (gralloc && gralloc->magic == k_cros_gralloc_magic && gralloc->num_planes > 0 &&
         gralloc->num_planes <= DRV_MAX_PLANES && gralloc->numFds >= (int)gralloc->num_planes &&
-        gralloc->width == desc.width && gralloc->height == desc.height && gralloc->format == format->format) {
+        gralloc->width == desc.width && gralloc->height == desc.height && gralloc->droid_format == (int32_t)desc.format) {
       buffer->handle = gralloc;
     }
   }
@@ -175,7 +175,9 @@ bool maton_ahb_buffer_upload_fallback(struct wlr_buffer* base, struct MatonEglUp
   const EGLint attrs[] = {EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE};
   EGLImageKHR image = uploader->create_image(uploader->display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID, client, attrs);
   if (image == EGL_NO_IMAGE_KHR) return false;
-  GLuint texture = 0; glGenTextures(1, &texture); glBindTexture(GL_TEXTURE_2D, texture);
+  GLuint texture = 0; glGenTextures(1, &texture);
+  if (texture == 0) { uploader->destroy_image(uploader->display, image); return false; }
+  glBindTexture(GL_TEXTURE_2D, texture);
   if (uploader->image_target_texture) uploader->image_target_texture(GL_TEXTURE_2D, image);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, base->width, base->height, GL_BGRA_EXT, GL_UNSIGNED_BYTE, buffer->staging);
   GLenum error = glGetError(); glFinish();
@@ -199,10 +201,10 @@ bool maton_egl_uploader_init(struct MatonEglUploader* uploader) {
   uploader->surface = eglCreatePbufferSurface(uploader->display, config, surface_attrs);
   if (uploader->context == EGL_NO_CONTEXT || uploader->surface == EGL_NO_SURFACE ||
       !eglMakeCurrent(uploader->display, uploader->surface, uploader->surface, uploader->context)) return false;
-  uploader->create_image = (void*)eglGetProcAddress("eglCreateImageKHR");
-  uploader->destroy_image = (void*)eglGetProcAddress("eglDestroyImageKHR");
-  uploader->get_native_client_buffer = (void*)eglGetProcAddress("eglGetNativeClientBufferANDROID");
-  uploader->image_target_texture = (void*)eglGetProcAddress("glEGLImageTargetTexture2DOES");
+  uploader->create_image = (EGLImageKHR (*)(EGLDisplay,EGLContext,EGLenum,EGLClientBuffer,const EGLint*))eglGetProcAddress("eglCreateImageKHR");
+  uploader->destroy_image = (EGLBoolean (*)(EGLDisplay,EGLImageKHR))eglGetProcAddress("eglDestroyImageKHR");
+  uploader->get_native_client_buffer = (EGLClientBuffer (*)(const AHardwareBuffer*))eglGetProcAddress("eglGetNativeClientBufferANDROID");
+  uploader->image_target_texture = (void (*)(GLenum,GLeglImageOES))eglGetProcAddress("glEGLImageTargetTexture2DOES");
   uploader->ready = uploader->create_image && uploader->destroy_image &&
       uploader->get_native_client_buffer && uploader->image_target_texture;
   return uploader->ready;

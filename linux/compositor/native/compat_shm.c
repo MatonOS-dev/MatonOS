@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 struct ShmName {
@@ -23,17 +24,19 @@ int maton_shm_open(const char* name, int flags, mode_t mode) {
   pthread_mutex_lock(&names_lock);
   for (struct ShmName* it=names; it; it=it->next) {
     if (strcmp(it->name,name)==0) {
-      if (flags & O_CREAT) { pthread_mutex_unlock(&names_lock); errno=EEXIST; return -1; }
+      if ((flags & (O_CREAT|O_EXCL)) == (O_CREAT|O_EXCL)) { pthread_mutex_unlock(&names_lock); errno=EEXIST; return -1; }
       char path[64]; snprintf(path,sizeof(path),"/proc/self/fd/%d",it->fd);
-      int fd=open(path,(flags&O_ACCMODE)|O_CLOEXEC);
+      int fd=open(path,(flags&~(O_CREAT|O_EXCL|O_CLOEXEC))|O_CLOEXEC);
       pthread_mutex_unlock(&names_lock);
       return fd;
     }
   }
   if (!(flags & O_CREAT)) { pthread_mutex_unlock(&names_lock); errno=ENOENT; return -1; }
   const char* label=name[1]?name+1:"maton-shm";
-  int fd=memfd_create(label,MFD_CLOEXEC|MFD_ALLOW_SEALING);
+  int fd=memfd_create(label,MFD_CLOEXEC);
   if(fd<0){pthread_mutex_unlock(&names_lock);return -1;}
+  mode_t mask=umask(0);umask(mask);
+  if(fchmod(fd,mode&~mask)!=0){int err=errno;close(fd);pthread_mutex_unlock(&names_lock);errno=err;return -1;}
   struct ShmName* item=calloc(1,sizeof(*item));
   if(!item){close(fd);pthread_mutex_unlock(&names_lock);errno=ENOMEM;return -1;}
   item->name=strdup(name);
