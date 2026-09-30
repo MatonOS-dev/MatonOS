@@ -446,6 +446,13 @@ Feature work continues, but in this shape from now on.
     Remove the vending (and gms) spoof pairs while real Google is active.
   - Data dir carries over (offer "clear data" after switching). Key rotation
     can't do this without Google's private key, hence the patch.
+- **v9 (user, 2026-09-30): arm64.** Prepare now by splitting the tree:
+  a shared `maton_common` (bridge, rn-apps, daemons, Linux-apps stack,
+  sepolicy, overlays, install/VAB, tools) and per-architecture device
+  folders (`pc_x86_64` now, `pc_arm64` in v9: kernel config, board config,
+  firmware, Mesa driver set, pc-gpu-detect rules, boot path). Remove the
+  hard-coded x86_64 bits (Expo abiFilters, NDK triples, QEMU harness) as
+  part of the split. Scheduled right after the 2026-09-30 release.
 - **v8 (user, 2026-09-29): Nix packages** as a Linux app source beside
   Flatpak/AppImage: closures under /nix/store carry their own glibc/Mesa, so
   they run under bwrap with a read-only store at /data/matonos/linux/nix
