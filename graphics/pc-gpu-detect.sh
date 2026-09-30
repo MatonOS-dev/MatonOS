@@ -96,6 +96,14 @@ if { [ -z "$supported_drivers" ] || ! has_render_node "$supported_drivers"; } &&
    ! has_render_node "vgem"; then
     # vgem is a shmem-backed DRM render node. Mesa's kms_swrast/llvmpipe
     # renders into its buffers; drm_hwcomposer sends frames to real KMS.
+    #
+    # Mesa reads this via os_misc.c os_get_android_option(): the debug option
+    # LIBGL_ALWAYS_SOFTWARE maps to the key mesa.libgl.always.software and is
+    # looked up as debug.mesa.*, then vendor.mesa.*, then bare. So the property
+    # Mesa actually honours is vendor.mesa.libgl.always.software. The
+    # vendor.maton.graphics.software alias is what the Settings hardware report
+    # reads; set both.
+    setprop vendor.mesa.libgl.always.software true
     setprop vendor.maton.graphics.software true
     if [ -x /vendor/bin/modprobe ]; then
         if [ -x /vendor/bin/timeout ]; then
