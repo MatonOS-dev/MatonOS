@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <cerrno>
 #include <map>
 #include <string>
 #include <vector>
@@ -23,8 +24,9 @@ struct Value {
     uint64_t Number(uint64_t fallback = 0) const {
         if (kind != Kind::kNumber || scalar.empty() || scalar[0] == '-') return fallback;
         char* end = nullptr;
+        errno = 0;
         const auto value = std::strtoull(scalar.c_str(), &end, 10);
-        return end && *end == '\0' ? value : fallback;
+        return errno != ERANGE && end && *end == '\0' ? value : fallback;
     }
 };
 

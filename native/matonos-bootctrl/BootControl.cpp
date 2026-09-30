@@ -93,7 +93,7 @@ std::string CurrentDiskSysPath() {
         for (fs::directory_iterator it("/sys/class/block", ec), end; !ec && it != end; it.increment(ec)) {
             const fs::path node = fs::canonical(it->path(), ec);
             if (ec) { ec.clear(); continue; }
-            if (!fs::exists(node / "partition")) continue;
+            std::error_code partition_ec; if (!fs::exists(node / "partition", partition_ec) || partition_ec) continue;
             std::ifstream uevent(it->path() / "uevent");
             std::string line;
             while (std::getline(uevent, line)) {
@@ -102,26 +102,27 @@ std::string CurrentDiskSysPath() {
             }
         }
     }
-    const std::string mapper="/dev/block/mapper/system_"+(CurrentSlot()==0?std::string("a"):std::string("b"));
-    struct stat st{};
-    if(stat(mapper.c_str(),&st)!=0) {
-        std::fprintf(stderr, "matonos-bootctrl: cannot stat %s: %s\n", mapper.c_str(), strerror(errno));
-        return {};
-    }
-    const std::string id=std::to_string(major(st.st_rdev))+":"+std::to_string(minor(st.st_rdev));
+    // Resolve the active physical disk from its GPT PARTNAME when the boot PARTUUID is unavailable.
+    const std::string active_name = std::string("system") + (CurrentSlot() == 0 ? "_a" : "_b");
     std::error_code ec;
-    const fs::path dm=fs::canonical(fs::path("/sys/dev/block")/id,ec);
-    if(ec) {
-        std::fprintf(stderr, "matonos-bootctrl: cannot resolve active mapper sysfs node: %s\n", ec.message().c_str());
-        return {};
+    for (fs::directory_iterator it("/sys/class/block", ec), end; !ec && it != end; it.increment(ec)) {
+        const fs::path node = fs::canonical(it->path(), ec);
+        if (ec) { ec.clear(); continue; }
+        std::error_code partition_ec;
+        if (!fs::exists(node / "partition", partition_ec) || partition_ec) continue;
+        std::ifstream input(it->path() / "uevent");
+        if (!input) continue;
+        std::string line;
+        while (std::getline(input, line)) {
+            if (line == "PARTNAME=" + active_name) {
+                const fs::path parent = fs::canonical(node.parent_path(), ec);
+                if (!ec) return parent.string();
+                ec.clear();
+                break;
+            }
+        }
     }
-    std::error_code slave_error;
-    const fs::path slaves=dm/"slaves";
-    for(fs::directory_iterator it(slaves,slave_error),end;!slave_error&&it!=end;it.increment(slave_error)){
-        const fs::path slave=fs::canonical(it->path(),ec);if(ec){ec.clear();continue;}
-        if(fs::exists(slave/"partition"))return fs::canonical(slave.parent_path(),ec).string();
-    }
-    std::fprintf(stderr, "matonos-bootctrl: no physical slave found for %s\n", mapper.c_str());
+    std::fprintf(stderr, "matonos-bootctrl: cannot resolve physical disk for active PARTNAME=%s\n", active_name.c_str());
     return {};
 }
 
@@ -131,13 +132,13 @@ std::string FindCurrentDiskPartition(const std::string& wanted_name) {
     std::error_code ec;
     for(fs::directory_iterator it("/sys/class/block",ec),end;!ec&&it!=end;it.increment(ec)){
         const fs::path sys=fs::canonical(it->path(),ec);if(ec){ec.clear();continue;}
-        if(!fs::exists(sys/"partition")||fs::canonical(sys.parent_path(),ec).string()!=disk){ec.clear();continue;}
-        std::ifstream input(it->path()/"uevent");std::string line;
+        std::error_code partition_ec; if(!fs::exists(sys/"partition",partition_ec)||partition_ec||fs::canonical(sys.parent_path(),ec).string()!=disk){ec.clear();continue;}
+        std::ifstream input(it->path()/"uevent");if(!input)continue;std::string line;
         while(std::getline(input,line))if(line=="PARTNAME="+wanted_name){
             const std::string node="/dev/block/"+it->path().filename().string();
             if(access(node.c_str(),R_OK)==0)return node;
             std::fprintf(stderr, "matonos-bootctrl: cannot read %s: %s\n", node.c_str(), strerror(errno));
-            return {};
+            break;
         }
     }
     std::fprintf(stderr, "matonos-bootctrl: PARTNAME=%s not found on %s\n", wanted_name.c_str(), disk.c_str());
@@ -163,12 +164,12 @@ bool OpenCurrentEsp(bool writable, mi::FatVolume* volume, std::string* error) {
             *error = "Cannot open current physical disk for identity check.";
             return false;
         }
-        const bool has_sequence = ioctl(fd, BLKGETDISKSEQ, &disk_sequence) == 0 && disk_sequence != 0;
+        const int sequence_rc = ioctl(fd, BLKGETDISKSEQ, &disk_sequence);
+        const int sequence_error = errno;
         close(fd);
-        if (!has_sequence) {
-            *error = "Cannot verify current physical disk sequence.";
-            return false;
-        }
+        // Older kernels may not implement BLKGETDISKSEQ; the ESP opener can still validate its geometry.
+        if (sequence_rc != 0 && sequence_error != ENOTTY && sequence_error != EINVAL) { *error = "Cannot verify current physical disk sequence."; return false; }
+        if (sequence_rc != 0) disk_sequence = 0;
     }
     return mi::FatVolume::Open(esp, writable, volume, error, disk_sequence);
 }
@@ -178,7 +179,7 @@ State DefaultState() {
     std::memcpy(state.magic, kStateMagic, sizeof(kStateMagic));
     state.version = 1;
     state.active_slot = static_cast<uint32_t>(CurrentSlot());
-    state.bootable_mask = 1;
+    state.bootable_mask = 3;
     state.successful_mask = 0;
     state.merge_status = static_cast<uint32_t>(boot::MergeStatus::NONE);
     state.crc = Crc32(&state, offsetof(State, crc));
@@ -227,8 +228,14 @@ bool WriteState(State state) {
     const uint64_t offset = kStateOffsets[state.generation & 1u];
     const int fd = open(path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) return false;
-    const bool ok = pwrite(fd, &state, sizeof(state), static_cast<off_t>(offset)) == sizeof(state) &&
-                    fsync(fd) == 0;
+    size_t done = 0;
+    while (done < sizeof(state)) {
+        const ssize_t count = pwrite(fd, reinterpret_cast<const uint8_t*>(&state) + done, sizeof(state) - done, static_cast<off_t>(offset + done));
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) break;
+        done += static_cast<size_t>(count);
+    }
+    const bool ok = done == sizeof(state) && fsync(fd) == 0;
     close(fd);
     return ok;
 }
@@ -407,13 +414,14 @@ ndk::ScopedAStatus BootControl::markBootSuccessful() {
         return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot read slot state");
     }
     const int slot = CurrentSlot();
-    if (!MarkEntrySuccessful(slot)) return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot mark systemd-boot entry successful");
+    const State previous = state;
     state.bootable_mask |= 1u << slot;
     state.successful_mask |= 1u << slot;
     if (!WriteState(state)) {
         std::fprintf(stderr, "matonos-bootctrl: cannot persist successful slot %d state to misc\n", slot);
         return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot persist slot state");
     }
+    if (!MarkEntrySuccessful(slot)) { (void)WriteState(previous); return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot mark systemd-boot entry successful"); }
     std::fprintf(stderr, "matonos-bootctrl: marked slot %d successful\n", slot);
     return ndk::ScopedAStatus::ok();
 }
@@ -433,8 +441,9 @@ ndk::ScopedAStatus BootControl::setActiveBootSlot(int32_t slot) {
         const std::string stem=slot==0?"A":"B";
         std::vector<uint8_t> disabled;
         if(volume.ReadFile("loader/entries/"+stem+".DIS",&disabled,&error)) {
-            if(!volume.WriteFile("loader/entries/"+stem+"+3-0.conf",disabled,&error) ||
-               !volume.RenameFile("loader/entries/"+stem+".DIS","loader/entries/"+stem+".OLD",&error))
+            if(!volume.WriteFile("loader/entries/"+stem+"+3-0.conf",disabled,&error))
+                return Failure(boot::IBootControl::COMMAND_FAILED,"Cannot restore slot entry");
+            if(!volume.RenameFile("loader/entries/"+stem+".DIS","loader/entries/"+stem+".OLD",&error))
                 return Failure(boot::IBootControl::COMMAND_FAILED,"Cannot restore slot entry");
         }
         std::vector<uint8_t> successful;
@@ -445,9 +454,9 @@ ndk::ScopedAStatus BootControl::setActiveBootSlot(int32_t slot) {
     }
     state.bootable_mask |= 1u << slot;
     state.successful_mask &= ~(1u << slot);
-    if (!WriteLoaderDefault(slot)) return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot select systemd-boot entry");
     state.active_slot = static_cast<uint32_t>(slot);
-    return WriteState(state) ? ndk::ScopedAStatus::ok() : Failure(boot::IBootControl::COMMAND_FAILED, "Cannot persist slot state");
+    if (!WriteState(state)) return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot persist slot state");
+    return WriteLoaderDefault(slot) ? ndk::ScopedAStatus::ok() : Failure(boot::IBootControl::COMMAND_FAILED, "Cannot select systemd-boot entry");
 }
 
 ndk::ScopedAStatus BootControl::setSlotAsUnbootable(int32_t slot) {
@@ -458,29 +467,38 @@ ndk::ScopedAStatus BootControl::setSlotAsUnbootable(int32_t slot) {
     if (!ReadState(&state)) return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot read slot state");
     if (state.merge_status == static_cast<uint32_t>(boot::MergeStatus::MERGING))
         return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot disable a slot while snapshot merge is active");
-    {
-        mi::FatVolume volume;std::string error;
-        if(!OpenCurrentEsp(true,&volume,&error))
-            return Failure(boot::IBootControl::COMMAND_FAILED,"Cannot open systemd-boot ESP");
-        const std::string stem=slot==0?"A":"B";
-        std::vector<uint8_t> entry;std::string selected;
-        for(int left=3;left>=0&&selected.empty();--left)for(int done=0;done<=3;++done){
-            const std::string candidate=stem+"+"+std::to_string(left)+"-"+std::to_string(done)+".conf";
-            if(volume.ReadFile("loader/entries/"+candidate,&entry,&error)){selected=candidate;break;}
-        }
-        if(selected.empty()&&volume.ReadFile("loader/entries/"+stem+".conf",&entry,&error))selected=stem+".conf";
-        if(!selected.empty()&&!volume.RenameFile("loader/entries/"+selected,"loader/entries/"+stem+".DIS",&error))
-            return Failure(boot::IBootControl::COMMAND_FAILED,"Cannot disable slot entry");
-    }
+    const State previous = state;
     state.bootable_mask &= ~(1u << slot);
     state.successful_mask &= ~(1u << slot);
-    if (state.active_slot == static_cast<uint32_t>(slot)) {
+    const bool change_default = state.active_slot == static_cast<uint32_t>(slot);
+    if (change_default) {
         const uint32_t other = static_cast<uint32_t>(1 - slot);
-        if ((state.bootable_mask & (1u << other)) == 0 || !WriteLoaderDefault(static_cast<int>(other)))
+        if ((state.bootable_mask & (1u << other)) == 0)
             return Failure(boot::IBootControl::COMMAND_FAILED, "No bootable fallback slot");
         state.active_slot = other;
     }
-    return WriteState(state) ? ndk::ScopedAStatus::ok() : Failure(boot::IBootControl::COMMAND_FAILED, "Cannot persist slot state");
+    if (!WriteState(state)) return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot persist slot state");
+    auto rollback = [&]() { (void)WriteState(previous); };
+    {
+        mi::FatVolume volume; std::string error;
+        if (!OpenCurrentEsp(true, &volume, &error)) {
+            rollback(); return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot open systemd-boot ESP");
+        }
+        const std::string stem = slot == 0 ? "A" : "B";
+        std::vector<uint8_t> entry; std::string selected;
+        for (int left = 3; left >= 0 && selected.empty(); --left) for (int done = 0; done <= 3; ++done) {
+            const std::string candidate = stem + "+" + std::to_string(left) + "-" + std::to_string(done) + ".conf";
+            if (volume.ReadFile("loader/entries/" + candidate, &entry, &error)) { selected = candidate; break; }
+        }
+        if (selected.empty() && volume.ReadFile("loader/entries/" + stem + ".conf", &entry, &error)) selected = stem + ".conf";
+        if (!selected.empty() && !volume.RenameFile("loader/entries/" + selected, "loader/entries/" + stem + ".DIS", &error)) {
+            rollback(); return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot disable slot entry");
+        }
+    }
+    if (change_default && !WriteLoaderDefault(static_cast<int>(state.active_slot))) {
+        rollback(); return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot select fallback systemd-boot entry");
+    }
+    return ndk::ScopedAStatus::ok();
 }
 
 ndk::ScopedAStatus BootControl::setSnapshotMergeStatus(boot::MergeStatus status) {

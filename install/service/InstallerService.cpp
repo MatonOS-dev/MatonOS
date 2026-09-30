@@ -6,8 +6,11 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cctype>
+#include <climits>
 #include <cstdlib>
+#include <limits>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -31,13 +34,25 @@ std::string Read(const fs::path& path) {
 }
 
 bool ReadBool(const fs::path& path) { return Read(path) == "1"; }
+bool SectorsToBytes(const fs::path& path, uint64_t* bytes) {
+    const std::string text = Read(path);
+    if (text.empty()) return false;
+    char* end = nullptr; errno = 0;
+    const unsigned long long sectors = std::strtoull(text.c_str(), &end, 10);
+    if (errno == ERANGE || !end || *end || sectors > UINT64_MAX / 512ULL) return false;
+    *bytes = static_cast<uint64_t>(sectors) * 512ULL;
+    return true;
+}
 
 bool ParseDev(const std::string& text, unsigned* maj, unsigned* min) {
     const auto colon = text.find(':');
     if (colon == std::string::npos) return false;
     try {
-        *maj = static_cast<unsigned>(std::stoul(text.substr(0, colon)));
-        *min = static_cast<unsigned>(std::stoul(text.substr(colon + 1)));
+        const auto major_value = std::stoull(text.substr(0, colon));
+        const auto minor_value = std::stoull(text.substr(colon + 1));
+        if (major_value > UINT_MAX || minor_value > UINT_MAX) return false;
+        *maj = static_cast<unsigned>(major_value);
+        *min = static_cast<unsigned>(minor_value);
         return true;
     } catch (...) {
         return false;
@@ -247,7 +262,7 @@ bool CheckGpt(const WriteGpt& gpt, const Drive& disk, std::string* error) {
             !names.insert(p.name).second || !guids.insert(p.part_guid).second || p.size_bytes == 0 ||
             p.start_bytes < 1024 * 1024 || p.start_bytes % (1024 * 1024) != 0 || p.size_bytes % 512 != 0 || p.start_bytes > disk.size_bytes ||
             p.size_bytes > disk.size_bytes - p.start_bytes ||
-            p.start_bytes + p.size_bytes > disk.size_bytes - std::min<uint64_t>(disk.size_bytes, 34 * 512ULL)) {
+            p.start_bytes + p.size_bytes > disk.size_bytes - std::min<uint64_t>(disk.size_bytes, 34ULL * 512ULL)) {
             *error = "GPT contains an invalid, duplicate, unaligned, or out-of-bounds partition."; return false;
         }
         ranges.emplace_back(p.start_bytes, p.start_bytes + p.size_bytes);
@@ -278,10 +293,10 @@ std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
     std::ifstream swapinfo_check(swapinfo);
     const bool swapinfo_valid = swapinfo_check && static_cast<bool>(swapinfo_check >> mount_probe);
     const bool live_uuid_valid = !live_uuid.empty();
-    std::error_code ec;
+    std::error_code outer_ec;
 
-    for (const auto& entry : fs::directory_iterator(sys_block, ec)) {
-        if (ec) break;
+    for (const auto& entry : fs::directory_iterator(sys_block, outer_ec)) {
+        if (outer_ec) break;
         const std::string name = entry.path().filename().string();
         if (IsVirtualOrOptical(name)) continue;
 
@@ -297,7 +312,7 @@ std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
         std::error_code node_error;
         drive.path = fs::canonical(node, node_error).string();
         if (node_error) continue;
-        drive.size_bytes = std::strtoull(Read(entry.path() / "size").c_str(), nullptr, 10) * 512ULL;
+        if (!SectorsToBytes(entry.path() / "size", &drive.size_bytes)) continue;
         drive.read_only = ReadBool(entry.path() / "ro");
         drive.removable = ReadBool(entry.path() / "removable");
         drive.model = Read(entry.path() / "device" / "model");
@@ -319,13 +334,15 @@ std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
         drive.mounted = std::any_of(physical_ids.begin(), physical_ids.end(),
                                     [&](const std::string& id) { return mounted.count(id) != 0; });
         drive.in_use = HasHolders(entry.path());
-        for (const auto& child : fs::directory_iterator(entry.path(), ec)) {
-            if (ec) break;
-            if (!fs::exists(child.path() / "partition", ec)) continue;
+        std::error_code child_ec;
+        for (const auto& child : fs::directory_iterator(entry.path(), child_ec)) {
+            if (child_ec) break;
+            std::error_code partition_ec;
+            if (!fs::exists(child.path() / "partition", partition_ec) || partition_ec) continue;
             Partition partition;
             partition.path=(fs::path(dev_block_path)/child.path().filename()).string();
-            partition.start_bytes = std::strtoull(Read(child.path() / "start").c_str(), nullptr, 10) * 512ULL;
-            partition.size_bytes = std::strtoull(Read(child.path() / "size").c_str(), nullptr, 10) * 512ULL;
+            if (!SectorsToBytes(child.path() / "start", &partition.start_bytes) ||
+                !SectorsToBytes(child.path() / "size", &partition.size_bytes)) continue;
             unsigned pmaj = 0, pmin = 0;
             if (ParseDev(Read(child.path() / "dev"), &pmaj, &pmin))
                 partition.mounted = mounted.count(DevId(pmaj, pmin)) != 0;
@@ -345,6 +362,7 @@ std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
         // executor addresses its validated linear extents directly through
         // that partition, so it does not need to create temporary dm devices.
         auto super_it=std::find_if(drive.partitions.begin(),drive.partitions.end(),[](const Partition& p){return !p.logical&&p.name=="super"&&!p.path.empty();});
+        const std::string backing_super_guid = super_it == drive.partitions.end() ? std::string() : super_it->part_guid;
         if(super_it!=drive.partitions.end()) {
             const Partition physical=*super_it;
             std::vector<Partition> logical;
@@ -386,9 +404,12 @@ std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
             Partition logical;
             logical.name=mapped.path().filename().string();
             logical.logical=true;
+            if (backing_super_guid.empty()) continue;
+            logical.backing_part_guid = backing_super_guid;
             logical.mounted=mounted.count(mapped_id)!=0;
-            logical.size_bytes=std::strtoull(Read(sys_device/"size").c_str(),nullptr,10)*512ULL;
-            if(logical.size_bytes) drive.partitions.push_back(std::move(logical));
+            if (backing_super_guid.empty()) continue;
+            logical.backing_part_guid = backing_super_guid;
+            if(SectorsToBytes(sys_device/"size", &logical.size_bytes) && logical.size_bytes) drive.partitions.push_back(std::move(logical));
         }
         drive.live_medium = DiskHasPartUuid(entry.path(), live_uuid);
         drive.unsafe_reason = UnsafeReason(drive);

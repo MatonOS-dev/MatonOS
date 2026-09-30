@@ -52,6 +52,7 @@ uint32_t R(uint32_t x,unsigned n){return (x>>n)|(x<<(32-n));}
 std::array<uint8_t,32> Sha256(const uint8_t* data,size_t size) {
     std::array<uint32_t,8> h={0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
     const uint64_t bit_size=static_cast<uint64_t>(size)*8;
+    if (size > std::numeric_limits<size_t>::max() - 72) return {};
     const size_t total=((size+9+63)/64)*64;
     std::array<uint8_t,64> block{};
     for(size_t base=0;base<total;base+=64) {
@@ -90,6 +91,7 @@ bool MakeMetadata(const CreateLpMetadata& request,uint64_t super_size,const std:
     std::vector<LpExtent> extents;
     std::vector<std::string> group_names{"default"},partition_names;
     uint64_t cursor_bytes=kGeometryCopiesBytes+uint64_t(request.metadata_size_bytes)*request.metadata_slots*2;
+    if (cursor_bytes > UINT64_MAX - (kAlignmentBytes - 1)) { *error="LP metadata alignment overflows."; return false; }
     cursor_bytes=(cursor_bytes+kAlignmentBytes-1)/kAlignmentBytes*kAlignmentBytes;
     *first_sector=cursor_bytes/kSectorBytes;
     for(const auto& group:request.groups) {
@@ -111,6 +113,7 @@ bool MakeMetadata(const CreateLpMetadata& request,uint64_t super_size,const std:
         if(member_sum>group.maximum_size_bytes){*error="LP group members exceed their declared capacity.";return false;}
     }
     if(partitions.empty()){*error="LP metadata has no partitions.";return false;}
+    if (cursor_bytes > super_size) {*error="LP metadata extent begins beyond the super partition.";return false;}
     BlockDevice device{};device.first_logical_sector=*first_sector;device.alignment=kAlignmentBytes;device.alignment_offset=0;device.size=super_size;SetName(device.partition_name,super_name);
     std::vector<uint8_t> tables;const uint32_t part_offset=0;for(const auto& p:partitions)Append(&tables,p);
     const uint32_t extent_offset=static_cast<uint32_t>(tables.size());for(const auto& e:extents)Append(&tables,e);
@@ -142,7 +145,7 @@ bool ParseMetadata(int fd,const std::string& super_guid,const std::string& super
     auto table_valid=[&](const Table& t,uint32_t entry_size){return t.entry_size==entry_size&&uint64_t(t.offset)+uint64_t(t.num_entries)*entry_size<=header.tables_size;};
     if(!table_valid(header.partitions,sizeof(LpPartition))||!table_valid(header.extents,sizeof(LpExtent))||!table_valid(header.block_devices,sizeof(BlockDevice))||header.block_devices.num_entries!=1)return false;
     BlockDevice device{};std::memcpy(&device,table_bytes+header.block_devices.offset,sizeof(device));
-    if(device.size!=super_size||std::string(device.partition_name,strnlen(device.partition_name,sizeof(device.partition_name)))!=super_name)return false;
+    if(device.first_logical_sector>UINT64_MAX/kSectorBytes||device.size!=super_size||std::string(device.partition_name,strnlen(device.partition_name,sizeof(device.partition_name)))!=super_name)return false;
     for(uint32_t i=0;i<header.partitions.num_entries;++i) {
         LpPartition p{};std::memcpy(&p,table_bytes+header.partitions.offset+uint64_t(i)*sizeof(p),sizeof(p));
         if(p.num_extents==0){if(p.first_extent_index>header.extents.num_entries) return false;continue;}
@@ -169,7 +172,9 @@ bool WriteLpMetadata(const std::string& super_path,uint64_t super_size_bytes,con
     if(actual!=super_size_bytes){close(fd);*error="Super block-device size changed before LP initialization.";return false;}
     std::vector<uint8_t> metadata;uint64_t first_sector=0;
     if(!MakeMetadata(request,super_size_bytes,super_partition_name,&metadata,&first_sector,error)){close(fd);return false;}
-    Geometry geometry{};geometry.magic=kGeometryMagic;geometry.struct_size=sizeof(Geometry);geometry.metadata_max_size=static_cast<uint32_t>(request.metadata_size_bytes);geometry.metadata_slot_count=request.metadata_slots;geometry.logical_block_size=4096;
+    int logical_block_size=512;
+    if(ioctl(fd,BLKSSZGET,&logical_block_size)!=0||logical_block_size<512||logical_block_size>65536||(logical_block_size&(logical_block_size-1))!=0)logical_block_size=512;
+    Geometry geometry{};geometry.magic=kGeometryMagic;geometry.struct_size=sizeof(Geometry);geometry.metadata_max_size=static_cast<uint32_t>(request.metadata_size_bytes);geometry.metadata_slot_count=request.metadata_slots;geometry.logical_block_size=static_cast<uint32_t>(logical_block_size);
     auto checksum=Sha256(reinterpret_cast<uint8_t*>(&geometry),sizeof(geometry));std::memcpy(geometry.checksum,checksum.data(),checksum.size());
     std::array<uint8_t,kGeometryBytes> block{};std::memcpy(block.data(),&geometry,sizeof(geometry));
     bool ok=WriteAt(fd,block.data(),block.size(),kGeometryReservedBytes)&&WriteAt(fd,block.data(),block.size(),kGeometryReservedBytes+kGeometryBytes);

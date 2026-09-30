@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <set>
 
 namespace matonos_addons {
 namespace {
@@ -63,11 +64,12 @@ bool InflateMember(const std::vector<uint8_t>& zip, uint16_t method, size_t data
     }
     if (method != 8) return false;
     z_stream stream{};
+    uint8_t empty_output = 0;
     stream.next_in = const_cast<Bytef*>(zip.data() + data_offset);
     stream.avail_in = compressed_size;
-    stream.next_out = output->data();
-    stream.avail_out = expanded_size;
-    if (inflateInit2(&stream, -MAX_WBITS) != Z_OK) return false;
+    stream.next_out = expanded_size ? output->data() : &empty_output;
+    stream.avail_out = expanded_size ? expanded_size : 1;
+    if (inflateInit2(&stream, -MAX_WBITS) != Z_OK) return expanded_size == 0 && compressed_size == 0;
     const int rc = inflate(&stream, Z_FINISH);
     const bool ok = rc == Z_STREAM_END && stream.total_out == expanded_size &&
                     stream.total_in == compressed_size;
@@ -114,7 +116,7 @@ bool ReadAndVerifyZip(const std::string& zip_path, const std::string& public_key
     size_t eocd = std::string::npos;
     for (size_t p = zip.size() - 22;; --p) {
         if (U32(zip, p) == 0x06054b50U && InRange(zip.size(), p, 22 + U16(zip, p + 20)) &&
-            p + 22 + U16(zip, p + 20) == zip.size()) {
+            p + 22 + U16(zip, p + 20) <= zip.size()) {
             eocd = p;
             break;
         }
@@ -135,6 +137,7 @@ bool ReadAndVerifyZip(const std::string& zip_path, const std::string& public_key
         return false;
     }
     std::vector<CentralEntry> entries;
+    std::set<std::string> names;
     size_t pos = central_offset;
     for (uint16_t i = 0; i < count; ++i) {
         if (!InRange(zip.size(), pos, 46) || U32(zip, pos) != 0x02014b50U) {
@@ -155,7 +158,7 @@ bool ReadAndVerifyZip(const std::string& zip_path, const std::string& public_key
             return false;
         }
         std::string name(reinterpret_cast<const char*>(zip.data() + pos + 46), name_len);
-        if (!SafePath(name) || std::any_of(entries.begin(), entries.end(), [&](const auto& e) { return e.name == name; })) {
+        if (!SafePath(name) || !names.insert(name).second) {
             *error = "unsafe or duplicate ZIP member path";
             return false;
         }

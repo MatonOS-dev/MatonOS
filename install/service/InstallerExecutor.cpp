@@ -56,6 +56,7 @@ bool Run(const std::vector<std::string>& arguments, uint64_t disk_sequence, std:
 }
 
 const Partition* Find(const Drive& d,const PartitionRef& r) {
+    if (r.part_guid.empty() == r.logical_name.empty()) return nullptr;
     auto it=std::find_if(d.partitions.begin(),d.partitions.end(),[&](const Partition& p){
         return r.logical_name.empty()?(!p.logical&&p.part_guid==r.part_guid):(p.logical&&p.name==r.logical_name);
     });
@@ -346,7 +347,6 @@ bool WriteFilesToPartition(const Drive& drive,const WriteFiles& op,ProgressCallb
         if(!FatVolume::Open(source,false,&source_volume,error))return false;
     }
     uint64_t bytes_done=0,bytes_total=0;
-    for(const auto& file:op.files)if(file.live_payload_path.empty())bytes_total+=file.inline_contents.size();
     for(size_t index=0;index<op.files.size();++index) {
         if(cancelled&&cancelled()){*error="File write cancelled between files.";return false;}
         const auto& file=op.files[index];

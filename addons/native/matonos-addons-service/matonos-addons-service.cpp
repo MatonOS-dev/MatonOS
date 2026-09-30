@@ -45,6 +45,7 @@ constexpr size_t kChunkDecoded = 32U * 1024U;
 constexpr char kLog[] = "matonos-addons";
 MatonosIpcServer* gIpc;
 std::mutex gLock;
+bool gCommitting=false;
 struct Upload { bool active=false, image=false; int fd=-1; std::string operation_id, path; uint64_t size=0, received=0; } gUpload;
 struct PendingImage { bool valid=false; std::string id,version,sha256,manifest; std::vector<uint8_t> signature; uint64_t size=0; } gPending;
 
@@ -61,7 +62,16 @@ bool Name(const std::string& s) {
 bool IsSha256(const std::string& s) {
     return s.size()==64&&std::all_of(s.begin(),s.end(),[](unsigned char c){return (c>='0'&&c<='9')||(c>='a'&&c<='f');});
 }
-std::string JsonEscape(const std::string& s) { std::string o="\""; for(char c:s){ if(c=='"'||c=='\\')o+='\\'; if(c=='\n'||c=='\r')continue; o+=c; } return o+'"'; }
+std::string JsonEscape(const std::string& s) {
+    static constexpr char hex[]="0123456789abcdef";
+    std::string o="\"";
+    for(unsigned char c:s) {
+        if(c=='"'||c=='\\'){o+='\\';o+=static_cast<char>(c);}
+        else if(c<0x20||c>=0x80){o+="\\u00";o+=hex[c>>4];o+=hex[c&15];}
+        else o+=static_cast<char>(c);
+    }
+    return o+'"';
+}
 
 // The channel helper has already parsed the outer JSON. This strict extractor
 // accepts only primitive string/unsigned integer members used by this API.
@@ -160,7 +170,7 @@ bool HashFile(const fs::path& path,uint64_t expected,std::string* digest){
 bool ExpandImageGzip(const fs::path& compressed,const fs::path& raw){
     int in=open(compressed.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW),out=open(raw.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
     if(in<0||out<0){if(in>=0)close(in);if(out>=0)close(out);return false;}
-    z_stream z{};bool ok=inflateInit2(&z,15+32)==Z_OK;uint8_t ib[65536],ob[65536];uint64_t total=0;bool ended=false;
+    z_stream z{};bool ok=inflateInit2(&z,15+32)==Z_OK;const bool initialized=ok;uint8_t ib[65536],ob[65536];uint64_t total=0;bool ended=false;
     while(ok&&!ended){ssize_t n=read(in,ib,sizeof(ib));if(n<0&&errno==EINTR)continue;if(n<0){ok=false;break;}if(n==0){ok=false;break;}
         z.next_in=ib;z.avail_in=(uInt)n;
         while(ok&&z.avail_in){z.next_out=ob;z.avail_out=sizeof(ob);int rc=inflate(&z,Z_NO_FLUSH);size_t made=sizeof(ob)-z.avail_out;
@@ -170,7 +180,7 @@ bool ExpandImageGzip(const fs::path& compressed,const fs::path& raw){
         if(ended){uint8_t extra;if(read(in,&extra,1)!=0)ok=false;break;}
     }
     if(ok)ok=ended&&total==kSlotImageBytes&&fsync(out)==0;
-    inflateEnd(&z);close(in);close(out);if(!ok)unlink(raw.c_str());return ok;
+    if(initialized)inflateEnd(&z);close(in);close(out);if(!ok)unlink(raw.c_str());return ok;
 }
 
 struct Metadata { std::string name,vermagic,license,alias,signer; };
@@ -196,7 +206,7 @@ bool ReadModinfo(const std::vector<uint8_t>& b, Metadata* m, std::string* err){
     return true;
 }
 bool ReadFileLimit(const fs::path& p,size_t limit,std::vector<uint8_t>* b){std::ifstream f(p,std::ios::binary);if(!f)return false;f.seekg(0,std::ios::end);auto n=f.tellg();if(n<0||(uint64_t)n>limit)return false;b->resize((size_t)n);f.seekg(0);return b->empty()||!!f.read((char*)b->data(),(std::streamsize)b->size());}
-bool WriteAll(int fd,const void* data,size_t n){const char* p=(const char*)data;while(n){ssize_t r=write(fd,p,n);if(r<0){if(errno==EINTR)continue;return false;}p+=r;n-=(size_t)r;}return true;}
+bool WriteAll(int fd,const void* data,size_t n){const char* p=(const char*)data;while(n){ssize_t r=write(fd,p,n);if(r<0){if(errno==EINTR)continue;return false;}if(r==0)return false;p+=r;n-=(size_t)r;}return true;}
 bool WritePackageFile(const fs::path& path,const uint8_t* data,size_t size,mode_t mode){int fd=open(path.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,mode);if(fd<0)return false;bool ok=WriteAll(fd,data,size)&&fsync(fd)==0;close(fd);return ok;}
 [[maybe_unused]] bool EnsureSafeDirectories(const fs::path& root,const fs::path& relative){
     fs::path current=root;
@@ -298,7 +308,7 @@ bool InstallPackageZip(const std::string& zip_path,std::string* response,std::st
     if(!JsonField(package.manifest.c_str(),"imageSha256",&image_hash)||!JsonNumber(package.manifest.c_str(),"imageSize",&image_size)){
         *err="signed manifest does not identify its slot image";return false;
     }
-    gPending={true,parsed.id,parsed.version,image_hash,package.manifest,package.signature,image_size};
+    { std::lock_guard<std::mutex> lock(gLock); gPending={true,parsed.id,parsed.version,image_hash,package.manifest,package.signature,image_size}; }
     *response="{\"ok\":true,\"verified\":true,\"id\":"+JsonEscape(parsed.id)+",\"version\":"+JsonEscape(parsed.version)+",\"kernelRelease\":"+JsonEscape(KernelRelease())+",\"modules\":"+std::to_string(parsed.modules.size())+",\"imageBytes\":"+std::to_string(image_size)+",\"next\":\"begin_image\"}";
     return true;
 }
@@ -317,7 +327,7 @@ int Status(const char*,char* out,size_t cap,void*){
     const std::string release=KernelRelease();std::ostringstream s;s<<"{\"ok\":true,\"kernelRelease\":"<<JsonEscape(release)<<",\"slotMounted\":"<<(IsSlotMounted()?"true":"false")<<",\"addons\":[";
     bool first_addon=true;std::error_code ec;
     if(fs::is_directory(kSlot,ec))for(const auto& dir:fs::directory_iterator(kSlot,ec)){
-        if(ec)break;const std::string addon=dir.path().filename().string();if(!dir.is_directory()||!Name(addon))continue;
+        if(ec)break;std::error_code type_ec;if(!dir.is_directory(type_ec)||type_ec)continue;const std::string addon=dir.path().filename().string();if(!Name(addon))continue;
         std::ifstream vf(dir.path()/"active-version");std::string version;std::getline(vf,version);version=Trim(version);if(!SafeVersion(version))continue;
         matonos_addons::VerifiedZip package;PackageModules parsed;std::string error;
         const bool valid=LoadInstalledPackage(dir.path()/"versions"/version,addon,version,&package,&parsed,&error);
@@ -340,8 +350,8 @@ int BeginPackage(const char* a,char* out,size_t cap,void*){
     std::string operation_id;uint64_t size=0;
     if(!JsonField(a,"operationId",&operation_id)||!Name(operation_id)||!JsonNumber(a,"size",&size)||size==0||size>kMaxPackage)
         return Reply(out,cap,"{\"ok\":false,\"error\":\"invalid operation id or package size\"}");
-    std::lock_guard<std::mutex> l(gLock);if(gUpload.active)return Reply(out,cap,"{\"ok\":false,\"error\":\"another upload is active\"}");gPending={};
-    const fs::path dir=fs::path(kData)/"incoming";std::error_code ec;fs::create_directories(dir,ec);if(ec)return Reply(out,cap,"{\"ok\":false,\"error\":\"cannot create upload staging directory\"}");chmod(dir.c_str(),0700);
+    std::lock_guard<std::mutex> l(gLock);if(gUpload.active||gCommitting)return Reply(out,cap,"{\"ok\":false,\"error\":\"another upload is active\"}");gPending={};
+    const fs::path dir=fs::path(kData)/"incoming";std::error_code ec;fs::create_directories(dir,ec);if(ec||chmod(dir.c_str(),0700)!=0)return Reply(out,cap,"{\"ok\":false,\"error\":\"cannot secure upload staging directory\"}");
     const std::string path=(dir/(operation_id+".zip")).string();int fd=open(path.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
     if(fd<0)return Reply(out,cap,"{\"ok\":false,\"error\":\"cannot create unique package upload\"}");
     gUpload={true,false,fd,operation_id,path,size,0};(void)Progress(operation_id.c_str(),"receiving",0,(size_t)size,"");return Reply(out,cap,"{\"ok\":true,\"chunkBytes\":32768}");
@@ -350,7 +360,7 @@ int BeginImage(const char* a,char* out,size_t cap,void*){
     uint64_t compressed_size=0;if(!JsonNumber(a,"size",&compressed_size)||compressed_size==0||compressed_size>kMaxPackage)
         return Reply(out,cap,"{\"ok\":false,\"error\":\"invalid compressed slot image size\"}");
     std::lock_guard<std::mutex> l(gLock);
-    if(gUpload.active||!gPending.valid)return Reply(out,cap,"{\"ok\":false,\"error\":\"verify a signed package before uploading its image\"}");
+    if(gUpload.active||gCommitting||!gPending.valid)return Reply(out,cap,"{\"ok\":false,\"error\":\"verify a signed package before uploading its image\"}");
     if(gPending.size!=kSlotImageBytes)return Reply(out,cap,"{\"ok\":false,\"error\":\"signed image size is not the supported GPT slot size\"}");
     const std::string path=std::string(kData)+"/incoming/slot.img";unlink(path.c_str());
     int fd=open(path.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
@@ -368,9 +378,9 @@ int PackageChunk(const char* a,char* out,size_t cap,void*){
 int CommitPackage(const char*,char* out,size_t cap,void*){
     std::unique_lock<std::mutex> l(gLock);if(!gUpload.active||gUpload.received!=gUpload.size)return Reply(out,cap,"{\"ok\":false,\"error\":\"upload incomplete\"}");
     const std::string operation_id=gUpload.operation_id,path=gUpload.path;const size_t total=(size_t)gUpload.size;
-    const bool synced=fsync(gUpload.fd)==0;close(gUpload.fd);gUpload={};l.unlock();
+    const bool synced=fsync(gUpload.fd)==0;close(gUpload.fd);gUpload={};gCommitting=true;l.unlock();
     std::string response,error;(void)Progress(operation_id.c_str(),"validating",total,total,"");
-    bool ok=synced&&InstallPackageZip(path,&response,&error);if(!synced)error="cannot sync complete package upload";
+    bool ok=synced&&InstallPackageZip(path,&response,&error);if(!synced)error="cannot sync complete package upload";{std::lock_guard<std::mutex> lock(gLock);gCommitting=false;}
     std::error_code ec;fs::remove(path,ec);
     if(!ok)response="{\"ok\":false,\"error\":"+JsonEscape(error)+"}";
     (void)Progress(operation_id.c_str(),ok?"complete":"failed",total,total,"");return Reply(out,cap,response);
@@ -388,12 +398,12 @@ bool WriteImageToSelectedPartition(const fs::path& image,std::string* error){
     // streaming buffer small; a MiB stack allocation can crash the daemon.
     std::array<uint8_t,64*1024> buf{};uint64_t offset=0;bool ok=true;
     while(offset<kSlotImageBytes){size_t want=(size_t)std::min<uint64_t>(buf.size(),kSlotImageBytes-offset);ssize_t n=read(in,buf.data(),want);if(n<0&&errno==EINTR)continue;if(n<=0){ok=false;break;}size_t done=0;while(done<(size_t)n){ssize_t w=pwrite(out,buf.data()+done,(size_t)n-done,(off_t)(offset+done));if(w<0&&errno==EINTR)continue;if(w<=0){ok=false;break;}done+=(size_t)w;}if(!ok)break;offset+=(uint64_t)n;}
-    if(ok)ok=fsync(out)==0;close(in);close(out);sync();
-    if(!ok){*error=std::string("raw slot image write failed: ")+strerror(errno);return false;}return true;
+    if(ok&&fsync(out)!=0)ok=false;const int write_error=errno;close(in);close(out);sync();
+    if(!ok){*error=std::string("raw slot image write failed: ")+strerror(write_error);return false;}return true;
 }
 [[maybe_unused]] bool SavePendingManifest(std::string* error){
     const fs::path dir=fs::path(kData)/(gPending.id+"-"+gPending.version);std::error_code ec;fs::create_directories(dir,ec);
-    if(ec){*error="cannot create signed add-on metadata directory";return false;}chmod(dir.c_str(),0700);
+    if(ec){*error="cannot create signed add-on metadata directory";return false;}if(chmod(dir.c_str(),0700)!=0){*error="cannot secure signed add-on metadata directory";return false;}
     const std::string suffix=std::to_string(getpid());const fs::path manifest_tmp=dir/(".manifest-"+suffix),sig_tmp=dir/(".signature-"+suffix);
     if(!WritePackageFile(manifest_tmp,reinterpret_cast<const uint8_t*>(gPending.manifest.data()),gPending.manifest.size(),0600)||
        !WritePackageFile(sig_tmp,gPending.signature.data(),gPending.signature.size(),0600)){unlink(manifest_tmp.c_str());unlink(sig_tmp.c_str());*error="cannot persist verified signed manifest";return false;}
@@ -403,14 +413,13 @@ bool WriteImageToSelectedPartition(const fs::path& image,std::string* error){
 int CommitImage(const char*,char* out,size_t cap,void*){
     std::unique_lock<std::mutex> l(gLock);if(!gUpload.active||!gUpload.image||!gPending.valid||gUpload.received!=gUpload.size)return Reply(out,cap,"{\"ok\":false,\"error\":\"slot image upload is incomplete\"}");
     const std::string compressed_name=std::move(gUpload.path),raw_name=compressed_name+".raw";
-    const fs::path compressed(compressed_name),raw(raw_name);const bool synced=fsync(gUpload.fd)==0;close(gUpload.fd);gUpload={};l.unlock();
-    std::string digest,error;bool ok=synced&&ExpandImageGzip(compressed,raw)&&HashFile(raw,kSlotImageBytes,&digest)&&digest==gPending.sha256;
+    const fs::path compressed(compressed_name),raw(raw_name);const PendingImage pending=gPending;const bool synced=fsync(gUpload.fd)==0;close(gUpload.fd);gUpload={};gCommitting=true;l.unlock();
+    std::string digest,error;bool ok=synced&&ExpandImageGzip(compressed,raw)&&HashFile(raw,kSlotImageBytes,&digest)&&digest==pending.sha256;
     if(!synced)error="cannot sync staged slot image";else if(!ok)error="compressed image is invalid or its expanded hash does not match the signed manifest";
     if(ok)ok=WriteImageToSelectedPartition(raw,&error);
     std::error_code ec;fs::remove(compressed,ec);fs::remove(raw,ec);
-    if(ok){const std::string id=gPending.id,version=gPending.version;gPending={};
-        return Reply(out,cap,"{\"ok\":true,\"id\":"+JsonEscape(id)+",\"version\":"+JsonEscape(version)+",\"rebootRequired\":true,\"slotMounted\":false}");}
-    gPending={};return Reply(out,cap,"{\"ok\":false,\"error\":"+JsonEscape(error.empty()?"slot image install failed":error)+"}");
+    if(ok){std::lock_guard<std::mutex> lock(gLock);gPending={};gCommitting=false;return Reply(out,cap,"{\"ok\":true,\"id\":"+JsonEscape(pending.id)+",\"version\":"+JsonEscape(pending.version)+",\"rebootRequired\":true,\"slotMounted\":false}");}
+    {std::lock_guard<std::mutex> lock(gLock);gPending={};gCommitting=false;}return Reply(out,cap,"{\"ok\":false,\"error\":"+JsonEscape(error.empty()?"slot image install failed":error)+"}");
 }
 int Uninstall(const char*,char* out,size_t cap,void*){
     return Reply(out,cap,"{\"ok\":false,\"error\":\"the mounted slot is immutable; uninstall requires a newly signed replacement slot image\"}");
@@ -422,7 +431,7 @@ int LoadOne(const char* a,char* out,size_t cap,void*){
 }
 std::vector<SlotModule> SlotModules(){
     std::vector<SlotModule> modules;std::error_code ec;if(!fs::is_directory(kSlot,ec))return modules;
-    for(const auto& dir:fs::directory_iterator(kSlot,ec)){if(ec)break;if(!dir.is_directory())continue;std::string addon=dir.path().filename().string();if(!Name(addon))continue;
+    for(const auto& dir:fs::directory_iterator(kSlot,ec)){if(ec)break;std::error_code type_ec;if(!dir.is_directory(type_ec)||type_ec)continue;std::string addon=dir.path().filename().string();if(!Name(addon))continue;
         std::ifstream active(dir.path()/"active-version");std::string version;std::getline(active,version);version=Trim(version);if(!SafeVersion(version))continue;
         std::ifstream f(dir.path()/"versions"/version/"modules.load");std::string row;while(std::getline(f,row)){row=Trim(row);if(row.empty()||row[0]=='#')continue;if(row.size()>3&&row.compare(row.size()-3,3,".ko")==0)row.resize(row.size()-3);if(Name(row))modules.push_back({addon,version,row});}
     }return modules;
@@ -437,7 +446,7 @@ bool ValidateSlotModule(const std::string& addon,const std::string& version,cons
 bool RunModprobe(const std::string& addon,const std::string& version,const std::string& name){
     pid_t pid=fork();if(pid<0)return false;
     const std::string module_dir=(fs::path(kSlot)/addon/"versions"/version/"modules").string();
-    if(pid==0){execl("/vendor/bin/modprobe","modprobe","-d",module_dir.c_str(),"-d","/vendor/lib/modules",name.c_str(),(char*)nullptr);_exit(127);}
+    if(pid==0){execl("/vendor/bin/modprobe","modprobe","-d",module_dir.c_str(),name.c_str(),(char*)nullptr);_exit(127);}
     for(int i=0;i<100;i++){int status=0;pid_t r=waitpid(pid,&status,WNOHANG);if(r==pid)return WIFEXITED(status)&&WEXITSTATUS(status)==0;if(r<0&&errno!=EINTR)return false;usleep(100000);}
     kill(pid,SIGTERM);usleep(100000);kill(pid,SIGKILL);(void)waitpid(pid,nullptr,0);return false;
 }

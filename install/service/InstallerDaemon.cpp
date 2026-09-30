@@ -16,11 +16,16 @@
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <limits>
 #include <mutex>
 #include <string_view>
 #include <sstream>
 #include <unistd.h>
 #include <vector>
+#include <iterator>
+#include <fstream>
+#include <thread>
+#include <chrono>
 
 namespace mi = matonos::install;
 namespace js = matonos::install::json;
@@ -41,7 +46,8 @@ std::string Escape(const std::string& text) {
             case '\n': out += "\\n"; break;
             case '\r': out += "\\r"; break;
             case '\t': out += "\\t"; break;
-            default: if (c >= 0x20) out.push_back(static_cast<char>(c));
+            default: if (c >= 0x20 && c < 0x80) out.push_back(static_cast<char>(c));
+                else if (c >= 0x80) { static constexpr char hex[] = "0123456789abcdef"; out += "\\u00"; out.push_back(hex[c >> 4]); out.push_back(hex[c & 15]); }
         }
     }
     return out + "\"";
@@ -62,7 +68,9 @@ bool ParseOperation(const js::Value& value, mi::Operation* out, std::string* err
         *out = std::move(op); return true;
     }
     if (kind == "create_lp_metadata") {
-        mi::CreateLpMetadata op; op.super_part_guid = S(value,"superPartGuid"); op.metadata_size_bytes = N(value,"metadataSizeBytes"); op.metadata_slots = static_cast<uint32_t>(N(value,"metadataSlots"));
+        mi::CreateLpMetadata op; op.super_part_guid = S(value,"superPartGuid"); op.metadata_size_bytes = N(value,"metadataSizeBytes"); const uint64_t slots = N(value,"metadataSlots");
+        if (slots > UINT32_MAX) { *error = "LP metadata slot count is out of range."; return false; }
+        op.metadata_slots = static_cast<uint32_t>(slots);
         const auto* groups = Get(value,"groups");
         if (!groups || groups->kind != js::Value::Kind::kArray) { *error = "LP groups are missing."; return false; }
         for (const auto& group : groups->array) {
@@ -107,9 +115,9 @@ bool ParseOperation(const js::Value& value, mi::Operation* out, std::string* err
     return false;
 }
 bool LiveMode() {
-    FILE* f=std::fopen("/proc/cmdline","r"); if (!f) return false;
-    char line[8192] = {}; const bool read=std::fgets(line,sizeof(line),f)!=nullptr; std::fclose(f);
-    return read && std::strstr(line,"androidboot.matonos.live=1") != nullptr;
+    std::ifstream f("/proc/cmdline"); if (!f) return false;
+    std::string line((std::istreambuf_iterator<char>(f)), {});
+    return line.find("androidboot.matonos.live=1") != std::string::npos;
 }
 std::vector<mi::Drive> Snapshot() {
     return mi::EnumerateDrives("/sys/block","/dev/block","/proc/self/mountinfo","/proc/cmdline","/proc/swaps");
@@ -209,5 +217,5 @@ int main(int argc,char** argv) {
         __android_log_print(ANDROID_LOG_ERROR,kTag,"Unable to register installer channel; exiting without delaying boot");
         return 1;
     }
-    while (true) pause();
+    for (;;) std::this_thread::sleep_for(std::chrono::hours(24));
 }
