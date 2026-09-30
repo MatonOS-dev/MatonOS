@@ -1,7 +1,6 @@
 #!/system/bin/sh
-# Select the first non-virtual ALSA card with an actual playback PCM. The
-# property service's direct writes are consumed by BayLibre's PrimaryMixer.
-# This script is run asynchronously by init with a three-second service limit.
+# Select the first non-virtual ALSA card with an actual playback PCM. Keep
+# discovery short: init runs this asynchronously with a three-second limit.
 
 set_playback_mixer_max() {
     card=$1
@@ -17,15 +16,20 @@ set_playback_mixer_max() {
             *Playback*) ;;
             *) continue ;;
         esac
+        type=$(printf '%s' "$type" | tr '[:upper:]' '[:lower:]')
         case "$name:$type" in
             *Volume*:int)
                 max=${values##*->}
                 max=${max%%)*}
                 case "$max" in ''|*[!0-9-]*) continue ;; esac
-                "$tinymix_bin" -D "$card" "$name" "$max" >/dev/null 2>&1 || :
+                # Start conservatively below full hardware gain. Android's
+                # stream volume remains the user-facing control.
+                default=$((max * 2 / 3))
+                [ "$default" -gt 0 ] || default=1
+                "$tinymix_bin" -D "$card" "$name" "$default" >/dev/null 2>&1 || :
                 ;;
             *Switch*:bool)
-                "$tinymix_bin" -D "$card" "$name" On >/dev/null 2>&1 || :
+                "$tinymix_bin" -D "$card" "$name" 1 >/dev/null 2>&1 || :
                 ;;
         esac
     done
@@ -68,14 +72,20 @@ for cards_file in /proc/asound/cards; do
 
             setprop vendor.maton.audio.card "$card_num"
             setprop vendor.maton.audio.device "$pcm_device"
-            set_playback_mixer_max "$card_num"
+            # BayLibre caches its primary card on first stream; publish the
+            # persistent selector inputs and completion before slow mixer IO.
+            setprop persist.vendor.audio.primary.card "$card_num"
+            setprop persist.vendor.audio.primary.device "$pcm_device"
             setprop vendor.maton.audio.selector_result found
             setprop vendor.maton.audio.selector_done 1
+            set_playback_mixer_max "$card_num"
             exit 0
         done < /proc/asound/pcm
     done < "$cards_file"
 done
 
+setprop persist.vendor.audio.primary.card ''
+setprop persist.vendor.audio.primary.device ''
 setprop vendor.maton.audio.selector_result no_card
 setprop vendor.maton.audio.selector_done 1
 exit 0

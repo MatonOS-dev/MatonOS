@@ -24,6 +24,11 @@ files. Bluetooth's HCI manifest and the MatonOS feature declarations are in
 on this AOSP branch loads `/odm/etc/build.prop` as the canonical ODM property
 file; this is the path the script generates.
 
+Graphics detection is installed by vendor product files, not the ODM bundle:
+`pc-gpu-detect.sh`, its init rc, Mesa libraries/HALs, and the PCI-ID table are
+copied into `/vendor` by `graphics/graphics.mk` and `tools/build-mesa.sh`. No
+ODM graphics rows are required in `contents.list`.
+
 Vendor-owned defaults formerly injected into vendor `build.prop` are in the
 registry. System-owned read-only settings such as `ro.sf.lcd_density`,
 `ro.logd.size`, `ro.opengles.version`, and the graphics renderer debug default

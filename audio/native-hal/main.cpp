@@ -1,3 +1,5 @@
+// Unshipped reference implementation: its bluetooth module registration does
+// not match the shipped ODM manifest. Do not package or register this binary.
 #include <array>
 #include <cstdlib>
 #include <csignal>

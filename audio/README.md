@@ -37,17 +37,15 @@ gracefully unavailable.
 
 ## Boot card selection
 
-An ODM oneshot service runs at `post-fs-data`, with a three-second init
-timeout. It scans `/proc/asound/cards` in order and picks the first card with
-a playback-capable PCM in `/proc/asound/pcm`, skipping cards named Loopback
-or Dummy. Before publishing the selection, it enumerates TinyALSA mixer
-controls and sets every playback volume control to its hardware maximum and
-every playback switch to `On`. Missing or unsupported controls are ignored;
-the selector runs asynchronously and cannot gate HAL startup. It writes
-`persist.vendor.audio.primary.card` and
-`persist.vendor.audio.primary.device`; BayLibre reads these when its primary
-mixer/module is initialized. The input uses the same card/device because this
-HAL version has no separate primary capture selector property.
+After the asynchronous HDA codec preload/reprobe completes, an ODM oneshot
+selector scans `/proc/asound/cards` in order and picks the first card with a
+playback-capable PCM in `/proc/asound/pcm`, skipping Loopback and Dummy. It
+publishes the persistent BayLibre card/device properties and its result before
+touching mixer controls, so the three-second init timeout cannot turn slow
+mixer IO into a false `no_card` result. Integer playback volumes start at
+two-thirds of hardware range and playback switches are unmuted with `1`;
+unsupported controls are ignored. The input uses the same card/device because
+this HAL version has no separate primary capture selector property.
 
 No generated policy, bind mount, detector readiness gate, or `snd-aloop`
 loader is shipped. If there is no card, the selector fails/times out, or it
@@ -58,6 +56,18 @@ module registration does not depend on detection. The stock-derived stub
 implementation has previously been observed to fill capture with
 pseudo-random data; do not claim the no-card mic produces zero samples until
 verified or replaced.
+
+PipeWire is currently unshipped. `tools/build-pipewire.sh` only stages
+experimental prebuilts under `prebuilt/pipewire`; the inert
+`maton-pipewire.rc` documents why no service is started. There is no ODM
+bundle installation row or verified runtime integration. Do not enable the
+Linux-app audio path until binaries, libraries, configuration and proxy are
+installed under ODM and verified on a fresh boot.
+
+`audio/native-hal/` is also unshipped reference work. It is not installed or
+registered by the product. Its source still registers a `bluetooth` module,
+which intentionally does not match the shipped ODM VINTF (`default`,
+`r_submix`, `usb`, `stub`); do not treat it as a usable alternative HAL.
 
 ## HDA controller options and codec driver preload
 

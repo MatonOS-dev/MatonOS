@@ -56,3 +56,17 @@ The checked-out AOSP tree currently has frozen `android.hardware.audio.core`
 through v4 only. A v5 VINTF declaration cannot be built/verified against this
 tree; the product override therefore advertises v4. Move to v5 when the AOSP
 interface and BayLibre implementation both provide it.
+
+## Round 2 audit follow-up
+
+- PipeWire is deliberately **unshipped** for now. No `bundle/contents.list`
+  rows should be added for `prebuilt/pipewire`; `audio/maton-pipewire.rc` is
+  inert and `tools/build-pipewire.sh` only stages experimental artifacts. To
+  ship later, add explicit ODM bundle rows for the binaries, libraries,
+  configs/data and `maton-pipewire-proxy`, then validate startup and Linux-app
+  audio on a fresh image before enabling an init rc.
+- `bundle/contents.list` currently installs
+  `audio/config-odm/mixer_controls.xml` to `/odm/etc/mixer_controls.xml`, but
+  BayLibre reads this file only from `/vendor/etc`. Remove that `file` row;
+  `audio/audio.mk` already installs the same source at
+  `/vendor/etc/mixer_controls.xml`.

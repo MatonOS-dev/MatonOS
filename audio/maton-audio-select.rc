@@ -1,20 +1,25 @@
-# Discover a usable card once at boot. The async oneshot is informational
-# configuration only; it never gates the HAL or boot progress.
+# Start selection only after the asynchronous codec preload/reprobe completes.
+# Both services are oneshots; this property trigger never gates boot.
 on post-fs-data
     setprop vendor.maton.audio.selector_done 0
     setprop vendor.maton.audio.selector_result pending
+
+on post-fs-data && property:vendor.maton.audio.codec_preload=done
     start vendor.maton-audio-select
 
-on property:vendor.maton.audio.selector_result=found
-    setprop persist.vendor.audio.primary.card ${vendor.maton.audio.card}
-    setprop persist.vendor.audio.primary.device ${vendor.maton.audio.device}
+on property:vendor.maton.audio.codec_preload=done
+    start vendor.maton-audio-select
 
 on property:vendor.maton.audio.selector_result=no_card
+    setprop persist.vendor.audio.primary.card ''
+    setprop persist.vendor.audio.primary.device ''
     setprop ro.boot.audio.tinyalsa.ignore_output true
     setprop ro.boot.audio.tinyalsa.simulate_input true
 
 # A crash or timeout is also a no-card result. HAL startup proceeds normally.
 on property:init.svc.vendor.maton-audio-select=stopped && property:vendor.maton.audio.selector_done=0
+    setprop persist.vendor.audio.primary.card ''
+    setprop persist.vendor.audio.primary.device ''
     setprop ro.boot.audio.tinyalsa.ignore_output true
     setprop ro.boot.audio.tinyalsa.simulate_input true
 

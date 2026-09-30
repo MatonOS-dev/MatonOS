@@ -7,21 +7,19 @@
 MODPROBE=/vendor/bin/modprobe
 MODULE_DIR=/vendor/lib/modules
 
-[ -x "$MODPROBE" ] || exit 0
-[ -r "$MODULE_DIR/modules.dep" ] || exit 0
-
 setprop vendor.maton.audio.codec_preload running
 
-for module in "$MODULE_DIR"/snd-hda-codec-*.ko; do
-    [ -f "$module" ] || continue
-    name=${module##*/}
-    name=${name%.ko}
-    "$MODPROBE" -d "$MODULE_DIR" "$name" >/dev/null 2>&1 || :
-done
-
-# No audio client is expected to have opened the card this early. If removal
-# fails, leave the existing driver alone; loading it again remains harmless.
-"$MODPROBE" -d "$MODULE_DIR" -r snd_hda_intel >/dev/null 2>&1 || :
-"$MODPROBE" -d "$MODULE_DIR" snd_hda_intel >/dev/null 2>&1 || :
+if [ -x "$MODPROBE" ] && [ -r "$MODULE_DIR/modules.dep" ]; then
+    for module in "$MODULE_DIR"/snd-hda-codec-*.ko; do
+        [ -f "$module" ] || continue
+        name=${module##*/}
+        name=${name%.ko}
+        "$MODPROBE" -d "$MODULE_DIR" "$name" >/dev/null 2>&1 || :
+    done
+    # No audio client is expected to have opened the card this early. If
+    # removal fails, leave the existing driver alone; reloading is harmless.
+    "$MODPROBE" -d "$MODULE_DIR" -r snd_hda_intel >/dev/null 2>&1 || :
+    "$MODPROBE" -d "$MODULE_DIR" snd_hda_intel >/dev/null 2>&1 || :
+fi
 setprop vendor.maton.audio.codec_preload done
 exit 0

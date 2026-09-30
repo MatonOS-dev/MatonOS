@@ -1,6 +1,7 @@
 # Bundle rows: file <source> <destination>, tree <source-dir> <destination-dir>,
 # or prop <name>=<value>. Paths are relative to the device tree and bundle root.
 # Add each new daemon/configuration here; tools/build-bundle.sh owns the format.
+# Graphics are vendor image contents (graphics.mk/build-mesa.sh), not ODM bundle rows.
 
 file buildinfra/native-built/libmatonos-ipc.so lib64/libmatonos-ipc.so
 file buildinfra/native-built/matonos-sleepd bin/matonos-sleepd
