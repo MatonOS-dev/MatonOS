@@ -2,6 +2,7 @@
 #include <org/matonos/systembridge/ILinuxdListener.h>
 #include <binder/IServiceManager.h>
 #include <binder/IBinder.h>
+#include <binder/IInterface.h>
 #include <binder/IPCThreadState.h>
 #include <binder/PermissionCache.h>
 #include <binder/ProcessState.h>
@@ -43,7 +44,7 @@ class ListenerDeathRecipient final : public android::IBinder::DeathRecipient {
         std::lock_guard<std::mutex> guard(g_listener_mutex);
         g_progress_listeners.erase(std::remove_if(g_progress_listeners.begin(), g_progress_listeners.end(),
                 [&who](const android::sp<ILinuxdListener>& listener) {
-                    return listener->asBinder().get() == who.unsafe_get();
+                    return android::IInterface::asBinder(listener).get() == who.unsafe_get();
                 }), g_progress_listeners.end());
     }
 };
@@ -79,7 +80,7 @@ void* DispatchEvents(void*) {
         for (const auto& listener : listeners)
             if (!listener->onEvent(android::String16("progress"), android::String16(body.c_str())).isOk()) dead.push_back(listener);
         if (!dead.empty()) {
-            for (const auto& listener : dead) listener->asBinder()->unlinkToDeath(g_listener_death);
+            for (const auto& listener : dead) android::IInterface::asBinder(listener)->unlinkToDeath(g_listener_death);
             std::lock_guard<std::mutex> guard(g_listener_mutex);
             g_progress_listeners.erase(std::remove_if(g_progress_listeners.begin(), g_progress_listeners.end(),
                     [&dead](const android::sp<ILinuxdListener>& listener) {
@@ -289,7 +290,7 @@ class LinuxdService final : public BnLinuxd {
             std::lock_guard<std::mutex> guard(g_listener_mutex);
             if (std::find(g_progress_listeners.begin(), g_progress_listeners.end(), listener) ==
                     g_progress_listeners.end()) {
-                if (listener->asBinder()->linkToDeath(g_listener_death) != android::OK) return android::binder::Status::ok();
+                if (android::IInterface::asBinder(listener)->linkToDeath(g_listener_death) != android::OK) return android::binder::Status::ok();
                 g_progress_listeners.push_back(listener);
             }
             if (g_progress_listeners.size() > kListenerLimit) {
@@ -297,7 +298,7 @@ class LinuxdService final : public BnLinuxd {
                 g_progress_listeners.erase(g_progress_listeners.begin());
             }
         }
-        if (evicted) evicted->asBinder()->unlinkToDeath(g_listener_death);
+        if (evicted) android::IInterface::asBinder(evicted)->unlinkToDeath(g_listener_death);
         return android::binder::Status::ok();
     }
 
@@ -314,7 +315,7 @@ class LinuxdService final : public BnLinuxd {
                         g_progress_listeners.end());
             }
         }
-        if (removed) listener->asBinder()->unlinkToDeath(g_listener_death);
+        if (removed) android::IInterface::asBinder(listener)->unlinkToDeath(g_listener_death);
         return android::binder::Status::ok();
     }
 };
