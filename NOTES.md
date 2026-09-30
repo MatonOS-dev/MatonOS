@@ -1021,6 +1021,21 @@ Each entry: what, why no non-patch way, what it would need.
 
 ## Decisions
 
+- **Bluetooth/WiFi: HAL-owned stable interface, usermode spoof dropped (user,
+  2026-09-30)**: the `matonos-btd` daemon and its `/dev/vhci` "empty radio"
+  emulator are removed. With no controller the Bluetooth HAL reports
+  unavailable and Bluetooth stays off — honest, no crash; the
+  "toggle/scans-work-with-no-radio" goal is given up. The `IBluetoothHci` HAL
+  itself discovers and selects the real controller (persisted choice,
+  built-in before USB), owns rfkill, and opens the selected HCI user channel —
+  one process, no property coordination. Rationale: Android's stack aborts on
+  the hand-rolled emulator (`hci_layer.cc:493`, COMMAND_COMPLETE with an empty
+  command queue), and neither spoof maps onto AOSP's HALs cleanly. WiFi
+  likewise drops `matonos-wifid`'s rename/rfkill/2 s-poll machinery:
+  `mac80211_hwsim` (module param) covers the no-radio case and the stock
+  `wpa_supplicant`/`wificond`/nl80211 path owns `wlan0`. See
+  `out/pc-logs/agents/BT-WIFI-SIMPLIFY.md`.
+
 - **PipeWire moves to system_ext (user, 2026-09-30)**: it was placed in
   /vendor when it was going to be the audio HAL; Android audio now uses
   BayLibre's HAL, and PipeWire's job is Linux-app audio (v4): Flatpak apps
