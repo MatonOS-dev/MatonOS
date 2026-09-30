@@ -237,6 +237,7 @@ info "Assembling $IMAGE"
 esp_bytes=$((ESP_MIB * 1048576))
 start=1048576                                  # 1 MiB alignment
 disk_bytes=$(( start + esp_bytes + super_size + 1048576 ))   # + backup GPT
+if [[ -e $IMAGE && ! -f $IMAGE ]]; then die "output image exists and is not a regular file: $IMAGE"; fi
 rm -f "$IMAGE"
 truncate -s "$disk_bytes" "$IMAGE"
 esp_first=$((start / 512))

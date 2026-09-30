@@ -26,7 +26,7 @@ KERNEL=""
 BOOTEFI="/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
 SUPER_SIZE_BYTES=8589934592          # must equal BOARD_SUPER_PARTITION_SIZE
 CMDLINE="console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware androidboot.hardware=pc_x86_64 androidboot.selinux=permissive androidboot.verifiedbootstate=orange"
-PAYLOAD="./payload"
+PAYLOAD="$PWD/payload"
 SECURE_BOOT=0
 
 while getopts "o:k:b:s:c:d:Sh" opt; do
@@ -56,7 +56,13 @@ if (( SECURE_BOOT )); then
   sb_ensure_dev_key
 fi
 
-rm -rf "$PAYLOAD"
+[[ $PAYLOAD == /* ]] || die "payload destination must be an absolute path: $PAYLOAD"
+PAYLOAD=$(realpath -m -- "$PAYLOAD")
+[[ $PAYLOAD != / ]] || die "payload destination must not be /"
+if [[ -e $PAYLOAD && ( -b $PAYLOAD || -c $PAYLOAD || -p $PAYLOAD || -S $PAYLOAD ) ]]; then
+  die "payload destination must not be a device or special file: $PAYLOAD"
+fi
+rm -rf -- "$PAYLOAD"
 mkdir -p "$PAYLOAD/efi"
 microcode_work=$(mktemp -d --tmpdir pc-microcode.XXXXXX)
 trap 'rm -rf "$microcode_work"' EXIT

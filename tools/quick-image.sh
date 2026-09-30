@@ -36,6 +36,11 @@ done
 (( DRY_RUN == 0 || BUNDLE_ONLY == 1 )) || die "--dry-run is supported with --bundle-only only."
 
 if [[ $BUNDLE_ONLY == 1 ]]; then
+  LOCK=$AOSP/out/.maton-build.lock
+  mkdir -p "$AOSP/out"
+  exec 9>"$LOCK"
+  flock -n 9 || die "another AOSP build holds $LOCK; retry after it finishes."
+  pgrep -x soong_ui >/dev/null && die "an AOSP build is running (soong_ui); retry after it finishes."
   [[ -s $DEVICE_DIR/bundle/contents.list ]] || die "bundle registry missing: $DEVICE_DIR/bundle/contents.list"
   [[ -d $PRODUCT_OUT ]] || die "product output directory missing: $PRODUCT_OUT"
   for partition in system system_ext product vendor; do

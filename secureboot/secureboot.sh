@@ -26,7 +26,7 @@ sb_require_tools() {
   objdump -h "$SB_SHIM" 2>/dev/null | grep -q '[.]sbat' || sb_die "shim has no SBAT section: $SB_SHIM"
 }
 
-sb_ensure_dev_key() {
+sb_ensure_dev_key() (
   umask 077
   mkdir -p "$SB_KEY_DIR"
   chmod 0700 "$SB_KEY_DIR"
@@ -46,7 +46,7 @@ sb_ensure_dev_key() {
     sb_die "incomplete Secure Boot key set under $SB_KEY_DIR; restore it or remove it and regenerate the DEV key"
   fi
   [[ $(stat -c %a "$key") == 600 ]] || chmod 0600 "$key"
-}
+)
 
 sb_sign_pe() {
   local input=$1 output=$2

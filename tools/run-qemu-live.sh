@@ -15,7 +15,7 @@
 #   -m  RAM in MiB  (default: 8192; /data lives in RAM on the live image)
 #   -r  resolution  (default: 1600x900; at least ~1000x600 keeps Android's
 #                   large-screen desktop layout)
-#   -s  serial log  (default: <image dir>/serial-live.log)
+#   -s  serial log  (default: <image dir>/serial-live.log; socket adds .<adb port>.<pid>)
 #   -a  host port forwarded to the guest's adb (default: 5555); give each
 #       concurrently running VM its own port and -s log
 #   -x  extra QEMU arguments, word-split (e.g. -x "-device intel-hda
@@ -65,6 +65,7 @@ done
 [[ $RES =~ ^([0-9]+)x([0-9]+)$ ]] || die "resolution must be WIDTHxHEIGHT (-r)"
 XRES=${BASH_REMATCH[1]} YRES=${BASH_REMATCH[2]}
 LOG=${LOG:-$(dirname "$IMAGE")/serial-live.log}
+SOCK=$LOG.sock.$ADB_PORT.$$
 command -v qemu-system-x86_64 >/dev/null || die "install qemu-system-x86"
 
 OVMF_CODE=""
@@ -127,8 +128,8 @@ args=(
   -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:$ADB_PORT-:5555"
   -device "virtio-net-pci,netdev=net0"
   # Serial console: logged to $LOG and also reachable as a unix socket
-  # ($LOG.sock) for the root shell (debug entry sets androidboot.console).
-  -chardev "socket,id=ser0,path=$LOG.sock,server=on,wait=off,logfile=$LOG"
+  # (per-port socket) for the root shell (debug entry sets androidboot.console).
+  -chardev "socket,id=ser0,path=$SOCK,server=on,wait=off,logfile=$LOG"
   -serial chardev:ser0
 )
 if [[ $KVM == 1 ]]; then
@@ -198,6 +199,7 @@ fi
 # agents; wait for a free slot. The lock fd stays open in QEMU (exec), so the
 # slot is held exactly as long as the VM runs.
 slots=${MATON_VM_SLOTS:-2}
+[[ $slots =~ ^[1-9][0-9]*$ && $slots -le 16 ]] || die "MATON_VM_SLOTS must be an integer from 1 to 16"
 lockdir=$AOSP/out/pc-logs  # fixed, whatever image -i names
 mkdir -p "$lockdir"
 got=""
@@ -211,6 +213,5 @@ while [[ -z $got ]]; do
 done
 echo "VM slot $got"
 
-rm -f "$LOG.sock"
-echo "Serial console -> $LOG (interactive: $LOG.sock)"
+echo "Serial console -> $LOG (interactive: $SOCK)"
 exec qemu-system-x86_64 "${args[@]}"

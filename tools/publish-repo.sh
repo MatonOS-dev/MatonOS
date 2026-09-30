@@ -50,7 +50,12 @@ done
 
 # The server has no rsync: stream files with tar over ssh (APKs/icons, then index).
 host=${REMOTE%%:*}; dir=${REMOTE#*:}
-push() { tar -C "$REPO/repo" -cf - "$@" | ssh "$host" "mkdir -p '$dir/repo' && tar -C '$dir/repo' -xf -"; }
+[[ $host =~ ^[A-Za-z0-9._@-]+$ && $dir =~ ^[A-Za-z0-9._/-]+$ && $dir != /* && $dir != *..* ]] || die "unsafe remote host or directory in MATON_REPO_REMOTE"
+push() {
+  local remote_dir
+  printf -v remote_dir '%q' "$dir/repo"
+  tar -C "$REPO/repo" -cf - "$@" | ssh "$host" "mkdir -p -- $remote_dir && tar -C $remote_dir -xf -"
+}
 mapfile -t payload < <(cd "$REPO/repo" && find . -mindepth 1 -maxdepth 1 \( -name '*.apk' -o -name '*.zip' -o -name 'icons*' -o -name 'diff' -o -name 'index.css' -o -name 'index.png' -o -name 'status' \) -printf '%P\n')
 info "Uploading APKs and icons to $REMOTE"
 push "${payload[@]}"

@@ -46,9 +46,21 @@ for t in lsblk sgdisk wipefs blockdev findmnt mkfs.vfat zstd dd partprobe udevad
   command -v "$t" >/dev/null || die "missing tool: $t"
 done
 [[ -f $PAYLOAD_DIR/payload.conf ]] || die "no payload found in $PAYLOAD_DIR"
-# shellcheck source=/dev/null
-source "$PAYLOAD_DIR/payload.conf"
+# Parse only the documented scalar fields; never execute payload-controlled shell.
+declare -A conf=()
+while IFS= read -r line || [[ -n $line ]]; do
+  [[ $line =~ ^([A-Z_]+)=(.*)$ ]] || continue
+  key=${BASH_REMATCH[1]} value=${BASH_REMATCH[2]}
+  value=${value%\"}; value=${value#\"}
+  [[ $value != *$'\n'* && $value != *$'\r'* ]] || die "invalid payload config value: $key"
+  case $key in SUPER_SIZE_BYTES|SUPER_SHA256|ESP_SIZE_MIB|MIN_USERDATA_MIB|KERNEL_CMDLINE|DEBUG_CMDLINE|SECURE_BOOT) conf[$key]=$value ;; esac
+done < "$PAYLOAD_DIR/payload.conf"
+SUPER_SIZE_BYTES=${conf[SUPER_SIZE_BYTES]:-} SUPER_SHA256=${conf[SUPER_SHA256]:-}
+ESP_SIZE_MIB=${conf[ESP_SIZE_MIB]:-} MIN_USERDATA_MIB=${conf[MIN_USERDATA_MIB]:-}
+KERNEL_CMDLINE=${conf[KERNEL_CMDLINE]:-} DEBUG_CMDLINE=${conf[DEBUG_CMDLINE]:-}
+SECURE_BOOT=${conf[SECURE_BOOT]:-0}
 : "${SUPER_SIZE_BYTES:?} ${SUPER_SHA256:?} ${ESP_SIZE_MIB:?} ${MIN_USERDATA_MIB:?} ${KERNEL_CMDLINE:?}"
+[[ $SUPER_SIZE_BYTES =~ ^[0-9]+$ && $ESP_SIZE_MIB =~ ^[0-9]+$ && $MIN_USERDATA_MIB =~ ^[0-9]+$ && $SUPER_SHA256 =~ ^[a-fA-F0-9]{64}$ && $SECURE_BOOT =~ ^[01]$ ]] || die "payload config has invalid numeric or hash fields"
 # secureboot: CPU microcode is a required first-initrd asset in every installer profile.
 for f in microcode.cpio licenses/Fedora-shim-x64-BSD-3-Clause.txt \
          licenses/Intel-Microcode-LICENSE.txt licenses/AMD-WHENCE.txt; do
@@ -67,7 +79,19 @@ info "Checking payload integrity"
 # Work out which disk we booted from so we never offer it as a target.
 boot_disk=""
 src=$(findmnt -no SOURCE --target "$PAYLOAD_DIR" 2>/dev/null || true)
-if [[ -b $src ]]; then
+# Live images expose the ESP PARTUUID in the kernel command line, even when
+# the payload directory is on tmpfs, overlayfs, or a device-mapper root.
+boot_uuid=$(sed -n 's/.*androidboot\.boot_part_uuid=\([^ ]*\).*/\1/p' /proc/cmdline)
+if [[ -n $boot_uuid ]]; then
+  while read -r part_uuid node parent; do
+    if [[ ${part_uuid,,} == "${boot_uuid,,}" ]]; then
+      boot_disk=${parent:+/dev/$parent}
+      [[ -n $boot_disk ]] || boot_disk=$node
+      break
+    fi
+  done < <(lsblk -nrpo PARTUUID,NAME,PKNAME)
+fi
+if [[ -z $boot_disk && -b $src ]]; then
   pk=$(lsblk -no PKNAME "$src" 2>/dev/null | head -n1)
   boot_disk="/dev/${pk:-$(basename "$src")}"
 fi

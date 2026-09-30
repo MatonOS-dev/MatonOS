@@ -118,7 +118,7 @@ if ((${#EXIST[@]})); then
     D=$DEV_DIR
     while read -r p; do
       # Lazy: running processes keep the old file mapped until restarted.
-      while grep -q \" \$p \" /proc/self/mountinfo; do umount -l \"\$p\" || break; done
+      while grep -Fq \" \$p \" /proc/self/mountinfo; do umount -l \"\$p\" || break; done
       mkdir -p \"\$D/files\$(dirname \"\$p\")\"
       mv -f \"\$D/incoming\$p\" \"\$D/files\$p\"
       ctx=\$(ls -Zd \"\$p\" | awk '{print \$1}')

@@ -338,6 +338,12 @@ mkdir -p "$STAGE/etc"
   done
 } > "$STAGE/etc/intel_vulkan_pci_ids.txt"
 
+# A header-only table means Mesa moved or renamed its PCI ID macros. Do not
+# ship it: the boot selector would otherwise classify every Intel GPU as anv.
+if ! grep -qE '^0x[0-9a-f]+ (intel_hasvk|none)$' "$STAGE/etc/intel_vulkan_pci_ids.txt"; then
+  die "Intel Vulkan PCI ID table is empty; check Mesa pci_ids headers"
+fi
+
 find "$STAGE" -name '*.so' -exec "$TOOLCHAIN/bin/llvm-strip" --strip-unneeded {} +
 
 # ---------------------------------------------------------------- 6. check deps

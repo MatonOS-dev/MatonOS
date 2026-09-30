@@ -50,18 +50,20 @@ command -v curl >/dev/null || die "curl not found"
 command -v python3 >/dev/null || die "python3 not found"
 
 work=$(mktemp -d --tmpdir fetch-apps.XXXXXX)
-trap 'rm -rf "$work"' EXIT
+lock_tmp=""
+trap 'rm -rf "$work"; [[ -z $lock_tmp ]] || rm -f "$lock_tmp"' EXIT
 
 # ---------------------------------------------------------------- re-pin
 if (( UPDATE )); then
   info "Downloading F-Droid index"
   curl -sSfL -o "$work/index-v2.json" "$REPO/index-v2.json"
-  python3 - "$work/index-v2.json" "$LOCK" <<'EOF'
+  lock_tmp=$(mktemp "$LOCK.XXXXXX")
+python3 - "$work/index-v2.json" "$LOCK" "$lock_tmp" <<'EOF'
 import json, sys
-index, lock = sys.argv[1], sys.argv[2]
+index, source, lock = sys.argv[1], sys.argv[2], sys.argv[3]
 packages = json.load(open(index))["packages"]
 out = []
-for line in open(lock):
+for line in open(source):
     if not line.strip() or line.startswith("#"):
         out.append(line)
         continue
@@ -85,6 +87,9 @@ for line in open(lock):
     print(f"  {pkg} -> {m['versionName']} ({m['versionCode']})")
 open(lock, "w").writelines(out)
 EOF
+  chmod --reference="$LOCK" "$lock_tmp"
+  mv -f -- "$lock_tmp" "$LOCK"
+  lock_tmp=""
 fi
 
 # ---------------------------------------------------------------- download

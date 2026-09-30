@@ -214,11 +214,13 @@ cp "$KOUT/.config" "$STAGE/kernel.config"
 echo "$krel" > "$STAGE/kernel.release"
 # secureboot: stage CPU microcode on every kernel build, regardless of -S/-n.
 ucode_work=$(mktemp -d --tmpdir pc-microcode.XXXXXX)
+trap 'rm -rf "$ucode_work"' EXIT
 sb_build_microcode_cpio "$STAGE/microcode.cpio" "$ucode_work"
 mkdir -p "$STAGE/firmware"
 cp "$DEVICE_DIR/secureboot/licenses/Intel-Microcode-LICENSE.txt" "$STAGE/firmware/LICENSE.intel-microcode"
 cp "$ucode_work/amd-WHENCE.txt" "$STAGE/firmware/LICENSE.amd-WHENCE"
 rm -rf "$ucode_work"
+trap - EXIT
 
 modtmp=$(mktemp -d --tmpdir pc-kernel-modules.XXXXXX)
 trap 'rm -rf "$modtmp"' EXIT
@@ -245,7 +247,7 @@ if [[ $STAGE_FW == 1 ]]; then
   # Check out only the top-level directories our modules need.
   mapfile -t fw_dirs < <(printf '%s\n' "${fw_names[@]}" | grep / | cut -d/ -f1 | sort -u)
   if [[ -f $FIRMWARE/.git/info/sparse-checkout ]]; then
-    git -C "$FIRMWARE" sparse-checkout set "${fw_dirs[@]}"
+    if ((${#fw_dirs[@]})); then git -C "$FIRMWARE" sparse-checkout set "${fw_dirs[@]}"; fi
   fi
 
   mkdir -p "$STAGE/firmware"

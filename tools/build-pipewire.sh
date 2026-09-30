@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build PipeWire, WirePlumber, ALSA-lib and their small GLib dependency stack
-# for Android x86_64, then stage vendor-relative files in prebuilt/pipewire.
+# for Android x86_64, then stage experimental vendor-relative files in
+# prebuilt/pipewire. This output is intentionally NOT installed/shipped yet.
 set -Eeuo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }

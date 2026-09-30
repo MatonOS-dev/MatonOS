@@ -129,8 +129,13 @@ if [[ -z ${MATON_BUILD_LOCK_HELD:-} ]]; then
     flock 9
   fi
 fi
+SOONG_WAIT_TIMEOUT=${MATON_SOONG_WAIT_TIMEOUT:-7200}
+[[ $SOONG_WAIT_TIMEOUT =~ ^[1-9][0-9]*$ ]] || die "MATON_SOONG_WAIT_TIMEOUT must be a positive number of seconds"
+soong_wait_started=$SECONDS
 while pgrep -x soong_ui >/dev/null; do
-  info "Waiting for a running AOSP build (soong_ui)"
+  waited=$((SECONDS - soong_wait_started))
+  (( waited < SOONG_WAIT_TIMEOUT )) || die "timed out after ${waited}s waiting for a running AOSP build (soong_ui); retry when it exits or set MATON_SOONG_WAIT_TIMEOUT"
+  info "Waiting for a running AOSP build (soong_ui; ${waited}/${SOONG_WAIT_TIMEOUT}s)"
   sleep 30
 done
 
@@ -223,7 +228,7 @@ if [[ $DO_PAYLOAD == 1 ]]; then
   info "Installer payload"
   PATH=$AOSP/out/host/linux-x86/bin:$PATH \
     "$TOOLS/make-payload.sh" -o "$PRODUCT_OUT" -k "$DEVICE_DIR/prebuilt/bzImage" \
-    -d "$PRODUCT_OUT/payload"
+    -d "$PRODUCT_OUT/payload" -S
 fi
 
 info "Done in $(( (SECONDS - start) / 60 )) min"
