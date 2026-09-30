@@ -70,7 +70,6 @@ tools/build-native.sh                     # our C daemons -> prebuilt/
 tools/build-apps.sh                       # Settings, Flathub, ... (Expo/Gradle) -> buildinfra/apps-built/
 tools/fetch-apps.sh                       # pinned F-Droid APKs -> apps/apks/
 gms/fetch-gms.sh                          # pinned microG APKs
-linux/third_party/apply-patches.sh        # Flatpak stack patches (needs the pinned upstream sources)
 ```
 
 Our apps are signed with per-app development keys that `build-apps.sh`
