@@ -154,7 +154,10 @@ if [[ $DO_AOSP == 1 ]]; then
   "$TOOLS/build-native.sh"
 
   info "MatonOS ODM driver bundle"
-  "$TOOLS/build-bundle.sh" -o "$PRODUCT_OUT/odm.img"
+  # Distinct path: AOSP copies this as odm.img via BOARD_PREBUILT_ODMIMAGE
+  # (install/BoardConfig.mk). Writing straight to $PRODUCT_OUT/odm.img let the
+  # AOSP build overwrite the bundle (boot loop). See SHARED-CHANGES.md.
+  "$TOOLS/build-bundle.sh" -o "$PRODUCT_OUT/odm-bundle.img"
 
   info "AOSP patches"
   "$TOOLS/apply-patches.sh"

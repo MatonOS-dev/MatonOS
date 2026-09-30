@@ -3,7 +3,10 @@ PRODUCT_PACKAGES += matonos-linuxd
 
 # install: VABC snapshots are served by snapuserd over mainline UBLK.
 PRODUCT_VIRTUAL_AB_COMPRESSION_METHOD := none
-PRODUCT_BUILD_ODM_IMAGE := true
+# Do NOT let AOSP generate odm.img: our driver bundle (built by
+# tools/build-bundle.sh) is that partition. install/BoardConfig.mk points
+# BOARD_PREBUILT_ODMIMAGE at the bundle staged outside Soong (see
+# SHARED-CHANGES.md, 2026-09-30 ODM staging collision).
 $(call inherit-product, $(SRC_TARGET_DIR)/product/virtual_ab_ota/vabc_features.mk)
 # The release flag guarding the feature fragment's default is not fixed for
 # this product. Select the kernel UBLK backend explicitly, never dm-user.

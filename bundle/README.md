@@ -45,11 +45,14 @@ Do not add new system-owned `ro.*` properties to the bundle.
 
 `tools/build.sh` runs `tools/build-native.sh`, then `tools/build-bundle.sh`,
 before the AOSP stage and live-image packaging. The bundle script needs AOSP's
-host `mkfs.erofs`; it writes `out/target/product/pc_x86_64/odm.img`.
-`tools/make-live.sh` adds this image to `super` as logical partition `odm` in
-the same dynamic group as system, system_ext, product, and vendor. No
-`BOARD_ODMIMAGE_FILE_SYSTEM_TYPE` or `BOARD_PREBUILT_ODMIMAGE` is set, so
-Soong does not generate a competing ODM image.
+host `mkfs.erofs`; it stages the bundle at
+`out/target/product/pc_x86_64/odm-bundle.img` (not `odm.img` directly). AOSP
+copies it as `odm.img` via `BOARD_PREBUILT_ODMIMAGE` in
+`install/BoardConfig.mk`, so no AOSP-generated ODM image competes with the
+bundle. `tools/make-live.sh` adds that `odm.img` to `super` as logical
+partition `odm` in the same dynamic group as system, system_ext, product, and
+vendor. The coordinator's `tools/quick-image.sh` does not run the AOSP copy, so
+it stages the bundle and mirrors it to `odm.img` itself.
 
 Static validation: confirm every `file`/`tree` registry source exists; every
 `service` executable path in the registered rc files exists in the staging

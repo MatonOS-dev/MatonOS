@@ -14,6 +14,11 @@ AOSP=$(readlink -f "$DEVICE_DIR/../../..")
 PRODUCT=pc_x86_64
 VARIANT=userdebug
 PRODUCT_OUT=$AOSP/out/target/product/$PRODUCT
+# build-bundle.sh stages here; install/BoardConfig.mk copies it to odm.img via
+# BOARD_PREBUILT_ODMIMAGE during a full build. The quick paths below do not run
+# that copy, so they stage the bundle and mirror it to odm.img themselves.
+BUNDLE_IMG=$PRODUCT_OUT/odm-bundle.img
+ODM_IMG=$PRODUCT_OUT/odm.img
 BUNDLE_ONLY=0
 DRY_RUN=0
 
@@ -38,11 +43,13 @@ if [[ $BUNDLE_ONLY == 1 ]]; then
   done
   if [[ $DRY_RUN == 1 ]]; then
     info "Dry run: would rebuild the ODM bundle, then repack the live image. No files changed."
-    printf '  %q -o %q\n' "$TOOLS/build-bundle.sh" "$PRODUCT_OUT/odm.img"
+    printf '  %q -o %q\n' "$TOOLS/build-bundle.sh" "$BUNDLE_IMG"
+    printf '  cp -f %q %q\n' "$BUNDLE_IMG" "$ODM_IMG"
     printf '  %q -o %q\n' "$TOOLS/make-live.sh" "$PRODUCT_OUT"
     exit 0
   fi
-  "$TOOLS/build-bundle.sh" -o "$PRODUCT_OUT/odm.img"
+  "$TOOLS/build-bundle.sh" -o "$BUNDLE_IMG"
+  cp -f "$BUNDLE_IMG" "$ODM_IMG"
   "$TOOLS/make-live.sh" -o "$PRODUCT_OUT"
   exit 0
 fi
@@ -96,5 +103,6 @@ info "Building image targets on the existing combined graph (-j$JOBS): ${TARGETS
 "$NINJA" -f "$COMBINED" -j"$JOBS" "${TARGETS[@]}"
 
 info "Rebuilding the ODM driver bundle and live image"
-"$TOOLS/build-bundle.sh" -o "$PRODUCT_OUT/odm.img"
+"$TOOLS/build-bundle.sh" -o "$BUNDLE_IMG"
+cp -f "$BUNDLE_IMG" "$ODM_IMG"
 "$TOOLS/make-live.sh" -o "$PRODUCT_OUT"
