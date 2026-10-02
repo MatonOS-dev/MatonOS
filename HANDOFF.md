@@ -1,13 +1,13 @@
 ## Software Center repair, 2026-10-02
 
 Current handover: [Software Center and Flatpak repair](HANDOVER-2026-10-02.md).
-r13 (20261002, `1141086508…`) is the current build: the compositor APK
-crash fix (xcb closure bundled — r12's compositor died at load and no app
-could launch), the real Xwayland server staged into system_ext,
-offer-both display selection, and readable stub names `flatpak.<id>`.
-App icons confirmed working by the user on r12. r11/r12 remain preserved.
-Awaiting fresh-boot verification of r13 (checklist in the handover). No
-build is currently running. No release or push.
+r14 (20261002, `8d167425…`) is the current build and the one to test the
+MC launcher on: the Xwayland baked-path fix (r13's Xwayland never worked
+on device), wlroots logs in logcat (MatonWLR), bridge launch-failure
+logging, plus all r13 content (xcb-closure APK fix, real Xwayland staged,
+offer-both display selection, readable stub names `flatpak.<id>`).
+App icons confirmed working by the user on r12. r11-r13 remain preserved.
+No build is currently running. No release or push.
 
 # Session handoff
 
