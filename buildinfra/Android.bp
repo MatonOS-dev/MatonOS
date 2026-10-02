@@ -94,6 +94,13 @@ prebuilt_etc {
 }
 
 prebuilt_etc {
+    name: "privapp-permissions-org.matonos.compositor",
+    src: "privapp-permissions/privapp-permissions-org.matonos.compositor.xml",
+    sub_dir: "permissions",
+    system_ext_specific: true,
+}
+
+prebuilt_etc {
     name: "privapp-permissions-org.matonos.systembridge",
     src: "privapp-permissions/privapp-permissions-org.matonos.systembridge.xml",
     sub_dir: "permissions",
@@ -106,7 +113,7 @@ prebuilt_etc {
 android_app_import {
     name: "MatonWaylandHost",
     privileged: true,
-    required: ["privapp-permissions-org.matonos.flathub"],
+    required: ["privapp-permissions-org.matonos.compositor"],
     apk: "apps-built/MatonWaylandHost.apk",
     system_ext_specific: true,
     preprocessed: true,
