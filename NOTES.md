@@ -632,9 +632,40 @@ Feature work continues, but in this shape from now on.
   getSelectedText; set_cursor_rectangle -> CursorAnchorInfo; IME
   setComposingText -> preedit_string; commitText/deleteSurroundingText ->
   commit_string/delete_surrounding_text. Covers GTK3/4, Qt5/6,
-  Chromium/Electron on Wayland. X11 apps: later, an IBus/Fcitx-compatible
-  frontend in the container relaying to the same InputConnection (physical
-  keyboards work regardless). Not part of compositor v1.
+  Chromium/Electron on Wayland. Not part of compositor v1.
+  **X11 virtual keyboard layering (refined 2026-10-02, after checking the
+  standalone Xwayland 24.1.13 has no built-in XIM server or text-input
+  bridge):** layer 1 is the zwp_text_input_v3 + host InputConnection path
+  above (prerequisite for everything, unlocks the Android IME for Wayland
+  apps and provides the input state all X11 paths relay through). Layer 2
+  (cheap, covers Latin text): the compositor owns one X connection per X11
+  session and injects committed IME text via XTEST (Xwayland implements
+  XTEST); no preedit, no CJK. Layer 3 (full IME): a minimal clean-room XIM
+  server as a per-session X client of the compositor relaying
+  preedit/commit to the same InputConnection, or vendored IBus with
+  XMODIFIERS=@im=ibus and GTK_IM_MODULE/QT_IM_MODULE=ibus in the X11 env;
+  apps opt in through the launch environment either way. The staged
+  Xwayland 24.1.13 build excludes GLX/glamor/DRI3 and has no IME features
+  of its own, so the compositor supplies the entire bridge.
+- **Flatpak display selection: offer both, override via the bridge
+  (user, 2026-10-02):** every graphical launch exports WAYLAND_DISPLAY and a
+  per-session DISPLAY (the Xwayland socket path), grants both sockets, and
+  forces no toolkit backends — the Chrome `--ozone-platform=wayland` special
+  case goes away, because with a real X display present Chromium's X11
+  default works. Toolkits self-select (GTK/SDL2 -> Wayland, Qt and
+  Chromium/Electron -> X11). Per-app overrides run through the bridge's
+  generic daemon channel, no AIDL changes: linuxd call commands
+  `set_display_mode {ref, x11|wayland|both}` and `get_display_modes`,
+  persisted in a bounded `/data/matonos/linux/config/display-modes.json`.
+  Launch consults the override: wayland -> strip DISPLAY and restore the
+  forcing vars, x11 -> strip WAYLAND_DISPLAY and set the X11 toolkit env,
+  both -> offer both unchanged. Supersedes r12's
+  `/data/matonos/linux/config/x11-apps` opt-in file (kept transitional until
+  the bridge commands land). Authorization rides the bridge's existing
+  target allowlist; a store/Settings toggle can come later. Telemetry comes
+  free: the compositor logs which display system each session actually used
+  (Xwayland `events.ready` fires only on the first X client connect), and a
+  bridge topic can expose it to settings later.
   - **No Debian base (user decision, 2026-09-28, supersedes the Debian
     image):** we need the Android<->Linux glue anyway, so the host side is
     only flatpak + bubblewrap + ostree (+ their deps) built for Android

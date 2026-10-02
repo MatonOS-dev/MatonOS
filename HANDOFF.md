@@ -1,10 +1,12 @@
 ## Software Center repair, 2026-10-02
 
 Current handover: [Software Center and Flatpak repair](HANDOVER-2026-10-02.md).
-The r7 build was terminated; no r7 image exists. Latest completed live image
-is r6, with confirmed runtime failures. No build is currently running.
-Detailed chronology: [repair log](../../../out/pc-logs/agents/REPAIR-HANDOFF-2026-10-01.md).
-No release or push.
+r11 (20261002) is built with the deployment app-info icon fallback (Brave's
+placeholder icon) and the newest broker/wrapper; fresh-boot verification is
+outstanding. r12 (20261002) is building with server-side-only window
+decorations (double title bar fix) and the Xwayland stack plumbing. The r10
+image and older r1-r9 images remain preserved. No build other than the
+running r12 driver is active. No release or push.
 
 # Session handoff
 
