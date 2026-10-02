@@ -45,6 +45,16 @@ PRODUCT_COPY_FILES += \
     frameworks/native/data/etc/android.hardware.usb.host.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.usb.host.xml \
     frameworks/native/data/etc/android.software.freeform_window_management.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.software.freeform_window_management.xml
 
+# ------------------------------------------------- Xwayland (compositor)
+# The Xwayland server and its X11 stack runtime libraries (built by
+# linux/compositor/build-xwayland.sh, staged by tools/stage-xwayland.sh).
+XWAYLAND_SYSTEM_EXT := device/maton/pc_x86_64/linux/compositor/prebuilt/system_ext
+XWAYLAND_FILES := \
+    $(wildcard $(XWAYLAND_SYSTEM_EXT)/bin/*) \
+    $(wildcard $(XWAYLAND_SYSTEM_EXT)/lib64/*.so) \
+    $(wildcard $(XWAYLAND_SYSTEM_EXT)/lib64/*.so.*)
+PRODUCT_COPY_FILES += $(foreach f,$(XWAYLAND_FILES),$(f):$(TARGET_COPY_OUT_SYSTEM_EXT)/$(patsubst $(XWAYLAND_SYSTEM_EXT)/%,%,$(f)))
+
 # ---------------------------------------------------------------- HALs
 # Software-only implementations from hardware/interfaces; fine for bring-up,
 # none of them need a TEE.
