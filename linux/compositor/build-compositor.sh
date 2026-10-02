@@ -148,6 +148,16 @@ build_cross() {
 
 build_cross wayland wayland-1.24.0 \
   '-Dscanner=false -Dlibraries=true -Dtests=false -Ddocumentation=false -Ddtd_validation=false'
+
+# Carried wlroots change (to be moved into a proper fork; see UPSTREAMS):
+# make the Xwayland socket directory overridable and the abstract-namespace
+# bind optional. Android has no writable /tmp, and filesystem permissions are
+# the only isolation X11 socket clients can get.
+PATCH=$ROOT/wlroots-xwayland-sockets.patch
+MARKER='WLR_XWAYLAND_SOCKET_DIR'
+if ! grep -q "$MARKER" "$SRC/wlroots-0.20.2/xwayland/sockets.c" 2>/dev/null; then
+  (cd "$SRC/wlroots-0.20.2" && patch -p1 --forward < "$PATCH") || die "wlroots patch failed"
+fi
 build_cross pixman pixman-0.46.0 \
   '-Dtests=disabled -Ddemos=disabled -Dgtk=disabled -Dlibpng=disabled -Dmmx=disabled -Dsse2=enabled -Dssse3=enabled'
 mkdir -p "$BUILD/xkb-config"
