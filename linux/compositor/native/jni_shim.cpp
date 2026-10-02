@@ -82,6 +82,26 @@ Java_org_matonos_compositor_CompositorService_nativeAddSession(JNIEnv* env, jcla
   env->ReleaseStringUTFChars(path, value);
   return ok ? JNI_TRUE : JNI_FALSE;
 }
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_matonos_compositor_CompositorService_nativeXwaylandInit(JNIEnv* env, jclass,
+                                                                 jstring dir, jstring path) {
+  if (!dir || !path) return JNI_FALSE;
+  const char* d = env->GetStringUTFChars(dir, nullptr);
+  const char* p = env->GetStringUTFChars(path, nullptr);
+  bool ok = d && p && maton_core_xwayland_init(d, p);
+  if (d) env->ReleaseStringUTFChars(dir, d);
+  if (p) env->ReleaseStringUTFChars(path, p);
+  return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_matonos_compositor_CompositorService_nativeAddXwayland(JNIEnv* env, jclass,
+                                                                jint session, jint uid) {
+  char display[128];
+  if (!maton_core_add_xwayland(session, uid, display, sizeof(display))) return nullptr;
+  return env->NewStringUTF(display);
+}
 extern "C" JNIEXPORT void JNICALL
 Java_org_matonos_compositor_CompositorService_nativeLaunchDemo(JNIEnv*, jclass) { maton_core_launch_demo(); }
 extern "C" JNIEXPORT void JNICALL

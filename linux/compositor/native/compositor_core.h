@@ -11,6 +11,8 @@ extern "C" {
 bool maton_core_start(const char* socket_name, const char* runtime_dir);
 void maton_core_close(int id);
 bool maton_core_add_session(int session, const char* socket_path);
+bool maton_core_xwayland_init(const char* socket_dir, const char* xwayland_path);
+bool maton_core_add_xwayland(int session, int uid, char* display, size_t display_size);
 void maton_core_stop(void);
 void maton_core_launch_demo(void);
 void maton_core_attach(int id, struct MatonSurfaceOutput* output, int width, int height);

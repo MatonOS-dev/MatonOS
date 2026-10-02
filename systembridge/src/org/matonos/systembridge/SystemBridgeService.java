@@ -91,10 +91,15 @@ public final class SystemBridgeService extends Service {
             finally { Binder.restoreCallingIdentity(identity); }
         }
 
-        @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory) {
+        @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, String x11Display) {
             String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
             if (!"org.matonos.compositor".equals(caller) || runtimeDirectory == null)
                 throw new SecurityException("Only the compositor may launch graphical Flatpaks");
+            // A wrong display string could point a sandboxed application at
+            // another application's X server; only accept our own socket dir.
+            if (x11Display != null && x11Display.length() > 0 &&
+                    !x11Display.startsWith("/data/matonos/linux/x11/X"))
+                throw new SecurityException("X11 display outside the compositor socket directory");
             long identity = Binder.clearCallingIdentity();
             try {
                 ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
@@ -107,7 +112,7 @@ public final class SystemBridgeService extends Service {
                     if (dns.length() > 0) dns.append(',');
                     dns.append(server.getHostAddress());
                 }
-                return daemon.launchGraphical(ref, runtimeDirectory, dns.toString());
+                return daemon.launchGraphical(ref, runtimeDirectory, dns.toString(), x11Display);
             } catch (RemoteException e) {
                 throw new IllegalStateException("Flatpak service disconnected", e);
             } finally {

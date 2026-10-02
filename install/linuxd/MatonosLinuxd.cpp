@@ -199,10 +199,11 @@ class LinuxdService final : public BnLinuxd {
     android::binder::Status launchGraphical(const android::String16& ref,
             const android::os::ParcelFileDescriptor& runtimeDirectory,
             const android::String16& dnsServers,
+            const android::String16& x11Display,
             android::String16* aidl_return) override {
         if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         FlatpakResult result = {};
-        flatpak_manager_launch_graphical(ToUtf8(ref).c_str(), runtimeDirectory.get(), ToUtf8(dnsServers).c_str(), &result);
+        flatpak_manager_launch_graphical(ToUtf8(ref).c_str(), runtimeDirectory.get(), ToUtf8(dnsServers).c_str(), ToUtf8(x11Display).c_str(), &result);
         *aidl_return = android::String16(Encode(EncodeResult(result)).c_str());
         flatpak_manager_result_clear(&result);
         return android::binder::Status::ok();

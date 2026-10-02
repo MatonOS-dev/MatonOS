@@ -17,6 +17,8 @@ public final class CompositorService extends Service {
     private static native boolean nativeStart(String socketName, String runtimeDir, CompositorService owner);
     private static native void nativeStop();
     private static native boolean nativeAddSession(int id, String path);
+    private static native boolean nativeXwaylandInit(String socketDir, String xwaylandPath);
+    private static native String nativeAddXwayland(int session, int uid);
     private static native void nativeClose(int id);
     private static native void nativeLaunchDemo();
     private static native void nativeAttach(int id, android.view.Surface surface, int width, int height);
@@ -42,6 +44,17 @@ public final class CompositorService extends Service {
                 .setContentTitle("Wayland compositor running").setContentIntent(pi).setOngoing(true).build();
         startForeground(NOTIFICATION_ID, n);
         ready = nativeStart("wayland-0", getFilesDir().getAbsolutePath() + "/wayland", this);
+        if (ready) {
+            // Per-app Xwayland servers live in a shared, init-created and
+            // labeled directory so application UIDs can reach their sockets;
+            // lazy start keeps the cost at zero for Wayland-only apps.
+            java.io.File x11dir = new java.io.File("/data/matonos/linux/x11");
+            if (!x11dir.isDirectory()) {
+                Log.w(TAG, "No X11 socket directory; Xwayland disabled");
+            } else if (!nativeXwaylandInit(x11dir.getAbsolutePath(), "/system_ext/bin")) {
+                Log.w(TAG, "Xwayland environment setup failed; Xwayland disabled");
+            }
+        }
         if (!ready) Log.e(TAG, "Compositor failed to start; Android service remains responsive");
     }
 
@@ -132,6 +145,7 @@ public final class CompositorService extends Service {
                     }
                     if (session.uid != uid) throw new SecurityException("Session belongs to another UID");
                     session.listeners.register(listener);
+                    session.ensureXwayland();
                     return session;
                 }
             } catch (SecurityException e) { throw e; }
@@ -146,6 +160,7 @@ public final class CompositorService extends Service {
         final java.io.File directory;
         final java.util.concurrent.ConcurrentHashMap<Integer, int[]> windows = new java.util.concurrent.ConcurrentHashMap<>();
         final android.os.RemoteCallbackList<IEmbeddedWindowListener> listeners = new android.os.RemoteCallbackList<>();
+        volatile String x11Display;
         boolean launched;
         EmbeddedSession(int uid, String ref, int id) throws Exception {
             this.uid=uid;this.ref=ref;this.id=id;
@@ -154,6 +169,13 @@ public final class CompositorService extends Service {
             android.system.Os.chmod(directory.getAbsolutePath(),0711);
             if (!nativeAddSession(id,new java.io.File(directory,"wayland-0").getAbsolutePath()))
                 throw new java.io.IOException("Cannot create application Wayland socket");
+        }
+        /** Best effort: the lazy Xwayland server starts only when the
+         * application actually connects to its X11 display. */
+        void ensureXwayland() {
+            if (x11Display != null) return;
+            try { x11Display = nativeAddXwayland(id, uid); }
+            catch (Throwable error) { Log.w(TAG, "Xwayland unavailable for session " + id, error); }
         }
         private void check() {
             if (android.os.Binder.getCallingUid()!=uid) throw new SecurityException("Session belongs to another UID");
@@ -195,7 +217,7 @@ public final class CompositorService extends Service {
                     String status=FlatpakLauncher.status(CompositorService.this,ref);
                     if (new org.json.JSONObject(status).optBoolean("ok")) return status;
                 }
-                String reply=FlatpakLauncher.launch(CompositorService.this,ref,directory);
+                String reply=FlatpakLauncher.launch(CompositorService.this,ref,directory,x11Display);
                 launched=new org.json.JSONObject(reply).optBoolean("ok");
                 return reply;
             } catch(Exception e) { return failure(e); }

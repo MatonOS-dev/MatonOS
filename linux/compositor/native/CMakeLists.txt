@@ -8,6 +8,7 @@ get_filename_component(MATON_COMPOSITOR_ROOT "${MATON_COMPOSITOR_ROOT}" ABSOLUTE
 get_filename_component(MATON_AOSP_ROOT "${MATON_COMPOSITOR_ROOT}/../../../../../" ABSOLUTE)
 set(MATON_COMPOSITOR_BUILD "${MATON_AOSP_ROOT}/out/matonos/compositor")
 set(MATON_STAGE "${MATON_COMPOSITOR_BUILD}/stage/x86_64")
+set(MATON_XSTAGE "${MATON_COMPOSITOR_BUILD}/xstage/x86_64")
 set(MATON_WAYLAND_SCANNER "${MATON_COMPOSITOR_BUILD}/host/bin/wayland-scanner")
 set(MATON_XDG_XML "${MATON_COMPOSITOR_BUILD}/host/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml")
 set(MATON_WLROOTS_INCLUDE "${MATON_COMPOSITOR_BUILD}/sources/src/wlroots-0.20.2/include")
@@ -53,6 +54,7 @@ target_include_directories(maton_compositor PRIVATE
   "${MATON_WLROOTS_INCLUDE}"
   "${MATON_STAGE}/include"
   "${MATON_STAGE}/include/pixman-1"
+  "${MATON_XSTAGE}/include"
   "${MATON_AOSP_ROOT}/external/libdrm/include"
   "${MATON_AOSP_ROOT}/external/libdrm/include/drm"
   "${MATON_AOSP_ROOT}/external/minigbm/cros_gralloc"

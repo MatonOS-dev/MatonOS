@@ -16,13 +16,14 @@ import org.matonos.systembridge.ISystemBridge;
 final class FlatpakLauncher {
     private interface Request<T> { T run(ISystemBridge bridge) throws Exception; }
     static String launch(Context context,String ref) throws Exception {
-        return launch(context,ref,new java.io.File(context.getFilesDir(),"wayland"));
+        return launch(context,ref,new java.io.File(context.getFilesDir(),"wayland"),null);
     }
-    static String launch(Context context,String ref,java.io.File runtime) throws Exception {
+    static String launch(Context context,String ref,java.io.File runtime,String x11Display) throws Exception {
+        final String display=x11Display;
         return request(context,bridge->{
             java.io.FileDescriptor directory=Os.open(runtime.getAbsolutePath(),OsConstants.O_RDONLY|OsConstants.O_CLOEXEC,0);
             try(ParcelFileDescriptor capability=ParcelFileDescriptor.dup(directory)){
-                return bridge.launchFlatpak(ref,capability);
+                return bridge.launchFlatpak(ref,capability,display);
             }finally{Os.close(directory);}
         });
     }

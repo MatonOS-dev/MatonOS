@@ -24,6 +24,7 @@
 #include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/xwayland/xwayland.h>
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
 #include <pthread.h>
@@ -46,7 +47,14 @@ struct SocketSession {
   char path[108];
   struct SocketSession* next;
 };
-enum CommandKind { CMD_ATTACH, CMD_DETACH, CMD_RESIZE, CMD_KEY, CMD_MOTION, CMD_RELEASE, CMD_CLOSE, CMD_STOP, CMD_ADD_SESSION };
+struct XwaylandSession {
+  int session;
+  uid_t uid;
+  struct wlr_xwayland* xwayland;
+  struct wl_listener ready, new_surface, destroy;
+  struct XwaylandSession* next;
+};
+enum CommandKind { CMD_ATTACH, CMD_DETACH, CMD_RESIZE, CMD_KEY, CMD_MOTION, CMD_RELEASE, CMD_CLOSE, CMD_STOP, CMD_ADD_SESSION, CMD_ADD_XWAYLAND };
 struct Command {
   enum CommandKind kind;
   int id, a, b, c;
@@ -64,12 +72,16 @@ struct Window {
   struct wlr_scene_output* scene_output;
   struct wlr_scene* scene;
   struct wlr_xdg_toplevel* toplevel;
+  struct wlr_xwayland_surface* xsurface;
+  struct wlr_scene_tree* scene_tree;
   struct wl_listener frame, commit, toplevel_destroy, surface_commit;
+  struct wl_listener xsurface_destroy, xsurface_associate, xsurface_geometry;
   struct Window* next;
 };
 struct Server {
   pthread_mutex_t mutex;
   pthread_cond_t ready_cond;
+  pthread_cond_t xw_cond;
   pthread_t thread;
   atomic_bool started, stopping, demo_started;
   int event_fd, ready, ok;
@@ -78,6 +90,7 @@ struct Server {
   struct Command* last;
   struct Window* windows;
   struct SocketSession* sessions;
+  bool xw_done; unsigned xw_sent, xw_completed; bool xw_ok; char xw_display[128];
   struct wl_display* display;
   struct wl_event_loop* loop;
   struct wlr_backend* backend;
@@ -94,12 +107,17 @@ struct Server {
   uint32_t pointer_buttons;
   int pointer_window;
   struct wl_listener new_toplevel, new_popup, new_decoration;
+  char xwayland_path[512], xwayland_dir[512];
+  struct XwaylandSession* xwayland_sessions;
 } server = { .mutex=PTHREAD_MUTEX_INITIALIZER, .ready_cond=PTHREAD_COND_INITIALIZER,
+             .xw_cond=PTHREAD_COND_INITIALIZER,
              .event_fd=-1 };
 
 /* WindowActivity's built-in demo reserves ID 1. Real application windows
  * must never share it, including when the demo is opened after an app. */
 static atomic_int next_window_id = 2;
+static void handle_add_xwayland(int session,uid_t uid);
+static void on_xsurface_commit(struct wl_listener* l,void* data);
 struct PointerButtonEvent { uint32_t time; int window; };
 static void notify_pointer_button(void* data, uint32_t code, bool pressed) {
   struct PointerButtonEvent* event = data;
@@ -181,6 +199,9 @@ static void destroy_output(struct Window* w) {
 static void destroy_window(struct Window* w) {
   if(w->surface_commit.link.prev){wl_list_remove(&w->surface_commit.link);wl_list_init(&w->surface_commit.link);}
   if(w->toplevel_destroy.link.prev){wl_list_remove(&w->toplevel_destroy.link);wl_list_init(&w->toplevel_destroy.link);}
+  if(w->xsurface_destroy.link.prev){wl_list_remove(&w->xsurface_destroy.link);wl_list_init(&w->xsurface_destroy.link);}
+  if(w->xsurface_associate.link.prev){wl_list_remove(&w->xsurface_associate.link);wl_list_init(&w->xsurface_associate.link);}
+  if(w->xsurface_geometry.link.prev){wl_list_remove(&w->xsurface_geometry.link);wl_list_init(&w->xsurface_geometry.link);}
   destroy_output(w);
   if(w->scene)wlr_scene_node_destroy(&w->scene->tree.node);
   struct Window** p=&server.windows;while(*p&&*p!=w)p=&(*p)->next;if(*p)*p=w->next;
@@ -268,6 +289,84 @@ static void on_new_decoration(struct wl_listener* l,void* data) {
   d->destroy.notify=on_decoration_destroy;wl_signal_add(&deco->events.destroy,&d->destroy);
   wlr_xdg_toplevel_decoration_v1_set_mode(deco,WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
 }
+/* Xwayland windows reuse the toplevel window path: one Android activity per
+ * managed X window, rendered through a scene subsurface tree. */
+static void on_xsurface_destroy(struct wl_listener* l,void* data) {
+  (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,xsurface_destroy));
+  wl_list_remove(&l->link);wl_list_init(&l->link);
+  wl_list_remove(&w->surface_commit.link);wl_list_init(&w->surface_commit.link);
+  if(w->xsurface_associate.link.prev){wl_list_remove(&w->xsurface_associate.link);wl_list_init(&w->xsurface_associate.link);}
+  if(w->xsurface_geometry.link.prev){wl_list_remove(&w->xsurface_geometry.link);wl_list_init(&w->xsurface_geometry.link);}
+  clear_window_pointer(w);destroy_output(w);w->xsurface=NULL;w->activity=0;
+  maton_java_close_window(w->id);
+}
+static void on_xsurface_associate(struct wl_listener* l,void* data) {
+  (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,xsurface_associate));
+  if(!w->xsurface||!w->xsurface->surface)return;
+  /* The scene renders the paired Wayland surface; Android owns presentation. */
+  if(!w->scene_tree&&w->scene)
+    w->scene_tree=wlr_scene_subsurface_tree_create(&w->scene->tree,w->xsurface->surface);
+}
+static void on_xsurface_geometry(struct wl_listener* l,void* data) {
+  (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,xsurface_geometry));
+  /* Android's window size is authoritative: acknowledge X geometry requests
+   * with our configured size so the client redraws to fit the activity. */
+  if(w->xsurface)
+    wlr_xwayland_surface_configure(w->xsurface,0,0,w->width,w->height);
+}
+static struct Window* xwayland_window(struct wlr_xwayland_surface* xs,int session) {
+  for(struct Window* w=server.windows;w;w=w->next)if(w->xsurface==xs)return w;
+  struct Window* w=calloc(1,sizeof(*w));if(!w)return NULL;
+  w->id=atomic_fetch_add(&next_window_id,1);
+  w->width=xs->width>0?(int)xs->width:640;w->height=xs->height>0?(int)xs->height:400;
+  w->scene=wlr_scene_create();
+  if(!w->scene){free(w);return NULL;}
+  w->next=server.windows;server.windows=w;
+  w->session=session;w->xsurface=xs;
+  w->xsurface_destroy.notify=on_xsurface_destroy;
+  wl_signal_add(&xs->events.destroy,&w->xsurface_destroy);
+  w->xsurface_associate.notify=on_xsurface_associate;
+  wl_signal_add(&xs->events.associate,&w->xsurface_associate);
+  w->xsurface_geometry.notify=on_xsurface_geometry;
+  wl_signal_add(&xs->events.set_geometry,&w->xsurface_geometry);
+  w->surface_commit.notify=on_xsurface_commit;
+  wl_signal_add(&xs->events.request_configure,&w->surface_commit);
+  w->activity=1;maton_java_request_window(session,w->id,w->width,w->height);
+  return w;
+}
+static void on_xsurface_commit(struct wl_listener* l,void* data) {
+  (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,surface_commit));
+  if(w->xsurface)wlr_xwayland_surface_configure(w->xsurface,0,0,w->width,w->height);
+}
+static void on_xwayland_new_surface(struct wl_listener* l,void* data) {
+  struct XwaylandSession* xw=(struct XwaylandSession*)((char*)l-offsetof(struct XwaylandSession,new_surface));
+  struct wlr_xwayland_surface* xs=data;
+  if(xs->override_redirect)return;
+  xwayland_window(xs,xw->session);
+}
+static void xwayland_apply_socket_owner(struct XwaylandSession* xw) {
+  if(!xw->xwayland||xw->uid==0)return;
+  const char* dir=getenv("WLR_XWAYLAND_SOCKET_DIR");
+  if(!dir||!dir[0])return;
+  char path[256];snprintf(path,sizeof(path),"%s/X%s",dir,xw->xwayland->display_name+1);
+  struct stat info;
+  if(stat(path,&info)==0){
+    if(chown(path,xw->uid,xw->uid)==0)(void)chmod(path,0600);
+  }
+}
+static void on_xwayland_ready(struct wl_listener* l,void* data) {
+  (void)data;struct XwaylandSession* xw=(struct XwaylandSession*)((char*)l-offsetof(struct XwaylandSession,ready));
+  __android_log_print(ANDROID_LOG_INFO,"MatonCompositor","Session %d: Xwayland ready on %s",
+      xw->session,xw->xwayland?xw->xwayland->display_name:"?");
+  xwayland_apply_socket_owner(xw);
+}
+static void on_xwayland_destroy(struct wl_listener* l,void* data) {
+  (void)data;struct XwaylandSession* xw=(struct XwaylandSession*)((char*)l-offsetof(struct XwaylandSession,destroy));
+  wl_list_remove(&xw->ready.link);wl_list_remove(&xw->new_surface.link);wl_list_remove(&xw->destroy.link);
+  struct XwaylandSession** p=&server.xwayland_sessions;
+  while(*p&&*p!=xw)p=&(*p)->next;if(*p)*p=xw->next;
+  free(xw);
+}
 static void attach_output(struct Command* c) {
   struct Window* w=find_window(c->id);
   if(!c->output)return;
@@ -311,16 +410,44 @@ static void process_commands(void) {
         close(c->session->fd);unlink(c->session->path);free(c->session);
       }
       break;
+    case CMD_ADD_XWAYLAND:handle_add_xwayland(c->a,(uid_t)c->b);break;
     case CMD_ATTACH:attach_output(c);break;
     case CMD_DETACH:if(w){w->activity=0;destroy_output(w);}break;
-    case CMD_RESIZE:if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);bool committed=wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(committed){if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_size(w->toplevel,c->a,c->b);wlr_output_schedule_frame(w->output);}}}break;
-    case CMD_KEY:if(server.seat&&server.keyboard_initialized){if(w&&w->toplevel&&w->toplevel->base->surface)wlr_seat_keyboard_notify_enter(server.seat,w->toplevel->base->surface,NULL,0,&server.keyboard.modifiers);struct wlr_keyboard_key_event e={.time_msec=(uint32_t)(c->time/1000000),.keycode=(uint32_t)(c->b>0?c->b:c->a+8),.update_state=true,.state=c->c==0?WL_KEYBOARD_KEY_STATE_PRESSED:WL_KEYBOARD_KEY_STATE_RELEASED};wlr_keyboard_notify_key(&server.keyboard,&e);wlr_seat_keyboard_notify_key(server.seat,e.time_msec,e.keycode,e.state);wlr_seat_keyboard_notify_modifiers(server.seat,&server.keyboard.modifiers);}break;
+    case CMD_RESIZE:if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);bool committed=wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(committed){if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_size(w->toplevel,c->a,c->b);else if(w->xsurface)wlr_xwayland_surface_configure(w->xsurface,0,0,c->a,c->b);wlr_output_schedule_frame(w->output);}}}break;
+    case CMD_KEY:if(server.seat&&server.keyboard_initialized){struct wlr_surface* focus=NULL;if(w&&w->toplevel&&w->toplevel->base->surface)focus=w->toplevel->base->surface;else if(w&&w->xsurface&&w->xsurface->surface)focus=w->xsurface->surface;if(focus)wlr_seat_keyboard_notify_enter(server.seat,focus,NULL,0,&server.keyboard.modifiers);struct wlr_keyboard_key_event e={.time_msec=(uint32_t)(c->time/1000000),.keycode=(uint32_t)(c->b>0?c->b:c->a+8),.update_state=true,.state=c->c==0?WL_KEYBOARD_KEY_STATE_PRESSED:WL_KEYBOARD_KEY_STATE_RELEASED};wlr_keyboard_notify_key(&server.keyboard,&e);wlr_seat_keyboard_notify_key(server.seat,e.time_msec,e.keycode,e.state);wlr_seat_keyboard_notify_modifiers(server.seat,&server.keyboard.modifiers);}break;
     case CMD_MOTION:if(server.seat&&w){if(c->a==10||c->a==3){clear_window_pointer(w);break;}uint32_t tm=(uint32_t)(c->time/1000000);double sx=0,sy=0;struct wlr_scene* scene=w?w->scene:NULL;struct wlr_scene_node* node=scene?wlr_scene_node_at(&scene->tree.node,c->x,c->y,&sx,&sy):NULL;struct wlr_scene_buffer* sb=node&&node->type==WLR_SCENE_NODE_BUFFER?wlr_scene_buffer_from_node(node):NULL;struct wlr_scene_surface* ss=sb?wlr_scene_surface_try_from_buffer(sb):NULL;if(ss){server.pointer_window=w->id;if(server.pointer_focus!=ss->surface){server.pointer_focus=ss->surface;wlr_seat_pointer_notify_enter(server.seat,ss->surface,sx,sy);wlr_seat_keyboard_notify_enter(server.seat,ss->surface,NULL,0,&server.keyboard.modifiers);}wlr_seat_pointer_notify_motion(server.seat,tm,sx,sy);}else{server.pointer_focus=NULL;wlr_seat_pointer_notify_clear_focus(server.seat);}struct PointerButtonEvent button_event={.time=tm,.window=w->id};maton_pointer_buttons_update(&server.pointer_buttons,ss ? (uint32_t)c->b : 0,notify_pointer_button,&button_event);if(c->vs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_VERTICAL_SCROLL,-c->vs*15.0,(int32_t)-c->vs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);if(c->hs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_HORIZONTAL_SCROLL,-c->hs*15.0,(int32_t)-c->hs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);wlr_seat_pointer_notify_frame(server.seat);}break;
     case CMD_RELEASE:if(c->buffer)wlr_buffer_unlock(c->buffer);break;
-    case CMD_CLOSE:if(w&&w->toplevel){clear_window_pointer(w);wlr_xdg_toplevel_send_close(w->toplevel);}break;
+    case CMD_CLOSE:if(w&&w->toplevel){clear_window_pointer(w);wlr_xdg_toplevel_send_close(w->toplevel);}else if(w&&w->xsurface){clear_window_pointer(w);wlr_xwayland_surface_close(w->xsurface);}break;
     case CMD_STOP:atomic_store(&server.stopping,true);break;
     }free(c);
   }
+}
+static void handle_add_xwayland(int session,uid_t uid) {
+  pthread_mutex_lock(&server.mutex);
+  server.xw_ok=false;server.xw_display[0]=0;
+  if(atomic_load(&server.started)&&!atomic_load(&server.stopping)&&server.xwayland_path[0]){
+    struct XwaylandSession* xw=calloc(1,sizeof(*xw));
+    if(xw){
+      xw->session=session;xw->uid=uid;
+      xw->xwayland=wlr_xwayland_create(server.display,server.compositor,true);
+      if(xw->xwayland){
+        wlr_xwayland_set_seat(xw->xwayland,server.seat);
+        xw->ready.notify=on_xwayland_ready;wl_signal_add(&xw->xwayland->events.ready,&xw->ready);
+        xw->new_surface.notify=on_xwayland_new_surface;wl_signal_add(&xw->xwayland->events.new_surface,&xw->new_surface);
+        xw->destroy.notify=on_xwayland_destroy;wl_signal_add(&xw->xwayland->events.destroy,&xw->destroy);
+        xw->next=server.xwayland_sessions;server.xwayland_sessions=xw;
+        xwayland_apply_socket_owner(xw);
+        snprintf(server.xw_display,sizeof(server.xw_display),"%s/X%s",
+            server.xwayland_dir,xw->xwayland->display_name+1);
+        server.xw_ok=true;
+      }else{free(xw);}
+    }
+  }
+  if(!server.xw_ok)
+    __android_log_print(ANDROID_LOG_ERROR,"MatonCompositor","Session %d: Xwayland creation failed",session);
+  server.xw_completed++;
+  pthread_cond_broadcast(&server.xw_cond);
+  pthread_mutex_unlock(&server.mutex);
 }
 static int on_event_fd(int fd,uint32_t mask,void* data){(void)fd;(void)mask;(void)data;process_commands();return 0;}
 static void* server_main(void* unused) {
@@ -374,6 +501,7 @@ done:
   if(!initialized)__android_log_print(ANDROID_LOG_ERROR,"MatonCompositor","Startup failed at %s (errno=%d)",stage,errno);
   pthread_mutex_lock(&server.mutex);server.ok=initialized;server.ready=1;pthread_cond_broadcast(&server.ready_cond);pthread_mutex_unlock(&server.mutex);
   if(server.ok){while(!atomic_load(&server.stopping)){wl_display_flush_clients(server.display);wl_event_loop_dispatch(server.loop,-1);}wl_display_destroy_clients(server.display);}
+  while(server.xwayland_sessions){struct XwaylandSession* xw=server.xwayland_sessions;server.xwayland_sessions=xw->next;xw->next=NULL;if(xw->xwayland){/* The destroy listener unlinks and frees the session. */wlr_xwayland_destroy(xw->xwayland);}else{free(xw);}}
   while(server.windows)destroy_window(server.windows);
   if(server.new_popup.link.prev){wl_list_remove(&server.new_popup.link);wl_list_init(&server.new_popup.link);}
   if(server.new_decoration.link.prev){wl_list_remove(&server.new_decoration.link);wl_list_init(&server.new_decoration.link);}
@@ -409,6 +537,37 @@ void maton_core_motion(int id,float x,float y,float vs,float hs,int action,int b
 
 void maton_core_close(int id){command(CMD_CLOSE,id,0,0,0,0,0,0,0,0,NULL,NULL);}
 
+bool maton_core_xwayland_init(const char* socket_dir,const char* xwayland_path) {
+  if(!socket_dir||!xwayland_path||strlen(socket_dir)>=sizeof(server.xwayland_dir)||
+      strlen(xwayland_path)>=sizeof(server.xwayland_path))return false;
+  strcpy(server.xwayland_dir,socket_dir);
+  strcpy(server.xwayland_path,xwayland_path);
+  /* Only consulted from the Wayland thread; Xwayland sessions are created
+   * after the server starts, so the environment is in place in time. */
+  if(setenv("WLR_XWAYLAND_SOCKET_DIR",socket_dir,1))return false;
+  return setenv("WLR_XWAYLAND_NO_ABSTRACT","1",1)==0;
+}
+bool maton_core_add_xwayland(int session,int uid,char* display,size_t display_size) {
+  if(session<=0||!display||display_size==0)return false;
+  pthread_mutex_lock(&server.mutex);
+  if(!atomic_load(&server.started)||atomic_load(&server.stopping)||!server.xwayland_path[0]){
+    pthread_mutex_unlock(&server.mutex);return false;
+  }
+  unsigned sent=++server.xw_sent;
+  pthread_mutex_unlock(&server.mutex);
+  struct Command* c=calloc(1,sizeof(*c));
+  if(!c)return false;
+  c->kind=CMD_ADD_XWAYLAND;c->a=session;c->b=uid;enqueue(c);
+  pthread_mutex_lock(&server.mutex);
+  struct timespec limit;clock_gettime(CLOCK_REALTIME,&limit);limit.tv_sec+=5;
+  while(server.xw_completed<sent){
+    if(pthread_cond_timedwait(&server.xw_cond,&server.mutex,&limit))break;
+  }
+  bool ok=server.xw_completed>=sent&&server.xw_ok;
+  if(ok)snprintf(display,display_size,"%s",server.xw_display);
+  pthread_mutex_unlock(&server.mutex);
+  return ok;
+}
 bool maton_core_add_session(int id,const char* path) {
   if(id<=0||!path||strlen(path)>=sizeof(((struct SocketSession*)0)->path)||
       !atomic_load(&server.started)||atomic_load(&server.stopping))return false;
