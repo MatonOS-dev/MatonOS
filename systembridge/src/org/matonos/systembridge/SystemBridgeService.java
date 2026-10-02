@@ -92,32 +92,37 @@ public final class SystemBridgeService extends Service {
         }
 
         @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, String x11Display) {
-            String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
-            if (!"org.matonos.compositor".equals(caller) || runtimeDirectory == null)
-                throw new SecurityException("Only the compositor may launch graphical Flatpaks");
-            // A wrong display string could point a sandboxed application at
-            // another application's X server; only accept our own socket dir.
-            if (x11Display != null && x11Display.length() > 0 &&
-                    !x11Display.startsWith("/data/matonos/linux/x11/X"))
-                throw new SecurityException("X11 display outside the compositor socket directory");
-            long identity = Binder.clearCallingIdentity();
             try {
-                ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
-                if (daemon == null) throw new IllegalStateException("Flatpak service is unavailable");
-                android.net.ConnectivityManager connectivity = getSystemService(android.net.ConnectivityManager.class);
-                android.net.Network network = connectivity.getActiveNetwork();
-                android.net.LinkProperties link = network == null ? null : connectivity.getLinkProperties(network);
-                StringBuilder dns = new StringBuilder();
-                if (link != null) for (java.net.InetAddress server : link.getDnsServers()) {
-                    if (dns.length() > 0) dns.append(',');
-                    dns.append(server.getHostAddress());
+                String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
+                if (!"org.matonos.compositor".equals(caller) || runtimeDirectory == null)
+                    throw new SecurityException("Only the compositor may launch graphical Flatpaks");
+                // A wrong display string could point a sandboxed application at
+                // another application's X server; only accept our own socket dir.
+                if (x11Display != null && x11Display.length() > 0 &&
+                        !x11Display.startsWith("/data/matonos/linux/x11/X"))
+                    throw new SecurityException("X11 display outside the compositor socket directory");
+                long identity = Binder.clearCallingIdentity();
+                try {
+                    ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
+                    if (daemon == null) throw new IllegalStateException("Flatpak service is unavailable");
+                    android.net.ConnectivityManager connectivity = getSystemService(android.net.ConnectivityManager.class);
+                    android.net.Network network = connectivity.getActiveNetwork();
+                    android.net.LinkProperties link = network == null ? null : connectivity.getLinkProperties(network);
+                    StringBuilder dns = new StringBuilder();
+                    if (link != null) for (java.net.InetAddress server : link.getDnsServers()) {
+                        if (dns.length() > 0) dns.append(',');
+                        dns.append(server.getHostAddress());
+                    }
+                    return daemon.launchGraphical(ref, runtimeDirectory, dns.toString(), x11Display);
+                } finally {
+                    Binder.restoreCallingIdentity(identity);
+                    try { runtimeDirectory.close(); } catch (java.io.IOException ignored) { }
                 }
-                return daemon.launchGraphical(ref, runtimeDirectory, dns.toString(), x11Display);
-            } catch (RemoteException e) {
-                throw new IllegalStateException("Flatpak service disconnected", e);
-            } finally {
-                Binder.restoreCallingIdentity(identity);
-                try { runtimeDirectory.close(); } catch (java.io.IOException ignored) { }
+            } catch (RuntimeException error) {
+                // Server-side visibility: the client only sees the exception
+                // class, never this stack.
+                Log.e(TAG, "launchFlatpak failed for " + ref, error);
+                throw error;
             }
         }
 

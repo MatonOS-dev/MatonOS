@@ -42,6 +42,16 @@
 
 extern void* maton_wayland_test_client(void*);
 
+/* Route wlroots logging into logcat: stderr is lost in app processes, and
+ * Xwayland spawn or XWM failures would otherwise be invisible. */
+static void maton_wlr_log(enum wlr_log_importance importance,const char* fmt,va_list args) {
+  int priority=ANDROID_LOG_INFO;
+  if(importance>=WLR_ERROR)priority=ANDROID_LOG_ERROR;
+  else if(importance>=WLR_INFO)priority=ANDROID_LOG_INFO;
+  else priority=ANDROID_LOG_DEBUG;
+  __android_log_vprint(priority,"MatonWLR",fmt,args);
+}
+
 struct SocketSession {
   int id, fd;
   char path[108];
@@ -451,7 +461,9 @@ static void handle_add_xwayland(int session,uid_t uid) {
 }
 static int on_event_fd(int fd,uint32_t mask,void* data){(void)fd;(void)mask;(void)data;process_commands();return 0;}
 static void* server_main(void* unused) {
-  (void)unused;bool initialized=false;const char* stage="display";wlr_log_init(WLR_ERROR,NULL);server.display=wl_display_create();
+  (void)unused;bool initialized=false;const char* stage="display";
+  wlr_log_init(WLR_ERROR,maton_wlr_log);
+  server.display=wl_display_create();
   if(!server.display)goto done;server.loop=wl_display_get_event_loop(server.display);
   maton_surface_output_set_release_dispatch(release_buffer);
   stage="event loop";server.event_fd=eventfd(0,EFD_NONBLOCK|EFD_CLOEXEC);
@@ -545,7 +557,13 @@ bool maton_core_xwayland_init(const char* socket_dir,const char* xwayland_path) 
   /* Only consulted from the Wayland thread; Xwayland sessions are created
    * after the server starts, so the environment is in place in time. */
   if(setenv("WLR_XWAYLAND_SOCKET_DIR",socket_dir,1))return false;
-  return setenv("WLR_XWAYLAND_NO_ABSTRACT","1",1)==0;
+  /* wlroots bakes the build-host Xwayland path from xwayland.pc into its
+   * binary check and exec; WLR_XWAYLAND overrides both at runtime. */
+  char binary[512];
+  int written=snprintf(binary,sizeof(binary),"%s/Xwayland",xwayland_path);
+  if(written<0||written>=(int)sizeof(binary))return false;
+  return setenv("WLR_XWAYLAND",binary,1)==0&&
+      setenv("WLR_XWAYLAND_NO_ABSTRACT","1",1)==0;
 }
 bool maton_core_add_xwayland(int session,int uid,char* display,size_t display_size) {
   if(session<=0||!display||display_size==0)return false;

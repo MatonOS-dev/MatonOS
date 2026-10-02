@@ -196,7 +196,9 @@ Name: Xwayland
 Description: X Server for Wayland
 Version: 24.1.13
 URL: https://gitlab.freedesktop.org/xorg/xserver/
-xwayland=\${prefix}/bin/Xwayland
+# The device runtime path: wlroots bakes this into XWAYLAND_PATH and checks
+# access(X_OK) on it at server creation. The build prefix would fail there.
+xwayland=/system_ext/bin/Xwayland
 have_glamor=false
 have_glamor_api=false
 have_eglstream=false
