@@ -221,12 +221,27 @@ static void on_toplevel_destroy(struct wl_listener* l,void* data) {
   wl_list_remove(&w->surface_commit.link);wl_list_init(&w->surface_commit.link);
   destroy_output(w);w->toplevel=NULL;w->activity=0;maton_java_close_window(w->id);
 }
+/* Keyboard focus belongs to the window, never to the popup or subsurface
+ * under the pointer: moving it there makes toolkits see a focus-out on the
+ * toplevel and dismiss their open menus. */
+static struct wlr_surface* window_root_surface(struct Window* w) {
+  if(w->toplevel&&w->toplevel->base->surface)return w->toplevel->base->surface;
+  if(w->xsurface&&w->xsurface->surface)return w->xsurface->surface;
+  return NULL;
+}
 static void on_surface_commit(struct wl_listener* l,void* data) {
   (void)data;
   struct Window* w=window_from_listener(l,offsetof(struct Window,surface_commit));
   /* wlroots initializes xdg surfaces on their first surface commit. */
-  if(w->toplevel&&w->toplevel->base->initial_commit)
+  if(w->toplevel&&w->toplevel->base->initial_commit){
     wlr_xdg_toplevel_set_size(w->toplevel,w->width,w->height);
+    /* Android frames and manages the window, so it is tiled on every edge:
+     * toolkits then drop rounded corners, shadow margins and resize borders.
+     * xdg-shell v1 clients have no tiled state; maximized is the closest. */
+    if(wl_resource_get_version(w->toplevel->resource)>=XDG_TOPLEVEL_STATE_TILED_LEFT_SINCE_VERSION)
+      wlr_xdg_toplevel_set_tiled(w->toplevel,WLR_EDGE_TOP|WLR_EDGE_BOTTOM|WLR_EDGE_LEFT|WLR_EDGE_RIGHT);
+    else wlr_xdg_toplevel_set_maximized(w->toplevel,true);
+  }
 }
 static void on_new_toplevel(struct wl_listener* l,void* data) {
   (void)l;struct wlr_xdg_toplevel* t=data;struct Window* w=NULL;
@@ -314,6 +329,8 @@ static void on_xsurface_associate(struct wl_listener* l,void* data) {
   /* The scene renders the paired Wayland surface; Android owns presentation. */
   if(!w->scene_tree&&w->scene)
     w->scene_tree=wlr_scene_subsurface_tree_create(&w->scene->tree,w->xsurface->surface);
+  /* X11 has no tiled state; maximized makes toolkits drop frame effects. */
+  wlr_xwayland_surface_set_maximized(w->xsurface,true,true);
 }
 static void on_xsurface_geometry(struct wl_listener* l,void* data) {
   (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,xsurface_geometry));
@@ -423,7 +440,7 @@ static void process_commands(void) {
     case CMD_DETACH:if(w){w->activity=0;destroy_output(w);}break;
     case CMD_RESIZE:if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);bool committed=wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(committed){if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_size(w->toplevel,c->a,c->b);else if(w->xsurface)wlr_xwayland_surface_configure(w->xsurface,0,0,c->a,c->b);wlr_output_schedule_frame(w->output);}}}break;
     case CMD_KEY:if(server.seat&&server.keyboard_initialized){struct wlr_surface* focus=NULL;if(w&&w->toplevel&&w->toplevel->base->surface)focus=w->toplevel->base->surface;else if(w&&w->xsurface&&w->xsurface->surface)focus=w->xsurface->surface;if(focus)wlr_seat_keyboard_notify_enter(server.seat,focus,NULL,0,&server.keyboard.modifiers);struct wlr_keyboard_key_event e={.time_msec=(uint32_t)(c->time/1000000),.keycode=(uint32_t)(c->b>0?c->b:c->a+8),.update_state=true,.state=c->c==0?WL_KEYBOARD_KEY_STATE_PRESSED:WL_KEYBOARD_KEY_STATE_RELEASED};wlr_keyboard_notify_key(&server.keyboard,&e);wlr_seat_keyboard_notify_key(server.seat,e.time_msec,e.keycode,e.state);wlr_seat_keyboard_notify_modifiers(server.seat,&server.keyboard.modifiers);}break;
-    case CMD_MOTION:if(server.seat&&w){if(c->a==10||c->a==3){clear_window_pointer(w);break;}uint32_t tm=(uint32_t)(c->time/1000000);double sx=0,sy=0;struct wlr_scene* scene=w?w->scene:NULL;struct wlr_scene_node* node=scene?wlr_scene_node_at(&scene->tree.node,c->x,c->y,&sx,&sy):NULL;struct wlr_scene_buffer* sb=node&&node->type==WLR_SCENE_NODE_BUFFER?wlr_scene_buffer_from_node(node):NULL;struct wlr_scene_surface* ss=sb?wlr_scene_surface_try_from_buffer(sb):NULL;if(ss){server.pointer_window=w->id;if(server.pointer_focus!=ss->surface){server.pointer_focus=ss->surface;wlr_seat_pointer_notify_enter(server.seat,ss->surface,sx,sy);wlr_seat_keyboard_notify_enter(server.seat,ss->surface,NULL,0,&server.keyboard.modifiers);}wlr_seat_pointer_notify_motion(server.seat,tm,sx,sy);}else{server.pointer_focus=NULL;wlr_seat_pointer_notify_clear_focus(server.seat);}struct PointerButtonEvent button_event={.time=tm,.window=w->id};maton_pointer_buttons_update(&server.pointer_buttons,ss ? (uint32_t)c->b : 0,notify_pointer_button,&button_event);if(c->vs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_VERTICAL_SCROLL,-c->vs*15.0,(int32_t)-c->vs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);if(c->hs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_HORIZONTAL_SCROLL,-c->hs*15.0,(int32_t)-c->hs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);wlr_seat_pointer_notify_frame(server.seat);}break;
+    case CMD_MOTION:if(server.seat&&w){if(c->a==10||c->a==3){clear_window_pointer(w);break;}uint32_t tm=(uint32_t)(c->time/1000000);double sx=0,sy=0;struct wlr_scene* scene=w?w->scene:NULL;struct wlr_scene_node* node=scene?wlr_scene_node_at(&scene->tree.node,c->x,c->y,&sx,&sy):NULL;struct wlr_scene_buffer* sb=node&&node->type==WLR_SCENE_NODE_BUFFER?wlr_scene_buffer_from_node(node):NULL;struct wlr_scene_surface* ss=sb?wlr_scene_surface_try_from_buffer(sb):NULL;if(ss){server.pointer_window=w->id;if(server.pointer_focus!=ss->surface){server.pointer_focus=ss->surface;wlr_seat_pointer_notify_enter(server.seat,ss->surface,sx,sy);struct wlr_surface* root=window_root_surface(w);if(root&&server.seat->keyboard_state.focused_surface!=root)wlr_seat_keyboard_notify_enter(server.seat,root,NULL,0,&server.keyboard.modifiers);}wlr_seat_pointer_notify_motion(server.seat,tm,sx,sy);}else{server.pointer_focus=NULL;wlr_seat_pointer_notify_clear_focus(server.seat);}struct PointerButtonEvent button_event={.time=tm,.window=w->id};maton_pointer_buttons_update(&server.pointer_buttons,ss ? (uint32_t)c->b : 0,notify_pointer_button,&button_event);if(c->vs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_VERTICAL_SCROLL,-c->vs*15.0,(int32_t)-c->vs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);if(c->hs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_HORIZONTAL_SCROLL,-c->hs*15.0,(int32_t)-c->hs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);wlr_seat_pointer_notify_frame(server.seat);}break;
     case CMD_RELEASE:if(c->buffer)wlr_buffer_unlock(c->buffer);break;
     case CMD_CLOSE:if(w&&w->toplevel){clear_window_pointer(w);wlr_xdg_toplevel_send_close(w->toplevel);}else if(w&&w->xsurface){clear_window_pointer(w);wlr_xwayland_surface_close(w->xsurface);}break;
     case CMD_STOP:atomic_store(&server.stopping,true);break;
