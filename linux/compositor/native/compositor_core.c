@@ -21,6 +21,8 @@
 #include <wlr/types/wlr_viewporter.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_server_decoration.h>
+#include <wlr/types/wlr_xdg_decoration_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/log.h>
 #include <xkbcommon/xkbcommon.h>
@@ -91,7 +93,7 @@ struct Server {
   struct wlr_surface* pointer_focus;
   uint32_t pointer_buttons;
   int pointer_window;
-  struct wl_listener new_toplevel, new_popup;
+  struct wl_listener new_toplevel, new_popup, new_decoration;
 } server = { .mutex=PTHREAD_MUTEX_INITIALIZER, .ready_cond=PTHREAD_COND_INITIALIZER,
              .event_fd=-1 };
 
@@ -242,6 +244,30 @@ static void on_new_popup(struct wl_listener* listener,void* data) {
   p->commit.notify=on_popup_commit;wl_signal_add(&popup->base->surface->events.commit,&p->commit);
   p->destroy.notify=on_popup_destroy;wl_signal_add(&popup->events.destroy,&p->destroy);
 }
+/* Android's caption bar is the only window decoration MatonOS provides, so
+ * client-side decoration requests are refused: every toplevel is told that
+ * the server decorates. Toolkits then drop their own title bars instead of
+ * drawing a second one below Android's caption. */
+struct Decoration {
+  struct wlr_xdg_toplevel_decoration_v1* deco;
+  struct wl_listener request, destroy;
+};
+static void on_decoration_request(struct wl_listener* l,void* data) {
+  (void)data;struct Decoration* d=(struct Decoration*)((char*)l-offsetof(struct Decoration,request));
+  wlr_xdg_toplevel_decoration_v1_set_mode(d->deco,WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+}
+static void on_decoration_destroy(struct wl_listener* l,void* data) {
+  (void)data;struct Decoration* d=(struct Decoration*)((char*)l-offsetof(struct Decoration,destroy));
+  wl_list_remove(&d->request.link);wl_list_remove(&d->destroy.link);free(d);
+}
+static void on_new_decoration(struct wl_listener* l,void* data) {
+  (void)l;struct wlr_xdg_toplevel_decoration_v1* deco=data;
+  struct Decoration* d=calloc(1,sizeof(*d));if(!d)return;
+  d->deco=deco;
+  d->request.notify=on_decoration_request;wl_signal_add(&deco->events.request_mode,&d->request);
+  d->destroy.notify=on_decoration_destroy;wl_signal_add(&deco->events.destroy,&d->destroy);
+  wlr_xdg_toplevel_decoration_v1_set_mode(deco,WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+}
 static void attach_output(struct Command* c) {
   struct Window* w=find_window(c->id);
   if(!c->output)return;
@@ -312,6 +338,13 @@ static void* server_main(void* unused) {
   if(!wlr_data_device_manager_create(server.display))goto done;
   server.xdg_shell=wlr_xdg_shell_create(server.display,6);server.compositor=wlr_compositor_create(server.display,6,server.renderer);server.seat=wlr_seat_create(server.display,"seat0");
   stage="shell and seat";if(!server.xdg_shell||!server.compositor||!server.seat)goto done;
+  /* Server-side-only window decorations: Android's caption bar decorates. */
+  stage="decorations";
+  struct wlr_server_decoration_manager* legacy_decoration=wlr_server_decoration_manager_create(server.display);
+  struct wlr_xdg_decoration_manager_v1* decorations=wlr_xdg_decoration_manager_v1_create(server.display);
+  if(!legacy_decoration||!decorations)goto done;
+  wlr_server_decoration_manager_set_default_mode(legacy_decoration,WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
+  server.new_decoration.notify=on_new_decoration;wl_signal_add(&decorations->events.new_toplevel_decoration,&server.new_decoration);
   wlr_keyboard_init(&server.keyboard,NULL,"maton-keyboard");server.keyboard_initialized=1;
   struct xkb_context* xc=xkb_context_new(XKB_CONTEXT_NO_FLAGS);struct xkb_keymap* km=xc?xkb_keymap_new_from_string(xc,kMatonUsKeymap,XKB_KEYMAP_FORMAT_TEXT_V1,XKB_KEYMAP_COMPILE_NO_FLAGS):NULL;
   if(km){(void)wlr_keyboard_set_keymap(&server.keyboard,km);xkb_keymap_unref(km);}if(xc)xkb_context_unref(xc);
@@ -343,6 +376,7 @@ done:
   if(server.ok){while(!atomic_load(&server.stopping)){wl_display_flush_clients(server.display);wl_event_loop_dispatch(server.loop,-1);}wl_display_destroy_clients(server.display);}
   while(server.windows)destroy_window(server.windows);
   if(server.new_popup.link.prev){wl_list_remove(&server.new_popup.link);wl_list_init(&server.new_popup.link);}
+  if(server.new_decoration.link.prev){wl_list_remove(&server.new_decoration.link);wl_list_init(&server.new_decoration.link);}
   if(server.new_toplevel.link.prev){wl_list_remove(&server.new_toplevel.link);wl_list_init(&server.new_toplevel.link);}
   if(server.keyboard_initialized)wlr_keyboard_finish(&server.keyboard);server.keyboard_initialized=0;
   if(server.seat)wlr_seat_destroy(server.seat);server.seat=NULL;server.pointer_buttons=0;server.pointer_focus=NULL;server.pointer_window=0;

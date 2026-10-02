@@ -85,16 +85,28 @@ c_link_args = ['-L$PREFIX/lib', '-lmaton-shm']
 EOF
 
 # Build the host-only protocol scanner, then install protocol XML data.
-if [[ ! -x $HOST/bin/wayland-scanner ]]; then
+# A build directory configured by an older meson cannot be reused: its
+# metadata references functions the current meson dropped. Probe with
+# --reconfigure and recreate the directory only when that fails.
+meson_reuse() { # dir -> 0 when the directory can be reused by this meson
+  local dir=$1
+  [[ -f $dir/meson-private/build.dat ]] || return 1
+  meson setup --reconfigure "$dir" >/dev/null 2>&1
+}
+if [[ ! -d $BUILD/wayland-host ]] || ! meson_reuse "$BUILD/wayland-host"; then
+  rm -rf "$BUILD/wayland-host"
   meson setup "$BUILD/wayland-host" "$SRC/wayland-1.24.0" \
     --prefix="$HOST" --buildtype=release -Dscanner=true -Dlibraries=false \
     -Dtests=false -Ddocumentation=false -Ddtd_validation=false
 fi
 meson compile -C "$BUILD/wayland-host" -j"$JOBS"
 meson install -C "$BUILD/wayland-host"
-PATH="$HOST/bin:$PATH" PKG_CONFIG_PATH="$HOST/lib/pkgconfig:$HOST/lib/x86_64-linux-gnu/pkgconfig" \
-  meson setup "$BUILD/protocols-1.48-host" "$SRC/wayland-protocols-1.48" \
-    --prefix="$HOST" --buildtype=release -Dtests=false
+if ! meson_reuse "$BUILD/protocols-1.48-host"; then
+  rm -rf "$BUILD/protocols-1.48-host"
+  PATH="$HOST/bin:$PATH" PKG_CONFIG_PATH="$HOST/lib/pkgconfig:$HOST/lib/x86_64-linux-gnu/pkgconfig" \
+    meson setup "$BUILD/protocols-1.48-host" "$SRC/wayland-protocols-1.48" \
+      --prefix="$HOST" --buildtype=release -Dtests=false
+fi
 PATH="$HOST/bin:$PATH" PKG_CONFIG_PATH="$HOST/lib/pkgconfig:$HOST/lib/x86_64-linux-gnu/pkgconfig" \
   meson install -C "$BUILD/protocols-1.48-host"
 mkdir -p "$PREFIX/include/wayland-protocols"
@@ -105,18 +117,21 @@ build_cross() {
   local dir=$BUILD/$name
   local source=$SRC/$srcname
   [[ $srcname == wlroots-0.20.2 ]] && source=$SRC/wlroots-0.20.2
-  if [[ ! -f $dir/build.ninja || $name == wlroots ]]; then
+  # Compiling a build directory whose metadata was written by an older meson
+  # fails late with an opaque regen error, so probe before every compile:
+  # reconfigure in place when possible, recreate the directory when not.
+  local need_setup=0
+  if [[ ! -f $dir/build.ninja || $name == wlroots ]] ||
+      ! meson setup --reconfigure "$dir" >/dev/null 2>&1; then
+    need_setup=1
+  fi
+  if [[ $need_setup == 1 ]]; then
     # shellcheck disable=SC2086
     local pkg_libdir="$PREFIX/lib/pkgconfig:$PREFIX/lib64/pkgconfig:$PREFIX/share/pkgconfig:$HOST/lib/pkgconfig:$HOST/lib/x86_64-linux-gnu/pkgconfig:$HOST/share/pkgconfig"
-    if [[ -f $dir/meson-private/coredata.dat ]]; then
-      PKG_CONFIG_PATH="$PKG_CONFIG_PATH" PKG_CONFIG_LIBDIR="$pkg_libdir" \
-        meson setup --wipe "$dir" "$source" --cross-file "$BUILD/android-x86_64.ini" \
-          --prefix="$PREFIX" --libdir=lib --buildtype=release $opts
-    else
-      PKG_CONFIG_PATH="$PKG_CONFIG_PATH" PKG_CONFIG_LIBDIR="$pkg_libdir" \
-        meson setup "$dir" "$source" --cross-file "$BUILD/android-x86_64.ini" \
-          --prefix="$PREFIX" --libdir=lib --buildtype=release $opts
-    fi
+    rm -rf "$dir"
+    PKG_CONFIG_PATH="$PKG_CONFIG_PATH" PKG_CONFIG_LIBDIR="$pkg_libdir" \
+      meson setup "$dir" "$source" --cross-file "$BUILD/android-x86_64.ini" \
+        --prefix="$PREFIX" --libdir=lib --buildtype=release $opts
   fi
   PKG_CONFIG_PATH="$PKG_CONFIG_PATH" \
     PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig:$PREFIX/lib64/pkgconfig:$PREFIX/share/pkgconfig:$HOST/lib/pkgconfig:$HOST/lib/x86_64-linux-gnu/pkgconfig:$HOST/share/pkgconfig" \

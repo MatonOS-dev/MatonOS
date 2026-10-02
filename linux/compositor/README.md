@@ -146,6 +146,14 @@ outputs explicitly select ARGB to match the Android allocator, and the virtual
 monitor exposes logical geometry through xdg-output. Clipboard,
 IME, Xwayland, portals and audio remain outside this launch change.
 
+Window decorations (2026-10-02): the compositor implements xdg-decoration and
+the legacy server-decoration protocol and answers every toplevel with
+server-side mode, refusing client-side requests. Android's desktop caption
+bar is the only title bar; toolkits that honor the negotiation (Chromium/
+Electron, GTK, Qt) drop their own decorations instead of drawing a second bar
+below it. GTK_CSD=0 and QT_WAYLAND_DISABLE_WINDOWDECORATION=1 are additionally
+exported into every Flatpak launch for toolkits that ignore the protocol.
+
 Launcher stubs declare a real Android drawable resource, use exported PNG
 icons when available, and replace packages older than version 9. Missing
 PNG exports retain a fallback image. Image build and runtime results are in

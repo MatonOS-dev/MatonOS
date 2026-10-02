@@ -2,7 +2,4 @@
     <privapp-permissions package="org.matonos.flathub">
         <permission name="org.matonos.permission.SYSTEM_BRIDGE" />
     </privapp-permissions>
-    <privapp-permissions package="org.matonos.compositor">
-        <permission name="org.matonos.permission.SYSTEM_BRIDGE" />
-    </privapp-permissions>
 </permissions>

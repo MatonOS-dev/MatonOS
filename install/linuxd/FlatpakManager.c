@@ -653,6 +653,9 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
             "--no-documents-portal", "--env=MOZ_ENABLE_WAYLAND=1", "--env=GDK_BACKEND=wayland",
             "--env=QT_QPA_PLATFORM=wayland",
             "--env=ELECTRON_OZONE_PLATFORM_HINT=wayland",
+            /* Android's caption bar is the only window decoration; toolkits
+             * that ignore the decoration protocol are told to drop their own. */
+            "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1", "--env=GTK_CSD=0",
             "--env=LIBGL_ALWAYS_SOFTWARE=1", "--env=NO_AT_BRIDGE=1", (char*)ref + 4, NULL, NULL};
     // Chromium does not honor GDK_BACKEND and otherwise selects the absent X server.
     if (!strncmp(ref,"app/com.google.Chrome/",22) || !strncmp(ref,"app/org.chromium.Chromium/",26))
