@@ -51,6 +51,11 @@ done
 
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/lib64/pkgconfig:$PREFIX/share/pkgconfig:$HOST/lib/pkgconfig:$HOST/lib/x86_64-linux-gnu/pkgconfig:$HOST/share/pkgconfig"
 
+# The Xwayland/X11 stack built by build-xwayland.sh lives in a separate
+# prefix; wlroots' xwayland module links against its xcb libraries.
+XSTAGE=$BUILD/xstage/x86_64
+export PKG_CONFIG_PATH="$XSTAGE/lib/pkgconfig:$XSTAGE/share/pkgconfig:$PKG_CONFIG_PATH"
+
 # MIT-licensed libffi is statically linked into Wayland server.
 FFI_SRC=$SRC/libffi-3.4.8
 FFI_BUILD=$BUILD/libffi
@@ -127,7 +132,7 @@ build_cross() {
   fi
   if [[ $need_setup == 1 ]]; then
     # shellcheck disable=SC2086
-    local pkg_libdir="$PREFIX/lib/pkgconfig:$PREFIX/lib64/pkgconfig:$PREFIX/share/pkgconfig:$HOST/lib/pkgconfig:$HOST/lib/x86_64-linux-gnu/pkgconfig:$HOST/share/pkgconfig"
+    local pkg_libdir="$PREFIX/lib/pkgconfig:$PREFIX/lib64/pkgconfig:$PREFIX/share/pkgconfig:$HOST/lib/pkgconfig:$HOST/lib/x86_64-linux-gnu/pkgconfig:$HOST/share/pkgconfig:$XSTAGE/lib/pkgconfig:$XSTAGE/share/pkgconfig"
     rm -rf "$dir"
     PKG_CONFIG_PATH="$PKG_CONFIG_PATH" PKG_CONFIG_LIBDIR="$pkg_libdir" \
       meson setup "$dir" "$source" --cross-file "$BUILD/android-x86_64.ini" \
@@ -158,7 +163,7 @@ mkdir -p "$BUILD/generated/wayland-protocols"
   "$HOST/share/wayland-protocols/stable/xdg-shell/xdg-shell.xml" \
   "$BUILD/generated/wayland-protocols/xdg-shell-enum.h"
 build_cross wlroots wlroots-0.20.2 \
-  "-Dbackends=[] -Drenderers=[] -Dallocators=[] -Dexamples=false -Dxwayland=disabled -Dsession=disabled -Dcolor-management=disabled -Dlibliftoff=disabled"
+  "-Dbackends=[] -Drenderers=[] -Dallocators=[] -Dexamples=false -Dxwayland=enabled -Dsession=disabled -Dcolor-management=disabled -Dlibliftoff=disabled"
 
 echo "Compositor dependencies installed under $PREFIX"
 # Stage runtime .so files the host APK packages (Gradle expects <dir>/<abi>/).
