@@ -7,7 +7,9 @@ views. Details include the API's summary, description, icon, screenshots, and
 permission metadata when Flathub provides it. Install and uninstall operations
 use only the existing bridge target `flatpak`, with `install` / `uninstall`
 calls taking `{ "ref": "app/ID/x86_64/stable" }` and progress delivered by the
-`progress` topic. The UI does not call the Flatpak executable or linuxd.
+`progress` topic. Installation/removal bars appear in app rows, details, and
+the persistent header. They show reported percentages or animate while a stage
+has no percentage. The UI does not call the Flatpak executable or linuxd.
 
 Flathub's `/appstream/{id}` response does not include permission metadata for
 every app. When `metadata.permissions` is absent, the detail page says the API

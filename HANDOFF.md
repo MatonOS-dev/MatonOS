@@ -1,3 +1,11 @@
+## Software Center repair, 2026-10-02
+
+Current handover: [Software Center and Flatpak repair](HANDOVER-2026-10-02.md).
+The r7 build was terminated; no r7 image exists. Latest completed live image
+is r6, with confirmed runtime failures. No build is currently running.
+Detailed chronology: [repair log](../../../out/pc-logs/agents/REPAIR-HANDOFF-2026-10-01.md).
+No release or push.
+
 # Session handoff
 
 Live coordinator handoff: `out/pc-logs/agents/COORDINATOR-HANDOFF.md`

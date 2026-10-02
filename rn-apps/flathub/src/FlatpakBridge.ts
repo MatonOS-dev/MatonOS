@@ -35,12 +35,17 @@ export async function uninstallApp(ref: string, operationId: string, deleteData 
 }
 
 export async function runApp(appId: string) {
-  return callFlatpak("run", { appId });
+  return callFlatpak("launch_stub", { appId });
 }
 
 export async function getInstalledRefs(): Promise<string[]> {
   const response = await callFlatpak("list_installed");
   const output = response.output || "";
-  return output.split(/\r?\n/).map((line) => line.trim().split(/[\t ]+/).find((part) => /^app\/[A-Za-z0-9._-]+\//.test(part)))
-    .filter((ref): ref is string => Boolean(ref));
+  // Flatpak's ref column omits the app/ kind prefix. linuxd lists only apps.
+  return output.split(/\r?\n/).map((line) => {
+    const ref = line.trim();
+    if (/^app\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(ref)) return ref;
+    if (/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(ref)) return `app/${ref}`;
+    return "";
+  }).filter(Boolean);
 }

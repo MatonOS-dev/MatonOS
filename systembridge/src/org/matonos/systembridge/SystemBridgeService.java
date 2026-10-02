@@ -65,6 +65,7 @@ public final class SystemBridgeService extends Service {
     private volatile Set<String> allowedCerts;
     private volatile Set<String> targetCallers;
     private android.os.Handler geometryHandler;
+    private FlatpakStubManager flatpakStubManager;
     private boolean geometryRetryPending;
     private final ConcurrentMap<String, Subscription> subscriptions = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, FlatpakSubscription> flatpakSubscriptions = new ConcurrentHashMap<>();
@@ -78,6 +79,51 @@ public final class SystemBridgeService extends Service {
     };
 
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
+        @Override public String getFlatpakLaunchStatus(String ref) {
+            String caller=enforceAuthorizedCaller("flatpak_launch","getFlatpakLaunchStatus");
+            if (!"org.matonos.compositor".equals(caller)) throw new SecurityException("Only the compositor may inspect launches");
+            long identity=Binder.clearCallingIdentity();
+            try {
+                ILinuxd daemon=ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
+                if(daemon==null)throw new IllegalStateException("Flatpak service unavailable");
+                return daemon.call("launch_status",new org.json.JSONObject().put("ref",ref).toString());
+            } catch(Exception error) { throw new IllegalStateException("Cannot inspect application",error); }
+            finally { Binder.restoreCallingIdentity(identity); }
+        }
+
+        @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory) {
+            String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
+            if (!"org.matonos.compositor".equals(caller) || runtimeDirectory == null)
+                throw new SecurityException("Only the compositor may launch graphical Flatpaks");
+            long identity = Binder.clearCallingIdentity();
+            try {
+                ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
+                if (daemon == null) throw new IllegalStateException("Flatpak service is unavailable");
+                android.net.ConnectivityManager connectivity = getSystemService(android.net.ConnectivityManager.class);
+                android.net.Network network = connectivity.getActiveNetwork();
+                android.net.LinkProperties link = network == null ? null : connectivity.getLinkProperties(network);
+                StringBuilder dns = new StringBuilder();
+                if (link != null) for (java.net.InetAddress server : link.getDnsServers()) {
+                    if (dns.length() > 0) dns.append(',');
+                    dns.append(server.getHostAddress());
+                }
+                return daemon.launchGraphical(ref, runtimeDirectory, dns.toString());
+            } catch (RemoteException e) {
+                throw new IllegalStateException("Flatpak service disconnected", e);
+            } finally {
+                Binder.restoreCallingIdentity(identity);
+                try { runtimeDirectory.close(); } catch (java.io.IOException ignored) { }
+            }
+        }
+
+        @Override public boolean isFlatpakStub(int uid, String ref) {
+            String caller=enforceAuthorizedCaller("flatpak_launch","isFlatpakStub");
+            if(!"org.matonos.compositor".equals(caller))throw new SecurityException("Compositor only");
+            long identity=Binder.clearCallingIdentity();
+            try{return flatpakStubManager!=null&&flatpakStubManager.ownsStub(uid,ref);}
+            finally{Binder.restoreCallingIdentity(identity);}
+        }
+
         @Override public int getBridgeApiVersion() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiVersion");
             return 6;
@@ -330,7 +376,15 @@ public final class SystemBridgeService extends Service {
                 if ("flatpak".equals(target)) {
                     ILinuxd service = linuxdFor();
                     if (service == null) throw new IllegalStateException("Flatpak service is unavailable");
-                    result = service.call(command, args.toString());
+                    if ("launch_stub".equals(command)) {
+                        if (args.length() != 1 || !args.has("appId") || !(args.get("appId") instanceof String))
+                            throw new IllegalArgumentException("An application ID is required");
+                        long identity = Binder.clearCallingIdentity();
+                        try { result = flatpakStubManager.launch(args.getString("appId")); }
+                        finally { Binder.restoreCallingIdentity(identity); }
+                    } else {
+                        result = service.call(command, args.toString());
+                    }
                 } else {
                     IChannel channel = channelFor(target);
                     if (channel == null) throw new IllegalStateException("channel instance unavailable: " + target);
@@ -413,6 +467,8 @@ public final class SystemBridgeService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         activeService = this;
+        flatpakStubManager = new FlatpakStubManager(this);
+        flatpakStubManager.start();
         // sleep: poll off the main thread; failed power inspection keeps sleep blocked.
         sleepWakeForwarder = new AndroidWakeStateForwarder(this);
         sleepWakeForwarder.start();
@@ -438,6 +494,7 @@ public final class SystemBridgeService extends Service {
     }
 
     @Override public void onDestroy() {
+        if (flatpakStubManager != null) flatpakStubManager.close();
         // sleep: stop the poller with the persistent bridge service.
         if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
         if (navigationBarWindow != null) navigationBarWindow.close();
@@ -800,7 +857,7 @@ public final class SystemBridgeService extends Service {
 
     private static Set<String> knownTargets() {
         return new HashSet<>(java.util.Arrays.asList("launcher", "input", "sleep", "wifi",
-                "audio", "camera", "flatpak", "status", "nav.back", "nav.home", "nav.recents"));
+                "audio", "camera", "install", "addons", "flatpak", "flatpak_launch", "status", "nav.back", "nav.home", "nav.recents"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {

@@ -12,7 +12,10 @@ android_app {
         local_include_dirs: ["aidl"],
     },
     platform_apis: true,
-    static_libs: ["vendor.matonos.channel-V1-java"],
+    static_libs: [
+        "vendor.matonos.channel-V1-java",
+        "MatonLinuxStubGenerator",
+    ],
     certificate: "platform",
     privileged: true,
     system_ext_specific: true,
@@ -23,6 +26,7 @@ java_test_host {
     name: "MatonSystemBridgeAuthorizationTests",
     srcs: [
         "src/org/matonos/systembridge/BridgeCallerIdentity.java",
+        "src/org/matonos/systembridge/FlatpakStubIdentity.java",
         "tests/src/**/*.java",
     ],
     static_libs: ["junit"],

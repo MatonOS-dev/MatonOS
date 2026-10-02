@@ -20,11 +20,11 @@ static JNIEnv* callback_env(bool* attached) {
   return env;
 }
 
-extern "C" void maton_java_request_window(int id, int width, int height) {
+extern "C" void maton_java_request_window(int sessionId, int id, int width, int height) {
   bool attached;
   JNIEnv* env = callback_env(&attached);
   if (env && service && request_method) {
-    env->CallVoidMethod(service, request_method, id, width, height);
+    env->CallVoidMethod(service, request_method, sessionId, id, width, height);
     if (env->ExceptionCheck()) env->ExceptionClear();
   }
   if (attached) vm->DetachCurrentThread();
@@ -46,7 +46,7 @@ Java_org_matonos_compositor_CompositorService_nativeStart(JNIEnv* env, jclass, j
   env->GetJavaVM(&vm);
   jobject global = env->NewGlobalRef(owner);
   jclass cls = env->GetObjectClass(owner);
-  jmethodID request = env->GetMethodID(cls, "onNativeToplevel", "(III)V");
+  jmethodID request = env->GetMethodID(cls, "onNativeToplevel", "(IIII)V");
   jmethodID close = env->GetMethodID(cls, "onNativeToplevelClosed", "(I)V");
   env->DeleteLocalRef(cls);
   if (!global || !request || !close) {
@@ -71,6 +71,16 @@ Java_org_matonos_compositor_CompositorService_nativeStop(JNIEnv* env, jclass) {
   maton_core_stop();
   if (service) env->DeleteGlobalRef(service);
   service = nullptr; request_method = close_method = nullptr;
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_matonos_compositor_CompositorService_nativeAddSession(JNIEnv* env, jclass,
+                                                               jint id, jstring path) {
+  if (!path) return JNI_FALSE;
+  const char* value = env->GetStringUTFChars(path, nullptr);
+  if (!value) return JNI_FALSE;
+  bool ok = maton_core_add_session(id, value);
+  env->ReleaseStringUTFChars(path, value);
+  return ok ? JNI_TRUE : JNI_FALSE;
 }
 extern "C" JNIEXPORT void JNICALL
 Java_org_matonos_compositor_CompositorService_nativeLaunchDemo(JNIEnv*, jclass) { maton_core_launch_demo(); }
@@ -98,3 +108,6 @@ Java_org_matonos_compositor_CompositorService_nativeMotion(JNIEnv*, jclass, jint
                                                             jint buttons, jlong time) {
   maton_core_motion(id,x,y,vs,hs,action,buttons,time);
 }
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_matonos_compositor_CompositorService_nativeClose(JNIEnv*, jclass, jint id) { maton_core_close(id); }

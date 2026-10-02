@@ -159,15 +159,15 @@ struct wlr_allocator* maton_ahb_allocator_base(struct MatonAhbAllocator* allocat
 }
 
 AHardwareBuffer* maton_ahb_from_wlr_buffer(struct wlr_buffer* buffer) {
-  return buffer ? as_buffer(buffer)->ahb : NULL;
+  return buffer && buffer->impl == &buffer_impl ? as_buffer(buffer)->ahb : NULL;
 }
 
 bool maton_ahb_buffer_is_direct(struct wlr_buffer* buffer) {
-  return buffer && as_buffer(buffer)->handle != NULL;
+  return buffer && buffer->impl == &buffer_impl && as_buffer(buffer)->handle != NULL;
 }
 
 bool maton_ahb_buffer_upload_fallback(struct wlr_buffer* base, struct MatonEglUploader* uploader) {
-  if (!base || !uploader || !uploader->ready || !uploader->get_native_client_buffer ||
+  if (!base || base->impl != &buffer_impl || !uploader || !uploader->ready || !uploader->get_native_client_buffer ||
       !uploader->create_image || !as_buffer(base)->staging) return false;
   struct MatonAhbBuffer* buffer = as_buffer(base);
   EGLClientBuffer client = uploader->get_native_client_buffer(buffer->ahb);

@@ -8,3 +8,5 @@ input org.matonos.settings
 sleep org.matonos.settings
 wifi org.matonos.settings
 launcher org.matonos.recents
+
+flatpak_launch org.matonos.compositor

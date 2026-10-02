@@ -1,1 +1,2 @@
 user=_app seinfo=platform name=org.matonos.systembridge domain=matonos_system_bridge type=app_data_file levelFrom=all
+user=_app isPrivApp=true name=org.matonos.compositor domain=priv_app type=matonos_compositor_data_file levelFrom=user

@@ -7,6 +7,7 @@
 #include <binder/PermissionCache.h>
 #include <binder/ProcessState.h>
 #include <binder/Status.h>
+#include <binder/ParcelFileDescriptor.h>
 #include <json/json.h>
 #include <utils/String8.h>
 
@@ -195,6 +196,18 @@ std::string ToUtf8(const android::String16& value) {
 
 class LinuxdService final : public BnLinuxd {
   public:
+    android::binder::Status launchGraphical(const android::String16& ref,
+            const android::os::ParcelFileDescriptor& runtimeDirectory,
+            const android::String16& dnsServers,
+            android::String16* aidl_return) override {
+        if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
+        FlatpakResult result = {};
+        flatpak_manager_launch_graphical(ToUtf8(ref).c_str(), runtimeDirectory.get(), ToUtf8(dnsServers).c_str(), &result);
+        *aidl_return = android::String16(Encode(EncodeResult(result)).c_str());
+        flatpak_manager_result_clear(&result);
+        return android::binder::Status::ok();
+    }
+
     android::binder::Status call(const android::String16& command16,
                                  const android::String16& args16,
                                  android::String16* aidl_return) override {
@@ -219,7 +232,7 @@ class LinuxdService final : public BnLinuxd {
         const char* operation_id = nullptr;
         std::vector<std::string> run_arg_storage;
         std::vector<const char*> run_args;
-        if (command == "install" || command == "uninstall") {
+        if (command == "install" || command == "uninstall" || (command == "desktop_entry" || command == "icon" || command == "launch_status")) {
             const bool uninstall = command == "uninstall";
             if (!(uninstall ? OnlyKeys(request, {"ref", "deleteData", "operationId"}) : OnlyKeys(request, {"ref", "operationId"})) || !request["ref"].isString() ||
                     (request.isMember("deleteData") && !request["deleteData"].isBool()) ||

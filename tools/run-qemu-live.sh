@@ -27,7 +27,8 @@
 # The image is attached as a USB stick (qemu-xhci + usb-storage): that's the
 # real use case, and androidboot.boot_part_uuid matches SCSI/NVMe/MMC disks
 # but not virtio-blk. adb: `adb connect localhost:5555` (userdebug builds).
-# The image is opened copy-on-write (snapshot=on): nothing is written to it.
+# The image is opened copy-on-write by default. MATON_QEMU_PERSISTENT=1
+# writes to the image directly; use this for a prepared installed disk.
 set -Eeuo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -107,6 +108,13 @@ if [[ $GFX == venus ]]; then
   machine+=",memory-backend=mem0"
 fi
 
+snapshot=on
+case ${MATON_QEMU_PERSISTENT:-0} in
+  0) ;;
+  1) snapshot=off ;;
+  *) die "MATON_QEMU_PERSISTENT must be 0 or 1" ;;
+esac
+
 args=(
   -machine "$machine" -m "$MEM" -smp 4
   # No S3: virtio-gpu loses its scanout over suspend-to-RAM and the screen
@@ -115,7 +123,7 @@ args=(
   -drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE"
   -drive "if=pflash,format=raw,file=$vars"
   -device "qemu-xhci,id=xhci"
-  -drive "id=live,if=none,format=raw,snapshot=on,file=$IMAGE"
+  -drive "id=live,if=none,format=raw,snapshot=$snapshot,file=$IMAGE"
   -device "usb-storage,bus=xhci.0,drive=live,bootindex=0"
   # Input: q35's built-in PS/2 keyboard and the VMware absolute mouse
   # (vmmouse, PS/2 AUX), not usb-kbd/usb-tablet. QEMU's xHCI can't wake the
@@ -155,7 +163,7 @@ pid=$$; while [[ $pid -gt 1 ]]; do
     if [[ ${MATON_QEMU_WINDOWED:-0} != 1 ]]; then
       gtk_gl=egl-headless gtk_plain=none
     fi
-    [[ $ADB_PORT == 5555 ]] && die "port 5555 is the user's VM; agents use -a 5556+"
+    [[ $ADB_PORT == 5555 && ${MATON_QEMU_WINDOWED:-0} != 1 ]] && die "port 5555 is the user's VM; agents use -a 5556+"
     break
   fi
   pid=$(ps -o ppid= -p "$pid" | tr -d ' ')

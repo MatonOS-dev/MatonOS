@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-AOSP=$(cd "$ROOT/../.." && pwd)
-DEVICE_TREE=$AOSP/device/maton/pc_x86_64
+DEVICE_TREE=$(cd "$ROOT/../.." && pwd)
+AOSP=$(cd "$DEVICE_TREE/../../.." && pwd)
 ADB=${ADB:-$AOSP/out/host/linux-x86/bin/adb}
 DEVICE=${MATON_ADB_DEVICE:-127.0.0.1:5562}
 APK=$DEVICE_TREE/prebuilt/apps-built/Flathub.apk

@@ -1,43 +1,165 @@
 package org.matonos.compositor.stub;
 
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.view.KeyEvent;
+import android.view.MotionEvent;
+import android.view.Surface;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.widget.TextView;
+import org.json.JSONObject;
+import org.matonos.compositor.IEmbeddedHost;
+import org.matonos.compositor.IEmbeddedSession;
+import org.matonos.compositor.IEmbeddedWindowListener;
 
-/** Entry point class referenced by generated, code-free stub APK manifests. */
-public final class StubActivity extends Activity {
+/** Shared activity code runs in the generated app's own package and task. */
+public final class StubActivity extends Activity implements SurfaceHolder.Callback {
+    private static final String WINDOW = "org.matonos.linuxhost.WINDOW_ID";
+    private String ref;
+    private volatile int window;
+    private boolean bound, attached;
+    private volatile boolean destroyed;
+    private TextView status;
+    private SurfaceView view;
+    private Surface surface;
+    private IEmbeddedSession session;
+    private final IEmbeddedWindowListener listener = new IEmbeddedWindowListener.Stub() {
+        public void onWindowOpened(int id, int width, int height) {
+            runOnUiThread(() -> {
+                if (destroyed || window == id) return;
+                if (window == 0) showWindow(id);
+                else if (getIntent().getIntExtra(WINDOW,0)==0) startActivity(new Intent().setComponent(getComponentName())
+                        .putExtra(WINDOW,id)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK));
+            });
+        }
+        public void onWindowClosed(int id) {
+            runOnUiThread(() -> { if (!destroyed && window == id) finish(); });
+        }
+    };
+    private final ServiceConnection connection = new ServiceConnection() {
+        public void onServiceConnected(ComponentName name, IBinder binder) {
+            // Bridge verification may take time; never wait on the activity thread.
+            new Thread(() -> {
+                IEmbeddedSession opened=null;
+                try {
+                    opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener);
+                    final IEmbeddedSession active=opened;
+                    boolean needsLaunch=window==0;
+                    runOnUiThread(() -> {
+                        if (destroyed) {
+                            try { active.unregisterListener(listener); } catch(Exception ignored){}
+                            return;
+                        }
+                        session=active;
+                        if (window!=0) { if(view==null)showWindow(window);else attachIfReady(); }
+                    });
+                    if (needsLaunch && !destroyed) {
+                        JSONObject result=new JSONObject(active.launch());
+                        if (!result.optBoolean("ok")) { message(result.optString("error","Application could not start"));return; }
+                        message("Waiting for the application window…");
+                        for(int i=0;i<30&&!destroyed&&window==0;i++) {
+                            Thread.sleep(1000);
+                            JSONObject state=new JSONObject(active.getLaunchStatus());
+                            if (!state.optBoolean("ok")) { message(state.optString("error","Application exited"));return; }
+                        }
+                        if(!destroyed&&window==0)message("Application is running, but no window has appeared.");
+                    }
+                } catch(Exception e) { failure("Cannot start application",e); }
+                finally {
+                    if(destroyed&&opened!=null)try{opened.unregisterListener(listener);}catch(Exception ignored){}
+                }
+            },"flatpak-stub-launch").start();
+        }
+        public void onServiceDisconnected(ComponentName name) {
+            session=null;attached=false;
+            failure("Compositor disconnected",new IllegalStateException("The compositor stopped unexpectedly."));
+            window=0;view=null;surface=null;
+        }
+    };
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        String ref = null;
-        int minimum = 1;
+        status=new TextView(this);status.setPadding(32,32,32,32);
+        status.setText("Starting application…");setContentView(status);
+        window=state!=null?state.getInt(WINDOW,0):getIntent().getIntExtra(WINDOW,0);
+        int minimum=1;
         try {
-            ActivityInfo info = getPackageManager().getActivityInfo(getComponentName(),
-                    android.content.pm.PackageManager.GET_META_DATA);
-            if (info.metaData != null) {
-                ref = info.metaData.getString(HostContract.META_FLATPAK_REF);
-                minimum = info.metaData.getInt(HostContract.META_MIN_INTERFACE, 1);
-            }
-        } catch (Exception ignored) { }
-
-        String message;
-        if (ref == null || ref.trim().isEmpty()) {
-            message = "This Flatpak stub has no application reference.";
-        } else if (minimum > HostContract.getInterfaceVersion()) {
-            message = "This app needs Linux host interface " + minimum
-                    + "; installed host provides " + HostContract.getInterfaceVersion() + ".";
-        } else {
-            Intent host = new Intent().setClassName("org.matonos.compositor",
-                    "org.matonos.compositor.MainActivity")
-                    .putExtra(HostContract.EXTRA_FLATPAK_REF, ref);
-            startActivity(host);
-            finish();
-            return;
+            ActivityInfo info=getPackageManager().getActivityInfo(getComponentName(),PackageManager.GET_META_DATA);
+            if(info.metaData!=null){ref=info.metaData.getString(HostContract.META_FLATPAK_REF);minimum=info.metaData.getInt(HostContract.META_MIN_INTERFACE,1);}
+        } catch(Exception e){failure("Cannot read application reference",e);return;}
+        if(ref==null||ref.trim().isEmpty()){message("This launcher has no application reference.");return;}
+        if(minimum>HostContract.getInterfaceVersion()){message("Update the Linux host to launch this application.");return;}
+        Intent host=new Intent("org.matonos.compositor.EMBEDDED")
+                .setClassName("org.matonos.compositor","org.matonos.compositor.CompositorService");
+        try {
+            startForegroundService(host);
+            bound=bindService(host,connection,BIND_AUTO_CREATE);
+            if(!bound)message("Cannot connect to the compositor.");
+        } catch(Exception e){failure("Cannot connect to the compositor",e);}
+    }
+    private void showWindow(int id) {
+        window=id;
+        view=new SurfaceView(this);view.getHolder().addCallback(this);
+        view.setFocusableInTouchMode(true);
+        view.setOnTouchListener((v,event)->motion(event));
+        view.setOnGenericMotionListener((v,event)->motion(event));
+        setContentView(view);view.requestFocus();
+    }
+    private void message(String text) {
+        runOnUiThread(()->{if(!destroyed&&window==0)status.setText(text);});
+    }
+    private void failure(String operation,Exception error) {
+        android.util.Log.e("MatonFlatpakStub",operation+" for "+ref,error);
+        String detail=error.getMessage()!=null?error.getMessage():error.getClass().getSimpleName();
+        runOnUiThread(()->{
+            if(destroyed)return;
+            status.setText(operation+": "+detail);
+            if(view!=null)setContentView(status);
+        });
+    }
+    private void attachIfReady() {
+        if(attached||session==null||surface==null||!surface.isValid()||window==0)return;
+        try{session.attachWindow(window,surface,view.getWidth(),view.getHeight());attached=true;}
+        catch(Exception e){failure("Cannot display application window",e);}
+    }
+    public void surfaceCreated(SurfaceHolder holder){surface=holder.getSurface();attachIfReady();}
+    public void surfaceChanged(SurfaceHolder holder,int format,int width,int height){
+        surface=holder.getSurface();attachIfReady();
+        try{if(attached&&session!=null)session.resizeWindow(window,width,height);}
+        catch(Exception e){failure("Cannot resize application window",e);}
+    }
+    public void surfaceDestroyed(SurfaceHolder holder){
+        try{if(attached&&session!=null)session.detachWindow(window);}catch(Exception ignored){}
+        attached=false;surface=null;
+    }
+    @Override public boolean dispatchKeyEvent(KeyEvent event){
+        if(session==null||window==0)return super.dispatchKeyEvent(event);
+        try{session.keyEvent(window,event.getKeyCode(),event.getScanCode(),event.getAction(),event.getMetaState(),event.getEventTime()*1000000L);}
+        catch(Exception e){failure("Cannot send keyboard input",e);}
+        return true;
+    }
+    private boolean motion(MotionEvent event){
+        if(session==null||window==0)return false;
+        try{session.motionEvent(window,event.getX(),event.getY(),event.getAxisValue(MotionEvent.AXIS_VSCROLL),event.getAxisValue(MotionEvent.AXIS_HSCROLL),event.getActionMasked(),org.matonos.compositor.PointerInput.buttons(event.getActionMasked(),event.getButtonState(),event.isFromSource(android.view.InputDevice.SOURCE_TOUCHSCREEN)),event.getEventTime()*1000000L);}
+        catch(Exception e){failure("Cannot send pointer input",e);}
+        return true;
+    }
+    @Override protected void onSaveInstanceState(Bundle state){state.putInt(WINDOW,window);super.onSaveInstanceState(state);}
+    @Override protected void onDestroy(){
+        destroyed=true;
+        if(session!=null){
+            try{if(attached)session.detachWindow(window);}catch(Exception ignored){}
+            try{if(isFinishing()&&window!=0)session.closeWindow(window);}catch(Exception ignored){}
+            try{session.unregisterListener(listener);}catch(Exception ignored){}
         }
-        TextView error = new TextView(this);
-        error.setText(message);
-        error.setPadding(32, 32, 32, 32);
-        setContentView(error);
+        if(bound)unbindService(connection);
+        super.onDestroy();
     }
 }

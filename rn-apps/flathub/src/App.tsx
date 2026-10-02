@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FlatList } from "react-native";
-import { Image as ComposeImage, Button, Column, Host, LazyColumn, OutlinedTextField, Row, Text } from "@expo/ui/jetpack-compose";
+import { FlatList, View } from "react-native";
+import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Text, RNHostView } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
-import { background, clickable, fillMaxSize, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
+import { clickable, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import { getAppById, getAppDetails, getCollection, searchApps, type StoreApp } from "./FlathubApi";
 import { getInstalledRefs, installApp, runApp, uninstallApp, type ProgressEvent } from "./FlatpakBridge";
 import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
@@ -26,7 +26,16 @@ function AppIcon({ app, imageSize }: { app: StoreApp; imageSize: number }) {
 
 function ProgressLine({ progress }: { progress: string }) {
   if (!progress) return null;
-  return <Text style={{ typography: "bodyMedium" }}>{progress}</Text>;
+  return <Text style={{ typography: "bodyMedium" }} maxLines={2}>{progress}</Text>;
+}
+
+function busyButtonLabel(kind: "install" | "uninstall"): string {
+  return kind === "install" ? "Installing…" : "Working…";
+}
+
+function percentToRatio(percent: number | null): number | null {
+  if (percent == null) return null;
+  return Math.min(1, Math.max(0, percent / 100));
 }
 
 function Screenshots({ app }: { app: StoreApp }) {
@@ -34,41 +43,48 @@ function Screenshots({ app }: { app: StoreApp }) {
   return (
     <>
       <Text style={{ typography: "titleMedium" }}>Screenshots</Text>
-      <FlatList horizontal data={app.screenshots} keyExtractor={(_, index) => `${app.id}-${index}`}
-        renderItem={({ item: src }) => <ComposeImage source={{ uri: src }} contentDescription={`${app.name} screenshot`} modifiers={[width(620), height(349)]} />} />
+      <RNHostView modifiers={[height(349)]}><FlatList removeClippedSubviews={false} horizontal style={{ height: 349 }} data={app.screenshots} keyExtractor={(_, index) => `${app.id}-${index}`}
+        renderItem={({ item: src }) => <Host style={{ width: 620, height: 349 }} colorScheme="dark" seedColor="#79c75b"><ComposeImage source={{ uri: src }} contentDescription={`${app.name} screenshot`} modifiers={[width(620), height(349)]} /></Host>} /></RNHostView>
     </>
   );
 }
 
-function AppTile({ app, installed, busy, progress, onOpenDetails, onInstall, onLaunch }: {
+function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDetails, onInstall, onLaunch }: {
   app: StoreApp;
   installed: boolean;
   busy: boolean;
+  busyLabel: string;
   progress: string;
+  percent: number | null;
   onOpenDetails: (app: StoreApp) => void;
   onInstall: (app: StoreApp) => void;
   onLaunch: (app: StoreApp) => void;
 }) {
   const isBusy = busy && Boolean(progress);
-  const buttonLabel = isBusy ? progress : installed ? "Open" : "Install";
+  const buttonLabel = isBusy ? (busyLabel || "Working…") : installed ? "Open" : "Install";
   const buttonAction = installed ? () => onLaunch(app) : () => onInstall(app);
   return (
-    <Row verticalAlignment="center" modifiers={[paddingAll(12), clickable(() => onOpenDetails(app))]}>
-      <AppIcon app={app} imageSize={52} />
-      <Column modifiers={[weight(1), padding(12, 0, 12, 0)]}>
-        <Text style={{ typography: "titleMedium" }}>{app.name}</Text>
-        <Text style={{ typography: "bodyMedium" }} maxLines={2}>{app.summary}</Text>
-      </Column>
-      <Button enabled={!busy} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
-    </Row>
+    <Column modifiers={[clickable(() => onOpenDetails(app))]}>
+      <Row verticalAlignment="center" modifiers={[paddingAll(12)]}>
+        <AppIcon app={app} imageSize={52} />
+        <Column modifiers={[weight(1), padding(12, 0, 12, 0)]}>
+          <Text style={{ typography: "titleMedium" }}>{app.name}</Text>
+          <Text style={{ typography: "bodyMedium" }} maxLines={2}>{app.summary}</Text>
+        </Column>
+        <Button enabled={!busy} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
+      </Row>
+      <Show when={isBusy}>
+        <LinearProgressIndicator progress={percentToRatio(percent)} modifiers={[padding(0, 12, 12, 12)]} />
+      </Show>
+    </Column>
   );
 }
 
-function DetailContent({ app, installed, busy, progress, onBack, onInstall, onUninstall }: {
-  app: StoreApp; installed: boolean; busy: boolean; progress: string; onBack: () => void; onInstall: () => void; onUninstall: () => void;
+function DetailContent({ app, installed, busy, busyLabel, progress, percent, onBack, onInstall, onUninstall }: {
+  app: StoreApp; installed: boolean; busy: boolean; busyLabel: string; progress: string; percent: number | null; onBack: () => void; onInstall: () => void; onUninstall: () => void;
 }) {
   const permissionText = app.permissions.length ? app.permissions.join(" · ") : "Permission details are not included for this app by the Flathub API.";
-  const actionLabel = installed ? "Uninstall" : "Install";
+  const actionLabel = busy ? (busyLabel || "Working…") : installed ? "Uninstall" : "Install";
   const action = installed ? onUninstall : onInstall;
   return (
     <LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 14 }}>
@@ -81,9 +97,12 @@ function DetailContent({ app, installed, busy, progress, onBack, onInstall, onUn
           <Text style={{ typography: "bodySmall" }}>{app.developer}</Text>
         </Column>
       </Row>
-      <Row horizontalArrangement={{ spacedBy: 10 }}>
+      <Row horizontalArrangement={{ spacedBy: 10 }} verticalAlignment="center">
         <Button enabled={!busy} onClick={action}><Text>{actionLabel}</Text></Button>
-        <ProgressLine progress={progress} />
+        <Column modifiers={[weight(1)]}>
+          <Show when={Boolean(progress)}><LinearProgressIndicator progress={percentToRatio(percent)} /></Show>
+          <ProgressLine progress={progress} />
+        </Column>
       </Row>
       <Screenshots app={app} />
       <Text style={{ typography: "titleMedium" }}>Permissions</Text>
@@ -108,8 +127,10 @@ export default function App() {
   const [message, setMessage] = useState("");
   const [busyRef, setBusyRef] = useState("");
   const [progress, setProgress] = useState("");
+  const [percent, setPercent] = useState<number | null>(null);
   const operationToken = useRef(0);
   const operationIdRef = useRef("");
+  const operationKindRef = useRef<"install" | "uninstall">("install");
   const installedIds = useMemo(() => new Set(installedRefs.map((ref) => ref.split("/")[1])), [installedRefs]);
 
   async function refreshInstalled() {
@@ -154,7 +175,8 @@ export default function App() {
     const token = ++operationToken.current;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     operationIdRef.current = operationId;
-    setBusyRef(app.ref); setProgress("Preparing installation…"); setMessage("");
+    operationKindRef.current = "install";
+    setBusyRef(app.ref); setProgress("Preparing installation…"); setPercent(null); setMessage("");
     try {
       await installApp(app.ref, operationId);
       if (operationIdRef.current !== operationId) return;
@@ -162,9 +184,9 @@ export default function App() {
       setTimeout(() => {
         if (operationToken.current !== token) return;
         operationIdRef.current = "";
-        setBusyRef(""); setProgress(""); setMessage("The operation timed out. Check Installed before trying again.");
+        setBusyRef(""); setProgress(""); setPercent(null); setMessage("The operation timed out. Check Installed before trying again.");
       }, 10 * 60 * 1000);
-    } catch (error) { operationIdRef.current = ""; setProgress(""); setMessage(errorText(error)); setBusyRef(""); }
+    } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
   }
 
   async function startUninstall() {
@@ -172,7 +194,8 @@ export default function App() {
     const token = ++operationToken.current;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     operationIdRef.current = operationId;
-    setBusyRef(selected.ref); setProgress("Preparing removal…"); setMessage("");
+    operationKindRef.current = "uninstall";
+    setBusyRef(selected.ref); setProgress("Preparing removal…"); setPercent(null); setMessage("");
     try {
       await uninstallApp(selected.ref, operationId);
       if (operationIdRef.current !== operationId) return;
@@ -180,9 +203,9 @@ export default function App() {
       setTimeout(() => {
         if (operationToken.current !== token) return;
         operationIdRef.current = "";
-        setBusyRef(""); setProgress(""); setMessage("The operation timed out. Check Installed before trying again.");
+        setBusyRef(""); setProgress(""); setPercent(null); setMessage("The operation timed out. Check Installed before trying again.");
       }, 10 * 60 * 1000);
-    } catch (error) { operationIdRef.current = ""; setProgress(""); setMessage(errorText(error)); setBusyRef(""); }
+    } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
   }
 
   useEffect(() => {
@@ -198,14 +221,16 @@ export default function App() {
         operationToken.current++;
         operationIdRef.current = "";
         const completed = payload.result;
-        setBusyRef(""); setProgress("");
+        setBusyRef(""); setProgress(""); setPercent(null);
         if (!completed?.ok) setMessage(completed?.error || completed?.output?.trim() || "The Flatpak operation did not complete.");
         else setMessage("Operation complete.");
         void refreshInstalled();
         return;
       }
-      const percent = typeof payload.percent === "number" ? ` ${payload.percent}%` : "";
-      setProgress(`${payload.line || "Working…"}${percent}`);
+      if (!operationIdRef.current) return;
+      const eventPercent = typeof payload.percent === "number" ? payload.percent : null;
+      setPercent(eventPercent);
+      setProgress(`${payload.line || "Working…"}${eventPercent == null ? "" : ` ${eventPercent}%`}`);
     });
     return () => subscription.remove();
   }, []);
@@ -229,27 +254,35 @@ export default function App() {
   }
 
   const renderApp = ({ item }: { item: StoreApp }) => (
-    <AppTile app={item} installed={installedIds.has(item.id)} busy={Boolean(busyRef)}
-      progress={busyRef === item.ref ? progress : ""} onOpenDetails={openDetails}
-      onInstall={(app) => void startInstall(app)} onLaunch={(app) => void launchApp(app)} />
+    <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }} colorScheme="dark" seedColor="#79c75b">
+      <AppTile app={item} installed={installedIds.has(item.id)} busy={Boolean(busyRef)}
+        busyLabel={busyRef === item.ref ? busyButtonLabel(operationKindRef.current) : ""}
+        progress={busyRef === item.ref ? progress : ""} percent={busyRef === item.ref ? percent : null}
+        onOpenDetails={openDetails}
+        onInstall={(app) => void startInstall(app)} onLaunch={(app) => void launchApp(app)} />
+    </Host>
   );
   const keyApp = (app: StoreApp) => app.id;
 
   let content: ReactNode;
   if (selected) {
     const currentDetail = selected;
-    content = <DetailContent app={currentDetail} installed={installedIds.has(currentDetail.id)} busy={Boolean(busyRef)} progress={busyRef === currentDetail.ref ? progress : ""}
-      onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} />;
+    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(currentDetail.id)} busy={Boolean(busyRef)}
+      busyLabel={busyButtonLabel(operationKindRef.current)} progress={busyRef === currentDetail.ref ? progress : ""} percent={busyRef === currentDetail.ref ? percent : null}
+      onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} /></Host>;
   } else if (page === "installed") {
-    content = <Column modifiers={[weight(1)]}>
+    content = <View style={{ flex: 1 }}>
+      <Host matchContents={{ vertical: true }} colorScheme="dark" seedColor="#79c75b"><Column>
       <Text style={{ typography: "headlineSmall" }} modifiers={[paddingAll(20)]}>Installed apps</Text>
       <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading installed apps…</Text></Show>
       <Show when={Boolean(installedError) && !loading}><Text modifiers={[paddingAll(20)]}>{installedError}</Text></Show>
-      <FlatList style={{ flex: 1 }} data={installedApps} renderItem={renderApp} keyExtractor={keyApp}
-        ListEmptyComponent={!loading && !installedError ? <Text modifiers={[paddingAll(20)]}>No installed apps are listed yet.</Text> : null} />
-    </Column>;
+      </Column></Host>
+      <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={installedApps} renderItem={renderApp} keyExtractor={keyApp}
+        ListEmptyComponent={!loading && !installedError ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(20)]}>No installed apps are listed yet.</Text></Host> : null} />
+    </View>;
   } else {
-    content = <Column modifiers={[weight(1)]}>
+    content = <View style={{ flex: 1 }}>
+      <Host matchContents={{ vertical: true }} colorScheme="dark" seedColor="#79c75b"><Column>
       <Text style={{ typography: "headlineSmall" }} modifiers={[padding(20, 18, 20, 0)]}>Explore Flathub</Text>
       <Row horizontalArrangement={{ spacedBy: 10 }} modifiers={[padding(16, 10, 16, 10)]}>
         <Button onClick={() => void selectFeed("popular")}><Text>Popular</Text></Button>
@@ -258,23 +291,30 @@ export default function App() {
       <OutlinedTextField onValueChange={(value) => void runSearch(value)} modifiers={[padding(16, 0, 16, 0)]}>
         <OutlinedTextField.Label>Search apps</OutlinedTextField.Label>
       </OutlinedTextField>
-      <FlatList style={{ flex: 1 }} data={apps} renderItem={renderApp} keyExtractor={keyApp}
-        ListHeaderComponent={loading ? <Text modifiers={[paddingAll(16)]}>Loading Flathub…</Text> : null}
-        ListEmptyComponent={!loading ? <Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text> : null} />
-    </Column>;
+      </Column></Host>
+      <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={apps} renderItem={renderApp} keyExtractor={keyApp}
+        ListHeaderComponent={loading ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(16)]}>Loading Flathub…</Text></Host> : null}
+        ListEmptyComponent={!loading ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text></Host> : null} />
+    </View>;
   }
 
   return (
-    <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b">
-      <Column modifiers={[fillMaxSize(), background(themeColors.background)]}>
+    <View style={{ flex: 1, backgroundColor: themeColors.background }}>
+      <Host matchContents={{ vertical: true }} colorScheme="dark" seedColor="#79c75b"><Column>
         <Row horizontalArrangement={{ spacedBy: 12 }} modifiers={[paddingAll(14)]}>
           <Text style={{ typography: "titleLarge" }} modifiers={[weight(1)]}>Software Center</Text>
           <Button onClick={() => void selectPage("browse")}><Text>Browse</Text></Button>
           <Button onClick={() => void selectPage("installed")}><Text>Installed</Text></Button>
         </Row>
+        <Show when={Boolean(busyRef)}>
+          <Column modifiers={[padding(14, 0, 14, 14)]}>
+            <LinearProgressIndicator progress={percentToRatio(percent)} />
+            <Show when={Boolean(progress)}><Text style={{ typography: "bodyMedium" }} maxLines={2} modifiers={[padding(6, 0, 0, 0)]}>{progress}</Text></Show>
+          </Column>
+        </Show>
         <Show when={Boolean(message)}><Text style={{ typography: "bodyMedium" }} modifiers={[padding(18, 0, 18, 8)]}>{message}</Text></Show>
-        {content}
-      </Column>
-    </Host>
+      </Column></Host>
+      {content}
+    </View>
   );
 }

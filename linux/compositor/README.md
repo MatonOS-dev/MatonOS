@@ -117,3 +117,42 @@ After the multiarch host APK is included in a newly built image:
 Generic PCs with no graphics device must still boot. The compositor runs only
 when its host Activity starts, fails closed to a blank surface if an optional
 API or GPU path is unavailable, and never gates Android boot.
+
+## Flatpak launch wiring (2026-10-01)
+
+Version-9 Flatpak stubs render directly in their own `StubActivity`, retaining
+their package, icon, title and Android task. They bind the host's embedded
+service interface, not a host Activity. The bridge verifies the exact ref's
+generated package, sole caller UID and Android Keystore signing certificate.
+The returned session Binder accepts controls only from that UID and only for
+windows owned by that session. The full legacy compositor Binder is host-only.
+
+Each application has a distinct Wayland listening socket in a host-owned
+directory. Accepted clients' local socket paths associate new toplevels with
+the correct stub session; additional windows open another activity in the same
+stub package. The compositor service remains central and native rendering
+stays in its process. The host delegates a descriptor for each application's
+Wayland-only directory through the bridge. Linuxd exposes
+a private relay socket to Flatpak and forwards stream data and SCM_RIGHTS
+buffer descriptors, retaining the directory capability until the process exits.
+The launch wrapper preserves only the selected private relay socket path.
+GTK/Firefox are forced onto Wayland with software GL; X11 is disabled. Startup
+failures appear inside the stub and logs remain in the Linux cache.
+
+The compositor now checks Wayland socket creation correctly, advertises an
+initial virtual output, exposes subsurfaces/viewporter, draws XDG popups,
+forwards keyboard events to its seat and sends window close requests. Window
+outputs explicitly select ARGB to match the Android allocator, and the virtual
+monitor exposes logical geometry through xdg-output. Clipboard,
+IME, Xwayland, portals and audio remain outside this launch change.
+
+Launcher stubs declare a real Android drawable resource, use exported PNG
+icons when available, and replace packages older than version 9. Missing
+PNG exports retain a fallback image. Image build and runtime results are in
+`out/pc-logs/agents/REPAIR-HANDOFF-2026-10-01.md`.
+
+Known r7 application gaps: GTK/glycin's nested `flatpak-spawn` loader requires
+services absent from the private session broker; USB Imager requires the
+Linux system bus/UDisks2 disk service. Adding xdg-output does not establish
+that Pinball's SDL initialization succeeds. These are independent of stub
+window ownership and remain unverified/unresolved by that change.

@@ -49,7 +49,7 @@ public final class WindowActivity extends Activity implements SurfaceHolder.Call
     @Override public void surfaceChanged(SurfaceHolder h, int format, int w, int ht) { surface = h.getSurface(); attachIfReady(); try { if(compositor!=null && attached) compositor.resizeWindow(id,w,ht); } catch(Exception ignored){} }
     @Override public void surfaceDestroyed(SurfaceHolder h) { try { if(compositor!=null && attached) compositor.detachWindow(id); } catch(Exception ignored){} attached = false; surface = null; }
     @Override public boolean dispatchKeyEvent(KeyEvent e) { try { if(compositor!=null) compositor.keyEvent(id,e.getKeyCode(),e.getScanCode(),e.getAction(),e.getMetaState(),e.getEventTime()*1000000L); } catch(Exception ignored){} return true; }
-    @Override public boolean onTouchEvent(MotionEvent e) { try { if(compositor!=null) compositor.motionEvent(id,e.getX(),e.getY(),e.getAxisValue(MotionEvent.AXIS_VSCROLL),e.getAxisValue(MotionEvent.AXIS_HSCROLL),e.getActionMasked(),e.getButtonState(),e.getEventTime()*1000000L); } catch(Exception ignored){} return true; }
+    @Override public boolean onTouchEvent(MotionEvent e) { try { if(compositor!=null) compositor.motionEvent(id,e.getX(),e.getY(),e.getAxisValue(MotionEvent.AXIS_VSCROLL),e.getAxisValue(MotionEvent.AXIS_HSCROLL),e.getActionMasked(),PointerInput.buttons(e.getActionMasked(),e.getButtonState(),e.isFromSource(android.view.InputDevice.SOURCE_TOUCHSCREEN)),e.getEventTime()*1000000L); } catch(Exception ignored){} return true; }
     @Override public boolean onGenericMotionEvent(MotionEvent e) { return onTouchEvent(e); }
-    @Override protected void onDestroy() { unregisterReceiver(closeReceiver); unbindService(connection); super.onDestroy(); }
+    @Override protected void onDestroy() { if(isFinishing() && compositor!=null) try { compositor.closeWindow(id); } catch(Exception ignored){} unregisterReceiver(closeReceiver); unbindService(connection); super.onDestroy(); }
 }

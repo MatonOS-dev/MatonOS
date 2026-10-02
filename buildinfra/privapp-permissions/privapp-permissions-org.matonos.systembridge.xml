@@ -12,5 +12,7 @@
         <permission name="android.permission.REMOVE_TASKS" />
         <permission name="android.permission.STATUS_BAR_SERVICE" />
         <permission name="android.permission.INTERNAL_SYSTEM_WINDOW" />
+        <permission name="android.permission.INSTALL_PACKAGES" />
+        <permission name="android.permission.DELETE_PACKAGES" />
     </privapp-permissions>
 </permissions>

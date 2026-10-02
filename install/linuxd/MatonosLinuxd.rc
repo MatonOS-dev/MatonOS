@@ -2,7 +2,7 @@
 service matonos-linuxd /system_ext/bin/matonos-linuxd
     class late_start
     user system
-    group system
+    group system inet
     disabled
     restart_period 5
     seclabel u:r:matonos_linuxd:s0
@@ -14,5 +14,8 @@ on property:sys.boot_completed=1
     mkdir /data/matonos/linux/cache 0770 system system
     mkdir /data/matonos/linux/flatpak-user 0770 system system
     mkdir /data/matonos/linux/flatpak-data 0770 system system
+    mkdir /data/matonos/linux/runtime 0700 system system
+    # Flatpak prepares the X11 socket mount even for apps without a server.
+    mkdir /tmp/.X11-unix 1777 root root
     restorecon_recursive /data/matonos/linux
     start matonos-linuxd

@@ -18,6 +18,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- sleep: read PowerManager's held wake locks from its privileged dump. -->
     <uses-permission android:name="android.permission.DUMP" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- sleep: see system-wide active playback, not only the bridge's own player. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_ROUTING" />
     <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
@@ -29,6 +30,8 @@
     <uses-permission android:name="android.permission.REORDER_TASKS" />
     <uses-permission android:name="android.permission.REAL_GET_TASKS" />
     <uses-permission android:name="android.permission.REMOVE_TASKS" />
+    <uses-permission android:name="android.permission.INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.DELETE_PACKAGES" />
     <application
         android:label="MatonOS System Bridge"
         android:persistent="true"

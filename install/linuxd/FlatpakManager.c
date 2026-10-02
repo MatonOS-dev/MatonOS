@@ -2,6 +2,7 @@
 #include "FlatpakManager.h"
 
 #include <errno.h>
+#include <dirent.h>
 #include <fcntl.h>
 #include <pthread.h>
 #include <poll.h>
@@ -11,6 +12,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/time.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -133,6 +138,8 @@ void flatpak_manager_set_callbacks(FlatpakProgressCallback progress,
 }
 
 void flatpak_manager_init(void) {
+    setenv("TMPDIR", "/data/matonos/linux/cache", 1);
+    setenv("XDG_RUNTIME_DIR", "/data/matonos/linux/runtime", 1);
     setenv("FLATPAK_SYSTEM_DIR", "/data/matonos/linux/flatpak", 1);
     setenv("FLATPAK_SYSTEM_CACHE_DIR", "/data/matonos/linux/cache", 1);
     setenv("FLATPAK_USER_DIR", "/data/matonos/linux/flatpak-user", 1);
@@ -482,6 +489,339 @@ static void run_async(const char* app_id, const char* const* extra, size_t extra
     result->pid = (long)child;
 }
 
+typedef struct GraphicalChild { pid_t pid; int directory, listener, slot; char path[108]; } GraphicalChild;
+static pthread_mutex_t g_launch_mutex=PTHREAD_MUTEX_INITIALIZER;
+static struct { char ref[512], log[512]; pid_t pid; int alive; } g_launches[128];
+static int record_launch(const char* ref,const char* log,pid_t pid) {
+    int slot=-1;pthread_mutex_lock(&g_launch_mutex);
+    for(int i=0;i<128;i++)if(!strcmp(g_launches[i].ref,ref)){slot=i;break;}
+    if(slot<0)for(int i=0;i<128;i++)if(!g_launches[i].alive){slot=i;break;}
+    if(slot>=0){snprintf(g_launches[slot].ref,sizeof(g_launches[slot].ref),"%s",ref);
+        snprintf(g_launches[slot].log,sizeof(g_launches[slot].log),"%s",log);
+        g_launches[slot].pid=pid;g_launches[slot].alive=1;}
+    pthread_mutex_unlock(&g_launch_mutex);return slot;
+}
+static void record_exit(int slot,pid_t pid) {
+    pthread_mutex_lock(&g_launch_mutex);
+    if(slot>=0&&g_launches[slot].pid==pid)g_launches[slot].alive=0;
+    pthread_mutex_unlock(&g_launch_mutex);
+}
+static void read_launch_status(const char* ref,FlatpakResult* result) {
+    if(!flatpak_manager_valid_ref(ref)){set_error(result,"Invalid application reference");return;}
+    int alive=0;char path[512]={0};pthread_mutex_lock(&g_launch_mutex);
+    for(int i=0;i<128;i++)if(!strcmp(g_launches[i].ref,ref)){
+        alive=g_launches[i].alive;snprintf(path,sizeof(path),"%s",g_launches[i].log);break;}
+    pthread_mutex_unlock(&g_launch_mutex);
+    if(alive){result->ok=1;return;}
+    char message[4096]="Application exited before opening a window";
+    FILE* log=path[0]?fopen(path,"re"):NULL;
+    if(log){size_t count=fread(message,1,sizeof(message)-1,log);message[count]=0;fclose(log);}
+    set_error(result,message[0]?message:"Application exited before opening a window");
+}
+typedef struct WaylandRelay { int client, compositor; } WaylandRelay;
+
+/* Wayland transfers SHM buffers and fences with SCM_RIGHTS, not just bytes. */
+static int relay_wayland_packet(int source, int destination) {
+    char bytes[16384];
+    union { struct cmsghdr align; unsigned char bytes[CMSG_SPACE(64*sizeof(int))]; } control;
+    struct iovec buffer = {.iov_base=bytes,.iov_len=sizeof(bytes)};
+    struct msghdr message = {.msg_iov=&buffer,.msg_iovlen=1,.msg_control=control.bytes,.msg_controllen=sizeof(control.bytes)};
+    ssize_t count;
+    do { count=recvmsg(source,&message,MSG_CMSG_CLOEXEC); } while (count<0 && errno==EINTR);
+    if (count<=0) return -1;
+    int fds[64]; size_t fd_count=0;
+    for (struct cmsghdr* c=CMSG_FIRSTHDR(&message); c; c=CMSG_NXTHDR(&message,c)) {
+        if(c->cmsg_level==SOL_SOCKET && c->cmsg_type==SCM_RIGHTS && c->cmsg_len>=CMSG_LEN(0)) {
+            size_t n=(c->cmsg_len-CMSG_LEN(0))/sizeof(int);
+            int* values=(int*)CMSG_DATA(c);
+            for(size_t i=0;i<n;++i) { if(fd_count<64) fds[fd_count++]=values[i]; else close(values[i]); }
+        }
+    }
+    int failed=(message.msg_flags & MSG_CTRUNC)!=0;
+    message.msg_flags=0; buffer.iov_len=(size_t)count;
+    ssize_t sent=-1;
+    if(!failed) do { sent=sendmsg(destination,&message,MSG_NOSIGNAL); } while(sent<0 && errno==EINTR);
+    for(size_t i=0;i<fd_count;++i)close(fds[i]);
+    if(sent<=0)return -1;
+    while(sent<count) {
+        ssize_t n=send(destination,bytes+sent,(size_t)(count-sent),MSG_NOSIGNAL);
+        if(n<0 && errno==EINTR)continue;
+        if(n<=0)return -1;sent+=n;
+    }
+    return 0;
+}
+static void* relay_wayland(void* argument) {
+    WaylandRelay* relay=argument;
+    struct pollfd sockets[2]={{.fd=relay->client,.events=POLLIN},{.fd=relay->compositor,.events=POLLIN}};
+    for(;;) {
+        int ready=poll(sockets,2,-1);
+        if(ready<0 && errno==EINTR)continue;
+        if(ready<=0)break;
+        int failed=0;
+        for(int i=0;i<2;++i) {
+            if(sockets[i].revents&POLLIN) { if(relay_wayland_packet(sockets[i].fd,sockets[1-i].fd))failed=1; }
+            else if(sockets[i].revents&(POLLHUP|POLLERR|POLLNVAL))failed=1;
+        }
+        if(failed)break;
+    }
+    close(relay->client);close(relay->compositor);free(relay);return NULL;
+}
+static void* reap_graphical(void* argument) {
+    GraphicalChild* child=argument;
+    unsigned connections=0;
+    for(;;) {
+        int status;pid_t exited=waitpid(child->pid,&status,WNOHANG);
+        if(exited==child->pid || (exited<0 && errno!=EINTR))break;
+        struct pollfd listener={.fd=child->listener,.events=POLLIN};
+        if(poll(&listener,1,1000)<=0)continue;
+        int client=accept4(child->listener,NULL,NULL,SOCK_CLOEXEC);
+        if(client<0)continue;
+        if(connections++>=128){close(client);continue;}
+        int upstream=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0);
+        struct sockaddr_un address={.sun_family=AF_UNIX};
+        snprintf(address.sun_path,sizeof(address.sun_path),"/proc/self/fd/%d/wayland-0",child->directory);
+        if(upstream<0 || connect(upstream,(struct sockaddr*)&address,sizeof(address))) {
+            if(upstream>=0)close(upstream);close(client);continue;
+        }
+        struct timeval timeout={.tv_sec=5};
+        setsockopt(client,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
+        setsockopt(upstream,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
+        WaylandRelay* relay=malloc(sizeof(*relay));pthread_t thread;
+        if(relay){relay->client=client;relay->compositor=upstream;}
+        pthread_attr_t attributes;pthread_attr_init(&attributes);pthread_attr_setstacksize(&attributes,256*1024);
+        int error=relay?pthread_create(&thread,&attributes,relay_wayland,relay):ENOMEM;
+        pthread_attr_destroy(&attributes);
+        if(error){free(relay);close(client);close(upstream);}else pthread_detach(thread);
+    }
+    record_exit(child->slot,child->pid);
+    close(child->listener);unlink(child->path);close(child->directory);free(child);return NULL;
+}
+
+/* The compositor delegates only its socket directory, never its app data root. */
+void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, FlatpakResult* result) {
+    struct stat directory, socket_info;
+    if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
+        set_error(result, "valid installed application ref required"); return;
+    }
+    if (fstat(runtime_directory_fd, &directory) || !S_ISDIR(directory.st_mode) ||
+            fstatat(runtime_directory_fd, "wayland-0", &socket_info, AT_SYMLINK_NOFOLLOW) ||
+            !S_ISSOCK(socket_info.st_mode) || socket_info.st_uid != directory.st_uid) {
+        set_error(result, "compositor socket directory is unavailable"); return;
+    }
+    /* Check the full installed ref rather than accepting arbitrary commands. */
+    const char* info_args[] = {"--system", "info", ref};
+    ChildResult installed = run_cli(info_args, 3, 0);
+    if (installed.status != 0) { result_from_child(result, &installed); return; }
+    free(installed.output);
+    int capability = fcntl(runtime_directory_fd, F_DUPFD_CLOEXEC, 3);
+    if (capability < 0) { set_error(result, "cannot duplicate compositor directory"); return; }
+    int listener = socket(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC, 0);
+    char socket_path[108];
+    snprintf(socket_path,sizeof(socket_path),"/data/matonos/linux/runtime/wayland-%d",capability);
+    struct sockaddr_un address = {.sun_family=AF_UNIX};
+    snprintf(address.sun_path,sizeof(address.sun_path),"%s",socket_path);
+    unlink(socket_path);
+    if (listener < 0 || bind(listener,(struct sockaddr*)&address,sizeof(address)) || listen(listener,16)) {
+        if(listener>=0)close(listener);close(capability);set_error(result,"cannot create Wayland relay socket");return;
+    }
+    char log_path[512];
+    snprintf(log_path, sizeof(log_path), "/data/matonos/linux/cache/launch-%.*s.log",
+            (int)(strchr(ref + 4, '/') - (ref + 4)), ref + 4);
+    int logfd = open(log_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
+    posix_spawn_file_actions_t actions;
+    int rc = posix_spawn_file_actions_init(&actions);
+    if (rc) { close(listener); unlink(socket_path); close(capability); if (logfd >= 0) close(logfd); set_error(result, "Flatpak launch setup failed"); return; }
+    rc = 0;
+    if (!rc && logfd >= 0) rc = posix_spawn_file_actions_adddup2(&actions, logfd, STDOUT_FILENO);
+    if (!rc && logfd >= 0) rc = posix_spawn_file_actions_adddup2(&actions, logfd, STDERR_FILENO);
+    if (!rc && logfd >= 0) rc = posix_spawn_file_actions_addclose(&actions, logfd);
+    char display_env[128];
+    snprintf(display_env, sizeof(display_env), "WAYLAND_DISPLAY=%s",socket_path);
+    char dns_env[2048];
+    snprintf(dns_env,sizeof(dns_env),"MATON_FLATPAK_DNS=%s",dns_servers ? dns_servers : "");
+    size_t env_count = 0;
+    while (environ[env_count]) ++env_count;
+    char** env = calloc(env_count + 3, sizeof(char*));
+    size_t n = 0;
+    if (env) {
+        for (size_t i = 0; i < env_count; ++i)
+            if (strncmp(environ[i], "WAYLAND_DISPLAY=", 16) != 0 && strncmp(environ[i],"MATON_FLATPAK_DNS=",18) != 0) env[n++] = environ[i];
+        env[n++] = display_env;
+        env[n] = dns_env;
+    } else rc = ENOMEM;
+    char* argv[] = {(char*)k_flatpak, "--system", "run", "--socket=wayland", "--nosocket=x11",
+            "--no-documents-portal", "--env=MOZ_ENABLE_WAYLAND=1", "--env=GDK_BACKEND=wayland",
+            "--env=QT_QPA_PLATFORM=wayland",
+            "--env=ELECTRON_OZONE_PLATFORM_HINT=wayland",
+            "--env=LIBGL_ALWAYS_SOFTWARE=1", "--env=NO_AT_BRIDGE=1", (char*)ref + 4, NULL, NULL};
+    // Chromium does not honor GDK_BACKEND and otherwise selects the absent X server.
+    if (!strncmp(ref,"app/com.google.Chrome/",22) || !strncmp(ref,"app/org.chromium.Chromium/",26))
+        argv[sizeof(argv)/sizeof(argv[0])-2] = "--ozone-platform=wayland";
+    pid_t child = -1;
+    if (!rc) rc = posix_spawn(&child, k_flatpak, &actions, NULL, argv, env);
+    posix_spawn_file_actions_destroy(&actions);
+    if (logfd >= 0) close(logfd); free(env);
+    if (rc) { close(listener); unlink(socket_path); close(capability); set_error(result, strerror(rc)); return; }
+    int launch_slot=record_launch(ref,log_path,child);
+    if(launch_slot<0){kill(child,SIGTERM);while(waitpid(child,NULL,0)<0&&errno==EINTR){}close(listener);unlink(socket_path);close(capability);set_error(result,"Too many active launches");return;}
+    /* Report immediate CLI failures to the launch Activity instead of a blank window. */
+    for (int i = 0; i < 8; ++i) {
+        int status; pid_t exited = waitpid(child, &status, WNOHANG);
+        if (exited == child) {
+            record_exit(launch_slot,child);
+            FILE* log = fopen(log_path, "re");
+            char message[4096] = "Flatpak exited before opening a window";
+            if (log) { size_t count = fread(message, 1, sizeof(message)-1, log); message[count] = 0; fclose(log); }
+            close(listener); unlink(socket_path); close(capability);
+            if (WIFEXITED(status) && WEXITSTATUS(status)==0) { result->ok=1; result->exit_code=0; return; }
+            set_error(result, message[0] ? message : "Flatpak exited before opening a window"); return;
+        }
+        struct timespec delay = {.tv_sec = 0, .tv_nsec = 250000000}; nanosleep(&delay, NULL);
+    }
+    GraphicalChild* state = malloc(sizeof(*state));
+    pthread_t reaper;
+    if (state) { state->pid = child; state->slot=launch_slot; state->directory = capability; state->listener = listener; snprintf(state->path,sizeof(state->path),"%s",socket_path); }
+    if (!state || pthread_create(&reaper, NULL, reap_graphical, state)) {
+        record_exit(launch_slot,child);free(state); close(listener); unlink(socket_path); close(capability); kill(child, SIGTERM); while (waitpid(child, NULL, 0) < 0 && errno == EINTR) { }
+        set_error(result, "cannot reap Flatpak process"); return;
+    }
+    pthread_detach(reaper);
+    result->ok = 1; result->has_pid = 1; result->pid = (long)child;
+}
+
+/* Return only an installed app's exported desktop entry to the bridge. */
+static void read_desktop_entry(const char* ref, FlatpakResult* result) {
+    if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
+        set_error(result, "valid installed application ref required"); return;
+    }
+    const char* args[] = {"--system", "info", "--show-location", ref};
+    ChildResult child = run_cli(args, 4, 0);
+    if (child.status != 0) {
+        result_from_child(result, &child); return;
+    }
+    if (child.truncated || !child.output) {
+        free(child.output); set_error(result, "invalid application location response"); return;
+    }
+    child.output[strcspn(child.output, "\r\n")] = 0;
+    char app_id[256], path[4096];
+    const char* slash = strchr(ref + 4, '/');
+    size_t length = (size_t)(slash - (ref + 4));
+    if (length >= sizeof(app_id)) { free(child.output); set_error(result, "application ID too long"); return; }
+    memcpy(app_id, ref + 4, length); app_id[length] = 0;
+    if (strncmp(child.output, "/data/matonos/linux/flatpak/app/", strlen("/data/matonos/linux/flatpak/app/")) != 0 ||
+            snprintf(path, sizeof(path), "%s/export/share/applications/%s.desktop", child.output, app_id) >= (int)sizeof(path)) {
+        free(child.output); set_error(result, "invalid application location"); return;
+    }
+    char root[4096], resolved[4096];
+    if (!realpath(child.output, root) || !realpath(path, resolved) ||
+            strncmp(resolved, root, strlen(root)) != 0 || resolved[strlen(root)] != '/') {
+        free(child.output); set_error(result, "desktop entry must remain inside its installed deployment"); return;
+    }
+    free(child.output);
+    FILE* file = fopen(resolved, "re");
+    if (!file) { set_error(result, "installed application has no exported desktop entry"); return; }
+    // Localized desktop entries (for example Firefox) exceed the CLI log limit.
+    const size_t desktop_limit = 128 * 1024;
+    char* contents = calloc(desktop_limit + 1, 1);
+    if (!contents) { fclose(file); set_error(result, "cannot allocate desktop entry"); return; }
+    size_t count = fread(contents, 1, desktop_limit, file);
+    int failed = ferror(file) || (count == desktop_limit && fgetc(file) != EOF);
+    fclose(file);
+    if (failed) { free(contents); set_error(result, "desktop entry is unreadable or too large"); return; }
+    result->output = contents; result->ok = 1; result->exit_code = 0;
+}
+
+static void read_exported_icon(const char* ref, FlatpakResult* result) {
+    if (!flatpak_manager_valid_ref(ref) || strncmp(ref,"app/",4) != 0) {
+        set_error(result,"valid installed application ref required"); return;
+    }
+    const char* args[] = {"--system","info","--show-location",ref};
+    ChildResult location = run_cli(args,4,0);
+    if (location.status != 0) { result_from_child(result,&location); return; }
+    if (!location.output || location.truncated) { free(location.output); set_error(result,"invalid deployment location"); return; }
+    location.output[strcspn(location.output,"\r\n")] = 0;
+    char root[4096];
+    if (strncmp(location.output,"/data/matonos/linux/flatpak/app/",strlen("/data/matonos/linux/flatpak/app/")) || !realpath(location.output,root)) {
+        free(location.output); set_error(result,"invalid deployment location"); return;
+    }
+    free(location.output);
+    const char* sizes[] = {"256x256","128x128","64x64","48x48","512x512","32x32"};
+    const char* end = strchr(ref+4,'/');
+    char path[4096], resolved[4096]; FILE* file = NULL;
+    for (size_t i=0;i<sizeof(sizes)/sizeof(sizes[0]);++i) {
+        int length = snprintf(path,sizeof(path),"%s/export/share/icons/hicolor/%s/apps/%.*s.png",root,sizes[i],(int)(end-ref-4),ref+4);
+        if (length<0 || length>=(int)sizeof(path) || !realpath(path,resolved)) continue;
+        if (strncmp(resolved,root,strlen(root)) || resolved[strlen(root)]!='/') continue;
+        struct stat metadata;
+        if (stat(resolved,&metadata) || !S_ISREG(metadata.st_mode) || metadata.st_size<8 || metadata.st_size>256*1024) continue;
+        file=fopen(resolved,"re"); if (file) break;
+    }
+    /* AppStream supplies PNG thumbnails when an app exports only SVG. */
+    if (!file) {
+        // Some deployments bundle their AppStream PNG alongside their SVG export.
+        char app_id[256], media[4096];
+        size_t app_length=(size_t)(end-ref-4);
+        if(app_length<sizeof(app_id)) {
+            memcpy(app_id,ref+4,app_length);app_id[app_length]=0;
+            for(size_t i=0;i<app_length;i++)if(app_id[i]=='.')app_id[i]='/';
+            int length=snprintf(media,sizeof(media),"%s/files/share/app-info/media/%s",root,app_id);
+            DIR* directory=length>0 && length<(int)sizeof(media) ? opendir(media) : NULL;
+            if(directory) {
+                struct dirent* entry;unsigned visited=0;
+                while(!file && visited++<256 && (entry=readdir(directory))) {
+                    if(entry->d_name[0]=='.')continue;
+                    const char* thumbnails[]={"128x128@2","128x128","64x64"};
+                    for(size_t i=0;i<3;i++) {
+                        length=snprintf(path,sizeof(path),"%s/%s/icons/%s/%.*s.png",media,entry->d_name,thumbnails[i],(int)app_length,ref+4);
+                        if(length<0 || length>=(int)sizeof(path) || !realpath(path,resolved))continue;
+                        if(strncmp(resolved,root,strlen(root)) || resolved[strlen(root)]!='/')continue;
+                        struct stat metadata;
+                        if(stat(resolved,&metadata)||!S_ISREG(metadata.st_mode)||metadata.st_size<8||metadata.st_size>256*1024)continue;
+                        file=fopen(resolved,"re");if(file)break;
+                    }
+                }
+                closedir(directory);
+            }
+        }
+    }
+    if (!file) {
+        char metadata_root[4096];
+        const char* arch_end=strchr(end+1,'/');
+        const char* thumbnails[]={"128x128","64x64"};
+        if (arch_end && realpath("/data/matonos/linux/flatpak/appstream/flathub",metadata_root)) {
+            for(size_t i=0;i<2;++i) {
+                int length=snprintf(path,sizeof(path),"%s/%.*s/active/icons/%s/%.*s.png",metadata_root,(int)(arch_end-end-1),end+1,thumbnails[i],(int)(end-ref-4),ref+4);
+                if(length<0 || length>=(int)sizeof(path) || !realpath(path,resolved))continue;
+                if(strncmp(resolved,metadata_root,strlen(metadata_root)) || resolved[strlen(metadata_root)]!='/')continue;
+                struct stat metadata;
+                if(stat(resolved,&metadata) || !S_ISREG(metadata.st_mode) || metadata.st_size<8 || metadata.st_size>256*1024)continue;
+                file=fopen(resolved,"re");if(file)break;
+            }
+        }
+    }
+    if (!file) { set_error(result,"application has no exported PNG icon"); return; }
+    unsigned char* bytes=malloc(256*1024+1);
+    if (!bytes) { fclose(file); set_error(result,"cannot allocate icon"); return; }
+    size_t count=fread(bytes,1,256*1024+1,file);
+    int failed=ferror(file); fclose(file);
+    if (failed || count<8 || count>256*1024 || memcmp(bytes,"\x89PNG\r\n\x1a\n",8)) {
+        free(bytes); set_error(result,"invalid exported PNG icon"); return;
+    }
+    const char alphabet[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    char* encoded=calloc(4*((count+2)/3)+1,1);
+    if (!encoded) { free(bytes); set_error(result,"cannot encode icon"); return; }
+    size_t j=0;
+    for (size_t i=0;i<count;i+=3) {
+        unsigned value=(unsigned)bytes[i]<<16;
+        if (i+1<count) value|=(unsigned)bytes[i+1]<<8;
+        if (i+2<count) value|=bytes[i+2];
+        encoded[j++]=alphabet[(value>>18)&63]; encoded[j++]=alphabet[(value>>12)&63];
+        encoded[j++]=i+1<count?alphabet[(value>>6)&63]:'=';
+        encoded[j++]=i+2<count?alphabet[value&63]:'=';
+    }
+    free(bytes); result->output=encoded; result->ok=1; result->exit_code=0;
+}
+
 void flatpak_manager_call(const char* command, const char* ref, const char* app_id,
         const char* const* run_args, size_t run_arg_count, int delete_data,
         const char* operation_id, FlatpakResult* result) {
@@ -492,21 +832,35 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
     if (strcmp(command, "list_installed") == 0 || strcmp(command, "list_remotes") == 0 ||
             strcmp(command, "add_flathub") == 0) {
         ChildResult child;
-        pthread_mutex_lock(&g_operation_mutex);
+        int changes_remote = strcmp(command, "add_flathub") == 0;
+        // Flatpak supports listing the committed state during a transaction.
+        // Never queue a Binder caller behind a ten-minute install.
+        if (changes_remote && pthread_mutex_trylock(&g_operation_mutex) != 0) {
+            set_error(result, "A Flatpak operation is already running. Try again when it finishes.");
+            return;
+        }
         if (strcmp(command, "list_installed") == 0) {
-            const char* args[] = {"--system", "list", "--columns=application,ref"};
+            const char* args[] = {"--system", "list", "--app", "--columns=ref"};
             child = run_cli(args, sizeof(args) / sizeof(args[0]), 0);
         } else if (strcmp(command, "list_remotes") == 0) {
             const char* args[] = {"--system", "remotes", "--show-details"};
             child = run_cli(args, sizeof(args) / sizeof(args[0]), 0);
         } else {
-            const char* args[] = {"--system", "remote-add", "--if-not-exists", "--noninteractive",
-                    "--assumeyes", "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"};
+            /* remote-add accepts neither transaction flag; --from imports the
+             * repository URL and signing key from the .flatpakrepo file. */
+            const char* args[] = {"--system", "remote-add", "--if-not-exists", "--from",
+                    "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"};
             child = run_cli(args, sizeof(args) / sizeof(args[0]), 0);
         }
-        pthread_mutex_unlock(&g_operation_mutex);
+        if (changes_remote) pthread_mutex_unlock(&g_operation_mutex);
         result_from_child(result, &child);
         free(child.output);
+    } else if (strcmp(command, "launch_status") == 0) {
+        read_launch_status(ref,result);
+    } else if (strcmp(command, "icon") == 0) {
+        read_exported_icon(ref, result);
+    } else if (strcmp(command, "desktop_entry") == 0) {
+        read_desktop_entry(ref, result);
     } else if (strcmp(command, "install") == 0 || strcmp(command, "uninstall") == 0) {
         if (!flatpak_manager_valid_ref(ref)) set_error(result, "valid complete Flatpak ref required");
         else start_package_operation(strcmp(command, "uninstall") == 0, ref, delete_data, operation_id, result);

@@ -137,7 +137,11 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   printf '%s\n' "$key_id" >> "$processed_tmp"
 
   stamp=$DEVICE_DIR/prebuilt/apps-built/.$key_id.inputs
-  fingerprint=$(inputs_hash "$project" "$DEVICE_DIR/rn-apps/rn-common" "$DEVICE_DIR/buildinfra/client")-$cert_sha
+  extra_inputs=()
+  if [[ $key_id == matonos-wayland-host ]]; then
+    extra_inputs+=("$DEVICE_DIR/linux/compositor/native" "$DEVICE_DIR/systembridge/aidl")
+  fi
+  fingerprint=$(inputs_hash "$project" "$DEVICE_DIR/rn-apps/rn-common" "$DEVICE_DIR/buildinfra/client" "${extra_inputs[@]}")-$cert_sha
   if [[ ${MATON_APPS_FORCE:-0} != 1 && -s $stamp && $(cat "$stamp") == "$fingerprint" &&
         -s $DEVICE_DIR/prebuilt/apps-built/$apk_name && -s $DEVICE_DIR/buildinfra/apps-built/$apk_name ]]; then
     info "Skipping $key_id: inputs unchanged since the staged $apk_name"

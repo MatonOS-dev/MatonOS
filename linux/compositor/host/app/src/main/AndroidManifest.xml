@@ -1,10 +1,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
     <application android:label="Maton Wayland" android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:multiArch="true">
         <library android:name="org.matonos.linuxhost" />
-        <service android:name=".CompositorService" android:process=":compositor" android:exported="false"
+        <!-- Exported embedded Binder authenticates the exact generated stub;
+             the legacy full compositor Binder remains restricted to this UID. -->
+        <service android:name=".CompositorService" android:process=":compositor" android:exported="true"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Runs the local Wayland compositor" />
         </service>

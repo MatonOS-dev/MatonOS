@@ -46,17 +46,24 @@ other request. Access is checked with the bridge's
    rejects it promptly. Kill the linuxd process and confirm init restarts it
    without affecting boot or the rest of the running system.
 
+## Launcher stubs
+
+The system bridge links `MatonLinuxStubGenerator` and owns stub signing in its
+Android Keystore. It reconciles installed refs at startup, after completion
+notifications, and every 30 seconds. The validated `desktop_entry` command
+returns the installed deployment's exported desktop file. Generated packages
+are installed through PackageInstaller and removed after Flatpak uninstall.
+The signing alias survives Software Center updates and removals; clearing the
+bridge's own data still removes its key.
+
+Linuxd and the bridge use matching one-way progress listener definitions.
+The store shows numeric progress when Flatpak reports percentages and an
+indeterminate bar during other stages.
+
 ## Open issues
 
-- The bridge currently forwards Flatpak operations but does not generate or
-  install a stub APK after an install. See [SHARED-CHANGES.md](SHARED-CHANGES.md)
-  for the request to the separate bridge owner.
-- The stub generator's AndroidKeyStore alias cannot survive app UID removal;
-  stable bridge-owned stub signing is requested in `SHARED-CHANGES.md`.
-- The bridge has a duplicate listener AIDL under `systembridge/**`. It remains
-  synchronous here because that copy is outside this area's ownership. A
-  stalled listener can stop event delivery, but does not block CLI draining or
-  package operation serialization; listener death is tracked. Align both
-  definitions as `oneway` in the bridge task.
-- Full end-to-end install verification must wait for a successful shared image
-  build and a fresh boot.
+- The compositor host's MainActivity still reports that its Flatpak runtime
+  launcher is not wired. Stub creation does not implement graphical launch.
+- Stub generation currently uses a fallback icon rather than exported icons.
+- Runtime confirmation of automatic stub installation is pending the local
+  repair image build.

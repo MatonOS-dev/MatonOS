@@ -23,6 +23,7 @@ android {
     ndkPath System.getenv('MATON_NDK') ?: "${System.getProperty('user.home')}/Documents/android-ndk-r30"
     sourceSets {
         main {
+            aidl.srcDirs += file("$rootDir/../../../systembridge/aidl")
             jniLibs.srcDirs += file("$rootDir/../../../../../../out/matonos/compositor/jniLibs")
         }
     }

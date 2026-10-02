@@ -105,6 +105,8 @@ prebuilt_etc {
 // packaged inside the APK by linux/compositor/build-compositor.sh + Gradle.
 android_app_import {
     name: "MatonWaylandHost",
+    privileged: true,
+    required: ["privapp-permissions-org.matonos.flathub"],
     apk: "apps-built/MatonWaylandHost.apk",
     system_ext_specific: true,
     preprocessed: true,

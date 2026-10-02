@@ -9,4 +9,7 @@ interface ICompositor {
     void keyEvent(int windowId, int keycode, int scanCode, int action, int metaState, long eventTimeNanos);
     void motionEvent(int windowId, float x, float y, float verticalScroll, float horizontalScroll, int action, int buttons, long eventTimeNanos);
     void resizeWindow(int windowId, int width, int height);
+    String launchFlatpak(String ref);
+    void closeWindow(int id);
+    String getLaunchStatus(String ref);
 }

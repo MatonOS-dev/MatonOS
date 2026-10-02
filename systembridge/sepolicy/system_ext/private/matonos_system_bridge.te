@@ -6,11 +6,16 @@ app_domain(matonos_system_bridge)
 type matonos_linuxd, domain;
 typeattribute matonos_linuxd coredomain;
 init_daemon_domain(matonos_linuxd)
+type matonos_linuxd_tmpfs, file_type;
+type matonos_compositor_data_file, file_type, data_file_type, core_data_file_type, app_data_file_type;
+tmpfs_domain(matonos_linuxd)
 type matonos_linuxd_service, protected_service, service_manager_type;
 allow matonos_linuxd matonos_linuxd_service:service_manager add;
 allow matonos_system_bridge matonos_linuxd_service:service_manager find;
 neverallow { domain -matonos_linuxd } matonos_linuxd_service:service_manager add;
 binder_call(matonos_system_bridge, matonos_linuxd)
+# linuxd sends asynchronous operation progress back to the bridge.
+binder_call(matonos_linuxd, matonos_system_bridge)
 
 # Flatpak and bubblewrap use only fixed system_ext executables and the private
 # data tree. Namespaces are handled by bubblewrap inside the spawned process.
@@ -31,3 +36,14 @@ allow matonos_system_bridge power_service:service_manager find;
 binder_call(matonos_system_bridge, system_server)
 allow matonos_system_bridge vendor_configs_file:dir search;
 allow matonos_system_bridge vendor_configs_file:file r_file_perms;
+
+# The allowlisted compositor delegates its Wayland directory through Binder.
+# DAC keeps its private parent inaccessible; linuxd connects through that fd.
+allow matonos_linuxd { priv_app priv_app_36 }:fd use;
+allow matonos_linuxd matonos_compositor_data_file:dir { getattr search };
+allow matonos_linuxd matonos_compositor_data_file:sock_file { getattr read write };
+allow matonos_linuxd { priv_app priv_app_36 }:unix_stream_socket connectto;
+# Wayland SHM descriptors are relayed from the Flatpak process to the host.
+# Android 17 places privileged apps targeting SDK <=36 in priv_app_36.
+allow { priv_app priv_app_36 } matonos_linuxd:fd use;
+allow { priv_app priv_app_36 } matonos_linuxd_tmpfs:file { getattr read write map };
