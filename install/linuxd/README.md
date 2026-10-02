@@ -76,7 +76,10 @@ the PNG signature; otherwise the stub keeps its fallback icon.
 
 ## Open issues
 
-- X11-only applications cannot launch yet; Xwayland support in the compositor
-  is planned before shipping.
+- X11 applications launch under Xwayland only when their app id is listed in
+  `/data/matonos/linux/config/x11-apps` (one app id per line, read at launch;
+  absent file means Wayland for everything). No management interface exists
+  yet; the system bridge or an administrator must maintain the file. Runtime
+  verification of Xwayland launches is pending a fresh image.
 - Runtime confirmation of automatic stub installation is pending the local
   repair image build.

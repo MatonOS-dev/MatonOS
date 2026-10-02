@@ -154,6 +154,24 @@ Electron, GTK, Qt) drop their own decorations instead of drawing a second bar
 below it. GTK_CSD=0 and QT_WAYLAND_DISABLE_WINDOWDECORATION=1 are additionally
 exported into every Flatpak launch for toolkits that ignore the protocol.
 
+Xwayland (2026-10-02): each application session owns a lazy Xwayland server
+(Xwayland 24.1.13 built for bionic by `build-xwayland.sh`; the server binary
+and its libraries ship in system_ext). `CompositorService` initializes the
+per-app socket directory (`/data/matonos/linux/x11`, created by init, labeled
+`matonos_x11_socket_file`) and the compositor chowns each display socket to
+the session's application uid, so an app can only reach its own display.
+`WLR_XWAYLAND_NO_ABSTRACT=1` keeps wlroots from binding an abstract socket,
+whose filesystem permissions cannot isolate clients. Clients receive
+`DISPLAY=<socket path>` (libxcb path syntax). linuxd launches an application
+under X11 only when its app id is listed in
+`/data/matonos/linux/config/x11-apps`; X11 launches drop the Wayland forcing
+variables and use `--socket=x11 --nosocket=wayland`. Managed X windows reuse
+the toplevel path (one Android activity each); Android's window size is
+authoritative and is answered back through xwayland configure requests. GLX,
+glamor and DRI3 are disabled: X11 applications render in software, and the
+launch environment already forces software GL. Runtime verification is
+pending; X11 opt-in apps must be tested from a fresh image.
+
 Launcher stubs declare a real Android drawable resource, use exported PNG
 icons when available, and replace packages older than version 9. Missing
 PNG exports retain a fallback image. Image build and runtime results are in

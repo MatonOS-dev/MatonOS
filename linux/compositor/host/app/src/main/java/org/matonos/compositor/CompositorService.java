@@ -48,8 +48,11 @@ public final class CompositorService extends Service {
             // Per-app Xwayland servers live in a shared, init-created and
             // labeled directory so application UIDs can reach their sockets;
             // lazy start keeps the cost at zero for Wayland-only apps.
+            // Fail closed when the Xwayland server binary is not shipped.
             java.io.File x11dir = new java.io.File("/data/matonos/linux/x11");
-            if (!x11dir.isDirectory()) {
+            if (!new java.io.File("/system_ext/bin/Xwayland").isFile()) {
+                Log.i(TAG, "Xwayland server not installed; X11 launch disabled");
+            } else if (!x11dir.isDirectory()) {
                 Log.w(TAG, "No X11 socket directory; Xwayland disabled");
             } else if (!nativeXwaylandInit(x11dir.getAbsolutePath(), "/system_ext/bin")) {
                 Log.w(TAG, "Xwayland environment setup failed; Xwayland disabled");
