@@ -238,10 +238,10 @@ static void on_surface_commit(struct wl_listener* l,void* data) {
     wlr_xdg_toplevel_set_size(w->toplevel,w->width,w->height);
     /* Android frames and manages the window, so it is tiled on every edge:
      * toolkits then drop rounded corners, shadow margins and resize borders.
-     * xdg-shell v1 clients have no tiled state; maximized is the closest. */
-    if(wl_resource_get_version(w->toplevel->resource)>=XDG_TOPLEVEL_STATE_TILED_LEFT_SINCE_VERSION)
-      wlr_xdg_toplevel_set_tiled(w->toplevel,WLR_EDGE_TOP|WLR_EDGE_BOTTOM|WLR_EDGE_LEFT|WLR_EDGE_RIGHT);
-    else wlr_xdg_toplevel_set_maximized(w->toplevel,true);
+     * Firefox ignores tiled for its own frame, so maximized is sent as well;
+     * the window size stays whatever Android gives it. */
+    wlr_xdg_toplevel_set_tiled(w->toplevel,WLR_EDGE_TOP|WLR_EDGE_BOTTOM|WLR_EDGE_LEFT|WLR_EDGE_RIGHT);
+    wlr_xdg_toplevel_set_maximized(w->toplevel,true);
   }
 }
 static void on_new_toplevel(struct wl_listener* l,void* data) {
