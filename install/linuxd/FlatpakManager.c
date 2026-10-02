@@ -756,6 +756,19 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
         if (stat(resolved,&metadata) || !S_ISREG(metadata.st_mode) || metadata.st_size<8 || metadata.st_size>256*1024) continue;
         file=fopen(resolved,"re"); if (file) break;
     }
+    /* appstream-compose writes flatpak-context PNGs into every deployment it
+     * processed; apps exporting only SVG (Brave) still have icons here. */
+    if (!file) {
+        const char* flat_sizes[] = {"512x512","256x256","128x128","128x128@2","64x64","64x64@2","48x48","32x32"};
+        for (size_t i=0;i<sizeof(flat_sizes)/sizeof(flat_sizes[0]) && !file;++i) {
+            int length = snprintf(path,sizeof(path),"%s/files/share/app-info/icons/flatpak/%s/%.*s.png",root,flat_sizes[i],(int)(end-ref-4),ref+4);
+            if (length<0 || length>=(int)sizeof(path) || !realpath(path,resolved)) continue;
+            if (strncmp(resolved,root,strlen(root)) || resolved[strlen(root)]!='/') continue;
+            struct stat metadata;
+            if (stat(resolved,&metadata) || !S_ISREG(metadata.st_mode) || metadata.st_size<8 || metadata.st_size>256*1024) continue;
+            file=fopen(resolved,"re");
+        }
+    }
     /* AppStream supplies PNG thumbnails when an app exports only SVG. */
     if (!file) {
         // Some deployments bundle their AppStream PNG alongside their SVG export.
