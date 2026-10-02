@@ -30,7 +30,6 @@ import java.util.concurrent.TimeUnit;
 /** Reconciles installed Flatpaks with signed Android launcher packages. */
 final class FlatpakStubManager {
     private static final String TAG = "MatonFlatpakStubs";
-    private static final String PREFIX = "org.matonos.flatpak.stub.";
     private final Context context;
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
     private ILinuxd subscribedDaemon;
@@ -74,7 +73,12 @@ final class FlatpakStubManager {
             if (!ref.startsWith("app/")) ref = "app/" + ref;
             String[] parts = ref.split("/");
             if (parts.length != 4 || !parts[1].equals(appId)) continue;
-            Intent intent = context.getPackageManager().getLaunchIntentForPackage(packageFor(ref));
+            String pkg = packageFor(ref);
+            // Readable stub names are predictable; verify the occupant is
+            // really our signed stub before launching anything at that name.
+            if (!isOurSignedStub(pkg))
+                throw new IllegalStateException("The launcher entry for this application is not a MatonOS stub. Remove the conflicting package and retry.");
+            Intent intent = context.getPackageManager().getLaunchIntentForPackage(pkg);
             if (intent == null) {
                 refresh();
                 throw new IllegalStateException("The launcher entry is still being created. Try again shortly.");
@@ -84,6 +88,20 @@ final class FlatpakStubManager {
             return new JSONObject().put("ok", true).toString();
         }
         throw new IllegalStateException("This application is no longer installed");
+    }
+
+    /** The package at a stub name must carry our stub signing certificate. */
+    private boolean isOurSignedStub(String pkg) {
+        try {
+            PackageManager manager = context.getPackageManager();
+            PackageInfo info = manager.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES);
+            if (info.signingInfo == null) return false;
+            byte[] expected = StubGenerator.getExistingSigningCertificate();
+            for (android.content.pm.Signature signature : info.signingInfo.getApkContentsSigners())
+                if (expected != null && java.security.MessageDigest.isEqual(signature.toByteArray(), expected))
+                    return true;
+            return false;
+        } catch (Exception error) { return false; }
     }
 
     private static String packageFor(String ref) throws Exception {
@@ -129,7 +147,7 @@ final class FlatpakStubManager {
                 catch (Exception e) { Log.e(TAG, "Cannot create launcher for " + ref, e); }
             }
             for (PackageInfo pkg : context.getPackageManager().getInstalledPackages(0)) {
-                if (pkg.packageName.startsWith(PREFIX) && !wanted.contains(pkg.packageName) && pending.add(pkg.packageName))
+                if (FlatpakStubIdentity.isGeneratedStub(pkg.packageName) && !wanted.contains(pkg.packageName) && pending.add(pkg.packageName))
                     context.getPackageManager().getPackageInstaller().uninstall(pkg.packageName, resultSender);
             }
         } catch (Exception e) { Log.w(TAG, "Flatpak launcher reconciliation failed", e); }

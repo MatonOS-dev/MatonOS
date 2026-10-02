@@ -598,41 +598,21 @@ static void* reap_graphical(void* argument) {
     close(child->listener);unlink(child->path);close(child->directory);free(child);return NULL;
 }
 
-/* Per-application X11 opt-in: one app id per line in a bounded file the
- * system bridge (or an administrator) maintains. Wayland stays the default. */
-static bool app_prefers_x11(const char* ref) {
-    FILE* file = fopen("/data/matonos/linux/config/x11-apps", "re");
-    if (!file) return false;
-    const char* app = ref + 4;
-    const char* end = strchr(app, '/');
-    size_t app_length = end ? (size_t)(end - app) : strlen(app);
-    if (app_length == 0 || app_length >= 256) { fclose(file); return false; }
-    char line[256];
-    bool found = false;
-    while (!found && fgets(line, sizeof(line), file)) {
-        size_t length = strlen(line);
-        while (length && (line[length-1]=='\n'||line[length-1]=='\r'||line[length-1]==' ')) line[--length]=0;
-        found = length == app_length && !strncmp(line, app, app_length);
-    }
-    fclose(file);
-    return found;
-}
-
 /* The compositor delegates only its socket directory, never its app data root. */
 void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, const char* x11_display, FlatpakResult* result) {
     struct stat directory, socket_info;
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
         set_error(result, "valid installed application ref required"); return;
     }
+    /* Offer both display systems: toolkits self-select (GTK/SDL2 pick
+     * Wayland, Qt and Chromium/Electron pick X11 and land on the per-app
+     * Xwayland). No forcing variables, no per-app opt-in list. The X11
+     * display stays empty when the compositor has no Xwayland (it gates on
+     * the shipped server binary), and apps then use Wayland as before. */
     const bool display_valid = x11_display &&
         !strncmp(x11_display, "/data/matonos/linux/x11/X", 25) &&
         x11_display[25] != '\0' &&
         strspn(x11_display + 25, "0123456789") == strlen(x11_display + 25);
-    const bool wants_x11 = app_prefers_x11(ref);
-    if (wants_x11 && !display_valid) {
-        set_error(result, "application requests X11 but the compositor provides no Xwayland display"); return;
-    }
-    const bool use_x11 = wants_x11 && display_valid;
     if (fstat(runtime_directory_fd, &directory) || !S_ISDIR(directory.st_mode) ||
             fstatat(runtime_directory_fd, "wayland-0", &socket_info, AT_SYMLINK_NOFOLLOW) ||
             !S_ISSOCK(socket_info.st_mode) || socket_info.st_uid != directory.st_uid) {
@@ -667,43 +647,33 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     if (!rc && logfd >= 0) rc = posix_spawn_file_actions_addclose(&actions, logfd);
     char display_env[128];
     char x11_env[256];
-    if (use_x11) {
+    snprintf(display_env,sizeof(display_env),"WAYLAND_DISPLAY=%s",socket_path);
+    if (display_valid)
         snprintf(x11_env,sizeof(x11_env),"DISPLAY=%s",x11_display);
-    } else {
-        snprintf(display_env,sizeof(display_env),"WAYLAND_DISPLAY=%s",socket_path);
-    }
     char dns_env[2048];
     snprintf(dns_env,sizeof(dns_env),"MATON_FLATPAK_DNS=%s",dns_servers ? dns_servers : "");
     size_t env_count = 0;
     while (environ[env_count]) ++env_count;
-    char** env = calloc(env_count + 3, sizeof(char*));
+    char** env = calloc(env_count + 4, sizeof(char*));
     size_t n = 0;
     if (env) {
         for (size_t i = 0; i < env_count; ++i)
-            if (strncmp(environ[i], "WAYLAND_DISPLAY=", 16) != 0 && strncmp(environ[i],"MATON_FLATPAK_DNS=",18) != 0 &&
-                    (!use_x11 || strncmp(environ[i],"DISPLAY=",8) != 0)) env[n++] = environ[i];
-        if (use_x11) env[n++] = x11_env;
-        else env[n++] = display_env;
+            if (strncmp(environ[i], "WAYLAND_DISPLAY=", 16) != 0 &&
+                    strncmp(environ[i],"MATON_FLATPAK_DNS=",18) != 0 &&
+                    strncmp(environ[i],"DISPLAY=",8) != 0) env[n++] = environ[i];
+        env[n++] = display_env;
+        if (display_valid) env[n++] = x11_env;
         env[n] = dns_env;
     } else rc = ENOMEM;
+    /* Both display sockets are granted; toolkits choose their backend.
+     * Android's caption bar is the only window decoration, so toolkits that
+     * ignore the decoration protocol are told to drop their own, and GL
+     * stays software everywhere. */
     char* argv[] = {(char*)k_flatpak, "--system", "run",
-            /* Wayland for apps that support it; X11 only for opted-in
-             * applications (DISPLAY carries the per-session socket path). */
-            use_x11 ? "--socket=x11" : "--socket=wayland",
-            use_x11 ? "--nosocket=wayland" : "--nosocket=x11",
-            "--no-documents-portal",
-            /* Android's caption bar is the only window decoration; toolkits
-             * that ignore the decoration protocol are told to drop their own. */
+            "--socket=wayland", "--socket=x11", "--no-documents-portal",
             "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1", "--env=GTK_CSD=0",
             "--env=LIBGL_ALWAYS_SOFTWARE=1", "--env=NO_AT_BRIDGE=1",
-            use_x11 ? "--env=QT_X11_NO_MITSHM=1" : "--env=MOZ_ENABLE_WAYLAND=1",
-            use_x11 ? NULL : "--env=GDK_BACKEND=wayland",
-            use_x11 ? NULL : "--env=QT_QPA_PLATFORM=wayland",
-            use_x11 ? NULL : "--env=ELECTRON_OZONE_PLATFORM_HINT=wayland",
-            (char*)ref + 4, NULL, NULL};
-    // Chromium does not honor GDK_BACKEND and otherwise selects the absent X server.
-    if (!strncmp(ref,"app/com.google.Chrome/",22) || !strncmp(ref,"app/org.chromium.Chromium/",26))
-        argv[sizeof(argv)/sizeof(argv[0])-2] = "--ozone-platform=wayland";
+            (char*)ref + 4, NULL};
     pid_t child = -1;
     if (!rc) rc = posix_spawn(&child, k_flatpak, &actions, NULL, argv, env);
     posix_spawn_file_actions_destroy(&actions);

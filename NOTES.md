@@ -659,9 +659,11 @@ Feature work continues, but in this shape from now on.
   persisted in a bounded `/data/matonos/linux/config/display-modes.json`.
   Launch consults the override: wayland -> strip DISPLAY and restore the
   forcing vars, x11 -> strip WAYLAND_DISPLAY and set the X11 toolkit env,
-  both -> offer both unchanged. Supersedes r12's
-  `/data/matonos/linux/config/x11-apps` opt-in file (kept transitional until
-  the bridge commands land). Authorization rides the bridge's existing
+  both -> offer both unchanged. **Implemented (removed the transitional
+  `/data/matonos/linux/config/x11-apps` opt-in file; the forcing variables
+  and the Chrome `--ozone-platform=wayland` special case are gone).** The
+  bridge `set_display_mode` override commands are still future work.
+  Authorization rides the bridge's existing
   target allowlist; a store/Settings toggle can come later. Telemetry comes
   free: the compositor logs which display system each session actually used
   (Xwayland `events.ready` fires only on the first X client connect), and a

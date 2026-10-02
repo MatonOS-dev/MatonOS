@@ -76,10 +76,11 @@ the PNG signature; otherwise the stub keeps its fallback icon.
 
 ## Open issues
 
-- X11 applications launch under Xwayland only when their app id is listed in
-  `/data/matonos/linux/config/x11-apps` (one app id per line, read at launch;
-  absent file means Wayland for everything). No management interface exists
-  yet; the system bridge or an administrator must maintain the file. Runtime
-  verification of Xwayland launches is pending a fresh image.
+- Display selection: launches export both `WAYLAND_DISPLAY` and the
+  per-session `DISPLAY` (Xwayland socket path) and both sockets; toolkits
+  self-select (GTK/SDL2 -> Wayland, Qt and Chromium/Electron -> X11). Per-app
+  overrides are planned through the bridge's generic channel
+  (`set_display_mode`), not a config file. Xwayland launch verification is
+  pending a fresh image.
 - Runtime confirmation of automatic stub installation is pending the local
   repair image build.
