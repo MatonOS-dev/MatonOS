@@ -118,9 +118,12 @@ public final class SystemBridgeService extends Service {
                     Binder.restoreCallingIdentity(identity);
                     try { runtimeDirectory.close(); } catch (java.io.IOException ignored) { }
                 }
-            } catch (RuntimeException error) {
+            } catch (RemoteException e) {
                 // Server-side visibility: the client only sees the exception
                 // class, never this stack.
+                Log.e(TAG, "launchFlatpak failed for " + ref, e);
+                throw new IllegalStateException("Flatpak service disconnected", e);
+            } catch (RuntimeException error) {
                 Log.e(TAG, "launchFlatpak failed for " + ref, error);
                 throw error;
             }
