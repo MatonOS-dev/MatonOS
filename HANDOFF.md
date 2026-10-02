@@ -1,13 +1,13 @@
 ## Software Center repair, 2026-10-02
 
 Current handover: [Software Center and Flatpak repair](HANDOVER-2026-10-02.md).
-r11 (20261002, `daaf6fd6…`) is built with the deployment app-info icon
-fallback (Brave's placeholder icon) and the newest broker/wrapper. r12
-(20261002, `2e7251c5…`) is built with server-side-only window decorations
-(double title bar fix) and the Xwayland plumbing (gated off until
-`tools/stage-xwayland.sh` stages the binaries for r13). Both are awaiting
-fresh-boot verification. Older r1-r10 images remain preserved. No build is
-currently running. No release or push.
+r13 (20261002, `1141086508…`) is the current build: the compositor APK
+crash fix (xcb closure bundled — r12's compositor died at load and no app
+could launch), the real Xwayland server staged into system_ext,
+offer-both display selection, and readable stub names `flatpak.<id>`.
+App icons confirmed working by the user on r12. r11/r12 remain preserved.
+Awaiting fresh-boot verification of r13 (checklist in the handover). No
+build is currently running. No release or push.
 
 # Session handoff
 
