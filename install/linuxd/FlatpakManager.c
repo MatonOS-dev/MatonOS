@@ -7,6 +7,7 @@
 #include <pthread.h>
 #include <poll.h>
 #include <spawn.h>
+#include <stdbool.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -597,13 +598,7 @@ static void* reap_graphical(void* argument) {
     close(child->listener);unlink(child->path);close(child->directory);free(child);return NULL;
 }
 
-/* The compositor delegates only its socket directory, never its app data root. */
-void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, const char* x11_display, FlatpakResult* result) {
-    struct stat directory, socket_info;
-    if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
-        set_error(result, "valid installed application ref required"); return;
-    }
-    /* Per-application X11 opt-in: one app id per line in a bounded file the
+/* Per-application X11 opt-in: one app id per line in a bounded file the
  * system bridge (or an administrator) maintains. Wayland stays the default. */
 static bool app_prefers_x11(const char* ref) {
     FILE* file = fopen("/data/matonos/linux/config/x11-apps", "re");
