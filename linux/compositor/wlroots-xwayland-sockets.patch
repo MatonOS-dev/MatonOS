@@ -9,7 +9,7 @@ sockets have no filesystem permissions, so per-display servers can then
 isolate clients through filesystem socket ownership alone. Server startup,
 argv construction and teardown handle a missing first listen fd.
 --- a/xwayland/sockets.c	2026-07-07 23:46:09.000000000 +0200
-+++ b/xwayland/sockets.c	2026-10-02 18:37:58.784379745 +0200
++++ b/xwayland/sockets.c	2026-10-02 23:31:00.150735506 +0200
 @@ -7,6 +7,7 @@
  #include <stdint.h>
  #include <stdio.h>
@@ -191,7 +191,16 @@ argv construction and teardown handle a missing first listen fd.
  			if (!open_sockets(socks, display)) {
  				unlink(lock_name);
 --- a/xwayland/server.c	2026-07-07 23:46:09.000000000 +0200
-+++ b/xwayland/server.c	2026-10-02 18:36:53.431636170 +0200
++++ b/xwayland/server.c	2026-10-02 23:31:00.166424781 +0200
+@@ -26,7 +26,7 @@
+ 
+ noreturn static void exec_xwayland(struct wlr_xwayland_server *server,
+ 		int notify_fd) {
+-	if (!set_cloexec(server->x_fd[0], false) ||
++	if ((server->x_fd[0] >= 0 && !set_cloexec(server->x_fd[0], false)) ||
+ 			!set_cloexec(server->x_fd[1], false) ||
+ 			!set_cloexec(server->wl_fd[1], false)) {
+ 		wlr_log(WLR_ERROR, "Failed to unset CLOEXEC on FD");
 @@ -61,15 +61,23 @@
  #endif
  

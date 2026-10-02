@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+#include <android/log.h>
 #include "FlatpakManager.h"
 
 #include <errno.h>
@@ -612,7 +613,7 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
         set_error(result, "valid installed application ref required"); return;
     }
-    const bool has_x11 = x11_display && x11_display[0];
+    bool has_x11 = x11_display && x11_display[0];
     struct stat x11_directory;
     if (has_x11 && (x11_display[0] != 'X' || !x11_display[1] || strlen(x11_display) >= 64 ||
             strspn(x11_display + 1, "0123456789") != strlen(x11_display + 1))) {
@@ -621,7 +622,9 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     if (has_x11 && (fstat(x11_directory_fd, &x11_directory) || !S_ISDIR(x11_directory.st_mode) ||
             fstatat(x11_directory_fd, x11_display, &socket_info, AT_SYMLINK_NOFOLLOW) ||
             !S_ISSOCK(socket_info.st_mode) || socket_info.st_uid != x11_directory.st_uid)) {
-        set_error(result, "compositor X11 socket directory is unavailable"); return;
+        /* A dead Xwayland must not block the app: launch Wayland-only. */
+        __android_log_print(ANDROID_LOG_WARN, "matonos-linuxd", "X11 socket %s unavailable; launching %s without X11", x11_display, ref);
+        has_x11 = false;
     }
     if (fstat(runtime_directory_fd, &directory) || !S_ISDIR(directory.st_mode) ||
             fstatat(runtime_directory_fd, "wayland-0", &socket_info, AT_SYMLINK_NOFOLLOW) ||
