@@ -57,16 +57,6 @@ allow matonos_linuxd matonos_compositor:unix_stream_socket connectto;
 allow matonos_compositor matonos_linuxd:fd use;
 allow matonos_compositor matonos_linuxd_tmpfs:file { getattr read write map };
 
-# The allowlisted compositor runs as its own app domain: the per-app Xwayland
-# servers it forks inherit one auditable domain, and application uids can
-# connect to its X11 display sockets despite their per-uid MLS levels
-# (a listening socket keeps its creator's label, and mlstrustedsubject
-# satisfies the connectto constraint). It keeps ordinary privileged-app
-# privileges through app_domain().
-type matonos_compositor, domain;
-typeattribute matonos_compositor mlstrustedsubject;
-app_domain(matonos_compositor);
-
 # Per-app Xwayland: the compositor creates one lazy server per application
 # session in the shared labeled directory and hands each display socket to
 # its application's uid (chown + 0600), so a uid can only connect to its own
