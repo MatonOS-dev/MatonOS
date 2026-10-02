@@ -91,16 +91,15 @@ public final class SystemBridgeService extends Service {
             finally { Binder.restoreCallingIdentity(identity); }
         }
 
-        @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, String x11Display) {
+        @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, android.os.ParcelFileDescriptor x11Directory, String x11Display) {
             try {
                 String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
                 if (!"org.matonos.compositor".equals(caller) || runtimeDirectory == null)
                     throw new SecurityException("Only the compositor may launch graphical Flatpaks");
-                // A wrong display string could point a sandboxed application at
-                // another application's X server; only accept our own socket dir.
+                // Accept only a socket name inside the delegated X11 directory.
                 if (x11Display != null && x11Display.length() > 0 &&
-                        !x11Display.startsWith("/data/matonos/linux/x11/X"))
-                    throw new SecurityException("X11 display outside the compositor socket directory");
+                        (!x11Display.matches("X[0-9]+") || x11Directory == null))
+                    throw new SecurityException("Invalid compositor X11 socket capability");
                 long identity = Binder.clearCallingIdentity();
                 try {
                     ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
@@ -113,10 +112,9 @@ public final class SystemBridgeService extends Service {
                         if (dns.length() > 0) dns.append(',');
                         dns.append(server.getHostAddress());
                     }
-                    return daemon.launchGraphical(ref, runtimeDirectory, dns.toString(), x11Display);
+                    return daemon.launchGraphical(ref, runtimeDirectory, dns.toString(), x11Directory, x11Display);
                 } finally {
                     Binder.restoreCallingIdentity(identity);
-                    try { runtimeDirectory.close(); } catch (java.io.IOException ignored) { }
                 }
             } catch (RemoteException e) {
                 // Server-side visibility: the client only sees the exception
@@ -126,6 +124,9 @@ public final class SystemBridgeService extends Service {
             } catch (RuntimeException error) {
                 Log.e(TAG, "launchFlatpak failed for " + ref, error);
                 throw error;
+            } finally {
+                if (runtimeDirectory != null) try { runtimeDirectory.close(); } catch (java.io.IOException ignored) { }
+                if (x11Directory != null) try { x11Directory.close(); } catch (java.io.IOException ignored) { }
             }
         }
 

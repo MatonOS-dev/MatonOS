@@ -15,7 +15,5 @@ on property:sys.boot_completed=1
     mkdir /data/matonos/linux/flatpak-user 0770 system system
     mkdir /data/matonos/linux/flatpak-data 0770 system system
     mkdir /data/matonos/linux/runtime 0700 system system
-    # Per-app Xwayland display sockets (compositor chowns each to its app).
-    mkdir /data/matonos/linux/x11 1777 root root
     restorecon_recursive /data/matonos/linux
     start matonos-linuxd

@@ -4,7 +4,6 @@
 /data/matonos/linux(/.*)? u:object_r:matonos_flatpak_data_file:s0
 # Per-app Xwayland display sockets live in their own directory so the
 # compositor can hand each socket to its application's uid.
-/data/matonos/linux/x11(/.*)? u:object_r:matonos_x11_socket_file:s0
 # flatpak-spike: NDK runtime files use the existing system_file type, which
 # matonos-linuxd is already allowed to execute/read; no new policy type needed.
 /system_ext/bin/(flatpak|gpg|ostree|matonos-flatpak|revokefs-fuse|Xwayland) u:object_r:system_file:s0

@@ -490,7 +490,7 @@ static void run_async(const char* app_id, const char* const* extra, size_t extra
     result->pid = (long)child;
 }
 
-typedef struct GraphicalChild { pid_t pid; int directory, listener, slot; char path[108]; } GraphicalChild;
+typedef struct GraphicalChild { pid_t pid; int directory, listener, slot, x11_directory, x11_listener; char path[108], x11_path[108], x11_name[64]; } GraphicalChild;
 static pthread_mutex_t g_launch_mutex=PTHREAD_MUTEX_INITIALIZER;
 static struct { char ref[512], log[512]; pid_t pid; int alive; } g_launches[128];
 static int record_launch(const char* ref,const char* log,pid_t pid) {
@@ -567,52 +567,62 @@ static void* relay_wayland(void* argument) {
     }
     close(relay->client);close(relay->compositor);free(relay);return NULL;
 }
+static void close_graphical_sockets(int listener,const char* path,int directory,
+        int x11_listener,const char* x11_path,int x11_directory) {
+    if(listener>=0)close(listener);if(path[0])unlink(path);if(directory>=0)close(directory);
+    if(x11_listener>=0)close(x11_listener);if(x11_path[0])unlink(x11_path);if(x11_directory>=0)close(x11_directory);
+}
 static void* reap_graphical(void* argument) {
     GraphicalChild* child=argument;
     unsigned connections=0;
     for(;;) {
         int status;pid_t exited=waitpid(child->pid,&status,WNOHANG);
         if(exited==child->pid || (exited<0 && errno!=EINTR))break;
-        struct pollfd listener={.fd=child->listener,.events=POLLIN};
-        if(poll(&listener,1,1000)<=0)continue;
-        int client=accept4(child->listener,NULL,NULL,SOCK_CLOEXEC);
-        if(client<0)continue;
-        if(connections++>=128){close(client);continue;}
-        int upstream=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0);
-        struct sockaddr_un address={.sun_family=AF_UNIX};
-        snprintf(address.sun_path,sizeof(address.sun_path),"/proc/self/fd/%d/wayland-0",child->directory);
-        if(upstream<0 || connect(upstream,(struct sockaddr*)&address,sizeof(address))) {
-            if(upstream>=0)close(upstream);close(client);continue;
+        struct pollfd listeners[2]={{.fd=child->listener,.events=POLLIN},{.fd=child->x11_listener,.events=POLLIN}};
+        if(poll(listeners,2,1000)<=0)continue;
+        for(int i=0;i<2;++i) {
+            if(!(listeners[i].revents&POLLIN))continue;
+            int client=accept4(listeners[i].fd,NULL,NULL,SOCK_CLOEXEC);
+            if(client<0)continue;
+            if(connections++>=128){close(client);continue;}
+            int upstream=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0);
+            struct sockaddr_un address={.sun_family=AF_UNIX};
+            snprintf(address.sun_path,sizeof(address.sun_path),"/proc/self/fd/%d/%s",i?child->x11_directory:child->directory,i?child->x11_name:"wayland-0");
+            if(upstream<0 || connect(upstream,(struct sockaddr*)&address,sizeof(address))) {
+                if(upstream>=0)close(upstream);close(client);continue;
+            }
+            struct timeval timeout={.tv_sec=5};
+            setsockopt(client,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
+            setsockopt(upstream,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
+            WaylandRelay* relay=malloc(sizeof(*relay));pthread_t thread;
+            if(relay){relay->client=client;relay->compositor=upstream;}
+            pthread_attr_t attributes;pthread_attr_init(&attributes);pthread_attr_setstacksize(&attributes,256*1024);
+            int error=relay?pthread_create(&thread,&attributes,relay_wayland,relay):ENOMEM;
+            pthread_attr_destroy(&attributes);
+            if(error){free(relay);close(client);close(upstream);}else pthread_detach(thread);
         }
-        struct timeval timeout={.tv_sec=5};
-        setsockopt(client,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
-        setsockopt(upstream,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout));
-        WaylandRelay* relay=malloc(sizeof(*relay));pthread_t thread;
-        if(relay){relay->client=client;relay->compositor=upstream;}
-        pthread_attr_t attributes;pthread_attr_init(&attributes);pthread_attr_setstacksize(&attributes,256*1024);
-        int error=relay?pthread_create(&thread,&attributes,relay_wayland,relay):ENOMEM;
-        pthread_attr_destroy(&attributes);
-        if(error){free(relay);close(client);close(upstream);}else pthread_detach(thread);
     }
     record_exit(child->slot,child->pid);
-    close(child->listener);unlink(child->path);close(child->directory);free(child);return NULL;
+    close_graphical_sockets(child->listener,child->path,child->directory,child->x11_listener,child->x11_path,child->x11_directory);free(child);return NULL;
 }
 
-/* The compositor delegates only its socket directory, never its app data root. */
-void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, const char* x11_display, FlatpakResult* result) {
+/* The compositor delegates only its socket directories, never its app data root. */
+void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, int x11_directory_fd, const char* x11_display, FlatpakResult* result) {
     struct stat directory, socket_info;
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
         set_error(result, "valid installed application ref required"); return;
     }
-    /* Offer both display systems: toolkits self-select (GTK/SDL2 pick
-     * Wayland, Qt and Chromium/Electron pick X11 and land on the per-app
-     * Xwayland). No forcing variables, no per-app opt-in list. The X11
-     * display stays empty when the compositor has no Xwayland (it gates on
-     * the shipped server binary), and apps then use Wayland as before. */
-    const bool display_valid = x11_display &&
-        !strncmp(x11_display, "/data/matonos/linux/x11/X", 25) &&
-        x11_display[25] != '\0' &&
-        strspn(x11_display + 25, "0123456789") == strlen(x11_display + 25);
+    const bool has_x11 = x11_display && x11_display[0];
+    struct stat x11_directory;
+    if (has_x11 && (x11_display[0] != 'X' || !x11_display[1] || strlen(x11_display) >= 64 ||
+            strspn(x11_display + 1, "0123456789") != strlen(x11_display + 1))) {
+        set_error(result, "invalid X11 socket name"); return;
+    }
+    if (has_x11 && (fstat(x11_directory_fd, &x11_directory) || !S_ISDIR(x11_directory.st_mode) ||
+            fstatat(x11_directory_fd, x11_display, &socket_info, AT_SYMLINK_NOFOLLOW) ||
+            !S_ISSOCK(socket_info.st_mode) || socket_info.st_uid != x11_directory.st_uid)) {
+        set_error(result, "compositor X11 socket directory is unavailable"); return;
+    }
     if (fstat(runtime_directory_fd, &directory) || !S_ISDIR(directory.st_mode) ||
             fstatat(runtime_directory_fd, "wayland-0", &socket_info, AT_SYMLINK_NOFOLLOW) ||
             !S_ISSOCK(socket_info.st_mode) || socket_info.st_uid != directory.st_uid) {
@@ -625,6 +635,9 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     free(installed.output);
     int capability = fcntl(runtime_directory_fd, F_DUPFD_CLOEXEC, 3);
     if (capability < 0) { set_error(result, "cannot duplicate compositor directory"); return; }
+    int x11_capability = has_x11 ? fcntl(x11_directory_fd, F_DUPFD_CLOEXEC, 3) : -1;
+    if(has_x11 && x11_capability<0){close(capability);set_error(result,"cannot duplicate X11 directory");return;}
+    int x11_listener = -1;char x11_path[108]={0};
     int listener = socket(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC, 0);
     char socket_path[108];
     snprintf(socket_path,sizeof(socket_path),"/data/matonos/linux/runtime/wayland-%d",capability);
@@ -632,7 +645,17 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     snprintf(address.sun_path,sizeof(address.sun_path),"%s",socket_path);
     unlink(socket_path);
     if (listener < 0 || bind(listener,(struct sockaddr*)&address,sizeof(address)) || listen(listener,16)) {
-        if(listener>=0)close(listener);close(capability);set_error(result,"cannot create Wayland relay socket");return;
+        close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability);set_error(result,"cannot create Wayland relay socket");return;
+    }
+    if(has_x11) {
+        snprintf(x11_path,sizeof(x11_path),"%.*s-x11",(int)sizeof(x11_path)-5,socket_path);
+        x11_listener=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0);
+        snprintf(address.sun_path,sizeof(address.sun_path),"%s",x11_path);
+        unlink(x11_path);
+        if(x11_listener<0 || bind(x11_listener,(struct sockaddr*)&address,sizeof(address)) || listen(x11_listener,16)) {
+            close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability);
+            set_error(result,"cannot create X11 relay socket");return;
+        }
     }
     char log_path[512];
     snprintf(log_path, sizeof(log_path), "/data/matonos/linux/cache/launch-%.*s.log",
@@ -640,21 +663,18 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     int logfd = open(log_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
     posix_spawn_file_actions_t actions;
     int rc = posix_spawn_file_actions_init(&actions);
-    if (rc) { close(listener); unlink(socket_path); close(capability); if (logfd >= 0) close(logfd); set_error(result, "Flatpak launch setup failed"); return; }
+    if (rc) { close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability); if (logfd >= 0) close(logfd); set_error(result, "Flatpak launch setup failed"); return; }
     rc = 0;
     if (!rc && logfd >= 0) rc = posix_spawn_file_actions_adddup2(&actions, logfd, STDOUT_FILENO);
     if (!rc && logfd >= 0) rc = posix_spawn_file_actions_adddup2(&actions, logfd, STDERR_FILENO);
     if (!rc && logfd >= 0) rc = posix_spawn_file_actions_addclose(&actions, logfd);
     char display_env[128];
-    char x11_env[256];
     snprintf(display_env,sizeof(display_env),"WAYLAND_DISPLAY=%s",socket_path);
-    if (display_valid)
-        snprintf(x11_env,sizeof(x11_env),"DISPLAY=%s",x11_display);
     char dns_env[2048];
     snprintf(dns_env,sizeof(dns_env),"MATON_FLATPAK_DNS=%s",dns_servers ? dns_servers : "");
     size_t env_count = 0;
     while (environ[env_count]) ++env_count;
-    char** env = calloc(env_count + 4, sizeof(char*));
+    char** env = calloc(env_count + 3, sizeof(char*));
     size_t n = 0;
     if (env) {
         for (size_t i = 0; i < env_count; ++i)
@@ -662,7 +682,6 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
                     strncmp(environ[i],"MATON_FLATPAK_DNS=",18) != 0 &&
                     strncmp(environ[i],"DISPLAY=",8) != 0) env[n++] = environ[i];
         env[n++] = display_env;
-        if (display_valid) env[n++] = x11_env;
         env[n] = dns_env;
     } else rc = ENOMEM;
     /* Both display sockets are granted; toolkits choose their backend.
@@ -678,9 +697,9 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     if (!rc) rc = posix_spawn(&child, k_flatpak, &actions, NULL, argv, env);
     posix_spawn_file_actions_destroy(&actions);
     if (logfd >= 0) close(logfd); free(env);
-    if (rc) { close(listener); unlink(socket_path); close(capability); set_error(result, strerror(rc)); return; }
+    if (rc) { close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability); set_error(result, strerror(rc)); return; }
     int launch_slot=record_launch(ref,log_path,child);
-    if(launch_slot<0){kill(child,SIGTERM);while(waitpid(child,NULL,0)<0&&errno==EINTR){}close(listener);unlink(socket_path);close(capability);set_error(result,"Too many active launches");return;}
+    if(launch_slot<0){kill(child,SIGTERM);while(waitpid(child,NULL,0)<0&&errno==EINTR){}close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability);set_error(result,"Too many active launches");return;}
     /* Report immediate CLI failures to the launch Activity instead of a blank window. */
     for (int i = 0; i < 8; ++i) {
         int status; pid_t exited = waitpid(child, &status, WNOHANG);
@@ -689,7 +708,7 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
             FILE* log = fopen(log_path, "re");
             char message[4096] = "Flatpak exited before opening a window";
             if (log) { size_t count = fread(message, 1, sizeof(message)-1, log); message[count] = 0; fclose(log); }
-            close(listener); unlink(socket_path); close(capability);
+            close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability);
             if (WIFEXITED(status) && WEXITSTATUS(status)==0) { result->ok=1; result->exit_code=0; return; }
             set_error(result, message[0] ? message : "Flatpak exited before opening a window"); return;
         }
@@ -697,9 +716,10 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     }
     GraphicalChild* state = malloc(sizeof(*state));
     pthread_t reaper;
-    if (state) { state->pid = child; state->slot=launch_slot; state->directory = capability; state->listener = listener; snprintf(state->path,sizeof(state->path),"%s",socket_path); }
+    if (state) { state->pid = child; state->slot=launch_slot; state->directory = capability; state->listener = listener; state->x11_directory=x11_capability; state->x11_listener=x11_listener;
+        snprintf(state->x11_path,sizeof(state->x11_path),"%s",x11_path);snprintf(state->x11_name,sizeof(state->x11_name),"%s",has_x11?x11_display:""); snprintf(state->path,sizeof(state->path),"%s",socket_path); }
     if (!state || pthread_create(&reaper, NULL, reap_graphical, state)) {
-        record_exit(launch_slot,child);free(state); close(listener); unlink(socket_path); close(capability); kill(child, SIGTERM); while (waitpid(child, NULL, 0) < 0 && errno == EINTR) { }
+        record_exit(launch_slot,child);free(state); close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability); kill(child, SIGTERM); while (waitpid(child, NULL, 0) < 0 && errno == EINTR) { }
         set_error(result, "cannot reap Flatpak process"); return;
     }
     pthread_detach(reaper);

@@ -45,17 +45,21 @@ public final class CompositorService extends Service {
         startForeground(NOTIFICATION_ID, n);
         ready = nativeStart("wayland-0", getFilesDir().getAbsolutePath() + "/wayland", this);
         if (ready) {
-            // Per-app Xwayland servers live in a shared, init-created and
-            // labeled directory so application UIDs can reach their sockets;
+            // Per-app Xwayland sockets stay in a private directory delegated
+            // to linuxd through Binder;
             // lazy start keeps the cost at zero for Wayland-only apps.
             // Fail closed when the Xwayland server binary is not shipped.
-            java.io.File x11dir = new java.io.File("/data/matonos/linux/x11");
+            java.io.File x11dir = new java.io.File(getFilesDir(),"x11");
             if (!new java.io.File("/system_ext/bin/Xwayland").isFile()) {
                 Log.i(TAG, "Xwayland server not installed; X11 launch disabled");
-            } else if (!x11dir.isDirectory()) {
-                Log.w(TAG, "No X11 socket directory; Xwayland disabled");
-            } else if (!nativeXwaylandInit(x11dir.getAbsolutePath(), "/system_ext/bin")) {
-                Log.w(TAG, "Xwayland environment setup failed; Xwayland disabled");
+            } else {
+                try {
+                    if (!x11dir.isDirectory() && !x11dir.mkdirs())
+                        throw new java.io.IOException("Cannot create X11 socket directory");
+                    android.system.Os.chmod(x11dir.getAbsolutePath(),0711);
+                    if (!nativeXwaylandInit(x11dir.getAbsolutePath(), "/system_ext/bin"))
+                        Log.w(TAG, "Xwayland environment setup failed; Xwayland disabled");
+                } catch (Exception error) { Log.w(TAG, "X11 socket directory unavailable; Xwayland disabled", error); }
             }
         }
         if (!ready) Log.e(TAG, "Compositor failed to start; Android service remains responsive");

@@ -12,7 +12,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.matonos.systembridge.ISystemBridge;
 
-/** The bridge gets a directory capability for Wayland sockets only. */
+/** The bridge gets only directory capabilities for compositor sockets. */
 final class FlatpakLauncher {
     private interface Request<T> { T run(ISystemBridge bridge) throws Exception; }
     static String launch(Context context,String ref) throws Exception {
@@ -23,7 +23,11 @@ final class FlatpakLauncher {
         return request(context,bridge->{
             java.io.FileDescriptor directory=Os.open(runtime.getAbsolutePath(),OsConstants.O_RDONLY|OsConstants.O_CLOEXEC,0);
             try(ParcelFileDescriptor capability=ParcelFileDescriptor.dup(directory)){
-                return bridge.launchFlatpak(ref,capability,display);
+                if (display == null || display.isEmpty()) return bridge.launchFlatpak(ref,capability,null,display);
+                java.io.FileDescriptor x11=Os.open(new java.io.File(context.getFilesDir(),"x11").getAbsolutePath(),OsConstants.O_RDONLY|OsConstants.O_CLOEXEC,0);
+                try(ParcelFileDescriptor x11Capability=ParcelFileDescriptor.dup(x11)){
+                    return bridge.launchFlatpak(ref,capability,x11Capability,display);
+                }finally{Os.close(x11);}
             }finally{Os.close(directory);}
         });
     }

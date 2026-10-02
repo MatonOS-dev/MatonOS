@@ -45,10 +45,8 @@ extern void* maton_wayland_test_client(void*);
 /* Route wlroots logging into logcat: stderr is lost in app processes, and
  * Xwayland spawn or XWM failures would otherwise be invisible. */
 static void maton_wlr_log(enum wlr_log_importance importance,const char* fmt,va_list args) {
-  int priority=ANDROID_LOG_INFO;
-  if(importance>=WLR_ERROR)priority=ANDROID_LOG_ERROR;
-  else if(importance>=WLR_INFO)priority=ANDROID_LOG_INFO;
-  else priority=ANDROID_LOG_DEBUG;
+  /* wlroots orders SILENT < ERROR < INFO < DEBUG (higher is chattier). */
+  int priority=importance<=WLR_ERROR?ANDROID_LOG_ERROR:importance==WLR_INFO?ANDROID_LOG_INFO:ANDROID_LOG_DEBUG;
   __android_log_vprint(priority,"MatonWLR",fmt,args);
 }
 
@@ -354,21 +352,21 @@ static void on_xwayland_new_surface(struct wl_listener* l,void* data) {
   if(xs->override_redirect)return;
   xwayland_window(xs,xw->session);
 }
-static void xwayland_apply_socket_owner(struct XwaylandSession* xw) {
-  if(!xw->xwayland||xw->uid==0)return;
+static void xwayland_apply_socket_mode(struct XwaylandSession* xw) {
+  if(!xw->xwayland)return;
   const char* dir=getenv("WLR_XWAYLAND_SOCKET_DIR");
   if(!dir||!dir[0])return;
   char path[256];snprintf(path,sizeof(path),"%s/X%s",dir,xw->xwayland->display_name+1);
   struct stat info;
   if(stat(path,&info)==0){
-    if(chown(path,xw->uid,xw->uid)==0)(void)chmod(path,0600);
+    (void)chmod(path,0666);
   }
 }
 static void on_xwayland_ready(struct wl_listener* l,void* data) {
   (void)data;struct XwaylandSession* xw=(struct XwaylandSession*)((char*)l-offsetof(struct XwaylandSession,ready));
   __android_log_print(ANDROID_LOG_INFO,"MatonCompositor","Session %d: Xwayland ready on %s",
       xw->session,xw->xwayland?xw->xwayland->display_name:"?");
-  xwayland_apply_socket_owner(xw);
+  xwayland_apply_socket_mode(xw);
 }
 static void on_xwayland_destroy(struct wl_listener* l,void* data) {
   (void)data;struct XwaylandSession* xw=(struct XwaylandSession*)((char*)l-offsetof(struct XwaylandSession,destroy));
@@ -446,9 +444,9 @@ static void handle_add_xwayland(int session,uid_t uid) {
         xw->new_surface.notify=on_xwayland_new_surface;wl_signal_add(&xw->xwayland->events.new_surface,&xw->new_surface);
         xw->destroy.notify=on_xwayland_destroy;wl_signal_add(&xw->xwayland->events.destroy,&xw->destroy);
         xw->next=server.xwayland_sessions;server.xwayland_sessions=xw;
-        xwayland_apply_socket_owner(xw);
-        snprintf(server.xw_display,sizeof(server.xw_display),"%s/X%s",
-            server.xwayland_dir,xw->xwayland->display_name+1);
+        xwayland_apply_socket_mode(xw);
+        snprintf(server.xw_display,sizeof(server.xw_display),"X%s",
+            xw->xwayland->display_name+1);
         server.xw_ok=true;
       }else{free(xw);}
     }

@@ -37,20 +37,14 @@ binder_call(matonos_system_bridge, system_server)
 allow matonos_system_bridge vendor_configs_file:dir search;
 allow matonos_system_bridge vendor_configs_file:file r_file_perms;
 
-# The allowlisted compositor runs as its own app domain: the per-app Xwayland
-# servers it forks inherit one auditable domain, and application uids can
-# connect to its X11 display sockets despite their per-uid MLS levels
-# (a listening socket keeps its creator's label, and mlstrustedsubject
-# satisfies the connectto constraint). It keeps ordinary privileged-app
-# privileges through app_domain().
+# The compositor and its per-app Xwayland servers share an app domain.
+# linuxd reaches their private sockets through delegated directory fds.
 type matonos_compositor, domain;
-# coredomain mirrors the system bridge (and priv_app itself): without it the
-# core-vendor separation neverallows forbid linuxd connecting to the
-# compositor's sockets, and it exempts the X11 socket type checks below.
+# coredomain permits the system-side linuxd relay to connect to the host.
 typeattribute matonos_compositor coredomain, mlstrustedsubject;
 app_domain(matonos_compositor);
 
-# The compositor delegates its Wayland directory through Binder. DAC keeps
+# The compositor delegates its Wayland and X11 directories through Binder. DAC keeps
 # its private parent inaccessible; linuxd connects through that fd.
 allow matonos_linuxd matonos_compositor:fd use;
 allow matonos_linuxd matonos_compositor_data_file:dir { getattr search };
@@ -59,26 +53,3 @@ allow matonos_linuxd matonos_compositor:unix_stream_socket connectto;
 # Wayland SHM descriptors are relayed from the Flatpak process to the host.
 allow matonos_compositor matonos_linuxd:fd use;
 allow matonos_compositor matonos_linuxd_tmpfs:file { getattr read write map };
-
-# Per-app Xwayland: the compositor creates one lazy server per application
-# session in the shared labeled directory and hands each display socket to
-# its application's uid (chown + 0600), so a uid can only connect to its own
-# display. X clients use DISPLAY=<socket path> (libxcb path syntax).
-type matonos_x11_socket_file, file_type, data_file_type, app_data_file_type;
-type_transition matonos_compositor matonos_x11_socket_file:sock_file matonos_x11_socket_file;
-type_transition matonos_compositor matonos_x11_socket_file:file matonos_x11_socket_file;
-allow matonos_compositor matonos_x11_socket_file:dir { getattr search add_name remove_name write };
-allow matonos_compositor matonos_x11_socket_file:sock_file { create_file_perms setattr };
-allow matonos_compositor matonos_x11_socket_file:file { create_file_perms setattr };
-# X clients (application uids) write their own display socket (each socket is
-# chowned to the application's uid). A direct app->compositor connectto allow
-# cannot compile: the platform neverallows every appdomain unix-stream
-# connectto outside a tiny exempt list. Like the entire Wayland relay path,
-# this hop relies on the live image's permissive boot until the enforcing
-# design (connected-fd relaying) exists; see NOTES.md.
-allow appdomain matonos_x11_socket_file:sock_file { getattr write open };
-# Xwayland forks from the compositor and executes the system_ext server;
-# system_file x_file_perms already covers the exec. The server only touches
-# the labeled socket directory and its inherited descriptors.
-# Wayland SHM descriptors are relayed from the Flatpak process to the host.
-# The compositor receives relayed SHM descriptors from linuxd (rules above).
