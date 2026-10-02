@@ -607,6 +607,24 @@ static void* reap_graphical(void* argument) {
     close_graphical_sockets(child->listener,child->path,child->directory,child->x11_listener,child->x11_path,child->x11_directory);free(child);return NULL;
 }
 
+/* Android mounts a shell-owned debug tmpfs at /tmp. Apps that request
+ * filesystems=/tmp (Brave, Chromium-based apps) would get it bound into the
+ * sandbox, where bwrap, running as system, cannot create flatpak's
+ * /tmp/.X11-unix mount point. A system-wide override gives every sandbox a
+ * private /tmp instead; applied once, it lives in the Flatpak installation. */
+static void deny_host_tmp(void) {
+    static int applied;
+    if (applied) return;
+    char buffer[4096] = {0};
+    int fd = open("/data/matonos/linux/flatpak/overrides/global", O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd >= 0) { ssize_t got = read(fd, buffer, sizeof(buffer) - 1); close(fd); if (got > 0 && strstr(buffer, "!/tmp")) { applied = 1; return; } }
+    const char* args[] = {"--system", "override", "--nofilesystem=/tmp"};
+    ChildResult child = run_cli(args, 3, 0);
+    if (child.status == 0) applied = 1;
+    else __android_log_print(ANDROID_LOG_WARN, "matonos-linuxd", "cannot apply the global /tmp override (status %d)", child.status);
+    free(child.output);
+}
+
 /* Android's caption bar owns minimize/maximize/close, so GTK (including
  * Firefox's tab strip and libadwaita header bars) is told to draw no window
  * buttons. Only the gtk-decoration-layout key is set; other app settings in
@@ -703,6 +721,7 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     if (installed.status != 0) { result_from_child(result, &installed); return; }
     free(installed.output);
     hide_toolkit_window_buttons(ref);
+    deny_host_tmp();
     int capability = fcntl(runtime_directory_fd, F_DUPFD_CLOEXEC, 3);
     if (capability < 0) { set_error(result, "cannot duplicate compositor directory"); return; }
     int x11_capability = has_x11 ? fcntl(x11_directory_fd, F_DUPFD_CLOEXEC, 3) : -1;

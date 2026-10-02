@@ -20,5 +20,13 @@ find "$SRC/lib" -maxdepth 1 \( -name '*.so' -o -name '*.so.*' \) -print0 |
     esac
     install -m 0644 "$lib" "$DST/lib64/$(basename "$lib")"
   done
+# Xwayland also links the compositor build's pixman and Wayland client; the
+# APK carries its own copies, but /system_ext/bin/Xwayland only searches the
+# system library paths.
+CSTAGE=$AOSP/out/matonos/compositor/stage/x86_64/lib
+for lib in libpixman-1.so libwayland-client.so; do
+  [[ -e $CSTAGE/$lib ]] || { echo "ERROR: $lib missing at $CSTAGE; run build-compositor.sh" >&2; exit 1; }
+  install -m 0644 "$(readlink -f "$CSTAGE/$lib")" "$DST/lib64/$lib"
+done
 echo "Staged Xwayland runtime files under $DST:"
 ls -la "$DST/bin" "$DST/lib64" | tail -n +4
