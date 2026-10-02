@@ -179,4 +179,12 @@ echo "Compositor dependencies installed under $PREFIX"
 # Stage runtime .so files the host APK packages (Gradle expects <dir>/<abi>/).
 rm -rf "$BUILD/jniLibs"; mkdir -p "$BUILD/jniLibs/x86_64"
 find "$PREFIX/lib" -maxdepth 1 -name '*.so' -exec cp -L {} "$BUILD/jniLibs/x86_64/" \;
+# The xwayland-enabled wlroots links the xcb stack; bundle the closure into
+# the APK (libX11/freetype stay out: only the standalone Xwayland needs them).
+for lib in libxcb libxcb-composite libxcb-ewmh libxcb-icccm libxcb-render \
+           libxcb-res libxcb-xfixes libxcb-errors libXau libXdmcp; do
+  candidate=$XSTAGE/lib/$lib.so
+  [[ -f $candidate ]] || die "missing $candidate; run build-xwayland.sh"
+  cp -L "$candidate" "$BUILD/jniLibs/x86_64/"
+done
 echo "APK native libraries staged under $BUILD/jniLibs/x86_64"
