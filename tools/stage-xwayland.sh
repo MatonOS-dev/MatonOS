@@ -28,6 +28,12 @@ for lib in libpixman-1.so libwayland-client.so; do
   [[ -e $CSTAGE/$lib ]] || { echo "ERROR: $lib missing at $CSTAGE; run build-compositor.sh" >&2; exit 1; }
   install -m 0644 "$(readlink -f "$CSTAGE/$lib")" "$DST/lib64/$lib"
 done
+# Xwayland's EGL/GLES/GBM forwarders (see build-xwayland.sh); only Xwayland's
+# LD_LIBRARY_PATH names this directory.
+mkdir -p "$DST/lib64/xwayland"
+for lib in libEGL.so libGLESv2.so libgbm.so; do
+  install -m 0644 "$SRC/lib/xwayland-egl/$lib" "$DST/lib64/xwayland/$lib"
+done
 # Keymap compiler and XKB data (see build-xwayland.sh).
 install -m 0755 "$SRC/bin/xkbcomp" "$DST/bin/xkbcomp"
 XKB=$AOSP/out/matonos/compositor/xkb-data/system_ext/share/xkeyboard-config-2
