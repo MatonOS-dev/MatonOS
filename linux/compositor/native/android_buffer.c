@@ -1,4 +1,5 @@
 #include "android_buffer.h"
+#include "gralloc_handle.h"
 
 #include <android/hardware_buffer.h>
 #include <cutils/native_handle.h>
@@ -9,24 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const uint32_t k_cros_gralloc_magic = 0xABCDDCBA;
-#define DRV_MAX_PLANES 4
-/* C mirror of the packed minigbm handle layout; the upstream C++ subclass is
- * intentionally not included in this C implementation. */
-struct maton_cros_gralloc_handle {
-  int32_t version, numFds, numInts;
-  int32_t fds[DRV_MAX_PLANES + 1];
-  uint32_t strides[DRV_MAX_PLANES];
-  uint32_t offsets[DRV_MAX_PLANES];
-  uint32_t sizes[DRV_MAX_PLANES];
-  uint32_t id, width, height, format, tiling;
-  uint64_t format_modifier, use_flags;
-  uint32_t magic, pixel_stride;
-  int32_t droid_format;
-  int64_t usage;
-  uint32_t num_planes;
-  uint64_t reserved_region_size, total_size;
-} __attribute__((packed));
+static const uint32_t k_cros_gralloc_magic = MATON_CROS_GRALLOC_MAGIC;
+#define DRV_MAX_PLANES MATON_DRV_MAX_PLANES
 typedef const native_handle_t* (*GetNativeHandle)(const AHardwareBuffer*);
 typedef int (*CreateFromHandle)(const AHardwareBuffer_Desc*, const native_handle_t*, int32_t, AHardwareBuffer**);
 static GetNativeHandle get_native_handle;

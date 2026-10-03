@@ -775,12 +775,13 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     } else rc = ENOMEM;
     /* Both display sockets are granted; toolkits choose their backend.
      * Android's caption bar is the only window decoration, so toolkits that
-     * ignore the decoration protocol are told to drop their own, and GL
-     * stays software everywhere. */
+     * ignore the decoration protocol are told to drop their own. The GPU's
+     * render node is passed in: Wayland clients render on it and hand their
+     * dma-bufs to the compositor, which shows them without a copy. */
     char* argv[] = {(char*)k_flatpak, "--system", "run",
-            "--socket=wayland", "--socket=x11", "--no-documents-portal",
+            "--socket=wayland", "--socket=x11", "--no-documents-portal", "--device=dri",
             "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1", "--env=GTK_CSD=0",
-            "--env=LIBGL_ALWAYS_SOFTWARE=1", "--env=NO_AT_BRIDGE=1",
+            "--env=NO_AT_BRIDGE=1",
             (char*)ref + 4, NULL};
     pid_t child = -1;
     if (!rc) rc = posix_spawn(&child, k_flatpak, &actions, NULL, argv, env);

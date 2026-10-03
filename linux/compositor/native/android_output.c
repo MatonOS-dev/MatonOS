@@ -74,6 +74,16 @@ void maton_surface_output_finish(struct MatonSurfaceOutput* output) {
   output->control = NULL; output->window = NULL;
 }
 
+void maton_transaction_set_buffer(ASurfaceTransaction* transaction, ASurfaceControl* control,
+                                  AHardwareBuffer* buffer, struct wlr_buffer* base, int acquire_fence_fd) {
+  pthread_once(&set_release_once, resolve_set_buffer_with_release);
+  SetBufferWithRelease set_release = set_buffer_with_release;
+  if (set_release && base && wlr_buffer_lock(base))
+    set_release(transaction, control, buffer, acquire_fence_fd, base, on_buffer_release);
+  else
+    ASurfaceTransaction_setBuffer(transaction, control, buffer, acquire_fence_fd);
+}
+
 bool maton_surface_output_present(struct MatonSurfaceOutput* output, AHardwareBuffer* buffer,
                                  struct wlr_buffer* base, int acquire_fence_fd) {
   if (!output || !output->control || !buffer) {
@@ -82,12 +92,7 @@ bool maton_surface_output_present(struct MatonSurfaceOutput* output, AHardwareBu
   }
   ASurfaceTransaction* transaction = ASurfaceTransaction_create();
   if (!transaction) { if (acquire_fence_fd >= 0) close(acquire_fence_fd); return false; }
-  pthread_once(&set_release_once, resolve_set_buffer_with_release);
-  SetBufferWithRelease set_release = set_buffer_with_release;
-  if (set_release && base && wlr_buffer_lock(base))
-    set_release(transaction, output->control, buffer, acquire_fence_fd, base, on_buffer_release);
-  else
-    ASurfaceTransaction_setBuffer(transaction, output->control, buffer, acquire_fence_fd);
+  maton_transaction_set_buffer(transaction, output->control, buffer, base, acquire_fence_fd);
   ASurfaceTransaction_apply(transaction);
   ASurfaceTransaction_delete(transaction);
   return true;
