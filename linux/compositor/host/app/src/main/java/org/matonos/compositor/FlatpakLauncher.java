@@ -15,9 +15,6 @@ import org.matonos.systembridge.ISystemBridge;
 /** The bridge gets only directory capabilities for compositor sockets. */
 final class FlatpakLauncher {
     private interface Request<T> { T run(ISystemBridge bridge) throws Exception; }
-    static String launch(Context context,String ref) throws Exception {
-        return launch(context,ref,new java.io.File(context.getFilesDir(),"wayland"),null);
-    }
     static String launch(Context context,String ref,java.io.File runtime,String x11Display) throws Exception {
         final String display=x11Display;
         return request(context,bridge->{

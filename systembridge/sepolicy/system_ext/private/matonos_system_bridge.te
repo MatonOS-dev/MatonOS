@@ -43,6 +43,7 @@ allow matonos_system_bridge vendor_configs_file:file r_file_perms;
 
 # The compositor and its per-app Xwayland servers share an app domain.
 # linuxd reaches their private sockets through delegated directory fds.
+type matonos_dbus_broker_exec, exec_type, system_file_type, file_type;
 type matonos_compositor, domain;
 # coredomain permits the system-side linuxd relay to connect to the host.
 typeattribute matonos_compositor coredomain, mlstrustedsubject;
@@ -57,3 +58,6 @@ allow matonos_linuxd matonos_compositor:unix_stream_socket connectto;
 # Wayland SHM descriptors are relayed from the Flatpak process to the host.
 allow matonos_compositor matonos_linuxd:fd use;
 allow matonos_compositor matonos_linuxd_tmpfs:file { getattr read write map };
+
+# The session broker is exec'd without transition by its compositor owner.
+allow matonos_compositor matonos_dbus_broker_exec:file { execute execute_no_trans getattr map open read };

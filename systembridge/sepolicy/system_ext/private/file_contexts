@@ -9,3 +9,5 @@
 /system_ext/bin/(flatpak|gpg|ostree|matonos-flatpak|revokefs-fuse|Xwayland) u:object_r:system_file:s0
 /system_ext/lib64/lib[^/]+\.so u:object_r:system_file:s0
 /system_ext/share/flatpak(/.*)? u:object_r:system_file:s0
+
+/system_ext/bin/matonos-dbus-broker u:object_r:matonos_dbus_broker_exec:s0
