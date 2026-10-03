@@ -125,3 +125,7 @@ libs for preinstalled system apps. Workaround on a running VM:
 `adb install -r prebuilt/apps-built/MatonWaylandHost.apk` (update in /data
 gets extracted). Proper fix: codex job `codex/broker-exec`
 (`out/pc-logs/agents/codex-broker-exec-result.md`), then an r23b build.
+After the `adb install -r` workaround: Door Knocker opens (compositor-layer
+D-Bus works on device). Firefox asked for GAME_CONTROLLERS on launch — expected
+(Flathub Firefox declares devices=all); prompt + manifest gating confirmed,
+real controller access untested (no controller passed through).
