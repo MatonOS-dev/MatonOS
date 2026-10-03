@@ -599,8 +599,12 @@ bool maton_core_xwayland_init(const char* socket_dir,const char* xwayland_path) 
   char binary[512];
   int written=snprintf(binary,sizeof(binary),"%s/Xwayland",xwayland_path);
   if(written<0||written>=(int)sizeof(binary))return false;
+  /* Xwayland admits only its own UID, but X clients arrive through linuxd's
+   * relay as another user. The socket lives in this app's private directory
+   * and reaches linuxd only as a delegated fd, so that is the access gate. */
   return setenv("WLR_XWAYLAND",binary,1)==0&&
-      setenv("WLR_XWAYLAND_NO_ABSTRACT","1",1)==0;
+      setenv("WLR_XWAYLAND_NO_ABSTRACT","1",1)==0&&
+      setenv("WLR_XWAYLAND_NO_ACCESS_CONTROL","1",1)==0;
 }
 bool maton_core_add_xwayland(int session,int uid,char* display,size_t display_size) {
   if(session<=0||!display||display_size==0)return false;

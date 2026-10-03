@@ -8,8 +8,13 @@ WLR_XWAYLAND_NO_ABSTRACT=1 to skip the abstract-namespace bind: abstract
 sockets have no filesystem permissions, so per-display servers can then
 isolate clients through filesystem socket ownership alone. Server startup,
 argv construction and teardown handle a missing first listen fd.
---- a/xwayland/sockets.c	2026-07-07 23:46:09.000000000 +0200
-+++ b/xwayland/sockets.c	2026-10-02 23:31:00.150735506 +0200
+
+Honor WLR_XWAYLAND_NO_ACCESS_CONTROL=1 to start Xwayland with -ac. Xwayland
+only admits clients with its own UID; MatonOS clients reach the server
+through a relay as a different user, and the socket is reachable only via
+the compositor's private directory, so filesystem access is the gate.
+--- a/xwayland/sockets.c
++++ b/xwayland/sockets.c
 @@ -7,6 +7,7 @@
  #include <stdint.h>
  #include <stdio.h>
@@ -190,9 +195,17 @@ argv construction and teardown handle a missing first listen fd.
  		if ((lock_fd = open(lock_name, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0444)) >= 0) {
  			if (!open_sockets(socks, display)) {
  				unlink(lock_name);
---- a/xwayland/server.c	2026-07-07 23:46:09.000000000 +0200
-+++ b/xwayland/server.c	2026-10-02 23:31:00.166424781 +0200
-@@ -26,7 +26,7 @@
+--- a/xwayland/server.c
++++ b/xwayland/server.c
+@@ -6,6 +6,7 @@
+ #include <stdlib.h>
+ #include <stdlib.h>
+ #include <stdnoreturn.h>
++#include <string.h>
+ #include <sys/socket.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
+@@ -26,7 +27,7 @@
  
  noreturn static void exec_xwayland(struct wlr_xwayland_server *server,
  		int notify_fd) {
@@ -201,7 +214,7 @@ argv construction and teardown handle a missing first listen fd.
  			!set_cloexec(server->x_fd[1], false) ||
  			!set_cloexec(server->wl_fd[1], false)) {
  		wlr_log(WLR_ERROR, "Failed to unset CLOEXEC on FD");
-@@ -61,15 +61,23 @@
+@@ -61,18 +62,30 @@
  #endif
  
  #if HAVE_XWAYLAND_LISTENFD
@@ -233,7 +246,14 @@ argv construction and teardown handle a missing first listen fd.
  #endif
  	argv[i++] = "-displayfd";
  	argv[i++] = displayfd;
-@@ -144,9 +152,11 @@
++	const char *no_access_control = getenv("WLR_XWAYLAND_NO_ACCESS_CONTROL");
++	if (no_access_control != NULL && strcmp(no_access_control, "1") == 0) {
++		argv[i++] = "-ac";
++	}
+ 
+ 	char wmfd[16];
+ 	if (server->options.enable_wm) {
+@@ -144,9 +157,11 @@
  
  	if (server->x_fd_read_event[0]) {
  		wl_event_source_remove(server->x_fd_read_event[0]);
@@ -247,7 +267,7 @@ argv construction and teardown handle a missing first listen fd.
  	}
  
  	if (server->client) {
-@@ -413,9 +423,15 @@
+@@ -413,9 +428,15 @@
  static int xwayland_socket_connected(int fd, uint32_t mask, void *data) {
  	struct wlr_xwayland_server *server = data;
  
@@ -266,7 +286,7 @@ argv construction and teardown handle a missing first listen fd.
  
  	server_start(server);
  
-@@ -425,15 +441,19 @@
+@@ -425,15 +446,19 @@
  static bool server_start_lazy(struct wlr_xwayland_server *server) {
  	struct wl_event_loop *loop = wl_display_get_event_loop(server->wl_display);
  
