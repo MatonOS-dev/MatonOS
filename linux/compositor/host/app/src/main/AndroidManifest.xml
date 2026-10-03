@@ -2,6 +2,7 @@
     <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />

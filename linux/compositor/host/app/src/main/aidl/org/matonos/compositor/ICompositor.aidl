@@ -12,4 +12,5 @@ interface ICompositor {
     String launchFlatpak(String ref);
     void closeWindow(int id);
     String getLaunchStatus(String ref);
+    boolean isInhibited();
 }

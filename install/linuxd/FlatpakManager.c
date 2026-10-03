@@ -757,21 +757,26 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     if (!rc && logfd >= 0) rc = posix_spawn_file_actions_adddup2(&actions, logfd, STDOUT_FILENO);
     if (!rc && logfd >= 0) rc = posix_spawn_file_actions_adddup2(&actions, logfd, STDERR_FILENO);
     if (!rc && logfd >= 0) rc = posix_spawn_file_actions_addclose(&actions, logfd);
+    /* Delegate only the already validated session directory to the wrapper.
+     * It connects the broker control socket, then closes this FD before CLI exec. */
+    if (!rc) rc = posix_spawn_file_actions_adddup2(&actions, capability, 198);
     char display_env[128];
     snprintf(display_env,sizeof(display_env),"WAYLAND_DISPLAY=%s",socket_path);
     char dns_env[2048];
     snprintf(dns_env,sizeof(dns_env),"MATON_FLATPAK_DNS=%s",dns_servers ? dns_servers : "");
     size_t env_count = 0;
     while (environ[env_count]) ++env_count;
-    char** env = calloc(env_count + 3, sizeof(char*));
+    char** env = calloc(env_count + 4, sizeof(char*));
     size_t n = 0;
     if (env) {
         for (size_t i = 0; i < env_count; ++i)
             if (strncmp(environ[i], "WAYLAND_DISPLAY=", 16) != 0 &&
                     strncmp(environ[i],"MATON_FLATPAK_DNS=",18) != 0 &&
-                    strncmp(environ[i],"DISPLAY=",8) != 0) env[n++] = environ[i];
+                    strncmp(environ[i],"DISPLAY=",8) != 0 &&
+                    strncmp(environ[i],"MATON_INHIBIT_DIRECTORY_FD=",26) != 0) env[n++] = environ[i];
         env[n++] = display_env;
-        env[n] = dns_env;
+        env[n++] = dns_env;
+        env[n] = "MATON_INHIBIT_DIRECTORY_FD=198";
     } else rc = ENOMEM;
     /* Both display sockets are granted; toolkits choose their backend.
      * Android's caption bar is the only window decoration, so toolkits that

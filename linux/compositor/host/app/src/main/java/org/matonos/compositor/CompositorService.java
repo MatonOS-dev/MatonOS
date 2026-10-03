@@ -28,6 +28,8 @@ public final class CompositorService extends Service {
     private static native void nativeResize(int id, int width, int height);
 
     private volatile boolean ready;
+    private InhibitSocket inhibit;
+    static final String ACTION_INHIBIT = "org.matonos.compositor.INHIBIT";
     private final java.util.concurrent.ConcurrentHashMap<String, Long> launching = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<String, EmbeddedSession> sessions = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<Integer, EmbeddedSession> sessionsById = new java.util.concurrent.ConcurrentHashMap<>();
@@ -45,6 +47,9 @@ public final class CompositorService extends Service {
         startForeground(NOTIFICATION_ID, n);
         ready = nativeStart("wayland-0", getFilesDir().getAbsolutePath() + "/wayland", this);
         if (ready) {
+            try { inhibit = new InhibitSocket(this, new java.io.File(getFilesDir(),"wayland"), active ->
+                sendBroadcast(new Intent(ACTION_INHIBIT).setPackage(getPackageName()).putExtra("active",active)));
+            } catch(Exception e) { Log.e(TAG,"Inhibit socket unavailable",e); }
             // The advertised monitor is what clients (GTK, Firefox, Xwayland's
             // root window) take as the screen; window id 0 resizes only it.
             android.graphics.Rect display = getSystemService(android.view.WindowManager.class)
@@ -129,6 +134,7 @@ public final class CompositorService extends Service {
             }
         }
         public void closeWindow(int id) { nativeClose(id); }
+        public boolean isInhibited() { return inhibit != null && inhibit.isHeld(); }
         public void launchDemo() { nativeLaunchDemo(); }
         public void attachWindow(int id, android.view.Surface s, int w, int h) { nativeAttach(id, s, w, h); }
         public void detachWindow(int id) { nativeDetach(id); }
@@ -157,6 +163,7 @@ public final class CompositorService extends Service {
                     }
                     if (session.uid != uid) throw new SecurityException("Session belongs to another UID");
                     session.listeners.register(listener);
+                    listener.onInhibitChanged(session.inhibit.isHeld());
                     session.ensureXwayland();
                     return session;
                 }
@@ -172,6 +179,7 @@ public final class CompositorService extends Service {
         final java.io.File directory;
         final java.util.concurrent.ConcurrentHashMap<Integer, int[]> windows = new java.util.concurrent.ConcurrentHashMap<>();
         final android.os.RemoteCallbackList<IEmbeddedWindowListener> listeners = new android.os.RemoteCallbackList<>();
+        final InhibitSocket inhibit;
         volatile String x11Display;
         boolean launched;
         EmbeddedSession(int uid, String ref, int id) throws Exception {
@@ -181,6 +189,7 @@ public final class CompositorService extends Service {
             android.system.Os.chmod(directory.getAbsolutePath(),0711);
             if (!nativeAddSession(id,new java.io.File(directory,"wayland-0").getAbsolutePath()))
                 throw new java.io.IOException("Cannot create application Wayland socket");
+            inhibit=new InhibitSocket(CompositorService.this,directory,this::inhibited);
         }
         /** Best effort: the lazy Xwayland server starts only when the
          * application actually connects to its X11 display. */
@@ -195,6 +204,13 @@ public final class CompositorService extends Service {
         private void checkWindow(int window) {
             check();
             if (!windows.containsKey(window)) throw new SecurityException("Window belongs to another session");
+        }
+        void inhibited(boolean active) {
+            synchronized(listeners) {
+                int count=listeners.beginBroadcast();
+                try { for(int i=0;i<count;i++) try { listeners.getBroadcastItem(i).onInhibitChanged(active); } catch(android.os.RemoteException ignored){} }
+                finally { listeners.finishBroadcast(); }
+            }
         }
         void opened(int window,int width,int height) {
             windows.put(window,new int[]{width,height});
@@ -257,5 +273,9 @@ public final class CompositorService extends Service {
     @Override public IBinder onBind(Intent intent) {
         return "org.matonos.compositor.EMBEDDED".equals(intent.getAction()) ? embedded : binder;
     }
-    @Override public void onDestroy() { nativeStop(); super.onDestroy(); }
+    @Override public void onDestroy() {
+        if(inhibit!=null)inhibit.close();
+        for(EmbeddedSession session:sessions.values())session.inhibit.close();
+        nativeStop(); super.onDestroy();
+    }
 }

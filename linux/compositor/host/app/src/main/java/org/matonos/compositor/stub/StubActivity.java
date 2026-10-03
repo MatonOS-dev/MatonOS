@@ -40,6 +40,13 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK));
             });
         }
+        public void onInhibitChanged(boolean active) {
+            runOnUiThread(() -> {
+                if(destroyed)return;
+                if(active)getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            });
+        }
         public void onWindowClosed(int id) {
             runOnUiThread(() -> { if (!destroyed && window == id) finish(); });
         }
@@ -79,6 +86,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             },"flatpak-stub-launch").start();
         }
         public void onServiceDisconnected(ComponentName name) {
+            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             session=null;attached=false;
             failure("Compositor disconnected",new IllegalStateException("The compositor stopped unexpectedly."));
             window=0;view=null;surface=null;
