@@ -1550,6 +1550,14 @@ selector failure. Assess SOF firmware/topology separately if needed.
 
 ## Future ideas (not planned)
 
+- **Software Center honours `required-flatpak` (user, 2026-10-03).** Flathub
+  apps declare a minimum Flatpak version in their metadata
+  (`[Application] required-flatpak=…`). The system Flatpak version (already
+  reported up for the broker's minimum-version check) is passed to our
+  Flathub store client through the System Bridge, so it can mark or hide apps
+  that need a newer Flatpak than the device has, instead of failing at
+  install time.
+
 - Google Play services (**decided: v4, via the add-on slot**): system partitions are read-only erofs, so GApps can't
   be added by copying into /system after install. Options: build-time switch
   (e.g. WITH_GMS=true inheriting MindTheGapps x86_64), an add-on partition
