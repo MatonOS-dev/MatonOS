@@ -449,14 +449,16 @@ Feature work continues, but in this shape from now on.
     can't do this without Google's private key, hence the patch.
 - **Addons, unscheduled (user, 2026-10-03)**, delivered through the add-on
   slot rather than the base image:
-  - **ARM64 Android apps on pc_x86_64 via Digitalis**
-    (github.com/DigitalisX64/digitalis, Apache-2.0): an open arm64->x86_64
-    native bridge on Google's Berberis (`libndk_translation.so`). MatonOS has
-    no native bridge today, so ARM-only Android apps cannot run. Needs
-    `ro.dalvik.vm.native.bridge`, `arm64-v8a` in the ABI list and the
-    native-bridge linker config. First step: a VM investigation (their sample
-    apps plus popular ARM-only apps; performance, correctness on our Android
-    17 build, size).
+  - **ARM64 Android apps on pc_x86_64 via Digitalis** — NEXT after Flatpak
+    support is done (user, 2026-10-03). Not a downloadable addon after all:
+    it must live in /system, sets ro.dalvik.vm.native.bridge (+3 props),
+    changes TARGET_NATIVE_BRIDGE_* in BoardConfig (Soong builds an arm64
+    guest bionic), so it is a source integration in the base image (or a
+    WITH_DIGITALIS build variant). It targets AOSP 16 (android16-qpr2,
+    API 36); MatonOS is Android 17, so port their
+    frameworks/libs/binary_translation fork. Apache-2.0; no SELinux policy
+    shipped (fix avc on first boot). Research:
+    out/pc-logs/agents/opencode-digitalis-result.md.
   - **Podman** (later): a linuxd-managed system Podman service (subuid
     mapping, delegated cgroup v2 subtree, pasta networking, fuse-overlayfs
     storage); Flatpak front-ends such as Podman Desktop reach it through its
