@@ -104,6 +104,21 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         } catch(Exception e){failure("Cannot read application reference",e);return;}
         if(ref==null||ref.trim().isEmpty()){message("This launcher has no application reference.");return;}
         if(minimum>HostContract.getInterfaceVersion()){message("Update the Linux host to launch this application.");return;}
+        try {
+            String[] requested = getPackageManager().getPackageInfo(getPackageName(), PackageManager.GET_PERMISSIONS).requestedPermissions;
+            if (window == 0 && requested != null && java.util.Arrays.asList(requested).contains("org.matonos.permission.GAME_CONTROLLERS")
+                    && checkSelfPermission("org.matonos.permission.GAME_CONTROLLERS") != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{"org.matonos.permission.GAME_CONTROLLERS"}, 2900);
+                return;
+            }
+        } catch (PackageManager.NameNotFoundException error) { failure("Cannot read permissions", error); return; }
+        connectHost();
+    }
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grants) {
+        super.onRequestPermissionsResult(requestCode, permissions, grants);
+        if (requestCode == 2900 && !destroyed) connectHost();
+    }
+    private void connectHost() {
         Intent host=new Intent("org.matonos.compositor.EMBEDDED")
                 .setClassName("org.matonos.compositor","org.matonos.compositor.CompositorService");
         try {

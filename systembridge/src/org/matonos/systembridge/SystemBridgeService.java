@@ -112,7 +112,8 @@ public final class SystemBridgeService extends Service {
                         if (dns.length() > 0) dns.append(',');
                         dns.append(server.getHostAddress());
                     }
-                    return daemon.launchGraphical(ref, runtimeDirectory, dns.toString(), x11Directory, x11Display);
+                    return daemon.launchGraphical(ref, runtimeDirectory, dns.toString(), x11Directory, x11Display,
+                            flatpakStubManager.hasGameControllers(ref));
                 } finally {
                     Binder.restoreCallingIdentity(identity);
                 }

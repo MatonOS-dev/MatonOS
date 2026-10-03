@@ -126,6 +126,9 @@ $(call soong_config_set,minigbm,backend,gbm_mesa)
 # availability varies per PC.
 TARGET_USES_VULKAN := false
 
+# OEM AIDs generate vendor/etc/passwd and vendor/etc/group.
+TARGET_FS_CONFIG_GEN += $(DEVICE_PATH)/config.fs
+
 # ---------------------------------------------------------------- misc
 BOARD_PROPERTY_OVERRIDES_SPLIT_ENABLED := true
 BOARD_MALLOC_ALIGNMENT := 16

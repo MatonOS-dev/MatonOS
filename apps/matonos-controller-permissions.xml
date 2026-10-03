@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<permissions>
+    <permission name="org.matonos.permission.GAME_CONTROLLERS">
+        <group gid="vendor_game_controllers" />
+    </permission>
+</permissions>

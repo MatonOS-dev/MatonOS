@@ -122,6 +122,16 @@ final class FlatpakStubManager {
         }catch(Exception error){Log.w(TAG,"Cannot verify generated launcher",error);return false;}
     }
 
+    boolean hasGameControllers(String ref) {
+        try {
+            String pkg = packageFor(ref);
+            PackageInfo info = context.getPackageManager().getPackageInfo(pkg, 0);
+            return info.applicationInfo != null && ownsStub(info.applicationInfo.uid, ref)
+                    && context.getPackageManager().checkPermission(
+                            StubGenerator.GAME_CONTROLLERS, pkg) == PackageManager.PERMISSION_GRANTED;
+        } catch (Exception error) { return false; }
+    }
+
     private void reconcile() {
         try {
             ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
@@ -141,7 +151,7 @@ final class FlatpakStubManager {
                 String pkg = packageFor(ref);
                 wanted.add(pkg);
                 if (pending.contains(pkg)) continue;
-                try { if (context.getPackageManager().getPackageInfo(pkg, 0).getLongVersionCode() >= 9) continue; }
+                try { if (context.getPackageManager().getPackageInfo(pkg, 0).getLongVersionCode() >= 10) continue; }
                 catch (PackageManager.NameNotFoundException expected) { }
                 try { create(daemon, ref, pkg); }
                 catch (Exception e) { Log.e(TAG, "Cannot create launcher for " + ref, e); }
@@ -200,7 +210,11 @@ final class FlatpakStubManager {
                 if (bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth <= 1024 && bounds.outHeight <= 1024)
                     iconBytes = normalizeIcon(candidate);
             }
-            StubGenerator.generate(work, ref, desktop, iconBytes, Collections.emptyList(), pkg, apk);
+            JSONObject metadata = new JSONObject(daemon.call("metadata", new JSONObject().put("ref", ref).toString()));
+            if (!metadata.optBoolean("ok") || metadata.optBoolean("outputTruncated"))
+                throw new java.io.IOException("Flatpak metadata unavailable");
+            StubGenerator.generate(work, ref, desktop, iconBytes,
+                    StubGenerator.permissionsForMetadata(metadata.optString("output")), pkg, apk);
             PackageInstaller installer = context.getPackageManager().getPackageInstaller();
             PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
             params.setAppPackageName(pkg);

@@ -28,6 +28,9 @@ PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/ueventd.rc:$(TARGET_COPY_OUT_VENDOR)/etc/ueventd.rc \
     $(LOCAL_PATH)/power/pc-wakeup.sh:$(TARGET_COPY_OUT_VENDOR)/bin/pc-wakeup.sh
 
+PRODUCT_COPY_FILES += \
+    $(LOCAL_PATH)/apps/matonos-controller-permissions.xml:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/permissions/matonos-controller-permissions.xml
+
 # ---------------------------------------------------------------- firmware
 # Only the files referenced by our kernel modules, staged by
 # tools/build-kernel.sh from linux-firmware. The kernel finds them via

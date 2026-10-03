@@ -3,6 +3,8 @@ service matonos-linuxd /system_ext/bin/matonos-linuxd
     class late_start
     user system
     group system inet
+    # Only the child launcher changes supplementary groups.
+    capabilities SETGID
     disabled
     restart_period 5
     seclabel u:r:matonos_linuxd:s0

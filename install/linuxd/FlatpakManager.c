@@ -691,8 +691,37 @@ static void hide_toolkit_window_buttons(const char* ref) {
     }
 }
 
+/* Exact Context/devices tokens; no app-specific policy or override files. */
+static int declared_controllers(const char* metadata, int* all_devices) {
+    char* copy = strdup(metadata ? metadata : "");
+    if (!copy) return 0;
+    int context = 0, controllers = 0;
+    char* state;
+    for (char* line = strtok_r(copy, "\n", &state); line; line = strtok_r(NULL, "\n", &state)) {
+        while (*line == ' ' || *line == '\t') ++line;
+        size_t length = strlen(line);
+        while (length && strchr(" \t\r", line[length-1])) line[--length] = 0;
+        if (*line == '[') { context = !strcmp(line, "[Context]"); continue; }
+        char* equals = strchr(line, '=');
+        if (!context || !equals) continue;
+        char* key_end = equals;
+        while (key_end > line && strchr(" \t", key_end[-1])) --key_end;
+        if (key_end-line != 7 || strncmp(line, "devices", 7)) continue;
+        controllers = 0; *all_devices = 0;
+        char* tokens;
+        for (char* token = strtok_r(equals+1, ";", &tokens); token; token = strtok_r(NULL, ";", &tokens)) {
+            while (*token == ' ' || *token == '\t') ++token;
+            length = strlen(token);
+            while (length && strchr(" \t\r", token[length-1])) token[--length] = 0;
+            if (!strcmp(token, "all")) { controllers = 1; *all_devices = 1; }
+            if (!strcmp(token, "input")) controllers = 1;
+        }
+    }
+    free(copy); return controllers;
+}
+
 /* The compositor delegates only its socket directories, never its app data root. */
-void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, int x11_directory_fd, const char* x11_display, FlatpakResult* result) {
+void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, FlatpakResult* result) {
     struct stat directory, socket_info;
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
         set_error(result, "valid installed application ref required"); return;
@@ -720,6 +749,12 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     ChildResult installed = run_cli(info_args, 3, 0);
     if (installed.status != 0) { result_from_child(result, &installed); return; }
     free(installed.output);
+    const char* metadata_args[] = {"--system", "info", "--show-metadata", ref};
+    ChildResult metadata = run_cli(metadata_args, 4, 0);
+    int controllers = 0, all_devices = 0;
+    if (metadata.status == 0 && !metadata.truncated)
+        controllers = declared_controllers(metadata.output, &all_devices) && game_controllers;
+    free(metadata.output);
     hide_toolkit_window_buttons(ref);
     deny_host_tmp();
     int capability = fcntl(runtime_directory_fd, F_DUPFD_CLOEXEC, 3);
@@ -766,17 +801,19 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     snprintf(dns_env,sizeof(dns_env),"MATON_FLATPAK_DNS=%s",dns_servers ? dns_servers : "");
     size_t env_count = 0;
     while (environ[env_count]) ++env_count;
-    char** env = calloc(env_count + 4, sizeof(char*));
+    char** env = calloc(env_count + 5, sizeof(char*));
     size_t n = 0;
     if (env) {
         for (size_t i = 0; i < env_count; ++i)
             if (strncmp(environ[i], "WAYLAND_DISPLAY=", 16) != 0 &&
                     strncmp(environ[i],"MATON_FLATPAK_DNS=",18) != 0 &&
                     strncmp(environ[i],"DISPLAY=",8) != 0 &&
+                    strncmp(environ[i],"MATON_GAME_CONTROLLERS=",23) != 0 &&
                     strncmp(environ[i],"MATON_INHIBIT_DIRECTORY_FD=",26) != 0) env[n++] = environ[i];
         env[n++] = display_env;
         env[n++] = dns_env;
-        env[n] = "MATON_INHIBIT_DIRECTORY_FD=198";
+        env[n++] = "MATON_INHIBIT_DIRECTORY_FD=198";
+        env[n] = controllers ? "MATON_GAME_CONTROLLERS=1" : "MATON_GAME_CONTROLLERS=0";
     } else rc = ENOMEM;
     /* Both display sockets are granted; toolkits choose their backend.
      * Android's caption bar is the only window decoration, so toolkits that
@@ -784,7 +821,8 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
      * render node is passed in: Wayland clients render on it and hand their
      * dma-bufs to the compositor, which shows them without a copy. */
     char* argv[] = {(char*)k_flatpak, "--system", "run",
-            "--socket=wayland", "--socket=x11", "--no-documents-portal", "--device=dri",
+            "--socket=wayland", "--socket=x11", "--no-documents-portal",
+            controllers && all_devices ? "--device=all" : "--nodevice=all", "--device=dri",
             "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1", "--env=GTK_CSD=0",
             "--env=NO_AT_BRIDGE=1",
             (char*)ref + 4, NULL};
@@ -1004,6 +1042,13 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
         read_launch_status(ref,result);
     } else if (strcmp(command, "icon") == 0) {
         read_exported_icon(ref, result);
+    } else if (strcmp(command, "metadata") == 0) {
+        if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4)) {
+            set_error(result, "valid application ref required"); return;
+        }
+        const char* args[] = {"--system", "info", "--show-metadata", ref};
+        ChildResult child = run_cli(args, 4, 0);
+        result_from_child(result, &child); free(child.output);
     } else if (strcmp(command, "desktop_entry") == 0) {
         read_desktop_entry(ref, result);
     } else if (strcmp(command, "install") == 0 || strcmp(command, "uninstall") == 0) {

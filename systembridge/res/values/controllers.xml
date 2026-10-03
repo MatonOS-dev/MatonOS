@@ -1,0 +1,4 @@
+<resources>
+    <string name="game_controllers_label">Use game controllers</string>
+    <string name="game_controllers_description">Access connected game controllers and create virtual controller devices.</string>
+</resources>

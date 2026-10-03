@@ -5,6 +5,7 @@
 #include <binder/IInterface.h>
 #include <binder/IPCThreadState.h>
 #include <binder/PermissionCache.h>
+#include <binder/IPermissionController.h>
 #include <binder/ProcessState.h>
 #include <binder/Status.h>
 #include <binder/ParcelFileDescriptor.h>
@@ -202,10 +203,20 @@ class LinuxdService final : public BnLinuxd {
             const android::String16& dnsServers,
             const std::optional<android::os::ParcelFileDescriptor>& x11Directory,
             const std::optional<android::String16>& x11Display,
+            bool gameControllers,
             android::String16* aidl_return) override {
         if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
+        // Only the bridge may attest a stub's runtime grant. SYSTEM_BRIDGE is
+        // also held by other privileged clients; it alone cannot authorize this flag.
+        android::sp<android::IPermissionController> permissions =
+                android::interface_cast<android::IPermissionController>(
+                        android::defaultServiceManager()->checkService(android::String16("permission")));
+        int bridgeUid = permissions ? permissions->getPackageUid(
+                android::String16("org.matonos.systembridge"), 0) : -1;
+        if (bridgeUid < 0 || android::IPCThreadState::self()->getCallingUid() != static_cast<uid_t>(bridgeUid))
+            return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         FlatpakResult result = {};
-        flatpak_manager_launch_graphical(ToUtf8(ref).c_str(), runtimeDirectory.get(), ToUtf8(dnsServers).c_str(), x11Directory ? x11Directory->get() : -1, x11Display ? ToUtf8(*x11Display).c_str() : nullptr, &result);
+        flatpak_manager_launch_graphical(ToUtf8(ref).c_str(), runtimeDirectory.get(), ToUtf8(dnsServers).c_str(), x11Directory ? x11Directory->get() : -1, x11Display ? ToUtf8(*x11Display).c_str() : nullptr, gameControllers, &result);
         *aidl_return = android::String16(Encode(EncodeResult(result)).c_str());
         flatpak_manager_result_clear(&result);
         return android::binder::Status::ok();
@@ -235,7 +246,7 @@ class LinuxdService final : public BnLinuxd {
         const char* operation_id = nullptr;
         std::vector<std::string> run_arg_storage;
         std::vector<const char*> run_args;
-        if (command == "install" || command == "uninstall" || (command == "desktop_entry" || command == "icon" || command == "launch_status")) {
+        if (command == "install" || command == "uninstall" || (command == "metadata" || command == "desktop_entry" || command == "icon" || command == "launch_status")) {
             const bool uninstall = command == "uninstall";
             if (!(uninstall ? OnlyKeys(request, {"ref", "deleteData", "operationId"}) : OnlyKeys(request, {"ref", "operationId"})) || !request["ref"].isString() ||
                     (request.isMember("deleteData") && !request["deleteData"].isBool()) ||
