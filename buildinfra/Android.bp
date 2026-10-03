@@ -117,4 +117,7 @@ android_app_import {
     apk: "apps-built/MatonWaylandHost.apk",
     system_ext_specific: true,
     preprocessed: true,
+    // Legacy JNI packaging extracts the APK-owned broker executable.
+    // This presigned APK intentionally contains compressed native libraries.
+    skip_preprocessed_apk_checks: true,
 }
