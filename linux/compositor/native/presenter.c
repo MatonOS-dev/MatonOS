@@ -18,7 +18,7 @@
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_scene.h>
 
-#define SHM_POOL 3
+#define SHM_POOL 4  /* SurfaceFlinger can hold three at once (shown, queued, releasing) */
 
 struct Layer {
   struct wlr_scene_buffer* node;
