@@ -13,7 +13,8 @@ Linuxd starts `UdevDatabase.c` before accepting Flatpak operations. It reads
 sysfs (never device nodes) and publishes `/data/matonos/linux/udev/data/cM:m`
 for input event/js nodes, hidraw nodes and uinput. Input classification uses
 capability bitmaps, with touch/keyboard exclusions for controller detection;
-vendor/product/bus come from input IDs, HID ancestry or USB ancestry. Hidraw
+vendor/product/bus come only from the inputN IDs or hidraw's direct HID
+parent uevent. No arbitrary USB/Bluetooth/PCI ancestors are probed. Hidraw
 and uinput receive metadata even when device access is denied, but are not
 falsely labelled as joysticks without input capabilities. There are no
 application-ID exceptions or changes to device permissions.
@@ -54,6 +55,14 @@ database remains usable by other libudev consumers for enumeration and
 properties. Reliable monitor-based hotplug for those consumers remains
 unverified/unsupported when multicast is blocked; this is not a full udevd
 or logind replacement.
+
+For enforcing builds, device-owned system_ext policy gives linuxd read access
+only to `sysfs_matonos_input` metadata. Ueventd applies topology-independent
+`file_contexts` patterns under `/sys/devices` at coldboot and hotplug. Class
+directories/links use `sysfs_matonos_discovery` genfs labels because class links
+are outside device uevent subtrees; this type grants no regular-file access.
+Other sysfs directories allow only traversal and `getattr` for Bionic realpath.
+Generic sysfs files, device-node permissions and controller gates are unchanged.
 
 Host fixture checks: `python3 install/linuxd/tests/udev-database-test.py`.
 This uses temporary synthetic sysfs and database directories, without mounts,

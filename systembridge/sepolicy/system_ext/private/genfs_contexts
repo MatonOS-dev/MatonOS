@@ -1,0 +1,6 @@
+# /class links live outside hotplug /devices paths restored by ueventd.
+# genfs labels apply at inode creation, including new input/hidraw/uinput links.
+# linuxd gets directory/symlink reads only on this discovery type.
+genfscon sysfs /class/input u:object_r:sysfs_matonos_discovery:s0
+genfscon sysfs /class/hidraw u:object_r:sysfs_matonos_discovery:s0
+genfscon sysfs /class/misc u:object_r:sysfs_matonos_discovery:s0

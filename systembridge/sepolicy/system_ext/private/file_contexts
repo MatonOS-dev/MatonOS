@@ -9,3 +9,16 @@
 /system_ext/bin/(flatpak|gpg|ostree|matonos-flatpak|revokefs-fuse|Xwayland) u:object_r:system_file:s0
 /system_ext/lib64/lib[^/]+\.so u:object_r:system_file:s0
 /system_ext/share/flatpak(/.*)? u:object_r:system_file:s0
+
+# linuxd's sysfs metadata only. Canonical /devices paths cover every bus and
+# hotplug topology; ueventd restorecon does not follow /class symlinks.
+/sys/devices(/[^/]+)*/input[0-9]+/(capabilities|id) -d u:object_r:sysfs_matonos_input:s0
+/sys/devices(/[^/]+)*/input[0-9]+/capabilities/(ev|key|abs|rel) -- u:object_r:sysfs_matonos_input:s0
+/sys/devices(/[^/]+)*/input[0-9]+/properties -- u:object_r:sysfs_matonos_input:s0
+/sys/devices(/[^/]+)*/input[0-9]+/id/(vendor|product|bustype) -- u:object_r:sysfs_matonos_input:s0
+/sys/devices(/[^/]+)*/input[0-9]+/(event|js)[0-9]+/dev -- u:object_r:sysfs_matonos_input:s0
+/sys/devices(/[^/]+)*/hidraw/hidraw[0-9]+/dev -- u:object_r:sysfs_matonos_input:s0
+# Linux HID device names are bus:vendor:product.instance (uppercase hex).
+# The instance can exceed four digits; only this device's uevent is readable.
+/sys/devices(/[^/]+)*/[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-Fa-f]+/uevent -- u:object_r:sysfs_matonos_input:s0
+/sys/devices/virtual/misc/uinput/dev -- u:object_r:sysfs_matonos_input:s0

@@ -167,35 +167,42 @@ static bool hex_attr(const char *dir, const char *attr, unsigned *value) {
     *value = (unsigned)v;
     return true;
 }
-static void identity(char *db, const char *node) {
+/* Input identity is exported by inputN itself; hidraw identity by its
+ * direct HID device parent (hidrawN -> hidraw -> HID). Do not probe arbitrary
+ * USB/Bluetooth/PCI ancestors: their attributes are outside our labelled ABI. */
+static void identity(char *db, const char *node, const char *subsystem) {
     char parent[PATH_MAX], text[4096];
-    snprintf(parent, sizeof(parent), "%s", node);
+    unsigned vendor = 0, model = 0, bus = 0;
     bool have_vendor = false, have_model = false, have_bus = false;
-    while (strlen(parent) > strlen(MATON_SYS_ROOT)) {
-        unsigned vendor, model, bus;
-        bool v = hex_attr(parent, "id/vendor", &vendor) || hex_attr(parent, "idVendor", &vendor);
-        bool m = hex_attr(parent, "id/product", &model) || hex_attr(parent, "idProduct", &model);
-        bool b = hex_attr(parent, "id/bustype", &bus);
-        /* hidraw -> HID ancestor carries HID_ID=bus:vendor:product. */
-        if (read_text(parent, "uevent", text, sizeof(text))) {
-            char *hid = strstr(text, "HID_ID=");
-            unsigned hb, hv, hm;
-            if (hid && sscanf(hid, "HID_ID=%x:%x:%x", &hb, &hv, &hm) == 3) {
-                if (!v) { vendor = hv & 0xffff; v = true; }
-                if (!m) { model = hm & 0xffff; m = true; }
-                if (!b) { bus = hb; b = true; }
-            }
-            if (!b && strstr(text, "DEVTYPE=usb_device")) { bus = BUS_USB; b = true; }
-        }
-        if (v && !have_vendor) { append(db, "E:ID_VENDOR_ID=%04x\n", vendor); have_vendor = true; }
-        if (m && !have_model) { append(db, "E:ID_MODEL_ID=%04x\n", model); have_model = true; }
-        if (b && !have_bus && bus_name(bus)) {
-            append(db, "E:ID_BUS=%s\n", bus_name(bus)); have_bus = true;
-        }
+    if (!strcmp(subsystem, "misc")) return; /* uinput has no hardware identity. */
+    snprintf(parent, sizeof(parent), "%s", node);
+    unsigned levels = !strcmp(subsystem, "input") ? 1 : 2;
+    for (unsigned i = 0; i < levels; i++) {
         char *slash = strrchr(parent, '/');
-        if (!slash) break;
+        if (!slash || slash <= parent + strlen(MATON_SYS_ROOT)) return;
         *slash = 0;
     }
+    if (!strcmp(subsystem, "input")) {
+        have_vendor = hex_attr(parent, "id/vendor", &vendor);
+        have_model = hex_attr(parent, "id/product", &model);
+        have_bus = hex_attr(parent, "id/bustype", &bus);
+    } else if (read_text(parent, "uevent", text, sizeof(text))) {
+        /* Match a complete property key, never a substring of another key. */
+        for (char *line = text; line && *line;) {
+            if (!strncmp(line, "HID_ID=", 7) &&
+                sscanf(line, "HID_ID=%x:%x:%x", &bus, &vendor, &model) == 3) {
+                vendor &= 0xffff;
+                model &= 0xffff;
+                have_vendor = have_model = have_bus = true;
+                break;
+            }
+            char *next = strchr(line, '\n');
+            line = next ? next + 1 : NULL;
+        }
+    }
+    if (have_vendor) append(db, "E:ID_VENDOR_ID=%04x\n", vendor);
+    if (have_model) append(db, "E:ID_MODEL_ID=%04x\n", model);
+    if (have_bus && bus_name(bus)) append(db, "E:ID_BUS=%s\n", bus_name(bus));
 }
 
 /* MurmurHash2, seed zero: libudev's classic subsystem/tag BPF wire hash. */
@@ -314,7 +321,7 @@ static bool scan_class(const char *subsystem, Seen **seen) {
             classify(db, parent);
             append(db, "E:ID_SEAT=seat0\nE:TAGS=:seat:\nE:CURRENT_TAGS=:seat:\nG:seat\nQ:seat\n");
         }
-        identity(db, node);
+        identity(db, node, subsystem);
         /* Keep the initialization timestamp stable across refreshes. */
         char old[DB_SIZE];
         if (read_text(MATON_UDEV_ROOT "/data", item->id, old, sizeof(old)) && old[0] == 'I') {

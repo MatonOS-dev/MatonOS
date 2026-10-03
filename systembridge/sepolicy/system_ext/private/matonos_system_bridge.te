@@ -34,11 +34,20 @@ net_domain(matonos_linuxd)
 
 # Metadata discovery only; no input/hidraw/uinput device access is granted.
 allow matonos_linuxd self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
-# TODO(r24): the udev database reads input/hidraw nodes and their parent
-# device attributes in sysfs. Generic `sysfs` files are neverallow for
-# coredomain (system/sepolicy coredomain.te), so those nodes need their own
-# label (genfs_contexts / sysfs file_contexts) before an enforcing build;
-# permissive images log the reads as denials meanwhile.
+# Device-owned system_ext metadata ABI. ueventd restores these file_contexts
+# labels on coldboot and every add/change/bind/online device uevent.
+type sysfs_matonos_input, fs_type, sysfs_type;
+# Class links are created outside the device uevent subtree. genfscon labels
+# them immediately; the discovery type never grants access to regular files.
+type sysfs_matonos_discovery, fs_type, sysfs_type;
+# Traversal may cross already-labelled bus/platform directories. No generic
+# sysfs file reads: coredomain.te forbids those, including in enforcing builds.
+# Bionic realpath() uses O_PATH/fstat/stat on the resolved node directory.
+allow matonos_linuxd sysfs_type:dir { getattr search };
+allow matonos_linuxd sysfs_matonos_input:dir { getattr search };
+allow matonos_linuxd sysfs_matonos_input:file { getattr open read };
+allow matonos_linuxd sysfs_matonos_discovery:dir { getattr open read search };
+allow matonos_linuxd sysfs_matonos_discovery:lnk_file { getattr read };
 
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.

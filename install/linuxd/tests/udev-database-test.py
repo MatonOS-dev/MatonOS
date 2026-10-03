@@ -107,7 +107,7 @@ int main(int argc, char **argv) {{
     input_node(8, [272], [0, 1])  # VM absolute mouse, not controller
     input_node(9, [544, 545], ev=[1])  # dpad-only controller
     input_node(10, [256, 257], rel=[8], ev=[1, 2])  # tablet pad, not controller
-    hid = sys / "devices/usb1/hid/test/hidraw/hidraw0"
+    hid = sys / "devices/usb1/0003:045E:028E.0001/hidraw/hidraw0"
     hid.mkdir(parents=True)
     (hid / "dev").write_text("240:0\n")
     (hid.parent.parent / "uevent").write_text("HID_ID=0003:0000045E:0000028E\n")
@@ -116,6 +116,18 @@ int main(int argc, char **argv) {{
     uinput.mkdir(parents=True)
     (uinput / "dev").write_text("10:223\n")
     (sys / "class/misc/uinput").symlink_to(uinput)
+
+    # Ancestor identities must never fill in missing inputN/HID fields.
+    # This also models unrelated USB hubs above a device and virtual uinput.
+    for ancestor in (sys / "devices/virtual", sys / "devices/usb1"):
+        (ancestor / "idVendor").write_text("ffff\n")
+        (ancestor / "idProduct").write_text("eeee\n")
+        (ancestor / "uevent").write_text("DEVTYPE=usb_device\n")
+    hid_bt = sys / "devices/platform/bluetooth/0005:054C:09CC.10000/hidraw/hidraw1"
+    hid_bt.mkdir(parents=True)
+    (hid_bt / "dev").write_text("240:1\n")
+    (hid_bt.parent.parent / "uevent").write_text("DRIVER=hid-generic\nHID_ID=0005:0000054C:000009CC\n")
+    (sys / "class/hidraw/hidraw1").symlink_to(hid_bt)
 
     def refresh():
         subprocess.run([str(executable)], check=True)
@@ -137,6 +149,17 @@ int main(int argc, char **argv) {{
     assert (db / "tags/seat/c13:0").exists()
     assert "E:ID_BUS=usb\n" in (db / "data/c240:0").read_text()
     assert "E:DEVNAME=/dev/uinput\n" in (db / "data/c10:223").read_text()
+    bt_entry = (db / "data/c240:1").read_text()
+    for value in ("ID_VENDOR_ID=054c", "ID_MODEL_ID=09cc", "ID_BUS=bluetooth"):
+        assert f"E:{value}\n" in bt_entry, value
+    assert "ID_BUS=" not in (db / "data/c10:223").read_text()
+    (hid_bt.parent.parent / "uevent").write_text("DRIVER=hid-generic\n")
+    (pad / "id/vendor").unlink()
+    refresh()
+    assert "ID_VENDOR_ID=" not in entry(0), "read identity from unrelated ancestor"
+    assert "ID_VENDOR_ID=" not in (db / "data/c240:1").read_text()
+    (pad / "id/vendor").write_text("045e\n")
+    refresh()
     before = (db / "data/c13:0").stat().st_mtime_ns
     refresh()
     assert entry(0) == pad_entry
