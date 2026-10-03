@@ -10,6 +10,31 @@ The back button returns through the in-app route history and finishes the Settin
 
 ## Verification
 
+The **Media volume** Quick Settings tile is a Java `TileService` in the local
+Android module. Its manifest and resources merge into the Settings APK during
+Expo CNG. The SystemUI RRO puts its custom component third in both default QS
+lists. It opens a transparent, non-exported activity through
+`startActivityAndCollapse(PendingIntent)`, then requests SystemUI's media slider
+with `STREAM_MUSIC`, `ADJUST_SAME`, and `FLAG_SHOW_UI`. Opening it does not change
+volume or mute, does not need a running media session, and uses only public
+Android APIs (no bridge capability or privileged permission). Locked tiles wait
+for unlock. Android owns the slider, mute control and expanded volume panel.
+
+For an app-only build from a detached device-tree worktree, set
+`MATON_AOSP_ROOT=/mnt/data/aosp MATON_APPS_ONLY=matonos-settings` when running
+`tools/build-apps.sh`. The override supplies shared checkout SDK stubs; build
+outputs still go into this worktree.
+
+After the rebuilt Settings APK and SystemUI overlay are integrated into an
+image, verify Media volume appears near the front of QS on fresh user data. Click
+it while idle and during playback, drag the media slider with the mouse, and
+check mute/unmute and repeated clicks. Verify a click alone preserves the level,
+the shade collapses, and no blank window remains in Recents. On existing user
+data, add Media volume through QS Edit: the default overlay deliberately does
+not overwrite a user's saved `sysui_qs_tiles` list. Repeat after reboot and on
+the lock screen (unlock must precede opening). PC volume keys already use the
+stock mappings in `input/keylayout/Vendor_4d54_Product_0001.kl`.
+
 - `npm run typecheck`, `npm run lint`, and `node --check plugins/withMatonSettings.js` — passed.
 - Static scan — no `getInitialSection` or `router.replace`; no `.map()` in JSX (drive and operation lists render through `FlatList` components; other `.map()` calls are state updates before the return).
 - APK release build, Expo prebuild, and release-linkage check passed. `aapt2 dump xmltree` confirmed the staged APK declares `com.android.settings.group_key=top_level_account_category`, order `-100`, and the `matonos-settings://install` alias filter.
