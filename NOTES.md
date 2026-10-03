@@ -1085,6 +1085,18 @@ Each entry: what, why no non-patch way, what it would need.
 
 ## Decisions
 
+- **QS brightness + media volume sliders (2026-10-03):** MatonOS cp2a
+  release values enable `scene_container`, `dual_shade`,
+  `qs_tile_detailed_view`, `expanded_audio_detailed_view` and
+  `desktop_sizing` as read-only build-time flags. Stock SystemUI's dual
+  shade creates an always-present STREAM_MUSIC slider, independent of media
+  playback. The SystemUI RRO retains the desktop status bar, skips touch
+  falsing on PCs, and keeps QS visible during brightness adjustments.
+  Keep the r23 Media volume TileService and both default tile lists as a
+  panel shortcut/fallback. No AOSP patches. Host aconfig generation is
+  verified; rebuilt SystemUI/RRO runtime validation is still required.
+  Brightness remains upstream-limited to displays reported as INTERNAL.
+
 - **Bluetooth/WiFi: HAL-owned stable interface, usermode spoof dropped (user,
   2026-09-30)**: the `matonos-btd` daemon and its `/dev/vhci` "empty radio"
   emulator are removed. With no controller the Bluetooth HAL reports

@@ -1,0 +1,33 @@
+# The QS STREAM_MUSIC slider lives in the scene-container dual-shade overlay.
+# All four gates must be compiled on; cp2a requires read-only flag values.
+flag_value {
+  package: "com.android.systemui"
+  name: "scene_container"
+  state: ENABLED
+  permission: READ_ONLY
+}
+flag_value {
+  package: "com.android.systemui"
+  name: "dual_shade"
+  state: ENABLED
+  permission: READ_ONLY
+}
+flag_value {
+  package: "com.android.systemui"
+  name: "qs_tile_detailed_view"
+  state: ENABLED
+  permission: READ_ONLY
+}
+flag_value {
+  package: "com.android.systemui"
+  name: "expanded_audio_detailed_view"
+  state: ENABLED
+  permission: READ_ONLY
+}
+# Use AOSP's compact sw600dp desktop shade/tiles/slider dimensions.
+flag_value {
+  package: "com.android.systemui"
+  name: "desktop_sizing"
+  state: ENABLED
+  permission: READ_ONLY
+}
