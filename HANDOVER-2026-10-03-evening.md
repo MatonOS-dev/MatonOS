@@ -129,3 +129,8 @@ After the `adb install -r` workaround: Door Knocker opens (compositor-layer
 D-Bus works on device). Firefox asked for GAME_CONTROLLERS on launch — expected
 (Flathub Firefox declares devices=all); prompt + manifest gating confirmed,
 real controller access untested (no controller passed through).
+Chromium fails ("Failed to get portal proxy: Connection reset by peer"):
+likely xdg-dbus-proxy (apps with [Session Bus Policy]) cannot reach the
+bus address unix:path=/proc/<supervisor>/fd/198/bus inside its helper
+sandbox. Codex job codex/bus-proxy (VM access) →
+out/pc-logs/agents/codex-bus-proxy-result.md.
