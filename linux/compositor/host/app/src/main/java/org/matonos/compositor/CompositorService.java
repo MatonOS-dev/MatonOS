@@ -45,6 +45,11 @@ public final class CompositorService extends Service {
         startForeground(NOTIFICATION_ID, n);
         ready = nativeStart("wayland-0", getFilesDir().getAbsolutePath() + "/wayland", this);
         if (ready) {
+            // The advertised monitor is what clients (GTK, Firefox, Xwayland's
+            // root window) take as the screen; window id 0 resizes only it.
+            android.graphics.Rect display = getSystemService(android.view.WindowManager.class)
+                    .getMaximumWindowMetrics().getBounds();
+            nativeResize(0, display.width(), display.height());
             // Per-app Xwayland sockets stay in a private directory delegated
             // to linuxd through Binder;
             // lazy start keeps the cost at zero for Wayland-only apps.

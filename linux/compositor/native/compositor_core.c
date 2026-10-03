@@ -556,9 +556,11 @@ static void on_xwayland_destroy(struct wl_listener* l,void* data) {
   while(*p&&*p!=xw)p=&(*p)->next;if(*p)*p=xw->next;
   free(xw);
 }
-/* The single advertised monitor is the X root window: Xwayland clamps the
- * X pointer to it, so it must cover the largest Android window. It only
- * grows; shrinking would push windows' content past the root edge. */
+/* The single advertised monitor is what clients take as the screen: GTK and
+ * Firefox place and track popups within it, and it is Xwayland's root window,
+ * to which the X pointer is clamped. It starts at the display's size (sent
+ * from Java as a resize of window 0) and grows to cover any larger Android
+ * window; it never shrinks, which would push content past the root edge. */
 static void monitor_cover(int width,int height) {
   struct wlr_output* m=server.monitor;
   if(!m||(width<=m->width&&height<=m->height))return;
