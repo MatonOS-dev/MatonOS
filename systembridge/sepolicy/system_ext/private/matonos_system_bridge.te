@@ -34,9 +34,11 @@ net_domain(matonos_linuxd)
 
 # Metadata discovery only; no input/hidraw/uinput device access is granted.
 allow matonos_linuxd self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
-allow matonos_linuxd sysfs:dir r_dir_perms;
-allow matonos_linuxd sysfs:file r_file_perms;
-allow matonos_linuxd sysfs:lnk_file r_file_perms;
+# TODO(r24): the udev database reads input/hidraw nodes and their parent
+# device attributes in sysfs. Generic `sysfs` files are neverallow for
+# coredomain (system/sepolicy coredomain.te), so those nodes need their own
+# label (genfs_contexts / sysfs file_contexts) before an enforcing build;
+# permissive images log the reads as denials meanwhile.
 
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.
