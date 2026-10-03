@@ -1570,6 +1570,14 @@ selector failure. Assess SOF firmware/topology separately if needed.
 
 ## Future ideas (not planned)
 
+- **systemd-appd compatibility (user, 2026-10-03).** systemd-appd (draft,
+  systemd PR #43885, v263; Varlink `io.systemd.AppInstance`) identifies apps
+  by the cgroup xattr `user.app_id` + SO_PEERPIDFD. r24: linuxd sets
+  `user.app_id` on each app's cgroup. Later, when PipeWire or portals need
+  appd: a per-session Varlink emulation in the compositor host (identity =
+  stub/Flatpak id, permissions = the stub's Android grants). Research:
+  out/pc-logs/agents/opencode-appd-result.md.
+
 - **Software Center honours `required-flatpak` (user, 2026-10-03).** Flathub
   apps declare a minimum Flatpak version in their metadata
   (`[Application] required-flatpak=…`). The system Flatpak version (already
