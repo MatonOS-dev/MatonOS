@@ -43,7 +43,7 @@ foreach(lib wlroots wayland-server wayland-client pixman-1 xkbcommon drm)
 endforeach()
 
 add_library(maton_compositor SHARED
-  compositor_core.c jni_shim.cpp android_buffer.c android_output.c test_client.c
+  compositor_core.c jni_shim.cpp android_buffer.c android_output.c dmabuf_import.c test_client.c
   "${GENERATED}/xdg-shell-protocol.c" "${GENERATED}/xdg-shell-client-protocol.h"
   "${GENERATED}/wayland-protocols/xdg-shell-enum.h")
 target_compile_features(maton_compositor PRIVATE c_std_11 cxx_std_17)
