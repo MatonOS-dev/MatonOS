@@ -76,6 +76,7 @@ for entry in \
   'libxshmfence-1.3.3:d4a4df096aba96fea02c029ee3a44e11a47eb7f7213c1a729be83e85ec3fde10' \
   'freetype-2.14.1:32427e8c471ac095853212a37aef816c60b42052d4d9e48230bab3bdf2936ccc' \
   'xkbcomp-1.5.0:2ac31f26600776db6d9cd79b3fcd272263faebac7eb85fb2f33c7141b8486060' \
+  'libepoxy-1.5.10:a7ced37f4102b745ac86d6a70a9da399cc139ff168ba6b8002b4d8d43c900c15' \
   'xkeyboard-config-2.48:b77041324f0109f77161ee43743fe04baa485866af8460d31e476ad3f7648fd5' \
   'xwayland-24.1.13:173aea3d6f79609164c04528e1c8e4c9b60fcd59391c3c9dad4667297d727fb6'; do
   name=${entry%%:*}; hash=${entry#*:}
@@ -175,13 +176,52 @@ configure_build libxshmfence-1.3.3
 cp "$FLATPAK_PREFIX/lib/pkgconfig/libgcrypt.pc" \
    "$FLATPAK_PREFIX/lib64/pkgconfig/gpg-error.pc" "$PREFIX/lib/pkgconfig/"
 
-# Xwayland: the standalone X server for Wayland (meson). GLX/DRI3/glamor are
-# disabled: no GL stack exists in this environment, X11 apps render in
-# software. SHA1 comes from the bionic libgcrypt the Flatpak stack already
+# GPU rendering (glamor + DRI3). Mesa lives in /vendor and its Android build
+# has no EGL GBM platform, so Xwayland gets three small forwarding libraries
+# (xwayland-egl/): libEGL, libGLESv2 and libgbm load Mesa through the
+# same-process-HAL namespace, and libEGL maps the GBM platform to
+# EGL_EXT_platform_device. They sit in lib/xwayland-egl (on device
+# /system_ext/lib64/xwayland), which only Xwayland's LD_LIBRARY_PATH names.
+MESA_SRC=${MESA_DIR:-$HOME/Documents/mesa-26.2.3}
+[[ -f $MESA_SRC/src/gbm/main/gbm.h ]] || die "Mesa source (gbm.h) missing at $MESA_SRC"
+SHIM_SRC=$ROOT/xwayland-egl
+SHIM=$PREFIX/lib/xwayland-egl
+SYSINC=$TOOLCHAIN/sysroot/usr/include
+mkdir -p "$SHIM" "$BUILD/xwayland-egl" "$PREFIX/include"
+python3 "$SHIM_SRC/gen_forward.py" "$BUILD/xwayland-egl/egl_forward.c" libEGL_mesa.so 'egl[A-Z][A-Za-z0-9]*' \
+  --skip eglGetPlatformDisplay,eglQueryString,eglGetProcAddress "$SYSINC/EGL/egl.h"
+python3 "$SHIM_SRC/gen_forward.py" "$BUILD/xwayland-egl/gles_forward.c" libGLESv2_mesa.so 'gl[A-Z][A-Za-z0-9]*' \
+  "$SYSINC/GLES2/gl2.h" "$SYSINC/GLES3/gl3.h" "$SYSINC/GLES3/gl31.h" "$SYSINC/GLES3/gl32.h"
+python3 "$SHIM_SRC/gen_forward.py" "$BUILD/xwayland-egl/gbm_forward.c" libgbm_mesa.so 'gbm_[a-z0-9_]+' \
+  "$MESA_SRC/src/gbm/main/gbm.h"
+shim_lib() { # soname sources...
+  local soname=$1; shift
+  "$CC" -O2 -Wall -fPIC -shared -I"$SHIM_SRC" -o "$SHIM/$soname" -Wl,-soname,"$soname" "$@" \
+    "$SHIM_SRC/sphal.c" -ldl -llog || die "build failed: $soname"
+}
+shim_lib libEGL.so "$BUILD/xwayland-egl/egl_forward.c" "$SHIM_SRC/egl_overrides.c"
+shim_lib libGLESv2.so "$BUILD/xwayland-egl/gles_forward.c"
+shim_lib libgbm.so "$BUILD/xwayland-egl/gbm_forward.c"
+install -m 0644 "$MESA_SRC/src/gbm/main/gbm.h" "$PREFIX/include/gbm.h"
+cat > "$PREFIX/lib/pkgconfig/gbm.pc" <<EOF
+prefix=$PREFIX
+Name: gbm
+Description: Mesa gbm (MatonOS forwarder to the vendor Mesa)
+Version: 26.2.3
+Libs: -L$SHIM -lgbm
+Cflags: -I$PREFIX/include
+EOF
+# libepoxy: GL dispatch for glamor; on Android it opens libEGL.so/libGLESv2.so.
+[[ -d $SRC/libepoxy-1.5.10 ]] || tar -xzf "$DOWN/libepoxy-1.5.10.tar.gz" -C "$SRC"
+configure_meson libepoxy "$SRC/libepoxy-1.5.10" -Degl=yes -Dglx=no -Dx11=false -Dtests=false
+
+# Xwayland: the standalone X server for Wayland (meson). glamor and DRI3 run
+# on the GPU through the forwarders above; GLX stays off (X11 clients use
+# EGL/DRI3). SHA1 comes from the bionic libgcrypt the Flatpak stack already
 # ships in system_ext/lib64.
 [[ -d $SRC/xwayland-24.1.13 ]] || tar -xf "$DOWN/xwayland-24.1.13.tar.xz" -C "$SRC"
 configure_meson xwayland "$SRC/xwayland-24.1.13" \
-  -Dglx=false -Dglamor=false -Dxv=false -Ddri3=false -Dmitshm=auto \
+  -Dglx=false -Dglamor=true -Dxv=false -Ddri3=true -Dmitshm=auto \
   -Dsecure-rpc=false \
   -Dxwayland_ei=false -Dxdmcp=false -Dsystemd_notify=false \
   -Dlibdecor=false -Dxvfb=false -Dsha1=libgcrypt \
@@ -220,8 +260,8 @@ URL: https://gitlab.freedesktop.org/xorg/xserver/
 # The device runtime path: wlroots bakes this into XWAYLAND_PATH and checks
 # access(X_OK) on it at server creation. The build prefix would fail there.
 xwayland=/system_ext/bin/Xwayland
-have_glamor=false
-have_glamor_api=false
+have_glamor=true
+have_glamor_api=true
 have_eglstream=false
 have_initfd=true
 have_listenfd=true

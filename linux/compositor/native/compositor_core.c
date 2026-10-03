@@ -794,6 +794,14 @@ bool maton_core_xwayland_init(const char* socket_dir,const char* xwayland_path) 
   /* Xwayland admits only its own UID, but X clients arrive through linuxd's
    * relay as another user. The socket lives in this app's private directory
    * and reaches linuxd only as a delegated fd, so that is the access gate. */
+  /* Xwayland's glamor uses the EGL/GLES/GBM forwarders in <prefix>/lib64/xwayland
+   * (linux/compositor/xwayland-egl); only Xwayland, which inherits this
+   * environment, loads them. */
+  char libraries[512];
+  size_t prefix=strlen(xwayland_path);
+  if(prefix>=4&&!strcmp(xwayland_path+prefix-4,"/bin"))prefix-=4;
+  written=snprintf(libraries,sizeof(libraries),"%.*s/lib64/xwayland",(int)prefix,xwayland_path);
+  if(written<0||written>=(int)sizeof(libraries)||setenv("LD_LIBRARY_PATH",libraries,1))return false;
   return setenv("WLR_XWAYLAND",binary,1)==0&&
       setenv("WLR_XWAYLAND_NO_ABSTRACT","1",1)==0&&
       setenv("WLR_XWAYLAND_NO_ACCESS_CONTROL","1",1)==0;
