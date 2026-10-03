@@ -385,11 +385,79 @@ static void on_xsurface_commit(struct wl_listener* l,void* data) {
   (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,surface_commit));
   if(w->xsurface)wlr_xwayland_surface_configure(w->xsurface,0,0,w->width,w->height);
 }
+/* Override-redirect windows (menus, tooltips, drop-downs) get no Android
+ * window of their own. Every managed X window is configured at the X origin,
+ * so their root coordinates are offsets within the window they belong to:
+ * the transient parent if set, else the window under the pointer, else the
+ * session's newest X window. */
+struct XOverlay {
+  struct wlr_xwayland_surface* xs;
+  struct wlr_scene_tree* tree;
+  int session;
+  struct wl_listener associate, dissociate, geometry, destroy, tree_destroy;
+};
+static struct Window* xoverlay_owner(struct XOverlay* o) {
+  for(struct wlr_xwayland_surface* p=o->xs->parent;p;p=p->parent)
+    for(struct Window* w=server.windows;w;w=w->next)if(w->xsurface==p)return w;
+  struct Window* newest=NULL;
+  for(struct Window* w=server.windows;w;w=w->next){
+    if(!w->xsurface||w->session!=o->session||!w->scene)continue;
+    if(w->id==server.pointer_window)return w;
+    if(!newest||w->id>newest->id)newest=w;
+  }
+  return newest;
+}
+/* The tree can also die with its owner window's scene; forget it then. */
+static void on_xoverlay_tree_destroy(struct wl_listener* l,void* data) {
+  (void)data;struct XOverlay* o=(struct XOverlay*)((char*)l-offsetof(struct XOverlay,tree_destroy));
+  wl_list_remove(&o->tree_destroy.link);wl_list_init(&o->tree_destroy.link);
+  o->tree=NULL;
+}
+static void xoverlay_remove_tree(struct XOverlay* o) {
+  if(o->tree)wlr_scene_node_destroy(&o->tree->node);
+}
+static void on_xoverlay_associate(struct wl_listener* l,void* data) {
+  (void)data;struct XOverlay* o=(struct XOverlay*)((char*)l-offsetof(struct XOverlay,associate));
+  struct Window* w=xoverlay_owner(o);
+  if(!w||!o->xs->surface)return;
+  xoverlay_remove_tree(o);
+  o->tree=wlr_scene_subsurface_tree_create(&w->scene->tree,o->xs->surface);
+  if(!o->tree)return;
+  o->tree_destroy.notify=on_xoverlay_tree_destroy;wl_signal_add(&o->tree->node.events.destroy,&o->tree_destroy);
+  wlr_scene_node_raise_to_top(&o->tree->node);
+  wlr_scene_node_set_position(&o->tree->node,o->xs->x,o->xs->y);
+  __android_log_print(ANDROID_LOG_DEBUG,"MatonCompositor","X overlay %ux%u+%d+%d class=%s on window %d",
+      o->xs->width,o->xs->height,o->xs->x,o->xs->y,o->xs->class?o->xs->class:"-",w->id);
+  if(w->output)wlr_output_schedule_frame(w->output);
+}
+static void on_xoverlay_dissociate(struct wl_listener* l,void* data) {
+  (void)data;struct XOverlay* o=(struct XOverlay*)((char*)l-offsetof(struct XOverlay,dissociate));
+  xoverlay_remove_tree(o);
+}
+static void on_xoverlay_geometry(struct wl_listener* l,void* data) {
+  (void)data;struct XOverlay* o=(struct XOverlay*)((char*)l-offsetof(struct XOverlay,geometry));
+  if(o->tree)wlr_scene_node_set_position(&o->tree->node,o->xs->x,o->xs->y);
+}
+static void on_xoverlay_destroy(struct wl_listener* l,void* data) {
+  (void)data;struct XOverlay* o=(struct XOverlay*)((char*)l-offsetof(struct XOverlay,destroy));
+  xoverlay_remove_tree(o);
+  wl_list_remove(&o->associate.link);wl_list_remove(&o->dissociate.link);
+  wl_list_remove(&o->geometry.link);wl_list_remove(&o->destroy.link);
+  free(o);
+}
+static void xwayland_overlay(struct wlr_xwayland_surface* xs,int session) {
+  struct XOverlay* o=calloc(1,sizeof(*o));if(!o)return;
+  o->xs=xs;o->session=session;wl_list_init(&o->tree_destroy.link);
+  o->associate.notify=on_xoverlay_associate;wl_signal_add(&xs->events.associate,&o->associate);
+  o->dissociate.notify=on_xoverlay_dissociate;wl_signal_add(&xs->events.dissociate,&o->dissociate);
+  o->geometry.notify=on_xoverlay_geometry;wl_signal_add(&xs->events.set_geometry,&o->geometry);
+  o->destroy.notify=on_xoverlay_destroy;wl_signal_add(&xs->events.destroy,&o->destroy);
+}
 static void on_xwayland_new_surface(struct wl_listener* l,void* data) {
   struct XwaylandSession* xw=(struct XwaylandSession*)((char*)l-offsetof(struct XwaylandSession,new_surface));
   struct wlr_xwayland_surface* xs=data;
-  if(xs->override_redirect)return;
-  xwayland_window(xs,xw->session);
+  if(xs->override_redirect)xwayland_overlay(xs,xw->session);
+  else xwayland_window(xs,xw->session);
 }
 static void xwayland_apply_socket_mode(struct XwaylandSession* xw) {
   if(!xw->xwayland)return;
