@@ -4,7 +4,12 @@
     <!-- Desktop status bar (needs aconfig status_bar_for_desktop too, set in
          release/aconfig; user, 2026-09-27). -->
     <bool name="config_useDesktopStatusBar">true</bool>
-    <!-- PCs may have no volume keys. Keep a panel entry near the front of QS.
+    <!-- Mouse/trackpad input on PCs should not be rejected as false touches. -->
+    <bool name="config_isDesktopForFalsingPurposes">true</bool>
+    <!-- Keep both sliders and the tiles visible while adjusting brightness. -->
+    <bool name="config_useBrightnessMirrorInOverlay">false</bool>
+    <!-- PCs may have no volume keys. Keep the r23 panel tile as a fallback
+         (also available when QS is editing or showing tile details).
          Preserve the upstream defaults in both internet-tile variants. -->
     <string name="quick_settings_tiles_default" translatable="false">internet,bt,custom(org.matonos.settings/org.matonos.settings.nativebridge.MediaVolumeTileService),dnd,cast,flashlight,airplane,rotation,wallet,alarm,controls,screenrecord,battery</string>
     <string name="quick_settings_tiles_default_split" translatable="false">wifi,bt,custom(org.matonos.settings/org.matonos.settings.nativebridge.MediaVolumeTileService),cell,cast,dnd,wallet,airplane,rotation,flashlight,battery,alarm,controls,screenrecord</string>
