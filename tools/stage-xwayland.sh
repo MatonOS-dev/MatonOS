@@ -28,5 +28,11 @@ for lib in libpixman-1.so libwayland-client.so; do
   [[ -e $CSTAGE/$lib ]] || { echo "ERROR: $lib missing at $CSTAGE; run build-compositor.sh" >&2; exit 1; }
   install -m 0644 "$(readlink -f "$CSTAGE/$lib")" "$DST/lib64/$lib"
 done
+# Keymap compiler and XKB data (see build-xwayland.sh).
+install -m 0755 "$SRC/bin/xkbcomp" "$DST/bin/xkbcomp"
+XKB=$AOSP/out/matonos/compositor/xkb-data/system_ext/share/xkeyboard-config-2
+[[ -f $XKB/rules/evdev ]] || { echo "ERROR: XKB data missing at $XKB; run build-xwayland.sh" >&2; exit 1; }
+rm -rf "$DST/share/X11/xkb"; mkdir -p "$DST/share/X11"
+cp -r "$XKB" "$DST/share/X11/xkb"
 echo "Staged Xwayland runtime files under $DST:"
 ls -la "$DST/bin" "$DST/lib64" | tail -n +4

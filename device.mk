@@ -52,7 +52,8 @@ XWAYLAND_SYSTEM_EXT := device/maton/pc_x86_64/linux/compositor/prebuilt/system_e
 XWAYLAND_FILES := \
     $(wildcard $(XWAYLAND_SYSTEM_EXT)/bin/*) \
     $(wildcard $(XWAYLAND_SYSTEM_EXT)/lib64/*.so) \
-    $(wildcard $(XWAYLAND_SYSTEM_EXT)/lib64/*.so.*)
+    $(wildcard $(XWAYLAND_SYSTEM_EXT)/lib64/*.so.*) \
+    $(shell find $(XWAYLAND_SYSTEM_EXT)/share -type f 2>/dev/null)
 PRODUCT_COPY_FILES += $(foreach f,$(XWAYLAND_FILES),$(f):$(TARGET_COPY_OUT_SYSTEM_EXT)/$(patsubst $(XWAYLAND_SYSTEM_EXT)/%,%,$(f)))
 
 # ---------------------------------------------------------------- HALs

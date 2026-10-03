@@ -75,6 +75,8 @@ for entry in \
   'libxcvt-0.1.3:a929998a8767de7dfa36d6da4751cdbeef34ed630714f2f4a767b351f2442e01' \
   'libxshmfence-1.3.3:d4a4df096aba96fea02c029ee3a44e11a47eb7f7213c1a729be83e85ec3fde10' \
   'freetype-2.14.1:32427e8c471ac095853212a37aef816c60b42052d4d9e48230bab3bdf2936ccc' \
+  'xkbcomp-1.5.0:2ac31f26600776db6d9cd79b3fcd272263faebac7eb85fb2f33c7141b8486060' \
+  'xkeyboard-config-2.48:b77041324f0109f77161ee43743fe04baa485866af8460d31e476ad3f7648fd5' \
   'xwayland-24.1.13:173aea3d6f79609164c04528e1c8e4c9b60fcd59391c3c9dad4667297d727fb6'; do
   name=${entry%%:*}; hash=${entry#*:}
   archive=$DOWN/$name.tar.xz
@@ -103,7 +105,8 @@ configure_meson() { # name src args...
   local name=$1 src=$2; shift 2
   local dir=$BUILD/xwayland-stack/$name
   [[ -d $src ]] || tar -xf "$DOWN/$(basename "$src").tar.xz" -C "$SRC"
-  meson setup "$dir" "$src" --cross-file "$BUILD/android-x86_64-x.ini" \
+  local reconfigure=(); [[ -f $dir/build.ninja ]] && reconfigure=(--reconfigure)
+  meson setup "${reconfigure[@]}" "$dir" "$src" --cross-file "$BUILD/android-x86_64-x.ini" \
     --prefix="$PREFIX" --libdir=lib --buildtype=release "$@"
   meson compile -C "$dir" -j"$JOBS"
   meson install -C "$dir" >/dev/null
@@ -151,7 +154,7 @@ PYTHON=python3 configure_build libxcb-1.17.0 --without-xcb-xprint \
 configure_build xcb-util-wm-0.4.2
 configure_build xcb-util-errors-1.0.1
 # libX11: the client-side Xlib for Flatpak apps (links our libxcb).
-configure_build libX11-1.8.13 --disable-udb --disable-xlocale
+configure_build libX11-1.8.13 --disable-udb
 # libxkbfile is meson-only (no configure script); libXfont2 still ships
 # autotools. Both are Xwayland's XKB and font backend requirements.
 configure_meson libxkbfile "$SRC/libxkbfile-1.2.0"
@@ -182,7 +185,25 @@ configure_meson xwayland "$SRC/xwayland-24.1.13" \
   -Dsecure-rpc=false \
   -Dxwayland_ei=false -Dxdmcp=false -Dsystemd_notify=false \
   -Dlibdecor=false -Dxvfb=false -Dsha1=libgcrypt \
-  -Dxwayland-path="$PREFIX/bin"
+  -Dxwayland-path="$PREFIX/bin" \
+  -Dxkb_dir=/system_ext/share/X11/xkb -Dxkb_bin_dir=/system_ext/bin \
+  -Dxkb_output_dir=/system_ext/share/X11/xkb/compiled
+
+# Xwayland cannot start without a keymap: it runs xkbcomp on the XKB data at
+# server start. The read-only xkb_output_dir makes it fall back to
+# $XDG_RUNTIME_DIR, which the compositor points at its private runtime dir.
+configure_build xkbcomp-1.5.0
+# xkeyboard-config is data only; built for the host into its own prefix and
+# staged verbatim (arch independent).
+XKB_DATA=$BUILD/xkb-data
+[[ -d $SRC/xkeyboard-config-2.48 ]] || tar -xf "$DOWN/xkeyboard-config-2.48.tar.xz" -C "$SRC"
+rm -rf "$BUILD/build-xkeyboard-config"
+env -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR meson setup "$BUILD/build-xkeyboard-config" \
+  "$SRC/xkeyboard-config-2.48" --prefix=/system_ext -Dxorg-rules-symlinks=true -Dnls=false >/dev/null ||
+  die "configure failed: xkeyboard-config"
+rm -rf "$XKB_DATA"
+DESTDIR=$XKB_DATA meson install -C "$BUILD/build-xkeyboard-config" >/dev/null || die "install failed: xkeyboard-config"
+[[ -f $XKB_DATA/system_ext/share/xkeyboard-config-2/rules/evdev ]] || die "xkeyboard-config: X11 rules missing"
 
 # wlroots reads the xwayland.pc dependency and its have_* feature variables.
 # Upstream's generated pc file is replicated here verbatim.
