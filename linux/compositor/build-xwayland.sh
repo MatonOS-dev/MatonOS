@@ -4,7 +4,8 @@
 # libXdmcp, libxcb, xcb-util-wm (icccm/ewmh), xcb-util-errors, libX11,
 # libxkbfile, libXfont2 and Xwayland. wlroots' xwayland module needs the xcb
 # libraries and the Xwayland server binary; X clients in Flatpaks need libX11.
-# Sources are pinned with SHA-256 in UPSTREAMS; nothing is patched.
+# Sources are pinned with SHA-256 in UPSTREAMS; the EGL-only server GLX patch
+# below is documented in xwayland-egl-glx.patch.
 set -Eeuo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -215,13 +216,39 @@ EOF
 [[ -d $SRC/libepoxy-1.5.10 ]] || tar -xzf "$DOWN/libepoxy-1.5.10.tar.gz" -C "$SRC"
 configure_meson libepoxy "$SRC/libepoxy-1.5.10" -Degl=yes -Dglx=no -Dx11=false -Dtests=false
 
+# Server GLX uses epoxy dispatch and glamor's existing EGL display, not
+# libGL or a second Mesa/DRI module installation. Meson's GLX dependency('gl')
+# only needs the Khronos GL headers here; provide a headers-only pc file.
+# Use the same Mesa source as the vendor forwarders (NDK supplies KHR headers).
+mkdir -p "$PREFIX/include/GL"
+for header in gl.h glext.h glcorearb.h; do
+  install -m 0644 "$MESA_SRC/include/GL/$header" "$PREFIX/include/GL/$header"
+done
+cat > "$PREFIX/lib/pkgconfig/gl.pc" <<EOF
+prefix=$PREFIX
+includedir=\${prefix}/include
+Name: gl
+Description: Khronos GL headers only (Xwayland server uses epoxy/EGL)
+Version: 1.2
+Libs:
+Cflags: -I\${includedir}
+EOF
 # Xwayland: the standalone X server for Wayland (meson). glamor and DRI3 run
-# on the GPU through the forwarders above; GLX stays off (X11 clients use
-# EGL/DRI3). SHA1 comes from the bionic libgcrypt the Flatpak stack already
-# ships in system_ext/lib64.
+# on the GPU through the forwarders above. Enabling GLX also builds
+# glamor/glamor_glx_provider.c; xwl_glamor_init pushes this EGL-backed provider.
+# The patch uses epoxy for server GL dispatch and removes the DRI fallback.
+# Keep indirect GLX disabled (the default):
+# the EGL provider supports direct clients and needs no *_dri.so modules.
+# SHA1 comes from the bionic libgcrypt the Flatpak stack already ships.
 [[ -d $SRC/xwayland-24.1.13 ]] || tar -xf "$DOWN/xwayland-24.1.13.tar.xz" -C "$SRC"
+GLX_PATCH=$ROOT/xwayland-egl-glx.patch
+if patch --dry-run --batch --forward -p1 -d "$SRC/xwayland-24.1.13" < "$GLX_PATCH" >/dev/null 2>&1; then
+  patch --batch --forward -p1 -d "$SRC/xwayland-24.1.13" < "$GLX_PATCH"
+elif ! patch --dry-run --batch --reverse -p1 -d "$SRC/xwayland-24.1.13" < "$GLX_PATCH" >/dev/null 2>&1; then
+  die 'Xwayland EGL GLX patch neither applies nor is already applied'
+fi
 configure_meson xwayland "$SRC/xwayland-24.1.13" \
-  -Dglx=false -Dglamor=true -Dxv=false -Ddri3=true -Dmitshm=auto \
+  -Dglx=true -Dglamor=true -Dxv=false -Ddri3=true -Dmitshm=auto \
   -Dsecure-rpc=false \
   -Dxwayland_ei=false -Dxdmcp=false -Dsystemd_notify=false \
   -Dlibdecor=false -Dxvfb=false -Dsha1=libgcrypt \

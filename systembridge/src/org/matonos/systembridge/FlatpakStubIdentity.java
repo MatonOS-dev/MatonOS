@@ -15,15 +15,24 @@ final class FlatpakStubIdentity {
         String[] parts=ref.split("/");
         String id=parts[1];
         boolean plain=parts[2].equals("x86_64")&&parts[3].equals("stable")&&id.length()<=200;
-        for(String segment:id.split("\\."))
-            if(!segment.matches("[A-Za-z][A-Za-z0-9_]*"))plain=false;
+        // Android package segments are [A-Za-z][A-Za-z0-9_]*; Flatpak ids also
+        // allow '-' (io.github.….cpu-x) and leading digits.
+        StringBuilder safe=new StringBuilder();
+        for(String segment:id.split("\\.",-1)){
+            String fixed=segment.replaceAll("[^A-Za-z0-9_]","_");
+            if(fixed.isEmpty()||!Character.isLetter(fixed.charAt(0)))fixed="x"+fixed;
+            if(!fixed.equals(segment))plain=false;
+            if(safe.length()>0)safe.append('.');
+            safe.append(fixed);
+        }
         if(plain)return PREFIX+id;
-        // Non-default branch/arch, oversized or invalid ids: keep the name
-        // readable where possible, deterministic where not.
+        // Non-default branch/arch, oversized or rewritten ids: keep the name
+        // readable where possible, unique by a short hash of the ref.
+        String readable=safe.length()<=200?safe.toString():safe.substring(0,200).replaceAll("[._]+$","");
         byte[] digest=MessageDigest.getInstance("SHA-256").digest(ref.getBytes(StandardCharsets.UTF_8));
         StringBuilder suffix=new StringBuilder(".x");
         for(int i=0;i<4;i++)suffix.append(String.format(java.util.Locale.ROOT,"%02x",digest[i]&255));
-        return PREFIX+id+suffix;
+        return PREFIX+readable+suffix;
     }
     static boolean isGeneratedStub(String packageName) {
         return packageName!=null&&(packageName.startsWith(PREFIX)||packageName.startsWith(LEGACY_PREFIX));

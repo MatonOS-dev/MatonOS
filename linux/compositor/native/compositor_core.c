@@ -295,6 +295,7 @@ struct Popup {
  * constrained to the window: the positioner rules flip or slide menus back
  * inside it, as a desktop compositor does at the screen edge. */
 static void constrain_popup(struct wlr_xdg_popup* popup) {
+  if(!popup->base->initialized)return;
   struct wlr_surface* surface=popup->parent;struct wlr_xdg_surface* xdg;
   while((xdg=wlr_xdg_surface_try_from_wlr_surface(surface))&&xdg->role==WLR_XDG_SURFACE_ROLE_POPUP&&xdg->popup)
     surface=xdg->popup->parent;
@@ -335,23 +336,33 @@ static void on_new_popup(struct wl_listener* listener,void* data) {
  * drawing a second one below Android's caption. */
 struct Decoration {
   struct wlr_xdg_toplevel_decoration_v1* deco;
-  struct wl_listener request, destroy;
+  struct wl_listener request, commit, destroy;
 };
+/* wlroots asserts if a configure is scheduled before the surface's initial
+ * commit, so the mode is sent then, or at once when already initialized. */
+static void decoration_send(struct Decoration* d) {
+  if(d->deco->toplevel->base->initialized)
+    wlr_xdg_toplevel_decoration_v1_set_mode(d->deco,WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+}
 static void on_decoration_request(struct wl_listener* l,void* data) {
-  (void)data;struct Decoration* d=(struct Decoration*)((char*)l-offsetof(struct Decoration,request));
-  wlr_xdg_toplevel_decoration_v1_set_mode(d->deco,WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+  (void)data;decoration_send((struct Decoration*)((char*)l-offsetof(struct Decoration,request)));
+}
+static void on_decoration_commit(struct wl_listener* l,void* data) {
+  (void)data;struct Decoration* d=(struct Decoration*)((char*)l-offsetof(struct Decoration,commit));
+  if(d->deco->toplevel->base->initial_commit)decoration_send(d);
 }
 static void on_decoration_destroy(struct wl_listener* l,void* data) {
   (void)data;struct Decoration* d=(struct Decoration*)((char*)l-offsetof(struct Decoration,destroy));
-  wl_list_remove(&d->request.link);wl_list_remove(&d->destroy.link);free(d);
+  wl_list_remove(&d->request.link);wl_list_remove(&d->commit.link);wl_list_remove(&d->destroy.link);free(d);
 }
 static void on_new_decoration(struct wl_listener* l,void* data) {
   (void)l;struct wlr_xdg_toplevel_decoration_v1* deco=data;
   struct Decoration* d=calloc(1,sizeof(*d));if(!d)return;
   d->deco=deco;
   d->request.notify=on_decoration_request;wl_signal_add(&deco->events.request_mode,&d->request);
+  d->commit.notify=on_decoration_commit;wl_signal_add(&deco->toplevel->base->surface->events.commit,&d->commit);
   d->destroy.notify=on_decoration_destroy;wl_signal_add(&deco->events.destroy,&d->destroy);
-  wlr_xdg_toplevel_decoration_v1_set_mode(deco,WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE);
+  decoration_send(d);
 }
 /* Xwayland windows reuse the toplevel window path: one Android activity per
  * managed X window, rendered through a scene subsurface tree. */
@@ -838,7 +849,10 @@ bool maton_core_xwayland_init(const char* socket_dir,const char* xwayland_path) 
   if(prefix>=4&&!strcmp(xwayland_path+prefix-4,"/bin"))prefix-=4;
   written=snprintf(libraries,sizeof(libraries),"%.*s/lib64/xwayland",(int)prefix,xwayland_path);
   if(written<0||written>=(int)sizeof(libraries)||setenv("LD_LIBRARY_PATH",libraries,1))return false;
+  /* Mesa's Android build has no desktop GL: glamor's default GL-first probe
+   * makes libepoxy dlopen libGLESv1_CM and abort, so ask for GLES directly. */
   return setenv("WLR_XWAYLAND",binary,1)==0&&
+      setenv("WLR_XWAYLAND_GLAMOR","es",1)==0&&
       setenv("WLR_XWAYLAND_NO_ABSTRACT","1",1)==0&&
       setenv("WLR_XWAYLAND_NO_ACCESS_CONTROL","1",1)==0;
 }
