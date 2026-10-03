@@ -141,9 +141,17 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   stamp=$DEVICE_DIR/prebuilt/apps-built/.$key_id.inputs
   extra_inputs=()
   if [[ $key_id == matonos-wayland-host ]]; then
-    extra_inputs+=("$DEVICE_DIR/linux/compositor/native" "$DEVICE_DIR/systembridge/aidl")
+    extra_inputs+=("$DEVICE_DIR/linux/compositor/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker")
   fi
-  fingerprint=$(inputs_hash "$project" "$DEVICE_DIR/rn-apps/rn-common" "$DEVICE_DIR/buildinfra/client" "${extra_inputs[@]}")-$cert_sha
+  # The broker records the image Flatpak build version. Rebuild the APK when
+  # that generated input changes, even when app sources are unchanged.
+  flatpak_version_hash=
+  if [[ $key_id == matonos-wayland-host ]]; then
+    flatpak_config=${MATON_FLATPAK_BUILD_CONFIG:-${MATON_FLATPAK_NDK:-$AOSP/out/matonos/flatpak-ndk}/flatpak/build/config.h}
+    [[ -s $flatpak_config ]] || die "image Flatpak build config missing: $flatpak_config"
+    flatpak_version_hash=$(sha256sum "$flatpak_config" | cut -d' ' -f1)
+  fi
+  fingerprint=$(inputs_hash "$project" "$DEVICE_DIR/rn-apps/rn-common" "$DEVICE_DIR/buildinfra/client" "${extra_inputs[@]}")-$cert_sha-$flatpak_version_hash
   if [[ ${MATON_APPS_FORCE:-0} != 1 && -s $stamp && $(cat "$stamp") == "$fingerprint" &&
         -s $DEVICE_DIR/prebuilt/apps-built/$apk_name && -s $DEVICE_DIR/buildinfra/apps-built/$apk_name ]]; then
     info "Skipping $key_id: inputs unchanged since the staged $apk_name"
@@ -172,6 +180,7 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   (
     cd "$project"
     export ANDROID_HOME=$SDK ANDROID_SDK_ROOT=$SDK
+    export MATON_AOSP_ROOT=$AOSP
     export MATON_SIGNING_STORE_FILE=$key_file MATON_SIGNING_STORE_PASSWORD=$keypass
     export MATON_SIGNING_KEY_ALIAS=$KEY_ALIAS MATON_SIGNING_KEY_PASSWORD=$keypass
     export MATON_FRAMEWORK_STUB_JAR=$framework_stub

@@ -203,7 +203,7 @@ public final class CompositorService extends Service {
             if (!directory.isDirectory() && !directory.mkdirs()) throw new java.io.IOException("Cannot create application socket directory");
             android.system.Os.chmod(directory.getAbsolutePath(),0711);
             inhibit=new InhibitSocket(CompositorService.this,directory,this::inhibited);
-            try { bus=new SessionBus(directory,ref); }
+            try { bus=new SessionBus(CompositorService.this,directory,ref); }
             catch(Exception error) { inhibit.close(); throw error; }
             if (!nativeAddSession(id,new java.io.File(directory,"wayland-0").getAbsolutePath())) {
                 bus.close();inhibit.close();

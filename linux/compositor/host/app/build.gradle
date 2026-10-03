@@ -1,14 +1,45 @@
 plugins { id 'com.android.application' }
 
+// A PIE executable named as a JNI library so PackageManager extracts it with
+// executable permissions. Build from source for direct Gradle builds too.
+def brokerRoot = file('../../../dbus-broker')
+def brokerOutput = System.getenv('MATON_DBUS_ANDROID_OUT') ?: layout.buildDirectory.dir('broker/android').get().asFile.absolutePath
+def aospRoot = System.getenv('MATON_AOSP_ROOT') ?: file('../../../../../../..').absolutePath
+def brokerJni = layout.buildDirectory.dir('generated/brokerJni')
+def buildSessionBroker = tasks.register('buildSessionBroker', Exec) {
+    inputs.dir brokerRoot
+    outputs.dir brokerOutput
+    // build-android.sh also tracks the external static dependency builds.
+    outputs.upToDateWhen { false }
+    environment 'MATON_DBUS_ANDROID_OUT', brokerOutput
+    environment 'MATON_AOSP_ROOT', aospRoot
+    if (System.getenv('MATON_NDK')) environment 'MATON_ANDROID_NDK', System.getenv('MATON_NDK')
+    commandLine 'bash', new File(brokerRoot, 'build-android.sh').absolutePath
+}
+def packageSessionBroker = tasks.register('packageSessionBroker', Copy) {
+    dependsOn buildSessionBroker
+    from(new File(brokerOutput, 'matonos-dbus-broker'))
+    into brokerJni.map { it.dir('x86_64') }
+    rename { 'libmatonos-dbus-broker.so' }
+}
+tasks.named('preBuild').configure { dependsOn packageSessionBroker }
+
 android {
     namespace 'org.matonos.compositor'
     compileSdk 36
     defaultConfig {
         applicationId 'org.matonos.compositor'; minSdk 30; targetSdk 35; versionCode 1; versionName '1.0'
         ndk { abiFilters 'x86_64' }
-        externalNativeBuild { cmake { arguments '-DMATON_COMPOSITOR_ROOT=' + projectDir.absolutePath + '/../..' } }
+        externalNativeBuild { cmake { arguments '-DMATON_COMPOSITOR_ROOT=' + projectDir.absolutePath + '/../..', '-DMATON_AOSP_ROOT=' + aospRoot, '-DMATON_COMPOSITOR_BUILD=' + (System.getenv('MATON_COMPOSITOR_BUILD') ?: "$aospRoot/out/matonos/compositor") } }
     }
     buildFeatures { aidl true }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            // Preserve the executable ELF, rather than treating it as a DSO.
+            keepDebugSymbols += '**/libmatonos-dbus-broker.so'
+        }
+    }
     signingConfigs {
         release {
             storeFile file(System.getenv('MATON_SIGNING_STORE_FILE'))
@@ -24,7 +55,8 @@ android {
     sourceSets {
         main {
             aidl.srcDirs += file("$rootDir/../../../systembridge/aidl")
-            jniLibs.srcDirs += file("$rootDir/../../../../../../out/matonos/compositor/jniLibs")
+            jniLibs.srcDirs += file(System.getenv('MATON_COMPOSITOR_JNI_LIBS') ?: "$aospRoot/out/matonos/compositor/jniLibs")
+            jniLibs.srcDir brokerJni
         }
     }
 }

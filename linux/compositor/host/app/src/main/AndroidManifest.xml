@@ -10,7 +10,7 @@
         </intent>
     </queries>
     <application android:label="Maton Wayland" android:theme="@android:style/Theme.Material.Light.NoActionBar"
-        android:multiArch="true">
+        android:multiArch="true" android:extractNativeLibs="true">
         <library android:name="org.matonos.linuxhost" />
         <!-- Exported embedded Binder authenticates the exact generated stub;
              the legacy full compositor Binder remains restricted to this UID. -->
