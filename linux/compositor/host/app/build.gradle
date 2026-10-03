@@ -5,7 +5,7 @@ plugins { id 'com.android.application' }
 def brokerRoot = file('../../../dbus-broker')
 def brokerOutput = System.getenv('MATON_DBUS_ANDROID_OUT') ?: layout.buildDirectory.dir('broker/android').get().asFile.absolutePath
 def aospRoot = System.getenv('MATON_AOSP_ROOT') ?: file('../../../../../../..').absolutePath
-def brokerJni = layout.buildDirectory.dir('generated/brokerJni')
+def brokerJni = new File(layout.buildDirectory.get().asFile, 'generated/brokerJni')
 def buildSessionBroker = tasks.register('buildSessionBroker', Exec) {
     inputs.dir brokerRoot
     outputs.dir brokerOutput
@@ -19,7 +19,7 @@ def buildSessionBroker = tasks.register('buildSessionBroker', Exec) {
 def packageSessionBroker = tasks.register('packageSessionBroker', Copy) {
     dependsOn buildSessionBroker
     from(new File(brokerOutput, 'matonos-dbus-broker'))
-    into brokerJni.map { it.dir('x86_64') }
+    into new File(brokerJni, 'x86_64')
     rename { 'libmatonos-dbus-broker.so' }
 }
 tasks.named('preBuild').configure { dependsOn packageSessionBroker }
