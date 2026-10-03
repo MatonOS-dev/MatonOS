@@ -143,7 +143,17 @@ MatonOS is mostly an assembly of other people's excellent open-source work:
 - [Expo](https://expo.dev/) / [React Native](https://reactnative.dev/)
   (MatonOS Settings and our other apps)
 - Linux apps (in development): [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots),
-  [Flatpak](https://flatpak.org/), [OSTree](https://ostreedev.github.io/ostree/),
+  [Wayland](https://wayland.freedesktop.org/),
+  [Xwayland](https://gitlab.freedesktop.org/xorg/xserver) and the X.Org
+  libraries (libxcb, xorgproto, libXfont2, libxcvt, libxshmfence),
+  [libepoxy](https://github.com/anholt/libepoxy),
+  [pixman](https://gitlab.freedesktop.org/pixman/pixman),
+  [libxkbcommon](https://xkbcommon.org/),
+  [libdrm](https://gitlab.freedesktop.org/mesa/drm),
+  [libffi](https://sourceware.org/libffi/),
+  [Flatpak](https://flatpak.org/) and
+  [xdg-dbus-proxy](https://github.com/flatpak/xdg-dbus-proxy),
+  [OSTree](https://ostreedev.github.io/ostree/),
   [bubblewrap](https://github.com/containers/bubblewrap),
   [GLib](https://gitlab.gnome.org/GNOME/glib),
   [libseccomp](https://github.com/seccomp/libseccomp),
