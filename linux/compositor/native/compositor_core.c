@@ -689,7 +689,7 @@ static void handle_add_xwayland(int session,uid_t uid) {
 }
 static int on_event_fd(int fd,uint32_t mask,void* data){(void)fd;(void)mask;(void)data;process_commands();return 0;}
 /* GPU clients hand over dma-bufs that SurfaceFlinger shows as they are
- * (presenter.c, dmabuf_import.c). Only what gralloc can import is offered:
+ * (presenter.c, dmabuf_import.c). Only what gralloc can fully describe is offered:
  * single-plane RGB formats, linear or the driver's implicit layout, on the
  * render node SurfaceFlinger's GPU uses. */
 /* Every session has its own Xwayland and so its own xwayland_shell_v1 global,
@@ -721,15 +721,20 @@ static bool render_node(dev_t* out) {
 }
 static bool check_dmabuf(struct wlr_dmabuf_attributes* attrs,void* data) {
   (void)data;
-  /* Replaces wlroots' own check, so the real gralloc import is the test:
-   * it also rejects fds that are not dma-bufs. */
+  /* Replaces wlroots' own check: require the runtime-probed format and
+   * complete plane metadata for this actual import, not just import success. */
   return attrs->n_planes==1&&maton_dmabuf_format_supported(attrs->format)&&maton_dmabuf_importable(attrs);
 }
 static bool create_linux_dmabuf(void) {
   static const uint32_t formats[]={DRM_FORMAT_ARGB8888,DRM_FORMAT_XRGB8888,DRM_FORMAT_ABGR8888,DRM_FORMAT_XBGR8888,DRM_FORMAT_RGB565};
   for(size_t i=0;i<sizeof(formats)/sizeof(formats[0]);++i)
-    if(!wlr_drm_format_set_add(&server.dmabuf_formats,formats[i],DRM_FORMAT_MOD_LINEAR)||
-        !wlr_drm_format_set_add(&server.dmabuf_formats,formats[i],DRM_FORMAT_MOD_INVALID))return false;
+    if(maton_dmabuf_format_supported(formats[i])&&
+        (!wlr_drm_format_set_add(&server.dmabuf_formats,formats[i],DRM_FORMAT_MOD_LINEAR)||
+        !wlr_drm_format_set_add(&server.dmabuf_formats,formats[i],DRM_FORMAT_MOD_INVALID)))return false;
+  if(server.dmabuf_formats.len==0){
+    __android_log_print(ANDROID_LOG_WARN,"MatonCompositor","No mapper-safe formats; linux-dmabuf disabled");
+    return true;
+  }
   dev_t device;
   if(!render_node(&device)){
     /* No GPU: clients stay on shared memory. */

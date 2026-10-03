@@ -5,8 +5,12 @@ if(NOT MATON_COMPOSITOR_ROOT)
   message(FATAL_ERROR "MATON_COMPOSITOR_ROOT must point to linux/compositor")
 endif()
 get_filename_component(MATON_COMPOSITOR_ROOT "${MATON_COMPOSITOR_ROOT}" ABSOLUTE)
-get_filename_component(MATON_AOSP_ROOT "${MATON_COMPOSITOR_ROOT}/../../../../../" ABSOLUTE)
-set(MATON_COMPOSITOR_BUILD "${MATON_AOSP_ROOT}/out/matonos/compositor")
+if(NOT MATON_AOSP_ROOT)
+  get_filename_component(MATON_AOSP_ROOT "${MATON_COMPOSITOR_ROOT}/../../../../../" ABSOLUTE)
+endif()
+if(NOT MATON_COMPOSITOR_BUILD)
+  set(MATON_COMPOSITOR_BUILD "${MATON_AOSP_ROOT}/out/matonos/compositor")
+endif()
 set(MATON_STAGE "${MATON_COMPOSITOR_BUILD}/stage/x86_64")
 set(MATON_XSTAGE "${MATON_COMPOSITOR_BUILD}/xstage/x86_64")
 set(MATON_WAYLAND_SCANNER "${MATON_COMPOSITOR_BUILD}/host/bin/wayland-scanner")
@@ -43,7 +47,7 @@ foreach(lib wlroots wayland-server wayland-client pixman-1 xkbcommon drm)
 endforeach()
 
 add_library(maton_compositor SHARED
-  compositor_core.c jni_shim.cpp android_buffer.c android_output.c dmabuf_import.c maton_renderer.c presenter.c test_client.c
+  compositor_core.c jni_shim.cpp android_buffer.c android_output.c dmabuf_import.c dmabuf_metadata.cpp maton_renderer.c presenter.c test_client.c
   "${GENERATED}/xdg-shell-protocol.c" "${GENERATED}/xdg-shell-client-protocol.h"
   "${GENERATED}/wayland-protocols/xdg-shell-enum.h")
 target_compile_features(maton_compositor PRIVATE c_std_11 cxx_std_17)
@@ -57,6 +61,7 @@ target_include_directories(maton_compositor PRIVATE
   "${MATON_XSTAGE}/include"
   "${MATON_AOSP_ROOT}/external/libdrm/include"
   "${MATON_AOSP_ROOT}/external/libdrm/include/drm"
+  "${MATON_AOSP_ROOT}/hardware/interfaces/graphics/mapper/stable-c/include"
   "${MATON_AOSP_ROOT}/external/minigbm/cros_gralloc"
   "${MATON_AOSP_ROOT}/system/core/libcutils/include")
 target_link_libraries(maton_compositor PRIVATE
