@@ -118,6 +118,7 @@ struct Server {
   struct wl_listener new_toplevel, new_popup, new_decoration;
   char xwayland_path[512], xwayland_dir[512];
   struct XwaylandSession* xwayland_sessions;
+  struct wlr_output* monitor;
 } server = { .mutex=PTHREAD_MUTEX_INITIALIZER, .ready_cond=PTHREAD_COND_INITIALIZER,
              .xw_cond=PTHREAD_COND_INITIALIZER,
              .event_fd=-1 };
@@ -482,6 +483,19 @@ static void on_xwayland_destroy(struct wl_listener* l,void* data) {
   while(*p&&*p!=xw)p=&(*p)->next;if(*p)*p=xw->next;
   free(xw);
 }
+/* The single advertised monitor is the X root window: Xwayland clamps the
+ * X pointer to it, so it must cover the largest Android window. It only
+ * grows; shrinking would push windows' content past the root edge. */
+static void monitor_cover(int width,int height) {
+  struct wlr_output* m=server.monitor;
+  if(!m||(width<=m->width&&height<=m->height))return;
+  int w=width>m->width?width:m->width,h=height>m->height?height:m->height;
+  struct wlr_output_state state;wlr_output_state_init(&state);
+  wlr_output_state_set_custom_mode(&state,w,h,60000);
+  if(!wlr_output_commit_state(m,&state))
+    __android_log_print(ANDROID_LOG_ERROR,"MatonCompositor","Monitor resize to %dx%d failed",w,h);
+  wlr_output_state_finish(&state);
+}
 static void attach_output(struct Command* c) {
   struct Window* w=find_window(c->id);
   if(!c->output)return;
@@ -526,9 +540,9 @@ static void process_commands(void) {
       }
       break;
     case CMD_ADD_XWAYLAND:handle_add_xwayland(c->a,(uid_t)c->b);break;
-    case CMD_ATTACH:attach_output(c);break;
+    case CMD_ATTACH:monitor_cover(c->a,c->b);attach_output(c);break;
     case CMD_DETACH:if(w){w->activity=0;destroy_output(w);}break;
-    case CMD_RESIZE:if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);bool committed=wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(committed){if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_size(w->toplevel,c->a,c->b);else if(w->xsurface)wlr_xwayland_surface_configure(w->xsurface,0,0,c->a,c->b);wlr_output_schedule_frame(w->output);}}}break;
+    case CMD_RESIZE:if(c->a>0&&c->b>0)monitor_cover(c->a,c->b);if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);bool committed=wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(committed){if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_size(w->toplevel,c->a,c->b);else if(w->xsurface)wlr_xwayland_surface_configure(w->xsurface,0,0,c->a,c->b);wlr_output_schedule_frame(w->output);}}}break;
     case CMD_KEY:if(server.seat&&server.keyboard_initialized){struct wlr_surface* focus=NULL;if(w&&w->toplevel&&w->toplevel->base->surface)focus=w->toplevel->base->surface;else if(w&&w->xsurface&&w->xsurface->surface)focus=w->xsurface->surface;if(focus)wlr_seat_keyboard_notify_enter(server.seat,focus,NULL,0,&server.keyboard.modifiers);struct wlr_keyboard_key_event e={.time_msec=(uint32_t)(c->time/1000000),.keycode=(uint32_t)(c->b>0?c->b:c->a+8),.update_state=true,.state=c->c==0?WL_KEYBOARD_KEY_STATE_PRESSED:WL_KEYBOARD_KEY_STATE_RELEASED};wlr_keyboard_notify_key(&server.keyboard,&e);wlr_seat_keyboard_notify_key(server.seat,e.time_msec,e.keycode,e.state);wlr_seat_keyboard_notify_modifiers(server.seat,&server.keyboard.modifiers);}break;
     case CMD_MOTION:if(server.seat&&w){if(c->a==10||c->a==3){clear_window_pointer(w);break;}uint32_t tm=(uint32_t)(c->time/1000000);double sx=0,sy=0;struct wlr_scene* scene=w?w->scene:NULL;struct wlr_scene_node* node=scene?wlr_scene_node_at(&scene->tree.node,c->x,c->y,&sx,&sy):NULL;struct wlr_scene_buffer* sb=node&&node->type==WLR_SCENE_NODE_BUFFER?wlr_scene_buffer_from_node(node):NULL;struct wlr_scene_surface* ss=sb?wlr_scene_surface_try_from_buffer(sb):NULL;if(ss){server.pointer_window=w->id;if(server.pointer_focus!=ss->surface){server.pointer_focus=ss->surface;wlr_seat_pointer_notify_enter(server.seat,ss->surface,sx,sy);struct wlr_surface* root=window_root_surface(w);if(root&&server.seat->keyboard_state.focused_surface!=root)wlr_seat_keyboard_notify_enter(server.seat,root,NULL,0,&server.keyboard.modifiers);}wlr_seat_pointer_notify_motion(server.seat,tm,sx,sy);}else{server.pointer_focus=NULL;wlr_seat_pointer_notify_clear_focus(server.seat);}struct PointerButtonEvent button_event={.time=tm,.window=w->id};maton_pointer_buttons_update(&server.pointer_buttons,ss ? (uint32_t)c->b : 0,notify_pointer_button,&button_event);if(c->vs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_VERTICAL_SCROLL,-c->vs*15.0,(int32_t)-c->vs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);if(c->hs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_HORIZONTAL_SCROLL,-c->hs*15.0,(int32_t)-c->hs,WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);wlr_seat_pointer_notify_frame(server.seat);}break;
     case CMD_RELEASE:if(c->buffer)wlr_buffer_unlock(c->buffer);break;
@@ -603,6 +617,7 @@ static void* server_main(void* unused) {
   wlr_output_state_set_enabled(&monitor_state,true);wlr_output_state_set_custom_mode(&monitor_state,1280,720,60000);
   bool monitor_ok=wlr_output_commit_state(monitor,&monitor_state);wlr_output_state_finish(&monitor_state);
   if(!monitor_ok)goto done;
+  server.monitor=monitor;
   /* SDL's Wayland backend needs logical monitor geometry for scaling. The
    * layout owns the wl_output global and is destroyed with the display. */
   stage="logical monitor";struct wlr_output_layout* layout=wlr_output_layout_create(server.display);
