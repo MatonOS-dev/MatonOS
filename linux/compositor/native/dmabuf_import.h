@@ -14,3 +14,7 @@ bool maton_dmabuf_format_opaque(uint32_t drm_format);
  * cached for the buffer's lifetime (borrowed). NULL for non-dma-buf buffers
  * and buffers gralloc cannot import. */
 AHardwareBuffer* maton_dmabuf_ahb(struct wlr_buffer* buffer);
+/* True if gralloc can import the dma-buf (tries it); used to refuse
+ * linux-dmabuf buffers at creation instead of showing nothing later. */
+struct wlr_dmabuf_attributes;
+bool maton_dmabuf_importable(const struct wlr_dmabuf_attributes* attrs);

@@ -16,5 +16,6 @@ struct MatonPresenter* maton_presenter_create(ASurfaceControl* parent, struct wl
                                               struct MatonEglUploader* uploader);
 /* Removes all layers from the screen and frees them. */
 void maton_presenter_destroy(struct MatonPresenter* presenter);
-/* Synchronises the layers with the scene in one transaction. */
-void maton_presenter_present(struct MatonPresenter* presenter, struct wlr_scene* scene);
+/* Synchronises the layers with the scene in one transaction. Returns true
+ * if some content could not be shown yet (all of a layer's buffers busy). */
+bool maton_presenter_present(struct MatonPresenter* presenter, struct wlr_scene* scene);

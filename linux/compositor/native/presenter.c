@@ -126,7 +126,7 @@ static struct wlr_buffer* copy_shm(struct MatonPresenter* p, struct Layer* l, st
   return target;
 }
 
-struct Walk { struct MatonPresenter* p; ASurfaceTransaction* t; int z; };
+struct Walk { struct MatonPresenter* p; ASurfaceTransaction* t; int z; bool pending; };
 
 static void present_node(struct wlr_scene_buffer* node, int sx, int sy, void* data) {
   struct Walk* walk = data;
@@ -151,7 +151,7 @@ static void present_node(struct wlr_scene_buffer* node, int sx, int sy, void* da
     }
   } else if (buffer != l->shown_source || seq != l->shown_seq || !l->shown) {
     struct wlr_buffer* copy = copy_shm(p, l, buffer);
-    if (!copy) return;
+    if (!copy) { walk->pending = true; return; }
     maton_transaction_set_buffer(t, l->control, maton_ahb_from_wlr_buffer(copy), copy, -1);
     l->shown = copy;
     l->shown_source = buffer;
@@ -193,12 +193,12 @@ struct MatonPresenter* maton_presenter_create(ASurfaceControl* parent, struct wl
   return p;
 }
 
-void maton_presenter_present(struct MatonPresenter* p, struct wlr_scene* scene) {
-  if (!p || !scene) return;
+bool maton_presenter_present(struct MatonPresenter* p, struct wlr_scene* scene) {
+  if (!p || !scene) return false;
   ASurfaceTransaction* t = ASurfaceTransaction_create();
-  if (!t) return;
+  if (!t) return true;
   for (struct Layer* l = p->layers; l; l = l->next) l->seen = false;
-  struct Walk walk = {p, t, 0};
+  struct Walk walk = {p, t, 0, false};
   wlr_scene_node_for_each_buffer(&scene->tree.node, present_node, &walk);
   /* Hide layers not drawn this frame; detach those whose node is gone. */
   struct Layer** link = &p->layers;
@@ -225,6 +225,7 @@ void maton_presenter_present(struct MatonPresenter* p, struct wlr_scene* scene) 
     p->dead = l->next;
     layer_free(l);
   }
+  return walk.pending;
 }
 
 void maton_presenter_destroy(struct MatonPresenter* p) {

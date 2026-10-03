@@ -96,6 +96,13 @@ static AHardwareBuffer* import(const struct wlr_dmabuf_attributes* d) {
   return ahb;
 }
 
+bool maton_dmabuf_importable(const struct wlr_dmabuf_attributes* attrs) {
+  AHardwareBuffer* ahb = attrs ? import(attrs) : NULL;
+  if (!ahb) return false;
+  AHardwareBuffer_release(ahb);
+  return true;
+}
+
 struct Imported { struct wlr_addon addon; AHardwareBuffer* ahb; };
 static void imported_destroy(struct wlr_addon* addon) {
   struct Imported* imp = (struct Imported*)addon;

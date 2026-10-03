@@ -209,7 +209,9 @@ static void on_frame(struct wl_listener* l,void* data) {
   /* Windows are not composited: each visible buffer becomes its own Android
    * layer (presenter.c), so client dma-bufs reach SurfaceFlinger untouched. */
   if(w->scene_output&&w->presenter){
-    maton_presenter_present(w->presenter,w->scene);
+    /* A busy shm pool skips a layer's new content; retry next frame so the
+     * last commit is not left unshown when the client goes idle. */
+    if(maton_presenter_present(w->presenter,w->scene))wlr_output_schedule_frame(w->output);
     struct timespec now;clock_gettime(CLOCK_MONOTONIC,&now);wlr_scene_output_send_frame_done(w->scene_output,&now);
   }
 }
@@ -691,7 +693,9 @@ static bool render_node(dev_t* out) {
 }
 static bool check_dmabuf(struct wlr_dmabuf_attributes* attrs,void* data) {
   (void)data;
-  return attrs->n_planes==1&&maton_dmabuf_format_supported(attrs->format);
+  /* Replaces wlroots' own check, so the real gralloc import is the test:
+   * it also rejects fds that are not dma-bufs. */
+  return attrs->n_planes==1&&maton_dmabuf_format_supported(attrs->format)&&maton_dmabuf_importable(attrs);
 }
 static bool create_linux_dmabuf(void) {
   static const uint32_t formats[]={DRM_FORMAT_ARGB8888,DRM_FORMAT_XRGB8888,DRM_FORMAT_ABGR8888,DRM_FORMAT_XBGR8888,DRM_FORMAT_RGB565};

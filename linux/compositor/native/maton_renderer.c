@@ -13,7 +13,15 @@ struct MatonRenderer {
 };
 static struct MatonRenderer* from_base(struct wlr_renderer* r) { return (struct MatonRenderer*)r; }
 
-static void stub_destroy(struct wlr_texture* texture) { free(texture); }
+/* Like wlroots' GL textures, a stub keeps its dma-buf locked: wl_buffer.release
+ * then waits until the texture (and the client buffer holding it) is gone,
+ * which the presenter delays until SurfaceFlinger releases the buffer. */
+struct StubTexture { struct wlr_texture base; struct wlr_buffer* source; };
+static void stub_destroy(struct wlr_texture* texture) {
+  struct StubTexture* stub = (struct StubTexture*)texture;
+  wlr_buffer_unlock(stub->source);
+  free(stub);
+}
 static const struct wlr_texture_impl stub_texture_impl = { .destroy = stub_destroy };
 bool maton_texture_is_stub(const struct wlr_texture* texture) {
   return texture && texture->impl == &stub_texture_impl;
@@ -42,10 +50,11 @@ static struct wlr_texture* texture_from_buffer(struct wlr_renderer* r, struct wl
   }
   struct wlr_dmabuf_attributes attrs;
   if (!wlr_buffer_get_dmabuf(buffer, &attrs)) return wlr_texture_from_buffer(m->pixman, buffer);
-  struct wlr_texture* texture = calloc(1, sizeof(*texture));
-  if (!texture) return NULL;
-  wlr_texture_init(texture, r, &stub_texture_impl, (uint32_t)buffer->width, (uint32_t)buffer->height);
-  return texture;
+  struct StubTexture* stub = calloc(1, sizeof(*stub));
+  if (!stub) return NULL;
+  wlr_texture_init(&stub->base, r, &stub_texture_impl, (uint32_t)buffer->width, (uint32_t)buffer->height);
+  stub->source = wlr_buffer_lock(buffer);
+  return &stub->base;
 }
 static struct wlr_render_pass* begin_buffer_pass(struct wlr_renderer* r, struct wlr_buffer* buffer,
                                                  const struct wlr_buffer_pass_options* options) {
