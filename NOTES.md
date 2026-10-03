@@ -459,6 +459,19 @@ Feature work continues, but in this shape from now on.
     frameworks/libs/binary_translation fork. Apache-2.0; no SELinux policy
     shipped (fix avc on first boot). Research:
     out/pc-logs/agents/opencode-digitalis-result.md.
+    Port 16->17 (research 2026-10-03, opencode-berberis-diff-result.md):
+    MEDIUM, ~1-2 weeks for someone who knows Berberis. AOSP 17 added the
+    arm64 plumbing (native_bridge, kernel_api, guest_loader, runtime,
+    ld.config.arm64, binfmt) but not the engine (decoder/interpreter/JITs) —
+    Digitalis's ~190k lines drop in; work = 47 conflicts (mostly Android.bp),
+    cpu_emulation/ reorg moves, ~4.4k lines reapplied, API 37 trampolines.
+    libnativebridge is identical 16->17; proxy list unchanged.
+    Maintenance (opencode-berberis-maint-result.md): medium-high; mainly an
+    annual rebase, monthly ASB = bundle rebuilds; Digitalis bus factor 1.
+    Approach: integrate and help keep Digitalis alive (pin base, rebase
+    yearly, interpreter + lite JIT required, heavy optimizer optional, adopt
+    their test corpus), not own a translator; watch for Google publishing an
+    arm64 engine upstream.
   - **Podman** (later): a linuxd-managed system Podman service (subuid
     mapping, delegated cgroup v2 subtree, pasta networking, fuse-overlayfs
     storage); Flatpak front-ends such as Podman Desktop reach it through its
