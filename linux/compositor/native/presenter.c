@@ -141,6 +141,9 @@ static void present_node(struct wlr_scene_buffer* node, int sx, int sy, void* da
   struct wlr_scene_surface* scene_surface = wlr_scene_surface_try_from_buffer(node);
   uint32_t seq = scene_surface ? scene_surface->surface->current.seq : 0;
   AHardwareBuffer* ahb = maton_dmabuf_ahb(buffer);
+  /* Defence in depth: never send a dma-buf whose actual mapper metadata
+   * cannot describe its planes, even if it passed protocol-time validation. */
+  if (ahb && !maton_dmabuf_layout_safe(ahb)) ahb = NULL;
   bool opaque = false;
   if (ahb) {
     struct wlr_dmabuf_attributes attrs;
@@ -148,10 +151,20 @@ static void present_node(struct wlr_scene_buffer* node, int sx, int sy, void* da
     if (buffer != l->shown) {
       maton_transaction_set_buffer(t, l->control, ahb, buffer, -1);
       l->shown = buffer;
+      l->shown_source = NULL;
     }
   } else if (buffer != l->shown_source || seq != l->shown_seq || !l->shown) {
     struct wlr_buffer* copy = copy_shm(p, l, buffer);
-    if (!copy) { walk->pending = true; return; }
+    if (!copy) {
+      /* GPU textures may be stubs with no readback. Hide just this window;
+       * the other Linux layers and Android surfaces remain composable. */
+      struct wlr_dmabuf_attributes attrs;
+      if (wlr_buffer_get_dmabuf(buffer, &attrs)) {
+        l->seen = false;
+        l->shown_source = NULL;
+      } else walk->pending = true;
+      return;
+    }
     maton_transaction_set_buffer(t, l->control, maton_ahb_from_wlr_buffer(copy), copy, -1);
     l->shown = copy;
     l->shown_source = buffer;
