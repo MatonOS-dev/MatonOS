@@ -27,6 +27,7 @@ struct Layer {
   struct Layer* next;
   /* What SurfaceFlinger currently shows. */
   struct wlr_buffer* shown;       /* client buffer (dma-buf) or pool buffer (shm copy) */
+  struct wlr_buffer* shown_source; /* client buffer the shm copy was made from (compared only) */
   uint32_t shown_seq;             /* surface commit the shm copy was made from */
   bool visible, seen;
   /* Copies of shared-memory content; each is locked while SurfaceFlinger holds it. */
@@ -69,15 +70,17 @@ static struct Layer* find_layer(struct MatonPresenter* p, struct wlr_scene_buffe
   return l;
 }
 
-/* A pool buffer SurfaceFlinger is not holding (only the pool's own lock). */
+/* A pool buffer SurfaceFlinger is not holding. The pool owns its buffers
+ * without a lock (wlroots' "dropped" flag), so a free buffer has no locks;
+ * maton_transaction_set_buffer locks one until SurfaceFlinger releases it. */
 static struct wlr_buffer* free_pool_buffer(struct MatonPresenter* p, struct Layer* l, int width, int height) {
   for (int i = 0; i < SHM_POOL; ++i) {
     struct wlr_buffer* b = l->pool[i];
-    if (b && (b->width != width || b->height != height) && b->n_locks == 1 && b != l->shown) {
+    if (b && b->n_locks == 0 && (b->width != width || b->height != height)) {
       wlr_buffer_drop(b);
       l->pool[i] = b = NULL;
     }
-    if (b && b->n_locks == 1 && b != l->shown) return b;
+    if (b && b->n_locks == 0) return b;
     if (!b) {
       struct wlr_drm_format format = {.format = DRM_FORMAT_ARGB8888, .len = 1, .capacity = 1};
       uint64_t linear = DRM_FORMAT_MOD_LINEAR;
@@ -96,18 +99,30 @@ static struct wlr_buffer* free_pool_buffer(struct MatonPresenter* p, struct Laye
 static struct wlr_buffer* copy_shm(struct MatonPresenter* p, struct Layer* l, struct wlr_buffer* source) {
   struct wlr_client_buffer* client = wlr_client_buffer_get(source);
   struct wlr_texture* texture = client ? client->texture : NULL;
-  if (!texture || maton_texture_is_stub(texture)) return NULL;
-  struct wlr_buffer* target = free_pool_buffer(p, l, (int)texture->width, (int)texture->height);
-  void* dst; uint32_t dst_format; size_t dst_stride;
-  if (!target || !wlr_buffer_begin_data_ptr_access(target, WLR_BUFFER_DATA_PTR_ACCESS_WRITE, &dst, &dst_format, &dst_stride))
+  const char* why = NULL;
+  struct wlr_buffer* target = NULL;
+  if (!client) why = "not a client buffer";
+  else if (!texture) why = "no texture";
+  else if (maton_texture_is_stub(texture)) why = "stub texture";
+  else if (!(target = free_pool_buffer(p, l, (int)texture->width, (int)texture->height))) why = "no pool buffer";
+  void* dst = NULL; uint32_t dst_format; size_t dst_stride = 0;
+  if (!why && !wlr_buffer_begin_data_ptr_access(target, WLR_BUFFER_DATA_PTR_ACCESS_WRITE, &dst, &dst_format, &dst_stride))
+    why = "pool buffer not writable";
+  if (!why) {
+    struct wlr_texture_read_pixels_options read = {
+      .data = dst, .format = DRM_FORMAT_ARGB8888, .stride = (uint32_t)dst_stride,
+    };
+    bool ok = wlr_texture_read_pixels(texture, &read);
+    wlr_buffer_end_data_ptr_access(target);
+    if (!ok) why = "read_pixels failed";
+    else if (!maton_ahb_buffer_is_direct(target) && !maton_ahb_buffer_upload_fallback(target, p->uploader))
+      why = "upload fallback failed";
+  }
+  if (why) {
+    __android_log_print(ANDROID_LOG_WARN, "MatonPresenter", "shm copy: %s (buffer %dx%d, texture %ux%u)", why,
+                        source->width, source->height, texture ? texture->width : 0, texture ? texture->height : 0);
     return NULL;
-  struct wlr_texture_read_pixels_options read = {
-    .data = dst, .format = DRM_FORMAT_ARGB8888, .stride = (uint32_t)dst_stride,
-  };
-  bool ok = wlr_texture_read_pixels(texture, &read);
-  wlr_buffer_end_data_ptr_access(target);
-  if (!ok || (!maton_ahb_buffer_is_direct(target) && !maton_ahb_buffer_upload_fallback(target, p->uploader)))
-    return NULL;
+  }
   return target;
 }
 
@@ -134,11 +149,12 @@ static void present_node(struct wlr_scene_buffer* node, int sx, int sy, void* da
       maton_transaction_set_buffer(t, l->control, ahb, buffer, -1);
       l->shown = buffer;
     }
-  } else if (buffer != l->shown || seq != l->shown_seq || !l->shown) {
+  } else if (buffer != l->shown_source || seq != l->shown_seq || !l->shown) {
     struct wlr_buffer* copy = copy_shm(p, l, buffer);
     if (!copy) return;
     maton_transaction_set_buffer(t, l->control, maton_ahb_from_wlr_buffer(copy), copy, -1);
     l->shown = copy;
+    l->shown_source = buffer;
     l->shown_seq = seq;
   }
   opaque = opaque || wlr_buffer_is_opaque(buffer);
