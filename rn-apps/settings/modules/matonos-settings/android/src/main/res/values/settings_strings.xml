@@ -1,4 +1,5 @@
 <resources>
+    <string name="media_volume_tile_label">Media volume</string>
     <string name="settings_tile_title">MatonOS</string>
     <string name="settings_tile_summary">Sleep, hardware, developer tools and system information</string>
     <string name="install_alias_title">Install MatonOS</string>

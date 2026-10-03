@@ -6,7 +6,9 @@ set -Eeuo pipefail
 die() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+# Worktrees may live outside device/maton/pc_x86_64; use the shared checkout
+# for SDK stubs without changing or building that checkout.
+AOSP=${MATON_AOSP_ROOT:-$(readlink -f "$DEVICE_DIR/../../..")}
 SDK=${MATON_ANDROID_SDK:-$HOME/Documents/matonos-android-sdk}
 SDK_TOOLS_REV=15859902
 SDK_TOOLS_SHA=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583
