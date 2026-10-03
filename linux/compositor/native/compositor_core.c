@@ -685,12 +685,16 @@ static int on_event_fd(int fd,uint32_t mask,void* data){(void)fd;(void)mask;(voi
  * so each is shown to its own Xwayland only (as wlroots' xwayland.h advises). */
 static bool global_filter(const struct wl_client* client,const struct wl_global* global,void* data) {
   (void)data;
+  if(strcmp(wl_global_get_interface(global)->name,"xwayland_shell_v1"))return true;
   for(struct XwaylandSession* xw=server.xwayland_sessions;xw;xw=xw->next){
     struct wlr_xwayland* x=xw->xwayland;
     if(!x||!x->shell_v1||x->shell_v1->global!=global)continue;
     return x->server&&x->server->client==client;
   }
-  return true;
+  /* wlr_xwayland_create() advertises a new session's shell global before
+   * the session is listed; other Xwaylands that bound it then were refused
+   * at bind time and died with a protocol error. Unowned means hidden. */
+  return false;
 }
 static bool render_node(dev_t* out) {
   DIR* dir=opendir("/dev/dri");if(!dir)return false;
