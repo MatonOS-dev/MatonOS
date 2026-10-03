@@ -7,7 +7,7 @@ check them out in place of the stock projects.
 
 | Path | Repository | Based on | What we change |
 | --- | --- | --- | --- |
-| `external/minigbm` | [android_external_minigbm](https://github.com/MatonOS-dev/android_external_minigbm) | fork of android-generic `14-x86` | Mesa GBM allocator/mapper, vgem software rendering, dma-heap buffers, llvmpipe tile padding |
+| `external/minigbm` | [android_external_minigbm](https://github.com/MatonOS-dev/android_external_minigbm) | fork of android-generic `14-x86` | Mesa GBM allocator/mapper, vgem software rendering, dma-heap buffers, llvmpipe tile padding, external dma-buf import (id-0 handles keyed by dma-buf identity, local metadata) |
 | `external/drm_hwcomposer` | [android_external_drm_hwcomposer](https://github.com/MatonOS-dev/android_external_drm_hwcomposer) | AOSP | DRM node scan, software copy to dumb buffers, client-target format negotiation, no-RTTI, errno include |
 | `hardware/baylibre/audio` | [android_hardware_baylibre_audio](https://github.com/MatonOS-dev/android_hardware_baylibre_audio) | fork of BayLibre `main` | AIDL IModule/StreamDescriptor V4 compatibility |
 | `external/libdrm` | [android_external_libdrm](https://github.com/MatonOS-dev/android_external_libdrm) | AOSP | 2.4.134 for wlroots |
