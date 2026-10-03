@@ -158,6 +158,12 @@ $(call inherit-product-if-exists, $(LOCAL_PATH)/addons/addons.mk)
 PRODUCT_VENDOR_PROPERTIES += \
     ro.sf.lcd_density=160
 
+# Codec2 HAL selection defaults to "hidl" (frameworks/av HalSelection.cpp),
+# but Android 17 registers only the AIDL software IComponentStore: with
+# "hidl" MediaCodecList held just the in-process AAC decoder, so MP3 and
+# YouTube playback failed. Select the AIDL software codecs.
+PRODUCT_VENDOR_PROPERTIES += media.c2.hal.selection=aidl
+
 # Bigger log buffers: permissive-mode SELinux audit messages otherwise push
 # everything useful out of logcat during bring-up.
 PRODUCT_VENDOR_PROPERTIES += ro.logd.size=16M
