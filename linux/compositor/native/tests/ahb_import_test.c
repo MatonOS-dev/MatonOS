@@ -1,9 +1,13 @@
 /* On-device check for minigbm's external dma-buf import (handles with id 0).
  *
- * Allocates an AHardwareBuffer, fills it, wraps duplicates of its dma-buf
- * fds in a cros_gralloc handle with id 0 and no reserved region, and imports
- * that with AHardwareBuffer_createFromHandle. Verifies the pixels, a second
- * import of the same dma-buf, and that the metadata path does not fail.
+ * Wraps duplicates of gralloc buffers' dma-buf fds in cros_gralloc handles
+ * with id 0 and no reserved region (as the compositor will for client
+ * dma-bufs) and imports them with AHardwareBuffer_createFromHandle. Checks:
+ *  - pixels of an import match its source buffer;
+ *  - two different dma-bufs imported at once stay distinct (stock minigbm
+ *    tracks buffers by id, so both id-0 imports alias the first);
+ *  - a second import of the same dma-buf works;
+ *  - metadata (dataspace) can be set and read back without a reserved region.
  * Build with the NDK (API 35) and run on the device as any user. */
 #include <android/hardware_buffer.h>
 #include <cutils/native_handle.h>
@@ -30,89 +34,119 @@ struct handle {
   uint64_t reserved_region_size, total_size;
 } __attribute__((packed));
 
+/* vndk/hardware_buffer.h */
+#define CREATE_FROM_HANDLE_METHOD_CLONE 3
+#define DATASPACE_SRGB 142671872 /* ADATASPACE_SRGB */
 typedef const native_handle_t* (*GetNativeHandle)(const AHardwareBuffer*);
 typedef int (*CreateFromHandle)(const AHardwareBuffer_Desc*, const native_handle_t*, int32_t, AHardwareBuffer**);
+typedef int (*SetDataSpace)(AHardwareBuffer*, int32_t);
+typedef int32_t (*GetDataSpace)(const AHardwareBuffer*);
+static GetNativeHandle get_handle;
+static CreateFromHandle create;
+static SetDataSpace set_dataspace;
+static GetDataSpace get_dataspace;
 
 static int failures;
 #define CHECK(cond, ...) do { if (!(cond)) { printf("FAIL: " __VA_ARGS__); printf("\n"); failures++; } } while (0)
 
-/* Builds the external handle; the caller owns it and its duplicated fds. */
-static struct handle* external_handle(const struct handle* source) {
-  int ints = (int)((sizeof(struct handle) - sizeof(native_handle_t)) / sizeof(int)) - (int)source->num_planes;
-  struct handle* h = malloc(sizeof(*h));
-  if (!h) return NULL;
-  memcpy(h, source, sizeof(*h));
-  h->version = (int32_t)sizeof(native_handle_t);
-  for (uint32_t i = 0; i < DRV_MAX_PLANES + 1; ++i) h->fds[i] = -1;
-  for (uint32_t i = 0; i < source->num_planes; ++i) h->fds[i] = dup(source->fds[i]);
-  h->numFds = (int32_t)source->num_planes;
-  h->numInts = ints;
-  h->id = 0;
-  h->reserved_region_size = 0;
-  return h;
+static const AHardwareBuffer_Desc k_desc = {
+  .width = 256, .height = 128, .layers = 1, .format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM,
+  .usage = AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN | AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN |
+           AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE,
+};
+
+static uint32_t pixel(uint32_t seed, uint32_t x, uint32_t y) { return (seed << 24) | (y << 12) | x; }
+
+/* Allocates a buffer filled from seed; *desc gets its actual description. */
+static AHardwareBuffer* allocate_filled(uint32_t seed, AHardwareBuffer_Desc* desc) {
+  AHardwareBuffer* buffer = NULL;
+  if (AHardwareBuffer_allocate(&k_desc, &buffer)) return NULL;
+  memset(desc, 0, sizeof(*desc));
+  AHardwareBuffer_describe(buffer, desc);
+  desc->rfu0 = 0; desc->rfu1 = 0;
+  uint32_t* pixels = NULL;
+  if (AHardwareBuffer_lock(buffer, AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN, -1, NULL, (void**)&pixels) || !pixels) {
+    AHardwareBuffer_release(buffer);
+    return NULL;
+  }
+  for (uint32_t y = 0; y < desc->height; ++y)
+    for (uint32_t x = 0; x < desc->width; ++x) pixels[y * desc->stride + x] = pixel(seed, x, y);
+  AHardwareBuffer_unlock(buffer, NULL);
+  return buffer;
 }
-static void free_handle(struct handle* h) {
-  if (!h) return;
-  for (uint32_t i = 0; i < h->num_planes; ++i) if (h->fds[i] >= 0) close(h->fds[i]);
-  free(h);
+
+/* Wraps duplicates of the buffer's plane fds in an id-0 handle, imports it. */
+static AHardwareBuffer* import_external(AHardwareBuffer* source, const AHardwareBuffer_Desc* desc, int* rc) {
+  const struct handle* original = (const struct handle*)get_handle(source);
+  *rc = -1;
+  if (!original || original->magic != 0xABCDDCBA) return NULL;
+  struct handle h;
+  memcpy(&h, original, sizeof(h));
+  h.version = (int32_t)sizeof(native_handle_t);
+  for (uint32_t i = 0; i < DRV_MAX_PLANES + 1; ++i) h.fds[i] = -1;
+  for (uint32_t i = 0; i < original->num_planes; ++i) h.fds[i] = dup(original->fds[i]);
+  h.numFds = (int32_t)original->num_planes;
+  h.numInts = (int32_t)((sizeof(h) - sizeof(native_handle_t)) / sizeof(int)) - h.numFds;
+  h.id = 0;
+  h.reserved_region_size = 0;
+  AHardwareBuffer* imported = NULL;
+  *rc = create(desc, (const native_handle_t*)&h, CREATE_FROM_HANDLE_METHOD_CLONE, &imported);
+  for (uint32_t i = 0; i < original->num_planes; ++i) close(h.fds[i]);
+  return *rc == 0 ? imported : NULL;
+}
+
+static int pixels_match(AHardwareBuffer* buffer, const AHardwareBuffer_Desc* desc, uint32_t seed) {
+  uint32_t* seen = NULL;
+  if (AHardwareBuffer_lock(buffer, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, NULL, (void**)&seen) || !seen) return 0;
+  int ok = 1;
+  for (uint32_t y = 0; y < desc->height && ok; ++y)
+    for (uint32_t x = 0; x < desc->width; ++x)
+      if (seen[y * desc->stride + x] != pixel(seed, x, y)) { ok = 0; break; }
+  AHardwareBuffer_unlock(buffer, NULL);
+  return ok;
 }
 
 int main(void) {
   void* lib = dlopen("libnativewindow.so", RTLD_NOW);
-  GetNativeHandle get_handle = lib ? (GetNativeHandle)dlsym(lib, "AHardwareBuffer_getNativeHandle") : NULL;
-  CreateFromHandle create = lib ? (CreateFromHandle)dlsym(lib, "AHardwareBuffer_createFromHandle") : NULL;
-  if (!get_handle || !create) { printf("FAIL: libnativewindow handle API missing\n"); return 1; }
-
-  AHardwareBuffer_Desc desc = {
-    .width = 256, .height = 128, .layers = 1, .format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM,
-    .usage = AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN | AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN |
-             AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE,
-  };
-  AHardwareBuffer* original = NULL;
-  if (AHardwareBuffer_allocate(&desc, &original)) { printf("FAIL: allocate\n"); return 1; }
-  AHardwareBuffer_Desc actual; AHardwareBuffer_describe(original, &actual);
-
-  uint32_t* pixels = NULL;
-  CHECK(AHardwareBuffer_lock(original, AHARDWAREBUFFER_USAGE_CPU_WRITE_OFTEN, -1, NULL, (void**)&pixels) == 0, "lock original");
-  if (pixels) {
-    for (uint32_t y = 0; y < desc.height; ++y)
-      for (uint32_t x = 0; x < desc.width; ++x) pixels[y * actual.stride + x] = (y << 16) | x;
-    AHardwareBuffer_unlock(original, NULL);
+  get_handle = lib ? (GetNativeHandle)dlsym(lib, "AHardwareBuffer_getNativeHandle") : NULL;
+  create = lib ? (CreateFromHandle)dlsym(lib, "AHardwareBuffer_createFromHandle") : NULL;
+  set_dataspace = lib ? (SetDataSpace)dlsym(lib, "AHardwareBuffer_setDataSpace") : NULL;
+  get_dataspace = lib ? (GetDataSpace)dlsym(lib, "AHardwareBuffer_getDataSpace") : NULL;
+  if (!get_handle || !create || !set_dataspace || !get_dataspace) {
+    printf("FAIL: libnativewindow handle API missing\n");
+    return 1;
   }
 
-  const struct handle* source = (const struct handle*)get_handle(original);
-  CHECK(source && source->magic == 0xABCDDCBA, "original is not a cros_gralloc handle");
-  if (!source || failures) return 1;
-  printf("original: id=%u planes=%u format=0x%x modifier=0x%llx region=%llu\n", source->id,
-         source->num_planes, source->format, (unsigned long long)source->format_modifier,
-         (unsigned long long)source->reserved_region_size);
+  AHardwareBuffer_Desc desc_a, desc_b;
+  AHardwareBuffer* a = allocate_filled(0x11, &desc_a);
+  AHardwareBuffer* b = allocate_filled(0x22, &desc_b);
+  if (!a || !b) { printf("FAIL: allocate\n"); return 1; }
 
-  struct handle* first = external_handle(source);
-  struct handle* second = external_handle(source);
-  AHardwareBuffer* imported = NULL; AHardwareBuffer* again = NULL;
-  /* METHOD_CLONE (1): the import gets its own copy; we keep and free ours. */
-  CHECK(first && create(&actual, (const native_handle_t*)first, 1, &imported) == 0 && imported, "import id-0 handle");
-  CHECK(second && create(&actual, (const native_handle_t*)second, 1, &again) == 0 && again, "second import of the same dma-buf");
-  free_handle(first); free_handle(second);
+  int rc;
+  AHardwareBuffer* import_a = import_external(a, &desc_a, &rc);
+  CHECK(import_a, "import A (rc=%d)", rc);
+  AHardwareBuffer* import_b = import_external(b, &desc_b, &rc);
+  CHECK(import_b, "import B while A is imported (rc=%d)", rc);
+  AHardwareBuffer* import_a2 = import_external(a, &desc_a, &rc);
+  CHECK(import_a2, "second import of A (rc=%d)", rc);
 
-  if (imported) {
-    uint32_t* seen = NULL;
-    CHECK(AHardwareBuffer_lock(imported, AHARDWAREBUFFER_USAGE_CPU_READ_OFTEN, -1, NULL, (void**)&seen) == 0 && seen, "lock imported");
-    if (seen) {
-      int bad = 0;
-      for (uint32_t y = 0; y < desc.height && !bad; ++y)
-        for (uint32_t x = 0; x < desc.width; ++x)
-          if (seen[y * actual.stride + x] != ((y << 16) | x)) { bad = 1; break; }
-      CHECK(!bad, "imported pixels differ from the original");
-      AHardwareBuffer_unlock(imported, NULL);
-    }
-    /* Exercises gralloc metadata (name, dataspace, ...) on the import. */
-    AHardwareBuffer_Desc described; AHardwareBuffer_describe(imported, &described);
-    CHECK(described.width == desc.width && described.height == desc.height, "describe imported");
+  if (import_a) CHECK(pixels_match(import_a, &desc_a, 0x11), "import A shows the wrong pixels");
+  if (import_b) CHECK(pixels_match(import_b, &desc_b, 0x22), "import B shows the wrong pixels (aliased?)");
+  if (import_a2) CHECK(pixels_match(import_a2, &desc_a, 0x11), "second import of A shows the wrong pixels");
+
+  if (import_a) {
+    int set = set_dataspace(import_a, DATASPACE_SRGB);
+    CHECK(set == 0, "setDataSpace on an import (rc=%d)", set);
+    int32_t got = get_dataspace(import_a);
+    CHECK(got == DATASPACE_SRGB, "getDataSpace on an import returned %d", got);
   }
-  if (again) AHardwareBuffer_release(again);
-  if (imported) AHardwareBuffer_release(imported);
-  AHardwareBuffer_release(original);
-  printf(failures ? "%d FAILED\n" : "PASS\n", failures);
+
+  if (import_a2) AHardwareBuffer_release(import_a2);
+  if (import_b) AHardwareBuffer_release(import_b);
+  if (import_a) AHardwareBuffer_release(import_a);
+  AHardwareBuffer_release(b);
+  AHardwareBuffer_release(a);
+  if (failures) printf("%d FAILED\n", failures);
+  else printf("PASS\n");
   return failures ? 1 : 0;
 }
