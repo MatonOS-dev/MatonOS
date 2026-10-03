@@ -447,6 +447,21 @@ Feature work continues, but in this shape from now on.
     Remove the vending (and gms) spoof pairs while real Google is active.
   - Data dir carries over (offer "clear data" after switching). Key rotation
     can't do this without Google's private key, hence the patch.
+- **Addons, unscheduled (user, 2026-10-03)**, delivered through the add-on
+  slot rather than the base image:
+  - **ARM64 Android apps on pc_x86_64 via Digitalis**
+    (github.com/DigitalisX64/digitalis, Apache-2.0): an open arm64->x86_64
+    native bridge on Google's Berberis (`libndk_translation.so`). MatonOS has
+    no native bridge today, so ARM-only Android apps cannot run. Needs
+    `ro.dalvik.vm.native.bridge`, `arm64-v8a` in the ABI list and the
+    native-bridge linker config. First step: a VM investigation (their sample
+    apps plus popular ARM-only apps; performance, correctness on our Android
+    17 build, size).
+  - **Podman** (later): a linuxd-managed system Podman service (subuid
+    mapping, delegated cgroup v2 subtree, pasta networking, fuse-overlayfs
+    storage); Flatpak front-ends such as Podman Desktop reach it through its
+    API socket. Podman inside a Flatpak sandbox is blocked by Flatpak's
+    --disable-userns by design.
 - **v9 (user, 2026-09-30): arm64.** Prepare now by splitting the tree:
   a shared `maton_common` (bridge, rn-apps, daemons, Linux-apps stack,
   sepolicy, overlays, install/VAB, tools) and per-architecture device
