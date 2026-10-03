@@ -269,15 +269,35 @@ static void on_new_toplevel(struct wl_listener* l,void* data) {
 }
 struct Popup {
   struct wlr_xdg_popup* popup;
-  struct wl_listener commit, destroy;
+  struct wl_listener commit, reposition, destroy;
 };
+/* Each window is its own Android output sized to the window, so anything a
+ * popup draws past the window edge is cut off. Popups are therefore
+ * constrained to the window: the positioner rules flip or slide menus back
+ * inside it, as a desktop compositor does at the screen edge. */
+static void constrain_popup(struct wlr_xdg_popup* popup) {
+  struct wlr_surface* surface=popup->parent;struct wlr_xdg_surface* xdg;
+  while((xdg=wlr_xdg_surface_try_from_wlr_surface(surface))&&xdg->role==WLR_XDG_SURFACE_ROLE_POPUP&&xdg->popup)
+    surface=xdg->popup->parent;
+  for(struct Window* w=server.windows;w;w=w->next){
+    if(!xdg||!w->toplevel||w->toplevel->base!=xdg)continue;
+    /* The scene places the window geometry, not the surface, at the output origin. */
+    struct wlr_box box={xdg->geometry.x,xdg->geometry.y,w->width,w->height};
+    wlr_xdg_popup_unconstrain_from_box(popup,&box);return;
+  }
+  wlr_xdg_surface_schedule_configure(popup->base);
+}
 static void on_popup_commit(struct wl_listener* l,void* data) {
   (void)data;struct Popup* p=(struct Popup*)((char*)l - offsetof(struct Popup,commit));
-  if(p->popup->base->initial_commit)wlr_xdg_surface_schedule_configure(p->popup->base);
+  if(p->popup->base->initial_commit)constrain_popup(p->popup);
+}
+static void on_popup_reposition(struct wl_listener* l,void* data) {
+  (void)data;struct Popup* p=(struct Popup*)((char*)l - offsetof(struct Popup,reposition));
+  constrain_popup(p->popup);
 }
 static void on_popup_destroy(struct wl_listener* l,void* data) {
   (void)data;struct Popup* p=(struct Popup*)((char*)l - offsetof(struct Popup,destroy));
-  wl_list_remove(&p->commit.link);wl_list_remove(&p->destroy.link);free(p);
+  wl_list_remove(&p->commit.link);wl_list_remove(&p->reposition.link);wl_list_remove(&p->destroy.link);free(p);
 }
 static void on_new_popup(struct wl_listener* listener,void* data) {
   (void)listener;struct wlr_xdg_popup* popup=data;
@@ -287,6 +307,7 @@ static void on_new_popup(struct wl_listener* listener,void* data) {
   if(!popup->base->data)return;
   struct Popup* p=calloc(1,sizeof(*p));if(!p)return;p->popup=popup;
   p->commit.notify=on_popup_commit;wl_signal_add(&popup->base->surface->events.commit,&p->commit);
+  p->reposition.notify=on_popup_reposition;wl_signal_add(&popup->events.reposition,&p->reposition);
   p->destroy.notify=on_popup_destroy;wl_signal_add(&popup->events.destroy,&p->destroy);
 }
 /* Android's caption bar is the only window decoration MatonOS provides, so
