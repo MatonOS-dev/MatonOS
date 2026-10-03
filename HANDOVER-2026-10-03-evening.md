@@ -112,3 +112,16 @@ a Flatpak app opening, `chrome://gpu`, MP3/YouTube sound, QS sliders.
   opencode work runs inside `opencode serve` (no `opencode run` process).
 - Board-config changes (config.fs, BoardConfig.mk) trigger near-full rebuilds.
 - VM `/data` is RAM: big Flatpaks fill it; `adb install` then fails.
+
+## Update after r23 boot (late 2026-10-03)
+
+r23 (`de877625…`) booted. Sound works (MP3/codec fix confirmed). The new QS
+shade opens by clicking the clock (notifications) / status icons (QS), not
+by dragging — accepted for now. **Flatpak apps broke:** CompositorService
+crashes with `UnsatisfiedLinkError: libmaton_compositor.so not found`,
+because `useLegacyPackaging = true` (added to ship the broker as an
+executable) compresses JNI libs, and PackageManager does not extract native
+libs for preinstalled system apps. Workaround on a running VM:
+`adb install -r prebuilt/apps-built/MatonWaylandHost.apk` (update in /data
+gets extracted). Proper fix: codex job `codex/broker-exec`
+(`out/pc-logs/agents/codex-broker-exec-result.md`), then an r23b build.
