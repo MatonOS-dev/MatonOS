@@ -22,20 +22,28 @@ public final class WindowActivity extends Activity implements SurfaceHolder.Call
     static final String ACTION_CLOSE_WINDOW = "org.matonos.compositor.CLOSE_WINDOW";
     private int id; private Surface surface; private ICompositor compositor; private SurfaceView view; private boolean attached, demoLaunched;
     private final ServiceConnection connection = new ServiceConnection() {
-        public void onServiceConnected(ComponentName n, IBinder b) { compositor = ICompositor.Stub.asInterface(b); attachIfReady(); }
-        public void onServiceDisconnected(ComponentName n) { compositor = null; }
+        public void onServiceConnected(ComponentName n, IBinder b) { compositor = ICompositor.Stub.asInterface(b);
+            try { keepScreenOn(compositor.isInhibited()); } catch(Exception ignored){}
+            attachIfReady(); }
+        public void onServiceDisconnected(ComponentName n) { compositor = null; keepScreenOn(false); }
     };
     private final BroadcastReceiver closeReceiver = new BroadcastReceiver() {
         @Override public void onReceive(android.content.Context context, android.content.Intent intent) {
-            if (intent.getIntExtra(EXTRA_WINDOW_ID, -1) == id) finish();
+            if(CompositorService.ACTION_INHIBIT.equals(intent.getAction()))keepScreenOn(intent.getBooleanExtra("active",false));
+            else if (intent.getIntExtra(EXTRA_WINDOW_ID, -1) == id) finish();
         }
     };
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state); id = getIntent().getIntExtra(EXTRA_WINDOW_ID, 1); view = new SurfaceView(this); view.getHolder().addCallback(this);
         view.setFocusableInTouchMode(true); setContentView(view, new ViewGroup.LayoutParams(-1, -1));
         bindService(new android.content.Intent(this, CompositorService.class), connection, BIND_AUTO_CREATE);
-        if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(closeReceiver, new IntentFilter(ACTION_CLOSE_WINDOW), RECEIVER_NOT_EXPORTED);
-        else registerReceiver(closeReceiver, new IntentFilter(ACTION_CLOSE_WINDOW));
+        IntentFilter filter=new IntentFilter(ACTION_CLOSE_WINDOW);filter.addAction(CompositorService.ACTION_INHIBIT);
+        if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(closeReceiver, filter, RECEIVER_NOT_EXPORTED);
+        else registerReceiver(closeReceiver, filter);
+    }
+    private void keepScreenOn(boolean active) {
+        if(active)getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
     private void attachIfReady() {
         if (compositor == null || surface == null || !surface.isValid()) return;
