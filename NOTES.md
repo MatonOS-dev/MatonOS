@@ -447,6 +447,14 @@ Feature work continues, but in this shape from now on.
     Remove the vending (and gms) spoof pairs while real Google is active.
   - Data dir carries over (offer "clear data" after switching). Key rotation
     can't do this without Google's private key, hence the patch.
+- **Split the Linux-app layer into its own repository (user, 2026-10-03;
+  long-term, sooner if the provenance audit finds GPL-derived code).** Moves:
+  linux/compositor (native, host APK, xwayland-egl), linux/dbus-broker, the
+  stub generator, later PipeWire and the Java portals. Stays in MatonOS:
+  linuxd + the Flatpak build + sepolicy + System Bridge (the "Flatpak host
+  service"). Contract between them: the System Bridge AIDL and the minimum
+  Flatpak version. Benefits: its own APK release cycle, contained licensing,
+  reusable by other AOSP distros.
 - **Addons, unscheduled (user, 2026-10-03)**, delivered through the add-on
   slot rather than the base image:
   - **ARM64 Android apps on pc_x86_64 via Digitalis** — NEXT after Flatpak
