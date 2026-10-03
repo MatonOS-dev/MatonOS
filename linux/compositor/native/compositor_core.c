@@ -95,6 +95,7 @@ struct Window {
   struct wlr_scene_tree* scene_tree;
   struct MatonPresenter* presenter;
   struct wl_listener frame, commit, toplevel_destroy, surface_commit;
+  struct wl_event_source* retry;
   struct wl_listener xsurface_destroy, xsurface_associate, xsurface_geometry, scene_tree_destroy;
   struct Window* next;
 };
@@ -203,20 +204,32 @@ static void on_commit(struct wl_listener* l,void* data) {
   }
   (void)maton_surface_output_present(&w->surface,ahb,b,-1);
 }
+static int on_present_retry(void* data) {
+  struct Window* w=data;
+  if(w->output)wlr_output_schedule_frame(w->output);
+  return 0;
+}
 static void on_frame(struct wl_listener* l,void* data) {
   (void)data;
   struct Window* w=window_from_listener(l,offsetof(struct Window,frame));
   /* Windows are not composited: each visible buffer becomes its own Android
    * layer (presenter.c), so client dma-bufs reach SurfaceFlinger untouched. */
   if(w->scene_output&&w->presenter){
-    /* A busy shm pool skips a layer's new content; retry next frame so the
-     * last commit is not left unshown when the client goes idle. */
-    if(maton_presenter_present(w->presenter,w->scene))wlr_output_schedule_frame(w->output);
+    /* A busy shm pool skips a layer's new content; retry shortly so the
+     * last commit is not left unshown when the client goes idle. Not on the
+     * next frame: the headless output fires that at once, and a layer whose
+     * Android window is not latching (hidden, stopped) would then spin the
+     * Wayland thread and starve every other window. */
+    if(maton_presenter_present(w->presenter,w->scene)){
+      if(!w->retry)w->retry=wl_event_loop_add_timer(wl_display_get_event_loop(server.display),on_present_retry,w);
+      if(w->retry)wl_event_source_timer_update(w->retry,50);
+    }
     struct timespec now;clock_gettime(CLOCK_MONOTONIC,&now);wlr_scene_output_send_frame_done(w->scene_output,&now);
   }
 }
 static void destroy_output(struct Window* w) {
   clear_window_pointer(w);
+  if(w->retry){wl_event_source_remove(w->retry);w->retry=NULL;}
   if(w->frame.link.prev){wl_list_remove(&w->frame.link);wl_list_init(&w->frame.link);}
   if(w->commit.link.prev){wl_list_remove(&w->commit.link);wl_list_init(&w->commit.link);}
   if(w->presenter)maton_presenter_destroy(w->presenter);w->presenter=NULL;
