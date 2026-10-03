@@ -7,6 +7,63 @@ and runs package operations on a worker while reporting progress. It starts
 after `sys.boot_completed`; a missing service or Flatpak payload does not block
 boot.
 
+## Input-device metadata for Flatpak
+
+Linuxd starts `UdevDatabase.c` before accepting Flatpak operations. It reads
+sysfs (never device nodes) and publishes `/data/matonos/linux/udev/data/cM:m`
+for input event/js nodes, hidraw nodes and uinput. Input classification uses
+capability bitmaps, with touch/keyboard exclusions for controller detection;
+vendor/product/bus come from input IDs, HID ancestry or USB ancestry. Hidraw
+and uinput receive metadata even when device access is denied, but are not
+falsely labelled as joysticks without input capabilities. There are no
+application-ID exceptions or changes to device permissions.
+
+The database uses udev's `E:` properties, `I:` initialization timestamp,
+`G:` tags and `Q:` current tags. Input nodes have the `seat` tag, default
+`ID_SEAT=seat0`, and corresponding empty `tags/seat/cM:m` index files. Files
+are replaced atomically within a stable directory; unchanged entries retain
+their timestamp and inode. A regular `control` existence marker satisfies
+libudev's active-udev check; it does not implement udevadm's control protocol.
+
+The bwrap shim identifies app sandboxes through the presence of the
+`--setenv FLATPAK_ID` option (direct or bundled), binds this directory
+read-only at `/run/udev`, and sets `SDL_JOYSTICK_DISABLE_UDEV=1` for every app.
+Flatpak already binds `/sys/class`, `/sys/dev` and `/sys/devices` read-only;
+`--device=all` binds `/dev` as a directory so future input nodes appear too.
+The shim adds no device binds and grants no access beyond Flatpak and Android
+permissions. The inspected NDK Flatpak checkout's `flatpak-run.c` has no
+`/run/udev` bind, so the explicit shim bind is required.
+
+A kernel `NETLINK_KOBJECT_UEVENT` group-1 listener refreshes the snapshot for
+input, hidraw and misc events. A two-second reconciliation also recovers
+missed events, startup/sysfs races and listener failures. Incomplete scans
+preserve stale entries until a complete scan can safely remove them.
+Successful database updates attempt group-2 multicast using libudev's
+40-byte `libudev` header, network-order magic/subsystem/tag hashes and
+NUL-separated properties. Removal events carry the previous metadata.
+Multicast is best effort: linuxd runs as `system` without `CAP_NET_ADMIN`,
+older libudev expects root sender credentials, and isolated network
+namespaces cannot reliably receive host multicast. No extra capability or
+namespace privilege is added for this.
+
+SDL2 and SDL3 both recognize the generic disable-udev joystick hint and
+use initial `/dev/input` enumeration plus inotify for create/delete/move and
+permission changes; when inotify is unavailable, they poll. This also avoids
+a libudev monitor which opens successfully but never delivers events. The
+database remains usable by other libudev consumers for enumeration and
+properties. Reliable monitor-based hotplug for those consumers remains
+unverified/unsupported when multicast is blocked; this is not a full udevd
+or logind replacement.
+
+Host fixture checks: `python3 install/linuxd/tests/udev-database-test.py`.
+This uses temporary synthetic sysfs and database directories, without mounts,
+VMs or device access. Compile-check C sources with the NDK API-35 clang and
+`-O2 -Wall -Wextra -Werror -march=x86-64-v2`, as in `tools/build-native.sh`.
+Runtime verification still needs an authorized fresh image: inspect the DB
+inside a `--device=all` sandbox, compare libudev enumeration with sysfs,
+and plug/unplug a controller while an SDL2/SDL3 app runs. Device access and
+the separate controller-permission branch must be checked independently.
+
 Run arguments are passed after `--`, and caller-provided values beginning with
 `-` are rejected. Uninstall keeps app data unless `deleteData: true` is supplied.
 Operations have a ten-minute CLI limit; listener callbacks run on a separate

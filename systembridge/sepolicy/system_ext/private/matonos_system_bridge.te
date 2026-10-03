@@ -32,6 +32,12 @@ allow matonos_linuxd self:capability { setuid setgid sys_admin };
 allow matonos_linuxd self:process { fork sigchld signal };
 net_domain(matonos_linuxd)
 
+# Metadata discovery only; no input/hidraw/uinput device access is granted.
+allow matonos_linuxd self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
+allow matonos_linuxd sysfs:dir r_dir_perms;
+allow matonos_linuxd sysfs:file r_file_perms;
+allow matonos_linuxd sysfs:lnk_file r_file_perms;
+
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.
 allow matonos_system_bridge input_service:service_manager find;

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <android/log.h>
 #include "FlatpakManager.h"
+#include "UdevDatabase.h"
 
 #include <errno.h>
 #include <dirent.h>
@@ -140,6 +141,7 @@ void flatpak_manager_set_callbacks(FlatpakProgressCallback progress,
 }
 
 void flatpak_manager_init(void) {
+    maton_udev_start();
     setenv("TMPDIR", "/data/matonos/linux/cache", 1);
     setenv("XDG_RUNTIME_DIR", "/data/matonos/linux/runtime", 1);
     setenv("FLATPAK_SYSTEM_DIR", "/data/matonos/linux/flatpak", 1);
