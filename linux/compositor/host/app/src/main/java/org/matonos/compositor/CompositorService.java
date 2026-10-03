@@ -28,7 +28,6 @@ public final class CompositorService extends Service {
     private static native void nativeResize(int id, int width, int height);
 
     private volatile boolean ready;
-    private InhibitSocket inhibit;
     static final String ACTION_INHIBIT = "org.matonos.compositor.INHIBIT";
     private final java.util.concurrent.ConcurrentHashMap<String, Long> launching = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.concurrent.ConcurrentHashMap<String, EmbeddedSession> sessions = new java.util.concurrent.ConcurrentHashMap<>();
@@ -47,9 +46,6 @@ public final class CompositorService extends Service {
         startForeground(NOTIFICATION_ID, n);
         ready = nativeStart("wayland-0", getFilesDir().getAbsolutePath() + "/wayland", this);
         if (ready) {
-            try { inhibit = new InhibitSocket(this, new java.io.File(getFilesDir(),"wayland"), active ->
-                sendBroadcast(new Intent(ACTION_INHIBIT).setPackage(getPackageName()).putExtra("active",active)));
-            } catch(Exception e) { Log.e(TAG,"Inhibit socket unavailable",e); }
             // The advertised monitor is what clients (GTK, Firefox, Xwayland's
             // root window) take as the screen; window id 0 resizes only it.
             android.graphics.Rect display = getSystemService(android.view.WindowManager.class)
@@ -100,6 +96,11 @@ public final class CompositorService extends Service {
         sendBroadcast(close);
     }
 
+    private boolean sessionInhibited() {
+        for(EmbeddedSession session:sessions.values())if(session.inhibit.isHeld())return true;
+        return false;
+    }
+
     private final ICompositor.Stub binder = new ICompositor.Stub() {
         @Override public boolean onTransact(int code, android.os.Parcel data, android.os.Parcel reply, int flags)
                 throws android.os.RemoteException {
@@ -116,7 +117,19 @@ public final class CompositorService extends Service {
                 if (last != null && android.os.SystemClock.elapsedRealtime() - last < 5000)
                     return "{\"ok\":true}";
                 try {
-                    String reply = FlatpakLauncher.launch(CompositorService.this, ref);
+                    EmbeddedSession session;
+                    synchronized (sessions) {
+                        session=sessions.get("host:"+ref);
+                        if(session==null) {
+                            if(sessions.size()>=128)throw new IllegalStateException("Too many application sessions");
+                            session=new EmbeddedSession(android.os.Process.myUid(),ref,nextSession.getAndIncrement());
+                            session.standalone=true;
+                            sessionsById.put(session.id,session);sessions.put("host:"+ref,session);
+                        }
+                    }
+                    if(!session.bus.isAlive())throw new IllegalStateException("Session broker exited");
+                    session.ensureXwayland();
+                    String reply = FlatpakLauncher.launch(CompositorService.this, ref,session.directory,session.x11Display);
                     if (new org.json.JSONObject(reply).optBoolean("ok")) launching.put(ref, android.os.SystemClock.elapsedRealtime());
                     return reply;
                 } catch (Exception e) {
@@ -134,7 +147,7 @@ public final class CompositorService extends Service {
             }
         }
         public void closeWindow(int id) { nativeClose(id); }
-        public boolean isInhibited() { return inhibit != null && inhibit.isHeld(); }
+        public boolean isInhibited() { return sessionInhibited(); }
         public void launchDemo() { nativeLaunchDemo(); }
         public void attachWindow(int id, android.view.Surface s, int w, int h) { nativeAttach(id, s, w, h); }
         public void detachWindow(int id) { nativeDetach(id); }
@@ -180,6 +193,8 @@ public final class CompositorService extends Service {
         final java.util.concurrent.ConcurrentHashMap<Integer, int[]> windows = new java.util.concurrent.ConcurrentHashMap<>();
         final android.os.RemoteCallbackList<IEmbeddedWindowListener> listeners = new android.os.RemoteCallbackList<>();
         final InhibitSocket inhibit;
+        final SessionBus bus;
+        boolean standalone;
         volatile String x11Display;
         boolean launched;
         EmbeddedSession(int uid, String ref, int id) throws Exception {
@@ -187,9 +202,13 @@ public final class CompositorService extends Service {
             directory=new java.io.File(getFilesDir(),"wayland/s"+id);
             if (!directory.isDirectory() && !directory.mkdirs()) throw new java.io.IOException("Cannot create application socket directory");
             android.system.Os.chmod(directory.getAbsolutePath(),0711);
-            if (!nativeAddSession(id,new java.io.File(directory,"wayland-0").getAbsolutePath()))
-                throw new java.io.IOException("Cannot create application Wayland socket");
             inhibit=new InhibitSocket(CompositorService.this,directory,this::inhibited);
+            try { bus=new SessionBus(directory,ref); }
+            catch(Exception error) { inhibit.close(); throw error; }
+            if (!nativeAddSession(id,new java.io.File(directory,"wayland-0").getAbsolutePath())) {
+                bus.close();inhibit.close();
+                throw new java.io.IOException("Cannot create application Wayland socket");
+            }
         }
         /** Best effort: the lazy Xwayland server starts only when the
          * application actually connects to its X11 display. */
@@ -206,6 +225,7 @@ public final class CompositorService extends Service {
             if (!windows.containsKey(window)) throw new SecurityException("Window belongs to another session");
         }
         void inhibited(boolean active) {
+            if(standalone)sendBroadcast(new Intent(ACTION_INHIBIT).setPackage(getPackageName()).putExtra("active",sessionInhibited()));
             synchronized(listeners) {
                 int count=listeners.beginBroadcast();
                 try { for(int i=0;i<count;i++) try { listeners.getBroadcastItem(i).onInhibitChanged(active); } catch(android.os.RemoteException ignored){} }
@@ -217,7 +237,10 @@ public final class CompositorService extends Service {
             synchronized (listeners) {
                 int count=listeners.beginBroadcast();
                 try {
-                    if (count==0) { nativeClose(window); return; }
+                    if (count==0) {
+                        if(standalone)onNativeToplevel(0,window,width,height);else nativeClose(window);
+                        return;
+                    }
                     listeners.getBroadcastItem(count-1).onWindowOpened(window,width,height);
                 } catch (android.os.RemoteException e) { nativeClose(window); }
                 finally { listeners.finishBroadcast(); }
@@ -225,6 +248,7 @@ public final class CompositorService extends Service {
         }
         boolean closed(int window) {
             if (windows.remove(window)==null) return false;
+            if(standalone)return false;
             synchronized (listeners) {
                 int count=listeners.beginBroadcast();
                 try { for(int i=0;i<count;i++) try { listeners.getBroadcastItem(i).onWindowClosed(window); } catch(android.os.RemoteException ignored){} }
@@ -245,6 +269,7 @@ public final class CompositorService extends Service {
                     String status=FlatpakLauncher.status(CompositorService.this,ref);
                     if (new org.json.JSONObject(status).optBoolean("ok")) return status;
                 }
+                if(!bus.isAlive())throw new IllegalStateException("Session broker exited");
                 String reply=FlatpakLauncher.launch(CompositorService.this,ref,directory,x11Display);
                 launched=new org.json.JSONObject(reply).optBoolean("ok");
                 return reply;
@@ -274,8 +299,7 @@ public final class CompositorService extends Service {
         return "org.matonos.compositor.EMBEDDED".equals(intent.getAction()) ? embedded : binder;
     }
     @Override public void onDestroy() {
-        if(inhibit!=null)inhibit.close();
-        for(EmbeddedSession session:sessions.values())session.inhibit.close();
+        for(EmbeddedSession session:sessions.values()) {session.inhibit.close();session.bus.close();}
         nativeStop(); super.onDestroy();
     }
 }

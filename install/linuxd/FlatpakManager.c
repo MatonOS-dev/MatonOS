@@ -759,9 +759,11 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     free(metadata.output);
     hide_toolkit_window_buttons(ref);
     deny_host_tmp();
-    int capability = fcntl(runtime_directory_fd, F_DUPFD_CLOEXEC, 3);
+    /* Keep sources above the fixed child slots 198/199 so spawn dup2 actions
+     * cannot overwrite another capability before it has been copied. */
+    int capability = fcntl(runtime_directory_fd, F_DUPFD_CLOEXEC, 200);
     if (capability < 0) { set_error(result, "cannot duplicate compositor directory"); return; }
-    int x11_capability = has_x11 ? fcntl(x11_directory_fd, F_DUPFD_CLOEXEC, 3) : -1;
+    int x11_capability = has_x11 ? fcntl(x11_directory_fd, F_DUPFD_CLOEXEC, 200) : -1;
     if(has_x11 && x11_capability<0){close(capability);set_error(result,"cannot duplicate X11 directory");return;}
     int x11_listener = -1;char x11_path[108]={0};
     int listener = socket(AF_UNIX, SOCK_STREAM|SOCK_CLOEXEC, 0);
@@ -797,13 +799,16 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     /* Delegate only the already validated session directory to the wrapper.
      * It connects the broker control socket, then closes this FD before CLI exec. */
     if (!rc) rc = posix_spawn_file_actions_adddup2(&actions, capability, 198);
+    if (!rc && has_x11) rc = posix_spawn_file_actions_adddup2(&actions, x11_capability, 199);
     char display_env[128];
     snprintf(display_env,sizeof(display_env),"WAYLAND_DISPLAY=%s",socket_path);
     char dns_env[2048];
     snprintf(dns_env,sizeof(dns_env),"MATON_FLATPAK_DNS=%s",dns_servers ? dns_servers : "");
+    char x11_env[160];
+    snprintf(x11_env,sizeof(x11_env),"MATON_SESSION_X11_NAME=%s",has_x11?x11_display:"");
     size_t env_count = 0;
     while (environ[env_count]) ++env_count;
-    char** env = calloc(env_count + 5, sizeof(char*));
+    char** env = calloc(env_count + 7, sizeof(char*));
     size_t n = 0;
     if (env) {
         for (size_t i = 0; i < env_count; ++i)
@@ -811,10 +816,12 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
                     strncmp(environ[i],"MATON_FLATPAK_DNS=",18) != 0 &&
                     strncmp(environ[i],"DISPLAY=",8) != 0 &&
                     strncmp(environ[i],"MATON_GAME_CONTROLLERS=",23) != 0 &&
-                    strncmp(environ[i],"MATON_INHIBIT_DIRECTORY_FD=",26) != 0) env[n++] = environ[i];
+                    strncmp(environ[i],"MATON_SESSION_DIRECTORY_FD=",27) != 0 &&
+                    strncmp(environ[i],"MATON_SESSION_X11_",18) != 0) env[n++] = environ[i];
         env[n++] = display_env;
         env[n++] = dns_env;
-        env[n++] = "MATON_INHIBIT_DIRECTORY_FD=198";
+        env[n++] = "MATON_SESSION_DIRECTORY_FD=198";
+        if(has_x11) {env[n++]="MATON_SESSION_X11_FD=199";env[n++]=x11_env;}
         env[n] = controllers ? "MATON_GAME_CONTROLLERS=1" : "MATON_GAME_CONTROLLERS=0";
     } else rc = ENOMEM;
     /* Both display sockets are granted; toolkits choose their backend.

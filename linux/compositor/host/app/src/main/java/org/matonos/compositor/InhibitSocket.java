@@ -14,7 +14,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
-/** Private session-directory capability delegated to linuxd. One byte is the
+/** Private host-side session transport. One byte is the
  * broker's aggregate hold state; echo acknowledges the applied Android hold.
  * EOF (including broker death) releases it. No app IDs or global bridge API. */
 final class InhibitSocket implements AutoCloseable {
@@ -35,8 +35,8 @@ final class InhibitSocket implements AutoCloseable {
         wake = context.getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MatonOS:FlatpakInhibit");
         wake.setReferenceCounted(false);
         bound.bind(new LocalSocketAddress(path.getAbsolutePath(), LocalSocketAddress.Namespace.FILESYSTEM));
-        // Parent is private; linuxd reaches it only through the delegated FD.
-        Os.chmod(path.getAbsolutePath(), 0666);
+        // Only the compositor-owned broker can acquire a hold.
+        Os.chmod(path.getAbsolutePath(), 0600);
         server = new LocalServerSocket(bound.getFileDescriptor());
         new Thread(this::accept, "flatpak-inhibit-accept").start();
     }
@@ -46,7 +46,7 @@ final class InhibitSocket implements AutoCloseable {
             try {
                 LocalSocket socket = server.accept();
                 synchronized (clients) {
-                    if (stopped || socket.getPeerCredentials().getUid() != 1000 || clients.size() >= 16) {
+                    if (stopped || socket.getPeerCredentials().getUid() != android.os.Process.myUid() || clients.size() >= 16) {
                         socket.close(); continue;
                     }
                     clients.add(socket);
