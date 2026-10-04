@@ -39,11 +39,12 @@ forks are only for other people's code.
 give that feature up for the time being** — no fallback patch. **The one
 exception (user, 2026-09-25; microG moved to v3 on 2026-09-26):** microG signature spoofing, implemented exactly
 like LineageOS (patch 0002: only microG-signed gms/vending may present Google's
-signature; no bridge involvement, user 2026-09-28); patch budget = 1. **Contingent
-second (user, 2026-10-04):** only if AOSP extends the app_data_file execute
-neverallow to all appdomains — a one-line exception for `matonos_flatpak_wx_app`
-in our `system/sepolicy` fork (see install/linuxd/CODE-STORAGE-r24.md). Record it as
-a known gap in NOTES.md ("Dropped for zero patches") with what it would need. **Also allowed (user,
+signature; no bridge involvement, user 2026-09-28); patch budget = 1. **Second
+(user, 2026-10-04):** a commit in our `system/sepolicy` fork exempting
+`matonos_flatpak_wx_app` (WRITABLE_CODE Flatpaks, non-appdomain, no binder)
+from the two `domain.te` neverallows that forbid non-app domains executing
+data (see install/linuxd/CODE-STORAGE-r24.md). Record any other dropped
+feature as a known gap in NOTES.md ("Dropped for zero patches") with what it would need. **Also allowed (user,
 2026-09-26): small, upstreamable fixes for obvious AOSP bugs** — currently
 `patches/frameworks/base/0001` (unified battery icon hidden when no battery
 is detected; the Compose icon ignores the icon hide list).
@@ -244,14 +245,6 @@ Prefer the newest stable over prereleases; note any deliberate exception
 (and why) next to its pin.
 
 ## Rule: Flatpak apps never get binder (user, 2026-10-04)
-
-**Exception (user, 2026-10-04):** apps granted
-`org.matonos.permission.WRITABLE_CODE` run in `matonos_flatpak_wx_app`
-(appdomain), which may execute its own `app_data_file` and may hold binder
-rights — a Flatpak runs as its stub's uid, so its binder reach equals its
-stub's. Seccomp keeps blocking binder ioctls until the compositor-host/bridge
-audit is resolved. Every other Flatpak keeps the rule below. See
-install/linuxd/CODE-STORAGE-r24.md "Planned: per-app `flatpak/` directory".
 
 Linux/Flatpak app sandboxes must have no access to Android binder. The
 mechanism is SELinux: executing bwrap transitions out of linuxd's domain

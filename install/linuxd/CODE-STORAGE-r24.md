@@ -190,39 +190,36 @@ new path is wired).
   zip64; to be checked on the VM.
 * **No app-to-app code sharing.** Sharing stops at runtimes/extensions.
 
-## Planned: per-app `flatpak/` directory and the WRITABLE_CODE domain (decided 2026-10-04)
+## Planned: per-app `linux/` directory and the WRITABLE_CODE domain (decided 2026-10-04)
 
 **All per-app Linux state lives in the stub's own Android data directory:**
-`/data/user/<userId>/<stub package>/flatpak/`
+`<ApplicationInfo.dataDir>/linux/` (i.e. /data/user/<userId>/<stub package>/linux;
+the path always comes from PackageManager via the bridge, never computed).
 - `run/`: the session's XDG_RUNTIME_DIR content (`wayland-0`, `X11/X0`),
-  created by the stub process (StubService runs as the stub uid) whose
+  created by the stub process (StubService runs as the stub uid); the
   listening fds go to the compositor host over binder; X display is always :0.
 - `home/`: the Flatpak app's data/home (replacing the per-app dirs under
   /data/matonos/linux and `vol.img`); for WRITABLE_CODE apps also the code
   they download (e.g. a Steam library under their home).
-It is plain `app_data_file` at the stub's MLS level: only that app can touch
-it, and Android handles multi-user, clear-data, uninstall and storage
-accounting. Stubs set `allowBackup=false`. Not `code_cache/` (Android clears it
-on app update). Created by the stub process, so no privileged creation.
+Plain `app_data_file` at the stub's MLS level: only that app can touch it, and
+Android handles multi-user, clear-data, uninstall and storage accounting.
+Stubs set `allowBackup=false`. Not `code_cache/` (cleared on app update).
 
-**W^X stays for every Flatpak by default** (`matonos_flatpak_app`, a
-non-appdomain: stock `domain.te` 1960/2040/792 forbid executing any data and
-writing any exec type; verified by DeepSeek wx-check). Apps granted
-`org.matonos.permission.WRITABLE_CODE` (dangerous, user consent; generic rule
-from the Flatpak manifest, never per app) instead run in
-`matonos_flatpak_wx_app` (appdomain + coredomain), which may execute its own
-`app_data_file` (the `execute_no_trans` neverallow binds only
-`all_untrusted_apps`). User decision 2026-10-04: this domain may hold binder
-rights; a Flatpak runs as its stub's uid, so its binder reach equals its
-stub's. The sandbox seccomp filter still blocks binder ioctls until the
-compositor-host/bridge audit (host-audit) is resolved. Never `execmod`.
+**W^X stays for every Flatpak by default** (`matonos_flatpak_app`; stock
+`domain.te` 1960/2040/792 forbid non-appdomains executing any data or writing
+any exec type). Apps granted `org.matonos.permission.WRITABLE_CODE`
+(dangerous, user consent; generic rule from the Flatpak manifest, never per
+app) run in `matonos_flatpak_wx_app`: a NON-appdomain (no binder, keeps the
+user-namespace capabilities nested sandboxes such as pressure-vessel need)
+that may execute its own `app_data_file`. Never `execmod`.
 
-Contingency (user, 2026-10-04): if a future AOSP extends the app_data_file
-execute neverallow (`system/sepolicy/private/app_neverallows.te`, today
-`all_untrusted_apps` only) to every appdomain, carry ONE targeted commit in
-our `system/sepolicy` fork adding `-matonos_flatpak_wx_app` to that rule's
-exception list, as AOSP does for untrusted_app_25/27. Not needed today; do
-not use SELINUX_IGNORE_NEVERALLOWS (it disables every neverallow check).
+This needs one commit in our `system/sepolicy` fork (user decision
+2026-10-04, second patch-budget entry): add `-matonos_flatpak_wx_app` to the
+exception lists of the neverallows at `private/domain.te` ~1960 (execute only
+exec/system/vendor files) and ~2040 (no execute of data_file_type). The
+appdomain route was rejected: appdomains may only be entered from zygote
+(`domain.te` ~1484) and may hold no capabilities (`app.te` ~600)
+(DeepSeek wx-appdomain, verified). Flatpaks never get binder; no exception.
 
 ## Runtime permission
 
