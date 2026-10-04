@@ -158,6 +158,15 @@ bridge's install flow. Goal: as much unmodified Flatpak plumbing as possible.
   (bound read-only), so `flatpak run` resolves app and runtime natively. Every
   sandbox can see all runtimes (public content, read-only). Updates: new
   `<commit>/` beside the old one, flip `active`; running apps keep theirs.
+* **Proven on the host with stock Flatpak 1.16.6 (layout spike, 2026-10-04,
+  out/pc-logs/agents/layout-spike-result.md):** `ostree pull-local` from the
+  shared repo into each installation's own `repo/` hardlinks every object (0
+  bytes written); stock `flatpak install --no-pull` then deploys (deploy file,
+  exports, `active`); `flatpak run` works with both installations bound
+  read-only and writes nothing to them; GNOME Platform 51 + Calculator = 1.7 GB
+  instead of 3.5 GB. `install --no-pull` needs a system bus only for malcontent:
+  build Flatpak with `-Dmalcontent=disabled`. The mount helper's code mounting
+  is no longer needed (flatpak run binds /app and /usr itself).
 * **Code is a hardlinked OSTree checkout** (`ostree checkout -H`): no doubled
   disk, dedup across apps/runtimes, repo always kept (delta updates).
 * **App stubs are the signed record.** Each app stub carries its app commit
