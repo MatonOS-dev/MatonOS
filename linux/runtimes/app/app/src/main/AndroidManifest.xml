@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="org.matonos.linuxruntimes"
-    android:versionCode="1"
-    android:versionName="1.0">
-    <uses-sdk android:minSdkVersion="36" android:targetSdkVersion="36" />
-    <application android:hasCode="true" android:label="MatonOS Linux Runtimes"
-        android:icon="@android:mipmap/ic_default_app" />
+<!-- Owns the uid of the Flatpak runtimes installation
+     (/data/matonos/linux/apps/<uid>/runtime). No code, no components. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:hasCode="false" android:label="MatonOS Linux Runtimes"
+        android:icon="@android:drawable/sym_def_app_icon" />
 </manifest>
