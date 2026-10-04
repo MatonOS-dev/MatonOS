@@ -1,7 +1,7 @@
 plugins { id 'com.android.application' }
 
-// A PIE executable named as a JNI library so PackageManager extracts it with
-// executable permissions. Build from source for direct Gradle builds too.
+// A PIE executable named as a JNI library so updates extract it with executable
+// permissions. The image extracts its copy from this same APK (buildinfra).
 def brokerRoot = file('../../../dbus-broker')
 def brokerOutput = System.getenv('MATON_DBUS_ANDROID_OUT') ?: layout.buildDirectory.dir('broker/android').get().asFile.absolutePath
 def aospRoot = System.getenv('MATON_AOSP_ROOT') ?: file('../../../../../../..').absolutePath
@@ -35,6 +35,9 @@ android {
     buildFeatures { aidl true }
     packaging {
         jniLibs {
+            // Keep extractNativeLibs=true for the broker in adb-installed updates.
+            // build-apps.sh stores/page-aligns JNI before signing the staged APK
+            // so the preinstalled copy can also load JNI directly from the ZIP.
             useLegacyPackaging = true
             // Preserve the executable ELF, rather than treating it as a DSO.
             keepDebugSymbols += '**/libmatonos-dbus-broker.so'

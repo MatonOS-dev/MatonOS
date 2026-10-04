@@ -124,6 +124,17 @@ testing only; it is not an image package. Imported APKs are privileged on
 keys. Do not set `certificate: "PRESIGNED"`; Soong interprets that Make
 convention as a dependency on its PRESIGNED certificate file.
 
+MatonWaylandHost keeps `extractNativeLibs=true` for its APK-owned session
+broker in app updates. `tools/build-apps.sh` stores its JNI libraries and dex,
+page-aligns the ZIP, and re-signs it with the persistent host key before
+staging. Use that staged APK for `adb install -r`; raw Gradle output has legacy
+JNI compression. The Soong import retains the staged APK byte-for-byte and
+extracts its broker into `/system_ext/bin/matonos-apk-session-broker`. Only the
+bundled system copy uses that executable; updates use their own extracted
+`nativeLibraryDir/libmatonos-dbus-broker.so`. PackageManager does not extract
+libraries for bundled system apps, so their JNI loads directly from the APK.
+No app-data executable or fallback to an older image broker is used.
+
 Every privileged permission requested by an imported app must appear in its
 own `privapp-permissions-<package>.xml`, imported by a stable `prebuilt_etc`
 module under `/system_ext/etc/permissions`. Keep permission names scoped to

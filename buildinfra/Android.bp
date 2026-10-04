@@ -113,11 +113,35 @@ prebuilt_etc {
 android_app_import {
     name: "MatonWaylandHost",
     privileged: true,
-    required: ["privapp-permissions-org.matonos.compositor"],
+    required: [
+        "privapp-permissions-org.matonos.compositor",
+        "matonos-apk-session-broker",
+    ],
     apk: "apps-built/MatonWaylandHost.apk",
     system_ext_specific: true,
     preprocessed: true,
-    // Legacy JNI packaging extracts the APK-owned broker executable.
-    // This presigned APK intentionally contains compressed native libraries.
-    skip_preprocessed_apk_checks: true,
+    // build-apps.sh stores and aligns JNI/dex before signing. System apps do
+    // not get PM extraction; JNI loads from the APK and the broker is below.
+}
+
+// Derive the image executable from the imported APK, never a separately built
+// broker. preprocessed keeps that APK byte-for-byte, including its signature.
+genrule {
+    name: "matonos-apk-session-broker-extract",
+    srcs: ["apps-built/MatonWaylandHost.apk"],
+    tools: ["matonos-extract-apk-broker"],
+    out: ["matonos-apk-session-broker"],
+    cmd: "$(location matonos-extract-apk-broker) $(in) $(out)",
+}
+
+python_binary_host {
+    name: "matonos-extract-apk-broker",
+    main: "extract-apk-broker.py",
+    srcs: ["extract-apk-broker.py"],
+}
+
+prebuilt_bin {
+    name: "matonos-apk-session-broker",
+    src: ":matonos-apk-session-broker-extract",
+    system_ext_specific: true,
 }
