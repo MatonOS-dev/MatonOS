@@ -254,6 +254,10 @@ system or the raw Android UID) with no wheel/sudo/admin/adm/lpadmin
 membership; no sudo/pkexec/su path; polkit is absent on the bus;
 no_new_privs makes setuid useless. Granted extras (e.g. controllers) appear
 as plain groups, never admin ones.
+Principle (user, 2026-10-04): containment beats compatibility. Default to
+the tightest permissions; when an app breaks on a missing permission, fix
+that case deliberately later (generically, never per app) rather than
+loosening the sandbox up front.
 
 ## Rule: our native code is plain C (user, 2026-09-28)
 
