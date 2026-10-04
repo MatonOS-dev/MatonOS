@@ -217,6 +217,17 @@ daemon sockets; daemons validate strictly. New daemon commands/events then
 need no bridge or AIDL change; typed per-area wrappers live in the Gradle
 client library.
 
+## Hard rule: Android never handles sleep (user, 2026-10-04)
+
+Android's own suspend path stays disabled (config_useAutoSuspend=false,
+screen never times out): when Android tries to sleep a PC it crashes.
+matonos-sleepd alone decides when to suspend (idle timeout
+persist.vendor.maton.sleep_idle_s, lid, power key) and writes the kernel
+state itself. Never re-enable Android-initiated suspend to fix a sleep
+problem; fix sleepd. Test VMs: set persist.vendor.maton.sleep_idle_s=0 after
+boot (a suspended QEMU guest never wakes). Future: sleepd keeps adb alive
+(e.g. no idle suspend while an adb session is connected on debug builds).
+
 ## Rule: newest libraries as the base (user, 2026-10-04)
 
 When possible, build on the newest stable release of every third-party
