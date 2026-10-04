@@ -277,7 +277,7 @@ everything from the verified stub identity (UID + per-device signature),
 its installed manifest and its granted Android permissions.
 
 Deliberate exception (user, 2026-10-04): Flatpaks may download and run code
-in their own `/data/linux/<uid>` directory by default (no permission), as on a
+in their own `/data/matonos/linux/apps/<uid>` directory by default (no permission), as on a
 Linux desktop; see install/linuxd/CODE-STORAGE-r24.md.
 
 Principle (user, 2026-10-04): containment beats compatibility. Default to
