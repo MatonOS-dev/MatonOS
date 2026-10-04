@@ -190,27 +190,34 @@ new path is wired).
   zip64; to be checked on the VM.
 * **No app-to-app code sharing.** Sharing stops at runtimes/extensions.
 
-## Planned: per-app `linux/` directory; Flatpaks may run downloaded code (decided 2026-10-04)
+## Planned: per-app Linux data in `/data/linux/<uid>/`; Flatpaks may run downloaded code (decided 2026-10-04)
 
-**All per-app Linux state lives in the stub's own Android data directory:**
-`<ApplicationInfo.dataDir>/linux/` (i.e. /data/user/<userId>/<stub package>/linux;
-the path always comes from PackageManager via the bridge, never computed).
-- `run/`: the session's XDG_RUNTIME_DIR content (`wayland-0`, `X11/X0`),
-  created by the stub process (StubService runs as the stub uid); the
-  listening fds go to the compositor host over binder; X display is always :0.
+**All per-app Linux state lives in `/data/linux/<stub uid>/`** (user decision;
+the stub's own app data dir was rejected: our domains may not touch
+`app_data_file` dirs (`domain.te` ~1786) and untrusted apps may not create
+any other label there (`app_neverallows.te` ~194); symlinks don't help).
+- `/data/linux` is created by init, labelled via our `file_contexts` as
+  `matonos_linux_data_file`; per-uid dirs are created by linuxd, owned by the
+  stub uid, at the stub's MLS level (set the create context explicitly).
+- `run/`: the session's XDG_RUNTIME_DIR content (`wayland-0`, `X11/X0`).
+  linuxd binds the listening sockets and returns them to the compositor host
+  through the launch call (stubs create nothing); X display is always :0.
 - `home/`: the Flatpak app's data/home (replacing the per-app dirs under
-  /data/matonos/linux and `vol.img`); also any code
-  they download (e.g. a Steam library under their home).
-Plain `app_data_file` at the stub's MLS level: only that app can touch it, and
-Android handles multi-user, clear-data, uninstall and storage accounting.
-Stubs set `allowBackup=false`. Not `code_cache/` (cleared on app update).
+  /data/matonos/linux and `vol.img`), including any code it downloads.
+- Lifecycle: the bridge's stub reconcile (FlatpakStubManager) asks linuxd to
+  delete `/data/linux/<uid>` when the stub is removed (also on user removal);
+  linuxd sweeps orphans at boot. Per-user automatically (uid encodes the user).
+- Storage accounting: tag the tree with the app's filesystem project ID
+  (`FS_IOC_FSSETXATTR`, inherit flag) so Android counts it as the app's data —
+  verify the Android 17 project-ID scheme first.
+- Not credential-encrypted per app (/data itself is encrypted).
 
-**Flatpaks may download and run code in their own `linux/` by default**
+**Flatpaks may download and run code in their own `/data/linux/<uid>` by default**
 (user decision 2026-10-04: Linux apps have no concept of a permission for
 this, and on a Linux desktop an app can always run files from its home).
-There is ONE sandbox domain, `matonos_flatpak_app`: a non-appdomain with no
+There is ONE sandbox domain, `matonos_linux_app` (renamed from matonos_flatpak_app): a non-appdomain with no
 binder that may execute (execute, execute_no_trans, map) its own
-`app_data_file`, i.e. its stub's `linux/` tree at the stub's MLS level. No
+`matonos_linux_data_file` tree (`/data/linux/<uid>`, at the stub's MLS level). No
 WRITABLE_CODE permission, no second domain, no prompt. Never `execmod`; never
 write to any exec type. Containment stays: own uid, own MLS level, no binder,
 only its own directory. Verified code images (APK-carried) are still how
