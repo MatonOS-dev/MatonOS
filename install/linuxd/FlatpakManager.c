@@ -35,7 +35,7 @@ extern char** environ;
  * com.matonos.flatpak APEX, mounted at /apex/com.matonos.flatpak. This is the
  * launcher (platform-signed Flatpak env wrapper); it execs the CLI in the
  * same APEX. */
-static const char k_flatpak[] = "/apex/com.matonos.flatpak/bin/flatpak";
+static const char k_flatpak[] = "/apex/com.matonos.flatpak/bin/flatpak-env-wrapper";
 static const size_t k_output_limit = 24 * 1024;
 static pthread_mutex_t g_operation_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_package_state_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -793,6 +793,7 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
      * dma-bufs to the compositor, which shows them without a copy. */
     char* argv[] = {(char*)k_flatpak, "--system", "run",
             "--socket=wayland", "--socket=x11", "--no-documents-portal",
+            "--socket=session-bus",
             "--nodevice=all", "--device=dri",
             "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1", "--env=GTK_CSD=0",
             "--env=NO_AT_BRIDGE=1",

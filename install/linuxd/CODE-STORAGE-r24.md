@@ -1,5 +1,11 @@
 # r24: Flatpak code storage and verified execution
 
+> **Historical design on the static-apex branch.** Phase 1 removes the
+> `matonos-mount-helper` launch protocol and its APEX binary; the static stack
+> uses Flatpak's normal deployment paths. Keep this document as the record of
+> the former r24 loop-image design. Do not treat the helper/domain flow below
+> as the current launch chain. See [`linux/flatpak/APEX.md`](../../linux/flatpak/APEX.md).
+
 This resolves the H6/app-owns enforcing blocker (`domain.te` forbids executing
 data_file_type from /data and forbids writing exec_type) **without any platform
 policy exception**. It implements the design decided 2026-10-04 (NOTES.md).
