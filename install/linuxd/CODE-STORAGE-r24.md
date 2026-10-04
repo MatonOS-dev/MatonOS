@@ -217,6 +217,13 @@ rights; a Flatpak runs as its stub's uid, so its binder reach equals its
 stub's. The sandbox seccomp filter still blocks binder ioctls until the
 compositor-host/bridge audit (host-audit) is resolved. Never `execmod`.
 
+Contingency (user, 2026-10-04): if a future AOSP extends the app_data_file
+execute neverallow (`system/sepolicy/private/app_neverallows.te`, today
+`all_untrusted_apps` only) to every appdomain, carry ONE targeted commit in
+our `system/sepolicy` fork adding `-matonos_flatpak_wx_app` to that rule's
+exception list, as AOSP does for untrusted_app_25/27. Not needed today; do
+not use SELINUX_IGNORE_NEVERALLOWS (it disables every neverallow check).
+
 ## Runtime permission
 
 `org.matonos.permission.RUN_DOWNLOADED_CODE` (`dangerous`, declared by
