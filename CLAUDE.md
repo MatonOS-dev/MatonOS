@@ -242,6 +242,14 @@ Prefer the newest stable over prereleases; note any deliberate exception
 
 ## Rule: Flatpak apps never get binder (user, 2026-10-04)
 
+**Exception (user, 2026-10-04):** apps granted
+`org.matonos.permission.WRITABLE_CODE` run in `matonos_flatpak_wx_app`
+(appdomain), which may execute its own `app_data_file` and may hold binder
+rights — a Flatpak runs as its stub's uid, so its binder reach equals its
+stub's. Seccomp keeps blocking binder ioctls until the compositor-host/bridge
+audit is resolved. Every other Flatpak keeps the rule below. See
+install/linuxd/CODE-STORAGE-r24.md "Planned: per-app `flatpak/` directory".
+
 Linux/Flatpak app sandboxes must have no access to Android binder. The
 mechanism is SELinux: executing bwrap transitions out of linuxd's domain
 into the app sandbox domain, so bwrap and everything below it (the app,

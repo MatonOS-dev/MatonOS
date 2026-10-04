@@ -190,19 +190,32 @@ new path is wired).
   zip64; to be checked on the VM.
 * **No app-to-app code sharing.** Sharing stops at runtimes/extensions.
 
-## Rejected: writable+executable game library (2026-10-04)
+## Planned: per-app `flatpak/` directory and the WRITABLE_CODE domain (decided 2026-10-04)
 
-Idea: Steam-like apps (download and run code in place) get a W+X library
-image behind a custom permission. **Not possible without AOSP patches** —
-stock `system/sepolicy/private/domain.te` forbids it for every non-appdomain,
-which `matonos_flatpak_app` must stay (appdomain's `app.te` grants binder):
-- 1960: non-appdomains may execute only exec_type/system/vendor files;
-- 2040: non-appdomains may never execute any data_file_type;
-- 792: no domain may write exec_type/system/vendor files.
-(First check missed these; verified by the DeepSeek wx-check against the
-policy rig, out/pc-logs/agents/wx-check-result.md.) Downloaded code must use
-the sealing path above (write as data, seal into a verified read-only image).
-Steam-like launchers stay a known gap until a generic sealing trigger exists.
+**All per-app Linux state lives in the stub's own Android data directory:**
+`/data/user/<userId>/<stub package>/flatpak/`
+- `run/`: the session's XDG_RUNTIME_DIR content (`wayland-0`, `X11/X0`),
+  created by the stub process (StubService runs as the stub uid) whose
+  listening fds go to the compositor host over binder; X display is always :0.
+- `home/`: the Flatpak app's data/home (replacing the per-app dirs under
+  /data/matonos/linux and `vol.img`); for WRITABLE_CODE apps also the code
+  they download (e.g. a Steam library under their home).
+It is plain `app_data_file` at the stub's MLS level: only that app can touch
+it, and Android handles multi-user, clear-data, uninstall and storage
+accounting. Stubs set `allowBackup=false`. Not `code_cache/` (Android clears it
+on app update). Created by the stub process, so no privileged creation.
+
+**W^X stays for every Flatpak by default** (`matonos_flatpak_app`, a
+non-appdomain: stock `domain.te` 1960/2040/792 forbid executing any data and
+writing any exec type; verified by DeepSeek wx-check). Apps granted
+`org.matonos.permission.WRITABLE_CODE` (dangerous, user consent; generic rule
+from the Flatpak manifest, never per app) instead run in
+`matonos_flatpak_wx_app` (appdomain + coredomain), which may execute its own
+`app_data_file` (the `execute_no_trans` neverallow binds only
+`all_untrusted_apps`). User decision 2026-10-04: this domain may hold binder
+rights; a Flatpak runs as its stub's uid, so its binder reach equals its
+stub's. The sandbox seccomp filter still blocks binder ioctls until the
+compositor-host/bridge audit (host-audit) is resolved. Never `execmod`.
 
 ## Runtime permission
 
