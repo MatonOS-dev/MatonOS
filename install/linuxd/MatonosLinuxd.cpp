@@ -210,11 +210,12 @@ class LinuxdService final : public BnLinuxd {
             const android::String16& dnsServers,
             const std::optional<android::os::ParcelFileDescriptor>& x11Directory,
             const std::optional<android::String16>& x11Display,
-            bool gameControllers,
+            bool gameControllers, int32_t stubUid, int32_t stubPid,
+            const android::os::ParcelFileDescriptor& lifeline,
             android::String16* aidl_return) override {
         if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         FlatpakResult result = {};
-        flatpak_manager_launch_graphical(ToUtf8(ref).c_str(), runtimeDirectory.get(), ToUtf8(dnsServers).c_str(), x11Directory ? x11Directory->get() : -1, x11Display ? ToUtf8(*x11Display).c_str() : nullptr, gameControllers, &result);
+        flatpak_manager_launch_graphical(ToUtf8(ref).c_str(), runtimeDirectory.get(), ToUtf8(dnsServers).c_str(), x11Directory ? x11Directory->get() : -1, x11Display ? ToUtf8(*x11Display).c_str() : nullptr, gameControllers, stubUid, stubPid, lifeline.get(), &result);
         *aidl_return = android::String16(Encode(EncodeResult(result)).c_str());
         flatpak_manager_result_clear(&result);
         return android::binder::Status::ok();

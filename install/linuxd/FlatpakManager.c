@@ -2,7 +2,7 @@
 #include <android/log.h>
 #include "FlatpakManager.h"
 #include "UdevDatabase.h"
-#include "GtkSettings.h"
+#include "SafePath.h"
 
 #include <errno.h>
 #include <dirent.h>
@@ -34,8 +34,6 @@ static int g_package_operation_active;
 static FlatpakProgressCallback g_progress_callback;
 static FlatpakCompleteCallback g_complete_callback;
 static void* g_callback_context;
-
-static void* reap_child(void* data);
 
 typedef struct ChildResult {
     int status;
@@ -315,29 +313,6 @@ static void result_from_child(FlatpakResult* result, ChildResult* child) {
     child->output = NULL;
 }
 
-static int spawn_detached(pid_t pid) {
-    pthread_t thread;
-    pid_t* heap_pid = malloc(sizeof(*heap_pid));
-    int error;
-    if (!heap_pid) return ENOMEM;
-    *heap_pid = pid;
-    error = pthread_create(&thread, NULL, reap_child, heap_pid);
-    if (error != 0) {
-        free(heap_pid);
-        return error;
-    }
-    (void)pthread_detach(thread);
-    return 0;
-}
-
-static void* reap_child(void* data) {
-    pid_t pid = *(pid_t*)data;
-    int status;
-    free(data);
-    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) { }
-    return NULL;
-}
-
 typedef struct PackageOperation {
     int uninstall;
     int delete_data;
@@ -438,60 +413,8 @@ static void start_package_operation(int uninstall, const char* ref, int delete_d
 
 static void run_async(const char* app_id, const char* const* extra, size_t extra_count,
         FlatpakResult* result) {
-    int nullfd;
-    posix_spawn_file_actions_t actions;
-    char** argv;
-    size_t count = 5 + extra_count;
-    pid_t child = -1;
-    int rc;
-    if (access(k_flatpak, X_OK) != 0) {
-        set_error(result, strerror(errno));
-        return;
-    }
-    for (size_t i = 0; i < extra_count; ++i) {
-        if (extra[i] == NULL || extra[i][0] == '-') {
-            set_error(result, "Flatpak run arguments must not be options");
-            return;
-        }
-    }
-    argv = calloc(count + 1, sizeof(char*));
-    if (!argv) { set_error(result, "cannot allocate Flatpak arguments"); return; }
-    argv[0] = (char*)k_flatpak;
-    argv[1] = "--system";
-    argv[2] = "run";
-    argv[3] = (char*)app_id;
-    argv[4] = "--";
-    for (size_t i = 0; i < extra_count; ++i) argv[5 + i] = (char*)extra[i];
-    nullfd = open("/dev/null", O_RDWR | O_CLOEXEC);
-    if (posix_spawn_file_actions_init(&actions) != 0) {
-        if (nullfd >= 0) close(nullfd);
-        free(argv);
-        set_error(result, "Flatpak run setup failed");
-        return;
-    }
-    if (nullfd >= 0) {
-        (void)posix_spawn_file_actions_adddup2(&actions, nullfd, STDOUT_FILENO);
-        (void)posix_spawn_file_actions_adddup2(&actions, nullfd, STDERR_FILENO);
-        (void)posix_spawn_file_actions_addclose(&actions, nullfd);
-    }
-    rc = posix_spawn(&child, k_flatpak, &actions, NULL, argv, environ);
-    posix_spawn_file_actions_destroy(&actions);
-    if (nullfd >= 0) close(nullfd);
-    free(argv);
-    if (rc != 0) {
-        set_error(result, strerror(rc));
-        return;
-    }
-    rc = spawn_detached(child);
-    if (rc != 0) {
-        (void)kill(child, SIGTERM);
-        while (waitpid(child, NULL, 0) < 0 && errno == EINTR) { }
-        set_error(result, "cannot reap Flatpak process");
-        return;
-    }
-    result->ok = 1;
-    result->has_pid = 1;
-    result->pid = (long)child;
+    (void)app_id; (void)extra; (void)extra_count;
+    set_error(result, "Launch through the signed Android stub");
 }
 
 typedef struct GraphicalChild { pid_t pid; int directory, listener, slot, x11_directory, x11_listener; char path[108], x11_path[108], x11_name[64]; } GraphicalChild;
@@ -582,26 +505,6 @@ static void deny_host_tmp(void) {
     free(child.output);
 }
 
-/* Android's caption bar owns minimize/maximize/close, so GTK (including
- * Firefox's tab strip and libadwaita header bars) is told to draw no window
- * buttons. Only the gtk-decoration-layout key is set; other app settings in
- * the sandbox's settings.ini survive. Best effort: a failure keeps the app's
- * own buttons rather than blocking the launch. */
-static void hide_toolkit_window_buttons(const char* ref) {
-    const char* id = ref + 4; const char* slash = strchr(id, '/');
-    if (!slash) return;
-    static const char* const versions[] = {"gtk-3.0", "gtk-4.0"};
-    int rootfd = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    if (rootfd < 0) return;
-    for (size_t i = 0; i < 2; ++i) {
-        char directory[512];
-        int n = snprintf(directory, sizeof(directory), "data/matonos/linux/flatpak-data/.var/app/%.*s/config/%s",
-                (int)(slash - id), id, versions[i]);
-        if (n > 0 && n < (int)sizeof(directory)) set_gtk_settings_key(rootfd, directory);
-    }
-    close(rootfd);
-}
-
 /* Exact Context/devices tokens; no app-specific policy or override files. */
 static int declared_controllers(const char* metadata, int* all_devices) {
     char* copy = strdup(metadata ? metadata : "");
@@ -632,8 +535,11 @@ static int declared_controllers(const char* metadata, int* all_devices) {
 }
 
 /* The compositor delegates only its socket directories, never its app data root. */
-void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, FlatpakResult* result) {
+void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, int stub_uid, int stub_pid, int lifeline_fd, FlatpakResult* result) {
     struct stat directory, socket_info;
+    if (stub_uid < 10000 || stub_pid <= 0 || lifeline_fd < 0) {
+        set_error(result, "verified stub process required"); return;
+    }
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
         set_error(result, "valid installed application ref required"); return;
     }
@@ -666,7 +572,6 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     if (metadata.status == 0 && !metadata.truncated)
         controllers = declared_controllers(metadata.output, &all_devices) && game_controllers;
     free(metadata.output);
-    hide_toolkit_window_buttons(ref);
     deny_host_tmp();
     /* Keep sources above the fixed child slots 198/199 so spawn dup2 actions
      * cannot overwrite another capability before it has been copied. */
@@ -708,7 +613,12 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     /* Delegate only the already validated session directory to the wrapper.
      * It connects the broker control socket, then closes this FD before CLI exec. */
     if (!rc) rc = posix_spawn_file_actions_adddup2(&actions, capability, 198);
+    int owner_fd = fcntl(lifeline_fd, F_DUPFD_CLOEXEC, 200);
+    if (owner_fd < 0) rc = errno;
+    if (!rc) rc = posix_spawn_file_actions_adddup2(&actions, owner_fd, 196);
     if (!rc && has_x11) rc = posix_spawn_file_actions_adddup2(&actions, x11_capability, 199);
+    char owner_env[384];
+    snprintf(owner_env,sizeof(owner_env),"MATON_APP_OWNER=%d:%d:%d:%.*s",stub_uid,stub_pid,controllers,(int)(strchr(ref+4,'/')-ref-4),ref+4);
     char display_env[128];
     snprintf(display_env,sizeof(display_env),"WAYLAND_DISPLAY=%s",socket_path);
     char dns_env[2048];
@@ -717,7 +627,7 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     snprintf(x11_env,sizeof(x11_env),"MATON_SESSION_X11_NAME=%s",has_x11?x11_display:"");
     size_t env_count = 0;
     while (environ[env_count]) ++env_count;
-    char** env = calloc(env_count + 7, sizeof(char*));
+    char** env = calloc(env_count + 9, sizeof(char*));
     size_t n = 0;
     if (env) {
         for (size_t i = 0; i < env_count; ++i)
@@ -727,6 +637,8 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
                     strncmp(environ[i],"MATON_GAME_CONTROLLERS=",23) != 0 &&
                     strncmp(environ[i],"MATON_SESSION_DIRECTORY_FD=",27) != 0 &&
                     strncmp(environ[i],"MATON_SESSION_X11_",18) != 0) env[n++] = environ[i];
+        env[n++] = owner_env;
+        env[n++] = "MATON_APP_LIFELINE=196";
         env[n++] = display_env;
         env[n++] = dns_env;
         env[n++] = "MATON_SESSION_DIRECTORY_FD=198";
@@ -740,13 +652,14 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
      * dma-bufs to the compositor, which shows them without a copy. */
     char* argv[] = {(char*)k_flatpak, "--system", "run",
             "--socket=wayland", "--socket=x11", "--no-documents-portal",
-            controllers && all_devices ? "--device=all" : "--nodevice=all", "--device=dri",
+            "--nodevice=all", "--device=dri",
             "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1", "--env=GTK_CSD=0",
             "--env=NO_AT_BRIDGE=1",
             (char*)ref + 4, NULL};
     pid_t child = -1;
     if (!rc) rc = posix_spawn(&child, k_flatpak, &actions, NULL, argv, env);
     posix_spawn_file_actions_destroy(&actions);
+    if (owner_fd >= 0) close(owner_fd);
     if (logfd >= 0) close(logfd); free(env);
     if (rc) { close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability); set_error(result, strerror(rc)); return; }
     int launch_slot=record_launch(ref,log_path,child);

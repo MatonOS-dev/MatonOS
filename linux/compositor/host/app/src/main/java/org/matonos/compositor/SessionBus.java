@@ -11,7 +11,7 @@ final class SessionBus implements AutoCloseable {
     final JavaPortal portals;
     private final File socket, control, policy;
 
-    SessionBus(android.content.Context context, File directory, String ref, java.util.function.Consumer<Boolean> changed, JavaPortal.Launcher launcher) throws Exception {
+    SessionBus(android.content.Context context, File directory, String ref, int appUid, java.util.function.Consumer<Boolean> changed, JavaPortal.Launcher launcher) throws Exception {
         android.content.pm.ApplicationInfo appInfo = context.getApplicationInfo();
         // PM never extracts the bundled system APK. The image build extracts
         // its broker from that APK into an executable system_file path. Updates
@@ -38,6 +38,7 @@ final class SessionBus implements AutoCloseable {
         portals=new JavaPortal(context,directory,changed,launcher);
         ProcessBuilder builder = new ProcessBuilder(executable.getAbsolutePath(),
                 socket.getAbsolutePath(), policy.getAbsolutePath(), "--host-session");
+        builder.environment().put("MATON_SESSION_APP_UID",Integer.toString(appUid));
         builder.environment().put("MATON_PORTAL_SECRET",portals.secret());
         builder.redirectError(ProcessBuilder.Redirect.appendTo(new File(directory, "bus.log")));
         try { process = builder.start(); }

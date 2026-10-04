@@ -1,9 +1,8 @@
-# Flatpak/bwrap/apps retain linuxd's domain (execute_no_trans), with DAC
-# enforced by the per-launch GAME_CONTROLLERS supplementary group.
-allow matonos_linuxd { hidraw_device uhid_device }:chr_file { getattr open read write ioctl };
+# Payloads use the stub UID; DAC gates the controller grant.
+allow matonos_flatpak_app { hidraw_device uhid_device }:chr_file { getattr open read write ioctl };
 # HID feature/report operations (H) and uinput device setup/event operations (U).
-allowxperm matonos_linuxd hidraw_device:chr_file ioctl { 0x4800-0x48ff };
-allowxperm matonos_linuxd uhid_device:chr_file ioctl { 0x5500-0x55ff };
+allowxperm matonos_flatpak_app hidraw_device:chr_file ioctl { 0x4800-0x48ff };
+allowxperm matonos_flatpak_app uhid_device:chr_file ioctl { 0x5500-0x55ff };
 
 # Verify the bridge UID via the existing platform permission Binder service.
 binder_call(matonos_linuxd, system_server)

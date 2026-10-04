@@ -11,6 +11,7 @@ interface IEmbeddedSession {
     void detachWindow(int id);
     void resizeWindow(int id, int width, int height);
     void closeWindow(int id);
+    void setWindowStopped(int id, boolean stopped);
     void keyEvent(int id, int key, int scan, int action, int meta, long time);
     void motionEvent(int id, float x, float y, float vs, float hs, int action, int buttons, long time);
 }
