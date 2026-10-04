@@ -11,8 +11,15 @@ libgpg-error, libassuan, OSTree, AppStream, libxmlb, libyaml and libfyaml from
 the NDK prefix. HTTPS and XML use the image's `/system/lib64/libcurl.so` and
 `libxml2.so`; curl is the platform build against BoringSSL. XZ is statically
 linked into libostree because AOSP's `liblzma.so` is a different library.
-Flatpak is configured without systemd, system helper, SELinux module, seccomp,
-documentation, xauth, and privileged mode. Its CLI uses the `FLATPAK_BWRAP`
+The historical spike configured Flatpak without seccomp. The current CLI is
+rebuilt by `linux/flatpak/build-seccomp.sh` with `--enable-seccomp`, linked to
+the packaged `libseccomp_matonos.so`. The script checks ENABLE_SECCOMP,
+BPF-export linkage and the `--seccomp` argument, and compares all filter
+syscall numbers with libseccomp's x86_64 table under NDK/bionic. Staging
+requires the generated seccomp define and matching CLI SHA-256. Systemd,
+system helper, SELinux module, documentation, xauth and privileged mode remain
+disabled. Runtime filter installation and application compatibility still need
+device verification. Its CLI uses the `FLATPAK_BWRAP`
 environment override to select the test bwrap; D-Bus proxy integration is
 still absent.
 

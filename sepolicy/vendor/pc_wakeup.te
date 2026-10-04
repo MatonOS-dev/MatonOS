@@ -1,7 +1,4 @@
-# pc-wakeup.sh: enables power/wakeup on keyboards, USB hubs/controllers
-# and the i8042 keyboard port at boot (init.pc_x86_64.rc). Minimal domain so init can
-# start it; the device is permissive for bring-up, the full rule set (sysfs
-# writes) comes with enforcing mode.
+# Boot helper: read bus classification metadata and write only wakeup controls.
 type pc_wakeup, domain;
 type pc_wakeup_exec, exec_type, vendor_file_type, file_type;
 
@@ -10,3 +7,10 @@ init_daemon_domain(pc_wakeup)
 allow pc_wakeup vendor_shell_exec:file rx_file_perms;
 allow pc_wakeup vendor_toolbox_exec:file rx_file_perms;
 r_dir_file(pc_wakeup, sysfs)
+
+# Canonical sysfs paths are labelled by ueventd restorecon (file_contexts).
+type sysfs_pc_wakeup, fs_type, sysfs_type;
+type sysfs_pc_wakeup_info, fs_type, sysfs_type;
+allow pc_wakeup sysfs_type:dir search;
+allow pc_wakeup sysfs_pc_wakeup:file { getattr open read write };
+allow pc_wakeup sysfs_pc_wakeup_info:file r_file_perms;
