@@ -1,0 +1,30 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'org.matonos.linuxruntimes'
+    compileSdk = 36
+    defaultConfig {
+        applicationId 'org.matonos.linuxruntimes'
+        minSdk = 36
+        targetSdk = 36
+        versionCode = 1
+        versionName = '1.0'
+    }
+    def signingStore = System.getenv('MATON_SIGNING_STORE_FILE')
+    if (signingStore) {
+        signingConfigs {
+            release {
+                storeFile file(signingStore)
+                storePassword System.getenv('MATON_SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('MATON_SIGNING_KEY_ALIAS')
+                keyPassword System.getenv('MATON_SIGNING_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (signingStore) signingConfig signingConfigs.release
+            minifyEnabled = false
+        }
+    }
+}

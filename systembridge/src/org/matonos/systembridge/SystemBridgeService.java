@@ -147,45 +147,24 @@ public final class SystemBridgeService extends Service {
             finally{Binder.restoreCallingIdentity(identity);}
         }
 
-        @Override public int reserveFlatpakRuntimeVersion(String runtimeRef) {
-            enforceAuthorizedCaller("flatpak", "reserveFlatpakRuntimeVersion");
-            long identity = Binder.clearCallingIdentity();
-            try { return flatpakStubManager.reserveRuntimeVersion(runtimeRef); }
-            catch (Exception error) { throw new IllegalStateException("Cannot reserve runtime version", error); }
-            finally { Binder.restoreCallingIdentity(identity); }
-        }
-        @Override public int installFlatpakImagePackages(String ref, android.os.ParcelFileDescriptor runtimeApk, android.os.ParcelFileDescriptor appApk) {
-            enforceAuthorizedCaller("flatpak", "installFlatpakImagePackages");
-            long identity = Binder.clearCallingIdentity();
-            try { return flatpakStubManager.installImages(ref, runtimeApk, appApk); }
-            catch (Exception error) { throw new IllegalStateException("Image install failed", error); }
-            finally { Binder.restoreCallingIdentity(identity); }
-        }
-        @Override public int installFlatpakExtra(String ref, android.os.ParcelFileDescriptor extraApk) {
-            enforceAuthorizedCaller("flatpak", "installFlatpakExtra");
-            long identity = Binder.clearCallingIdentity();
-            try { return flatpakStubManager.installExtra(ref, extraApk); }
-            catch (Exception error) { throw new IllegalStateException("Extra install failed", error); }
-            finally { Binder.restoreCallingIdentity(identity); }
-        }
-        @Override public String getFlatpakImagePackages(int uid, String ref) {
+        @Override public String getFlatpakStubCommits(int uid, String ref) {
             // linuxd runs as system; app callers must pass the existing scoped gate.
             if (Binder.getCallingUid() != android.os.Process.SYSTEM_UID)
-                enforceAuthorizedCaller("flatpak_launch", "getFlatpakImagePackages");
-            else Log.i(TAG, "Authorized action=getFlatpakImagePackages caller=system stubUid=" + uid);
+                enforceAuthorizedCaller("flatpak_launch", "getFlatpakStubCommits");
+            else Log.i(TAG, "Authorized action=getFlatpakStubCommits caller=system stubUid=" + uid);
             long identity = Binder.clearCallingIdentity();
-            try { return flatpakStubManager.imagePackages(uid, ref); }
-            catch (Exception error) { throw new IllegalStateException("Cannot resolve image packages", error); }
+            try { return flatpakStubManager.stubCommits(uid, ref); }
+            catch (Exception error) { throw new IllegalStateException("Cannot resolve stub commits", error); }
             finally { Binder.restoreCallingIdentity(identity); }
         }
 
         @Override public int getBridgeApiVersion() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiVersion");
-            return 7;
+            return 8;
         }
         @Override public String getBridgeApiHash() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiHash");
-            return "fca41d39411376b8c1edac63526db6084aef66f17f6753f175bc3dd8e1f9f8fe";
+            return "d4a82b10f6e9c73b81a2d5e4f09c8a3b7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1";
         }
 
         @Override public boolean injectBackKey() {
