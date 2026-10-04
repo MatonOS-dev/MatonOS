@@ -178,3 +178,16 @@ Java port step 2 = dbus-java 6.x + own Android LocalSocket transport.
 - Queue for codex after 13:10: H5 (opencode-h5-result.md design), the two
   small fixes (machine-id message, controller prompt re-ask + typos — NOT
   via shouldShowRequestPermissionRationale), bridge derives ref from stub.
+
+## 2026-10-04 12:20
+- Merged fe3417b: setns mount helper (socketpair, store-derived loop/fixed
+  targets, pidfd sandbox verification); removed an unneeded
+  `matonos_bwrap self:process ptrace` grant; policy compile PASS.
+- DECISION: Flatpak moves to the app layer NOW (r24), breaking freely, then
+  full rebuild. Flatpak ships in MatonWaylandHost.apk; system keeps bwrap
+  (image, own domain), mount helper, verity checks, start lever; format-neutral
+  MatonOS permission manifest (AppImage/tarball/OCI later). Brief:
+  out/pc-logs/agents/codex-flatpak-applayer-brief.md.
+- Running: GLM design pass -> glm-applayer-design.md; DeepSeek small fixes
+  (worktree ds/small-fixes -> ds-small-result.md). DeepSeek covers codex's
+  queue until codex returns (13:10). Then: move phases, H5, r24 build.
