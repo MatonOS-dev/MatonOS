@@ -4,6 +4,10 @@
 #include "UdevDatabase.h"
 #include "SessionPads.h"
 #include "SafePath.h"
+#include "MatonMls.h"
+#include <sys/xattr.h>
+#include <sys/ioctl.h>
+#include <linux/fs.h>
 
 #include <errno.h>
 #include <dirent.h>
@@ -540,6 +544,127 @@ static int declared_controllers(const char* metadata, int* all_devices) {
     free(copy); return controllers;
 }
 
+static int owned_directory(const char* path,int uid) {
+    char copy[512];if(strlen(path)>=sizeof(copy))return -1;strcpy(copy,path);
+    int fd=open("/",O_PATH|O_DIRECTORY|O_CLOEXEC);char* save=NULL;
+    for(char* part=strtok_r(copy,"/",&save);part;part=strtok_r(NULL,"/",&save)) {
+        if(!strcmp(part,".")||!strcmp(part,"..")){close(fd);return -1;}
+        int next=openat(fd,part,O_PATH|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);close(fd);fd=next;
+        if(fd<0)return -1;
+    }
+    struct stat st;if(fstat(fd,&st) || (uid>=0 && st.st_uid!=(uid_t)uid)){close(fd);return -1;}
+    return fd;
+}
+/* linux-data: no caller-selected path and no symlink traversal. fscreate is
+ * thread-local, so concurrent Binder calls cannot exchange MLS categories. */
+static int create_context(const char* label) {
+    int fd=open("/proc/thread-self/attr/fscreate",O_WRONLY|O_CLOEXEC);
+    if(fd<0)return -1;
+    size_t n=label?strlen(label):0;
+    int rc=write(fd,label?label:"",n)==(ssize_t)n?0:-1;close(fd);return rc;
+}
+static int data_child(int parent,const char* name,int uid,const char* label) {
+    int made=mkdirat(parent,name,0700)==0;
+    if(!made&&errno!=EEXIST)return -1;
+    int fd=openat(parent,name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+    if(fd<0)return -1;
+    /* AOSP: libcutils/private/android_projectid_config.h PROJECT_ID_APP_START
+     * = 50000; installd/utils.cpp:438-440 uses uid - 10000 + range start.
+     * Set before chown while linuxd owns the new directory. Existing trees
+     * inherit their original project ID; dev builds require no migration. */
+    struct fsxattr attrs={0};
+    if(made && ioctl(fd,FS_IOC_FSGETXATTR,&attrs)==0) {
+        attrs.fsx_projid=(unsigned)uid-10000+50000;
+        attrs.fsx_xflags|=FS_XFLAG_PROJINHERIT;
+        if(ioctl(fd,FS_IOC_FSSETXATTR,&attrs))
+            __android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","project quota unavailable uid=%d: %s",uid,strerror(errno));
+    } else if(made) __android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","project quota unsupported uid=%d",uid);
+    struct stat st;char context[256]={0};
+    if((made&&fchown(fd,uid,uid))||fstat(fd,&st)||st.st_uid!=(uid_t)uid||
+       (st.st_mode&0777)!=0700||fgetxattr(fd,"security.selinux",context,sizeof(context)-1)<=0||
+       strcmp(context,label)){close(fd);errno=EPERM;return -1;}
+    return fd;
+}
+static int prepare_linux_data(int uid,int pid,const char* ref) {
+    char level[64],label[160],path[64],process[256]={0};struct stat st;
+    if(uid%100000<10000||uid%100000>19999||maton_mls_level_from_uid(uid,level,sizeof(level)))return -1;
+    snprintf(path,sizeof(path),"/proc/%d",pid);
+    if(stat(path,&st)||st.st_uid!=(uid_t)uid)return -1;
+    snprintf(path,sizeof(path),"/proc/%d/attr/current",pid);
+    int proc=open(path,O_RDONLY|O_CLOEXEC|O_NOFOLLOW);if(proc<0)return -1;
+    ssize_t got=read(proc,process,sizeof(process)-1);close(proc);if(got<=0)return -1;
+    process[strcspn(process,"\n")]=0;
+    char* range=strstr(process,":s0");if(!range||strcmp(range+1,level))return -1;
+    snprintf(label,sizeof(label),"u:object_r:matonos_linux_data_file:%s",level);
+    int root=owned_directory("/data/matonos/linux/apps",1000);
+    if(root<0)return -1;
+    char name[32];snprintf(name,sizeof(name),"%d",uid);
+    /* Retain the existing system-owned UID owner record: a recycled UID
+     * must never inherit another Flatpak's home. The stub chooses no path. */
+    char record_name[48],id[256];
+    const char* end=strchr(ref+4,'/');size_t length=end?(size_t)(end-ref-4):0;
+    if(!length||length>=sizeof(id)){close(root);return -1;}
+    memcpy(id,ref+4,length);id[length]=0;
+    snprintf(record_name,sizeof(record_name),"%d.owner",uid);
+    int record=openat(root,record_name,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0640);
+    if(record>=0) {
+        int bad=write(record,id,length)!=(ssize_t)length;close(record);
+        if(bad){close(root);return -1;}
+    } else {
+        if(errno!=EEXIST){close(root);return -1;}
+        record=openat(root,record_name,O_RDONLY|O_NOFOLLOW|O_CLOEXEC);
+        char stored[256]={0};struct stat owner;
+        ssize_t n=record>=0?read(record,stored,sizeof(stored)-1):-1;
+        int bad=record<0||fstat(record,&owner)||!S_ISREG(owner.st_mode)||
+            owner.st_uid!=1000||n!=(ssize_t)length||memcmp(stored,id,length);
+        if(record>=0)close(record);
+        if(bad){close(root);errno=EPERM;return -1;}
+    }
+    int app=-1,home=-1,rc=-1;
+    if(create_context(label))goto done;
+    app=data_child(root,name,uid,label);if(app<0)goto done;
+    home=data_child(app,"home",uid,label);if(home<0)goto done;
+    rc=0;
+done:
+    (void)create_context(NULL);
+    if(home>=0)close(home);if(app>=0)close(app);close(root);
+    return rc;
+}
+/* Never follow symlinks or cross a mount while deleting an orphan. */
+static int remove_contents(int fd,dev_t device) {
+    DIR* dir=fdopendir(dup(fd));if(!dir)return -1;
+    struct dirent* entry;int rc=0;
+    while((entry=readdir(dir))) {
+        if(!strcmp(entry->d_name,".")||!strcmp(entry->d_name,".."))continue;
+        struct stat st;
+        if(fstatat(fd,entry->d_name,&st,AT_SYMLINK_NOFOLLOW)){rc=-1;break;}
+        if(S_ISDIR(st.st_mode)) {
+            int child=openat(fd,entry->d_name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+            struct stat pinned;
+            if(child<0){rc=-1;break;}
+            if(fstat(child,&pinned)||pinned.st_dev!=device||remove_contents(child,device))rc=-1;
+            close(child);
+            if(rc||unlinkat(fd,entry->d_name,AT_REMOVEDIR)){rc=-1;break;}
+        }else if(unlinkat(fd,entry->d_name,0)){rc=-1;break;}
+    }
+    closedir(dir);return rc;
+}
+int flatpak_manager_delete_data(int uid) {
+    if(uid%100000<10000||uid%100000>19999){errno=EINVAL;return -1;}
+    int root=owned_directory("/data/matonos/linux/apps",1000);if(root<0)return -1;
+    char name[32];snprintf(name,sizeof(name),"%d",uid);
+    int app=openat(root,name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+    if(app<0){
+        int rc=-1;
+        if(errno==ENOENT){snprintf(name,sizeof(name),"%d.owner",uid);rc=unlinkat(root,name,0);if(rc&&errno==ENOENT)rc=0;}
+        close(root);return rc;
+    }
+    struct stat st;int rc=fstat(app,&st)||st.st_uid!=(uid_t)uid?-1:remove_contents(app,st.st_dev);
+    close(app);if(!rc)rc=unlinkat(root,name,AT_REMOVEDIR);
+    if(!rc){snprintf(name,sizeof(name),"%d.owner",uid);if(unlinkat(root,name,0)&&errno!=ENOENT)rc=-1;}
+    close(root);return rc;
+}
+
 /* The compositor delegates only its socket directories, never its app data root. */
 void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, int stub_uid, int stub_pid, int lifeline_fd, FlatpakResult* result) {
     struct stat directory, socket_info;
@@ -566,6 +691,9 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
             fstatat(runtime_directory_fd, "wayland-0", &socket_info, AT_SYMLINK_NOFOLLOW) ||
             !S_ISSOCK(socket_info.st_mode) || socket_info.st_uid != directory.st_uid) {
         set_error(result, "compositor socket directory is unavailable"); return;
+    }
+    if (prepare_linux_data(stub_uid,stub_pid,ref)) {
+        set_error(result,"cannot prepare verified Linux data");return;
     }
     /* Check the full installed ref rather than accepting arbitrary commands. */
     const char* info_args[] = {"--system", "info", ref};

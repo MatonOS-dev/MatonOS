@@ -76,9 +76,9 @@ sandbox. See `out/pc-logs/agents/ds-setns-result.md`.
 | `matonos_bwrap` | exec of bwrap/matonos-bwrap | user namespaces and mounts only; no app data, no binder |
 | `matonos_mount_helper` | exec of `matonos-mount-helper` | privileged outside-sandbox mounter: setns into the sandbox mount ns, mount verified code/volume; no app data, no binder |
 | `matonos_app_launch` | exec of `matonos-app-exec` | trusted-for-MLS-only launcher: verify own label/level, dyntransition to the app domain, exec the payload; no mount, no capability |
-| `matonos_flatpak_app` | dyntransition in `matonos-app-exec` | payload: verified code, its volume, its sockets, /dev/dri, execmem; zero binder |
+| `matonos_linux_app` | dyntransition in `matonos-app-exec` | payload: verified code, its volume, its sockets, /dev/dri, execmem; zero binder |
 
-Every sandbox domain (`matonos_flatpak_app`, `matonos_flatpak_run`,
+Every sandbox domain (`matonos_linux_app`, `matonos_flatpak_run`,
 `matonos_bwrap`, `matonos_app_launch`) is covered by neverallows that forbid
 all Android Binder, binder-device and service-manager access beyond the
 unavoidable stock baseline. The stock platform policy unconditionally grants
@@ -260,3 +260,22 @@ user with no wheel/sudo/admin/adm membership and no sudo/su/pkexec path.
   service variant is the alternative if linuxd should not hold the capability.
 * Device matrix in `APP-OWNERSHIP-r24.md` still applies (this change adds the
   mount/verity and domain-entry steps; the identity/cgroup work is unchanged).
+
+### linux-data implementation gate (2026-10-04)
+
+The sandbox domain rename to `matonos_linux_app` is compiled and the actual
+worktree policy passes the isolated policy rig. The per-app data layout remains
+planned. Stock `private/app_neverallows.te:194` prohibits stock untrusted app
+domains creating/unlinking a custom `matonos_linux_data_file` type. The exact
+proposed custom-label policy produced 40 neverallow failures; the existing
+0001 execution exception does not cover this rule. No additional AOSP exception
+was made. A data-only seapp selector can leave the stock process domain intact,
+but cannot resolve this file-type restriction. Implementation therefore needs
+explicit approval to extend the existing patch, or a different labeling/domain
+decision. The saved layout draft is incomplete and must not be applied as-is.
+
+### Narrowed linux-data implementation (2026-10-04)
+
+The compositor retains session socket ownership and launch directory/display arguments.
+No per-UID run directory is created. Writable state is apps/<uid>/home; vol.img
+is no longer attached. Linuxd creates the UID tree with the verified stub MLS level.

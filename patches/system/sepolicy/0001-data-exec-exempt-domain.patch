@@ -4,7 +4,7 @@ Adds the private attribute data_exec_exempt_domain and exempts it from the
 two domain.te neverallows that forbid non-app domains executing data files
 (execute only exec/system/vendor files; no execute of data_file_type).
 Nothing in AOSP carries the attribute.
-MatonOS gives it only to matonos_flatpak_app: Linux/Flatpak app sandboxes,
+MatonOS gives it only to matonos_linux_app: Linux/Flatpak app sandboxes,
 which may run code downloaded into their own app data (as on a Linux
 desktop). That domain is not an appdomain (appdomains can only be entered
 from zygote and may hold no capabilities) and has no binder. Every other
@@ -22,7 +22,7 @@ index d0c07e0e5..8ee9287af 100644
  attribute omapi_server;
 +
 +# MatonOS: non-app domains that may execute their own app data
-+# (Linux/Flatpak sandboxes, matonos_flatpak_app). Exempts them
++# (Linux/Flatpak sandboxes, matonos_linux_app). Exempts them
 +# from the two domain.te neverallows that forbid non-app domains executing
 +# data files. Nothing in AOSP carries this attribute.
 +attribute data_exec_exempt_domain;

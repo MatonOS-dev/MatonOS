@@ -328,6 +328,21 @@ final class FlatpakStubManager {
         } catch (Exception error) { return false; }
     }
 
+    private void sweepLinuxData(ILinuxd daemon) throws Exception {
+        JSONObject inventory=new JSONObject(daemon.call("linux_data_uids","{}"));
+        if(!inventory.optBoolean("ok"))return;
+        org.json.JSONArray uids=inventory.getJSONArray("uids");
+        for(int i=0;i<uids.length();i++) {
+            int uid=uids.getInt(i);
+            // PM remains authoritative, including after user/package removal.
+            // Preserve any reused UID: uncertainty must never destroy user data.
+            String[] packages=context.getPackageManager().getPackagesForUid(uid);
+            if(packages!=null && packages.length>0)continue;
+            JSONObject reply=new JSONObject(daemon.call("delete_linux_data",new JSONObject().put("uid",uid).toString()));
+            if(!reply.optBoolean("ok"))Log.w(TAG,"Linux data cleanup failed for uid "+uid);
+        }
+    }
+
     private void reconcile() {
         try {
             ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
@@ -336,6 +351,7 @@ final class FlatpakStubManager {
                 daemon.subscribe("progress", listener);
                 subscribedDaemon = daemon;
             }
+            sweepLinuxData(daemon);
             JSONObject list = new JSONObject(daemon.call("list_installed", "{}"));
             if (!list.optBoolean("ok") || list.optBoolean("outputTruncated")) return;
             Set<String> wanted = new HashSet<>();
