@@ -16,26 +16,18 @@ check them out in place of the stock projects.
 | `external/wayland` | [android_external_wayland](https://github.com/MatonOS-dev/android_external_wayland) | AOSP | 1.26.0 for wlroots |
 | `external/wayland-protocols` | [android_external_wayland-protocols](https://github.com/MatonOS-dev/android_external_wayland-protocols) | AOSP | 1.48 for wlroots |
 
-### Linux apps (Flatpak on bionic)
+### Static Flatpak stack
 
-These check out nested inside the device tree, where `linux/third_party/<name>/Android.bp`
-expects them. Each branch = upstream tag + the tested release snapshot + one commit per fix
-(see `linux/third_party/FORKS-PLAN.md`). The 13 unpatched components are listed there too.
+The Flatpak runtime is built for Alpine 3.24/musl and shipped as a static APEX
+payload. Flatpak 1.16.6 and bubblewrap 0.12.0 are the Alpine 3.24 stable
+versions selected by the user on 2026-10-05; they replace the earlier bionic
+pins for this branch.
 
 | Path | Repository | Based on | What we change |
 | --- | --- | --- | --- |
-| `linux/third_party/flatpak/upstream` | [flatpak](https://github.com/MatonOS-dev/flatpak) | fork of flatpak/flatpak `1.18.4` (local rebase pending commit) | bionic build fixes |
-| `linux/third_party/ostree/upstream` | [ostree](https://github.com/MatonOS-dev/ostree) | fork of ostreedev/ostree `v2024.5` | bionic build fixes |
-| `linux/third_party/bubblewrap/upstream` | [bubblewrap](https://github.com/MatonOS-dev/bubblewrap) | fork of containers/bubblewrap `v0.13.0` (local rebase pending commit) | bionic build fixes |
-| `linux/third_party/glib/upstream` | [glib](https://github.com/MatonOS-dev/glib) | fork of GNOME/glib `2.84.4` | bionic build fixes |
-| `linux/third_party/gnupg/upstream` | [gnupg](https://github.com/MatonOS-dev/gnupg) | fork of gpg/gnupg `gnupg-2.5.2` | bionic build fixes |
-| `linux/third_party/npth/upstream` | [npth](https://github.com/MatonOS-dev/npth) | fork of gpg/npth `npth-1.8` | bionic build fixes |
-| `linux/third_party/libgpg-error/upstream` | [libgpg-error](https://github.com/MatonOS-dev/libgpg-error) | fork of gpg/libgpg-error `libgpg-error-1.51` | bionic build fixes |
-| `linux/third_party/libfyaml/upstream` | [libfyaml](https://github.com/MatonOS-dev/libfyaml) | fork of pantoniou/libfyaml `v0.9.6` | bionic build fixes |
-| `linux/third_party/appstream/upstream` | [appstream](https://github.com/MatonOS-dev/appstream) | fork of ximion/appstream `v1.2.0` | bionic build fixes |
-
-The 13 unpatched components are plain repositories in the org holding the exact release
-snapshot we build (generated files included, no MatonOS changes): [gdk-pixbuf](https://github.com/MatonOS-dev/gdk-pixbuf), [gpgme](https://github.com/MatonOS-dev/gpgme), [json-glib](https://github.com/MatonOS-dev/json-glib), [libarchive](https://github.com/MatonOS-dev/libarchive), [libassuan](https://github.com/MatonOS-dev/libassuan), [libgcrypt](https://github.com/MatonOS-dev/libgcrypt), [libjpeg-turbo](https://github.com/MatonOS-dev/libjpeg-turbo), [libksba](https://github.com/MatonOS-dev/libksba), [liblzma](https://github.com/MatonOS-dev/liblzma), [libpng](https://github.com/MatonOS-dev/libpng), [libseccomp](https://github.com/MatonOS-dev/libseccomp), [libxmlb](https://github.com/MatonOS-dev/libxmlb), [libyaml](https://github.com/MatonOS-dev/libyaml).
+| `linux/flatpak-static` | [flatpak](https://github.com/MatonOS-dev/flatpak) | `matonos/v26.10`, `03e6b205d01c9560a829941d95065a7c683d9667` | Alpine 3.24 static Flatpak source and build inputs |
+| `linux/flatpak-static/gpgme-lite` | [DullPGP](https://github.com/MatonOS-dev/DullPGP) | MatonOS fork | Portable OpenPGP verification for the static Flatpak/OSTree executable |
+| `linux/flatpak/prebuilt/static` | [MatonOS_apexs](https://github.com/MatonOS-dev/MatonOS_apexs) | output artifact; source commit and SHA-256 are recorded beside the payload | Signed static APEX payload inputs |
 
 Changing a fork: commit on `matonos/v1.2` in the project checkout, push to its
 MatonOS-dev repository, and upstream the fix where it makes sense.
