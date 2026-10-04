@@ -41,7 +41,7 @@ exception (user, 2026-09-25; microG moved to v3 on 2026-09-26):** microG signatu
 like LineageOS (patch 0002: only microG-signed gms/vending may present Google's
 signature; no bridge involvement, user 2026-09-28); patch budget = 1. **Second
 (user, 2026-10-04):** `patches/system/sepolicy/0001` (attribute `data_exec_exempt_domain`) exempting
-`matonos_flatpak_app` (Flatpak sandboxes, non-appdomain, no binder; they may
+`matonos_linux_app` (Flatpak sandboxes, non-appdomain, no binder; they may
 run code downloaded into their own data, user 2026-10-04)
 from the two `domain.te` neverallows that forbid non-app domains executing
 data (see install/linuxd/CODE-STORAGE-r24.md). Record any other dropped

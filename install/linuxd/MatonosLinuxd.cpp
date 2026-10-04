@@ -13,6 +13,8 @@
 #include <utils/String8.h>
 
 #include "FlatpakManager.h"
+#include <dirent.h>
+#include <android-base/unique_fd.h>
 
 #include <algorithm>
 #include <cctype>
@@ -236,6 +238,23 @@ class LinuxdService final : public BnLinuxd {
             return android::binder::Status::ok();
         }
 
+        if (command == "delete_linux_data") {
+            if(!OnlyKeys(request,{"uid"}) || !request["uid"].isInt()) reply(Encode(Error("uid required")));
+            else if(flatpak_manager_delete_data(request["uid"].asInt())) reply(Encode(Error("Linux data deletion failed")));
+            else { Json::Value ok;ok["ok"]=true;reply(Encode(ok)); }
+            return android::binder::Status::ok();
+        }
+        if(command == "linux_data_uids") {
+            Json::Value out;out["ok"]=true;out["uids"]=Json::Value(Json::arrayValue);
+            DIR* dir=opendir("/data/matonos/linux/apps");
+            if(!dir) { reply(Encode(Error("Linux data inventory unavailable")));return android::binder::Status::ok(); }
+            while(auto* entry=readdir(dir)) {
+                char* end=nullptr;long uid=strtol(entry->d_name,&end,10);
+                if(*entry->d_name && (!*end || !strcmp(end,".owner")) && uid>=10000 && uid<=INT32_MAX && uid%100000<=19999 && uid%100000>=10000)
+                    out["uids"].append(static_cast<int>(uid));
+            }
+            closedir(dir);reply(Encode(out));return android::binder::Status::ok();
+        }
         std::string ref_storage;
         std::string app_id_storage;
         const char* ref = nullptr;

@@ -76,9 +76,9 @@ sandbox. See `out/pc-logs/agents/ds-setns-result.md`.
 | `matonos_bwrap` | exec of bwrap/matonos-bwrap | user namespaces and mounts only; no app data, no binder |
 | `matonos_mount_helper` | exec of `matonos-mount-helper` | privileged outside-sandbox mounter: setns into the sandbox mount ns, mount verified code/volume; no app data, no binder |
 | `matonos_app_launch` | exec of `matonos-app-exec` | trusted-for-MLS-only launcher: verify own label/level, dyntransition to the app domain, exec the payload; no mount, no capability |
-| `matonos_flatpak_app` | dyntransition in `matonos-app-exec` | payload: verified code, its volume, its sockets, /dev/dri, execmem; zero binder |
+| `matonos_linux_app` | dyntransition in `matonos-app-exec` | payload: verified code, its volume, its sockets, /dev/dri, execmem; zero binder |
 
-Every sandbox domain (`matonos_flatpak_app`, `matonos_flatpak_run`,
+Every sandbox domain (`matonos_linux_app`, `matonos_flatpak_run`,
 `matonos_bwrap`, `matonos_app_launch`) is covered by neverallows that forbid
 all Android Binder, binder-device and service-manager access beyond the
 unavoidable stock baseline. The stock platform policy unconditionally grants
@@ -190,27 +190,34 @@ new path is wired).
   zip64; to be checked on the VM.
 * **No app-to-app code sharing.** Sharing stops at runtimes/extensions.
 
-## Planned: per-app `linux/` directory; Flatpaks may run downloaded code (decided 2026-10-04)
+## Planned: per-app Linux data in `/data/matonos/linux/apps/<uid>/`; Flatpaks may run downloaded code (decided 2026-10-04)
 
-**All per-app Linux state lives in the stub's own Android data directory:**
-`<ApplicationInfo.dataDir>/linux/` (i.e. /data/user/<userId>/<stub package>/linux;
-the path always comes from PackageManager via the bridge, never computed).
-- `run/`: the session's XDG_RUNTIME_DIR content (`wayland-0`, `X11/X0`),
-  created by the stub process (StubService runs as the stub uid); the
-  listening fds go to the compositor host over binder; X display is always :0.
+**All per-app Linux state lives in `/data/matonos/linux/apps/<stub uid>/`** (user decision;
+the stub's own app data dir was rejected: our domains may not touch
+`app_data_file` dirs (`domain.te` ~1786) and untrusted apps may not create
+any other label there (`app_neverallows.te` ~194); symlinks don't help).
+- The existing `/data/matonos/linux/apps/` tree, labelled via our `file_contexts` as
+  `matonos_linux_data_file`; per-uid dirs are created by linuxd, owned by the
+  stub uid, at the stub's MLS level (set the create context explicitly).
+- Session sockets stay owned by the compositor host exactly as today (its
+  runtime/X11 dirs passed to launchOwnedFlatpak; user decision 2026-10-04
+  after the host audit) — no per-uid run/.
 - `home/`: the Flatpak app's data/home (replacing the per-app dirs under
-  /data/matonos/linux and `vol.img`); also any code
-  they download (e.g. a Steam library under their home).
-Plain `app_data_file` at the stub's MLS level: only that app can touch it, and
-Android handles multi-user, clear-data, uninstall and storage accounting.
-Stubs set `allowBackup=false`. Not `code_cache/` (cleared on app update).
+  /data/matonos/linux and `vol.img`), including any code it downloads.
+- Lifecycle: the bridge's stub reconcile (FlatpakStubManager) asks linuxd to
+  delete `/data/matonos/linux/apps/<uid>` when the stub is removed (also on user removal);
+  linuxd sweeps orphans at boot. Per-user automatically (uid encodes the user).
+- Storage accounting: tag the tree with the app's filesystem project ID
+  (`FS_IOC_FSSETXATTR`, inherit flag) so Android counts it as the app's data —
+  verify the Android 17 project-ID scheme first.
+- Not credential-encrypted per app (/data itself is encrypted).
 
-**Flatpaks may download and run code in their own `linux/` by default**
+**Flatpaks may download and run code in their own `/data/matonos/linux/apps/<uid>` by default**
 (user decision 2026-10-04: Linux apps have no concept of a permission for
 this, and on a Linux desktop an app can always run files from its home).
-There is ONE sandbox domain, `matonos_flatpak_app`: a non-appdomain with no
+There is ONE sandbox domain, `matonos_linux_app` (renamed from matonos_flatpak_app): a non-appdomain with no
 binder that may execute (execute, execute_no_trans, map) its own
-`app_data_file`, i.e. its stub's `linux/` tree at the stub's MLS level. No
+`matonos_linux_data_file` tree (`/data/matonos/linux/apps/<uid>`, at the stub's MLS level). No
 WRITABLE_CODE permission, no second domain, no prompt. Never `execmod`; never
 write to any exec type. Containment stays: own uid, own MLS level, no binder,
 only its own directory. Verified code images (APK-carried) are still how
@@ -260,3 +267,22 @@ user with no wheel/sudo/admin/adm membership and no sudo/su/pkexec path.
   service variant is the alternative if linuxd should not hold the capability.
 * Device matrix in `APP-OWNERSHIP-r24.md` still applies (this change adds the
   mount/verity and domain-entry steps; the identity/cgroup work is unchanged).
+
+### linux-data implementation gate (2026-10-04)
+
+The sandbox domain rename to `matonos_linux_app` is compiled and the actual
+worktree policy passes the isolated policy rig. The per-app data layout remains
+planned. Stock `private/app_neverallows.te:194` prohibits stock untrusted app
+domains creating/unlinking a custom `matonos_linux_data_file` type. The exact
+proposed custom-label policy produced 40 neverallow failures; the existing
+0001 execution exception does not cover this rule. No additional AOSP exception
+was made. A data-only seapp selector can leave the stock process domain intact,
+but cannot resolve this file-type restriction. Implementation therefore needs
+explicit approval to extend the existing patch, or a different labeling/domain
+decision. The saved layout draft is incomplete and must not be applied as-is.
+
+### Narrowed linux-data implementation (2026-10-04)
+
+The compositor retains session socket ownership and launch directory/display arguments.
+No per-UID run directory is created. Writable state is apps/<uid>/home; vol.img
+is no longer attached. Linuxd creates the UID tree with the verified stub MLS level.

@@ -190,3 +190,71 @@ Optional local kernel hook (not run in phase 1): compile
 `-pthread`. On a disposable authorized target it creates one pad owned by
 UID 10000, prints its node, logs FF callbacks, and destroys it on Enter.
 This is a local C hook, not a socket protocol or Android vibrator relay.
+
+## linux-data task, 2026-10-04 (narrowed scope)
+
+The sandbox domain is `matonos_linux_app`. Persistent writable state uses the
+existing `/data/matonos/linux/apps/<stub uid>/home` path, labelled
+`matonos_linux_data_file` with the verified stub's MLS categories. Linuxd
+creates the UID tree and home using component-wise openat/O_NOFOLLOW walking,
+0700 mode and stub UID/GID ownership. The existing system-owned `<uid>.owner`
+record is retained to reject reuse by a different Flatpak. The wrapper checks
+ownership and uses home for HOME, user data and cache; bwrap binds that home.
+The mount helper no longer attaches vol.img. Shared repo/cache/store paths stay
+in place. Dev images need no migration: reset userdata for an older layout;
+existing wrongly labelled directories fail closed rather than being relabelled.
+
+Display/socket ownership, Wayland relays, Xwayland handling and the launch AIDL
+arguments are restored to the baseline. No per-UID run directory is created.
+The compositor sources and both ILinuxd copies have no diff. The only retained
+FlatpakManager/MatonosLinuxd launch-path edit prepares the verified data tree;
+no compositor listener FD handoff remains.
+
+Project IDs use the checked-out installd formula `uid - 10000 + 50000`:
+`frameworks/native/cmds/installd/utils.cpp:438-440`,
+`InstalldNativeService.cpp:866-876`, and
+`system/core/libcutils/include/private/android_projectid_config.h:54`.
+`frameworks/base/core/java/android/os/storage/StorageManager.java:2420` documents
+matching native ID ranges; `:2502-2504` adds the per-user range. Vold uses
+FSGETXATTR/FSSETXATTR in `system/vold/Utils.cpp:240-265` and the analogous
+UID-offset external-data scheme at `:395-410`. Linuxd sets the app ID and
+PROJINHERIT before chown on newly created directories. Unsupported/failed
+quota ioctls log a warning and never block boot or app launch. Existing files
+are not recursively retagged; actual StorageStats accounting requires a fresh
+image test on a project-quota filesystem.
+
+The bridge's startup/periodic reconcile inventories numeric UID directories
+through linuxd and requests deletion when PackageManager reports no packages
+for that UID. Package/user removal therefore converges on the same cleanup.
+Reused UIDs are conservatively retained; the owner record rejects reuse by a
+different Flatpak. Deletion walks FDs, never follows symlinks, and refuses a
+child directory on another device. Cleanup failure is logged and retried.
+
+Policy permits only the Linux app domain to execute this data type, denies
+all appdomain access, and keeps the existing sandbox Binder neverallows plus
+its mandatory seccomp Binder ioctl rejection. Stock domain.te grants a minimal
+Binder baseline to all domains; our private policy cannot subtract it. Do not
+claim a literal SELinux-only denial of every Binder operation.
+
+Validation: full policy rig PASS with fresh platform CIL, both neverallow
+checks and merged secilc without -N; build-native.sh PASS; freshly generated
+bridge AIDL + bridge/stubgen javac PASS; linuxd C/C++ and AIDL object compile
+PASS; NDK bwrap and mount-helper compile/link PASS. No compositor Gradle build
+is required because its files were restored. Preflight fails only on 19 missing
+worktree APK imports and the approved 0001 patch absent from its filename
+allowlist. No shared image build or fresh QEMU test is claimed.
+
+Real-hardware tests (after coordinator rebuild):
+1. Boot a fresh enforcing QEMU image on an owned 5556+ port, disable sleep idle,
+   run check-selinux-labels.sh on the image and verify normal boot completion.
+2. Launch signed Wayland and X11 stubs; confirm the original compositor sockets
+   and display selection, plus UID-owned 0700 home with the stub MLS categories.
+3. Download a small executable into home: execution/map succeeds only in the
+   Linux sandbox; the stub and unrelated apps cannot access it. Verify Binder
+   rejection and no execmod. Test two stubs and a secondary user for isolation.
+4. Uninstall a stub and remove a user; wait for reconcile and verify UID tree
+   and owner-record deletion. Reinstall and confirm no stale data. Exercise
+   symlink/foreign-owner/wrong-label rejection without affecting normal boot.
+5. Compare project IDs and StorageStats on a quota-capable filesystem, then
+   repeat steps 2-4 on Ryzen 5800X/RX6600/Intel7265, Surface Pro 3 and HP ProDesk
+   600 G1. These runtime tests remain outstanding; no kernel change is needed.

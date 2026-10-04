@@ -26,7 +26,7 @@
 /sys/devices(/[^/]+)*/[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-Fa-f]+/uevent -- u:object_r:sysfs_matonos_input:s0
 /sys/devices/virtual/misc/uinput/dev -- u:object_r:sysfs_matonos_input:s0
 
-/data/matonos/linux/apps/[0-9]+(/.*)? u:object_r:matonos_flatpak_app_data_file:s0
+/data/matonos/linux/apps/[0-9]+(/.*)? u:object_r:matonos_linux_data_file:s0
 /data/matonos/linux/flatpak(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
 /data/matonos/linux/runtime(/.*)? u:object_r:matonos_flatpak_socket_file:s0
 /data/matonos/linux/(machine-id|udev)(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
