@@ -460,8 +460,9 @@ Feature work continues, but in this shape from now on.
     optional app-owned writable+executable volume (sparse ext4 image on
     /data, grown/trimmed on demand, same per-app label), gated by a runtime
     permission prompt; never writable access to the app's code image.
-  - Runtimes and extensions: one shared runtime store owned by the base Linux
-    host app — a sparse, growable image (OSTree dedup kept), executable by
+  - Runtimes and extensions: one shared runtime store owned by the base app —
+    the Wayland compositor host (MatonWaylandHost, org.matonos.compositor),
+    which every stub inherits from (uses-library) — a sparse, growable image (OSTree dedup kept), executable by
     every app sandbox domain, writable only by the installer domain.
   - Domains: linuxd → installer domain (only writer of code/runtime stores);
     flatpak run in its own narrow domain → exec of bwrap transitions to the
