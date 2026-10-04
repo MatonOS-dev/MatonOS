@@ -8,9 +8,10 @@ import java.util.concurrent.TimeUnit;
 /** One native broker, owned and reaped by the compositor Wayland session. */
 final class SessionBus implements AutoCloseable {
     private final Process process;
+    final JavaPortal portals;
     private final File socket, control, policy;
 
-    SessionBus(android.content.Context context, File directory, String ref) throws Exception {
+    SessionBus(android.content.Context context, File directory, String ref, java.util.function.Consumer<Boolean> changed, JavaPortal.Launcher launcher) throws Exception {
         File executable = new File(context.getApplicationInfo().nativeLibraryDir,
                 "libmatonos-dbus-broker.so");
         if (!executable.isFile() || !executable.canExecute())
@@ -28,11 +29,13 @@ final class SessionBus implements AutoCloseable {
             out.write(("own " + app + "\ntalk org.freedesktop.portal.Flatpak\ntalk org.freedesktop.portal.Desktop\ntalk org.freedesktop.Flatpak\n").getBytes(StandardCharsets.UTF_8));
         }
         android.system.Os.chmod(policy.getAbsolutePath(), 0600);
+        portals=new JavaPortal(context,directory,changed,launcher);
         ProcessBuilder builder = new ProcessBuilder(executable.getAbsolutePath(),
                 socket.getAbsolutePath(), policy.getAbsolutePath(), "--host-session");
+        builder.environment().put("MATON_PORTAL_SECRET",portals.secret());
         builder.redirectError(ProcessBuilder.Redirect.appendTo(new File(directory, "bus.log")));
         try { process = builder.start(); }
-        catch (Exception error) { policy.delete(); throw error; }
+        catch (Exception error) { portals.close(); policy.delete(); throw error; }
         FutureTask<String> ready = new FutureTask<>(() -> {
             try (java.io.BufferedReader reader = new java.io.BufferedReader(
                     new java.io.InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
@@ -49,6 +52,7 @@ final class SessionBus implements AutoCloseable {
     }
     boolean isAlive() { return process.isAlive(); }
     @Override public void close() {
+        portals.close();
         process.destroy();
         try {
             if (!process.waitFor(2, TimeUnit.SECONDS)) { process.destroyForcibly(); process.waitFor(); }

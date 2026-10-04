@@ -97,7 +97,7 @@ public final class CompositorService extends Service {
     }
 
     private boolean sessionInhibited() {
-        for(EmbeddedSession session:sessions.values())if(session.inhibit.isHeld())return true;
+        for(EmbeddedSession session:sessions.values())if(session.bus.portals.isHeld())return true;
         return false;
     }
 
@@ -176,7 +176,7 @@ public final class CompositorService extends Service {
                     }
                     if (session.uid != uid) throw new SecurityException("Session belongs to another UID");
                     session.listeners.register(listener);
-                    listener.onInhibitChanged(session.inhibit.isHeld());
+                    listener.onInhibitChanged(session.bus.portals.isHeld());
                     session.ensureXwayland();
                     return session;
                 }
@@ -192,7 +192,6 @@ public final class CompositorService extends Service {
         final java.io.File directory;
         final java.util.concurrent.ConcurrentHashMap<Integer, int[]> windows = new java.util.concurrent.ConcurrentHashMap<>();
         final android.os.RemoteCallbackList<IEmbeddedWindowListener> listeners = new android.os.RemoteCallbackList<>();
-        final InhibitSocket inhibit;
         final SessionBus bus;
         boolean standalone;
         volatile String x11Display;
@@ -202,11 +201,9 @@ public final class CompositorService extends Service {
             directory=new java.io.File(getFilesDir(),"wayland/s"+id);
             if (!directory.isDirectory() && !directory.mkdirs()) throw new java.io.IOException("Cannot create application socket directory");
             android.system.Os.chmod(directory.getAbsolutePath(),0711);
-            inhibit=new InhibitSocket(CompositorService.this,directory,this::inhibited);
-            try { bus=new SessionBus(CompositorService.this,directory,ref); }
-            catch(Exception error) { inhibit.close(); throw error; }
+            bus=new SessionBus(CompositorService.this,directory,ref,this::inhibited,this::openUri);
             if (!nativeAddSession(id,new java.io.File(directory,"wayland-0").getAbsolutePath())) {
-                bus.close();inhibit.close();
+                bus.close();
                 throw new java.io.IOException("Cannot create application Wayland socket");
             }
         }
@@ -223,6 +220,25 @@ public final class CompositorService extends Service {
         private void checkWindow(int window) {
             check();
             if (!windows.containsKey(window)) throw new SecurityException("Window belongs to another session");
+        }
+        boolean openUri(Intent intent) throws Exception {
+            // URI grants must reach the verified stub before it launches the
+            // handler from its own activity/task. Existing bridge checks still
+            // authenticate the session; this callback has no privileged API.
+            android.net.Uri grant=intent.getData();
+            if(grant==null && intent.getClipData()!=null && intent.getClipData().getItemCount()>0)grant=intent.getClipData().getItemAt(0).getUri();
+            if(grant!=null && "content".equals(grant.getScheme())) {
+                String[] packages=getPackageManager().getPackagesForUid(uid);
+                if(packages!=null)for(String pkg:packages)grantUriPermission(pkg,grant,intent.getFlags() &
+                    (Intent.FLAG_GRANT_READ_URI_PERMISSION|Intent.FLAG_GRANT_WRITE_URI_PERMISSION));
+            }
+            synchronized(listeners) {
+                int count=listeners.beginBroadcast();
+                try {for(int i=count-1;i>=0;i--)try {if(listeners.getBroadcastItem(i).openUri(intent))return true;}catch(android.os.RemoteException ignored){} }
+                finally {listeners.finishBroadcast();}
+            }
+            try {startActivity(new Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));return true;}
+            catch(android.content.ActivityNotFoundException e){return false;}
         }
         void inhibited(boolean active) {
             if(standalone)sendBroadcast(new Intent(ACTION_INHIBIT).setPackage(getPackageName()).putExtra("active",sessionInhibited()));
@@ -299,7 +315,7 @@ public final class CompositorService extends Service {
         return "org.matonos.compositor.EMBEDDED".equals(intent.getAction()) ? embedded : binder;
     }
     @Override public void onDestroy() {
-        for(EmbeddedSession session:sessions.values()) {session.inhibit.close();session.bus.close();}
+        for(EmbeddedSession session:sessions.values()) {session.bus.close();}
         nativeStop(); super.onDestroy();
     }
 }

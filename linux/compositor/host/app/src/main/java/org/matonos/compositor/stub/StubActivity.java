@@ -31,6 +31,15 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     private Surface surface;
     private IEmbeddedSession session;
     private final IEmbeddedWindowListener listener = new IEmbeddedWindowListener.Stub() {
+        public boolean openUri(Intent intent) {
+            java.util.concurrent.FutureTask<Boolean> task=new java.util.concurrent.FutureTask<>(() -> {
+                if(destroyed || isFinishing())return false;
+                try {startActivity(intent);return true;}catch(android.content.ActivityNotFoundException|SecurityException e){return false;}
+            });
+            runOnUiThread(task);
+            try {return task.get(4,java.util.concurrent.TimeUnit.SECONDS);}
+            catch(Exception e){task.cancel(false);return false;}
+        }
         public void onWindowOpened(int id, int width, int height) {
             runOnUiThread(() -> {
                 if (destroyed || window == id) return;
