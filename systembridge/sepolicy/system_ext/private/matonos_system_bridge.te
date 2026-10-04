@@ -75,6 +75,7 @@ allow matonos_linuxd matonos_compositor:unix_stream_socket connectto;
 allow matonos_compositor matonos_linuxd:fd use;
 allow matonos_compositor matonos_linuxd_tmpfs:file { getattr read write map };
 
-# The APK session broker executes without transition from nativeLibraryDir.
+# The APK session broker executes without transition: updates use nativeLibraryDir,
+# while the image extracts its APK copy to /system_ext/bin/matonos-apk-session-broker.
 # app_domain supplies appdomain: stock app.te grants apk_data_file and
 # system_file x_file_perms (including execute_no_trans); no extra grant needed.

@@ -11,8 +11,14 @@ final class SessionBus implements AutoCloseable {
     private final File socket, control, policy;
 
     SessionBus(android.content.Context context, File directory, String ref) throws Exception {
-        File executable = new File(context.getApplicationInfo().nativeLibraryDir,
-                "libmatonos-dbus-broker.so");
+        android.content.pm.ApplicationInfo appInfo = context.getApplicationInfo();
+        // PM never extracts the bundled system APK. The image build extracts
+        // its broker from that APK into an executable system_file path. Updates
+        // must use their own extracted broker; never mix in the image version.
+        boolean bundled = (appInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
+                && (appInfo.flags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
+        File executable = bundled ? new File("/system_ext/bin/matonos-apk-session-broker")
+                : new File(appInfo.nativeLibraryDir, "libmatonos-dbus-broker.so");
         if (!executable.isFile() || !executable.canExecute())
             throw new java.io.IOException("APK session broker is missing or not executable: " + executable);
         if (!ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"))
