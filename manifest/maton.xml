@@ -48,47 +48,11 @@
        device tree where linux/third_party/<name>/Android.bp expects them -->
   <project path="device/maton/pc_x86_64/linux/third_party/flatpak/upstream" name="flatpak"
            remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/ostree/upstream" name="ostree"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/bubblewrap/upstream" name="bubblewrap"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/glib/upstream" name="glib"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/gnupg/upstream" name="gnupg"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/npth/upstream" name="npth"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libgpg-error/upstream" name="libgpg-error"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libfyaml/upstream" name="libfyaml"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/appstream/upstream" name="appstream"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <!-- Linux apps: unmodified release snapshots (tested tarballs incl. generated files) -->
-  <project path="device/maton/pc_x86_64/linux/third_party/gdk-pixbuf/upstream" name="gdk-pixbuf"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/gpgme/upstream" name="gpgme"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/json-glib/upstream" name="json-glib"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libarchive/upstream" name="libarchive"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libassuan/upstream" name="libassuan"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libgcrypt/upstream" name="libgcrypt"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libjpeg-turbo/upstream" name="libjpeg-turbo"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libksba/upstream" name="libksba"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/liblzma/upstream" name="liblzma"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libpng/upstream" name="libpng"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libseccomp/upstream" name="libseccomp"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libxmlb/upstream" name="libxmlb"
-           remote="matonos-dev" revision="matonos/v1.2" />
-  <project path="device/maton/pc_x86_64/linux/third_party/libyaml/upstream" name="libyaml"
-           remote="matonos-dev" revision="matonos/v1.2" />
+  <!-- The other bionic-Flatpak forks/snapshots (ostree, bubblewrap, glib,
+       gnupg, npth, libgpg-error, libfyaml, appstream, gdk-pixbuf, gpgme,
+       json-glib, libarchive, libassuan, libgcrypt, libjpeg-turbo, libksba,
+       liblzma, libpng, libseccomp, libxmlb, libyaml) were deleted on GitHub
+       (2026-10-04): the static musl Flatpak stack (MatonOS-dev/matonos-flatpak)
+       replaces them. Existing local checkouts keep the current image building
+       until integration; do not delete them before then. -->
 </manifest>
