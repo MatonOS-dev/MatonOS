@@ -176,8 +176,15 @@ void PublishCompletion(const FlatpakResult& result) {
 
 bool IsTrustedCaller() {
     android::IPCThreadState* state = android::IPCThreadState::self();
-    return android::PermissionCache::checkPermission(android::String16("org.matonos.permission.SYSTEM_BRIDGE"),
-            state->getCallingPid(), state->getCallingUid());
+    if (!android::PermissionCache::checkPermission(android::String16("org.matonos.permission.SYSTEM_BRIDGE"),
+            state->getCallingPid(), state->getCallingUid())) return false;
+    // All operations must pass through the bridge's certificate/target gate.
+    android::sp<android::IPermissionController> permissions =
+            android::interface_cast<android::IPermissionController>(
+                    android::defaultServiceManager()->checkService(android::String16("permission")));
+    int bridgeUid = permissions ? permissions->getPackageUid(
+            android::String16("org.matonos.systembridge"), 0) : -1;
+    return bridgeUid >= 0 && state->getCallingUid() == static_cast<uid_t>(bridgeUid);
 }
 
 void OnProgress(const char* line, void*) {
@@ -206,15 +213,6 @@ class LinuxdService final : public BnLinuxd {
             bool gameControllers,
             android::String16* aidl_return) override {
         if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
-        // Only the bridge may attest a stub's runtime grant. SYSTEM_BRIDGE is
-        // also held by other privileged clients; it alone cannot authorize this flag.
-        android::sp<android::IPermissionController> permissions =
-                android::interface_cast<android::IPermissionController>(
-                        android::defaultServiceManager()->checkService(android::String16("permission")));
-        int bridgeUid = permissions ? permissions->getPackageUid(
-                android::String16("org.matonos.systembridge"), 0) : -1;
-        if (bridgeUid < 0 || android::IPCThreadState::self()->getCallingUid() != static_cast<uid_t>(bridgeUid))
-            return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         FlatpakResult result = {};
         flatpak_manager_launch_graphical(ToUtf8(ref).c_str(), runtimeDirectory.get(), ToUtf8(dnsServers).c_str(), x11Directory ? x11Directory->get() : -1, x11Display ? ToUtf8(*x11Display).c_str() : nullptr, gameControllers, &result);
         *aidl_return = android::String16(Encode(EncodeResult(result)).c_str());

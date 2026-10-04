@@ -2,6 +2,7 @@
 #include <android/log.h>
 #include "FlatpakManager.h"
 #include "UdevDatabase.h"
+#include "GtkSettings.h"
 
 #include <errno.h>
 #include <dirent.h>
@@ -586,65 +587,19 @@ static void deny_host_tmp(void) {
  * buttons. Only the gtk-decoration-layout key is set; other app settings in
  * the sandbox's settings.ini survive. Best effort: a failure keeps the app's
  * own buttons rather than blocking the launch. */
-static int make_directory_chain(char* path) {
-    for (char* p = path + 1; *p; ++p) {
-        if (*p != '/') continue;
-        *p = '\0'; int failed = mkdir(path, 0700) && errno != EEXIST; *p = '/';
-        if (failed) return -1;
-    }
-    return mkdir(path, 0700) && errno != EEXIST ? -1 : 0;
-}
-static void set_gtk_settings_key(const char* directory) {
-    static const char key[] = "gtk-decoration-layout";
-    static const char line[] = "gtk-decoration-layout=:\n";
-    char dir[512], path[600], old[8192] = {0}, out[8192 + sizeof(line) + 16];
-    snprintf(dir, sizeof(dir), "%s", directory);
-    if (make_directory_chain(dir)) return;
-    snprintf(path, sizeof(path), "%s/settings.ini", directory);
-    int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    size_t length = 0;
-    if (fd >= 0) {
-        ssize_t got;
-        while (length < sizeof(old) - 1 && (got = read(fd, old + length, sizeof(old) - 1 - length)) > 0) length += (size_t)got;
-        close(fd);
-        if (length == sizeof(old) - 1) return;  /* unexpectedly large: leave it alone */
-    }
-    size_t n = 0; int done = 0, in_settings = 0;
-    for (char* cursor = old; *cursor; ) {
-        char* end = strchr(cursor, '\n'); size_t len = end ? (size_t)(end - cursor) + 1 : strlen(cursor);
-        if (cursor[0] == '[') {
-            if (in_settings && !done) { memcpy(out + n, line, sizeof(line) - 1); n += sizeof(line) - 1; done = 1; }
-            in_settings = !strncmp(cursor, "[Settings]", 10);
-        }
-        if (in_settings && !strncmp(cursor, key, sizeof(key) - 1) &&
-                strchr(" \t=", cursor[sizeof(key) - 1])) {
-            if (!done) { memcpy(out + n, line, sizeof(line) - 1); n += sizeof(line) - 1; done = 1; }
-        } else {
-            memcpy(out + n, cursor, len); n += len;
-            if (!end && len) out[n++] = '\n';
-        }
-        cursor += len;
-    }
-    if (!done && in_settings) { memcpy(out + n, line, sizeof(line) - 1); n += sizeof(line) - 1; done = 1; }
-    if (!done) n += (size_t)snprintf(out + n, sizeof(out) - n, "%s[Settings]\n%s", n ? "\n" : "", line);
-    char temporary[620];
-    snprintf(temporary, sizeof(temporary), "%s.matonos", path);
-    fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
-    if (fd < 0) return;
-    int ok = write(fd, out, n) == (ssize_t)n;
-    close(fd);
-    if (!ok || rename(temporary, path)) unlink(temporary);
-}
 static void hide_toolkit_window_buttons(const char* ref) {
     const char* id = ref + 4; const char* slash = strchr(id, '/');
     if (!slash) return;
     static const char* const versions[] = {"gtk-3.0", "gtk-4.0"};
+    int rootfd = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (rootfd < 0) return;
     for (size_t i = 0; i < 2; ++i) {
         char directory[512];
-        snprintf(directory, sizeof(directory), "/data/matonos/linux/flatpak-data/.var/app/%.*s/config/%s",
+        int n = snprintf(directory, sizeof(directory), "data/matonos/linux/flatpak-data/.var/app/%.*s/config/%s",
                 (int)(slash - id), id, versions[i]);
-        set_gtk_settings_key(directory);
+        if (n > 0 && n < (int)sizeof(directory)) set_gtk_settings_key(rootfd, directory);
     }
+    close(rootfd);
 }
 
 /* Exact Context/devices tokens; no app-specific policy or override files. */
@@ -846,12 +801,14 @@ static void read_desktop_entry(const char* ref, FlatpakResult* result) {
         free(child.output); set_error(result, "invalid application location"); return;
     }
     char root[4096], resolved[4096];
-    if (!realpath(child.output, root) || !realpath(path, resolved) ||
+    if (!realpath(child.output, root) ||
+            strncmp(root, "/data/matonos/linux/flatpak/app/", strlen("/data/matonos/linux/flatpak/app/")) ||
+            !realpath(path, resolved) ||
             strncmp(resolved, root, strlen(root)) != 0 || resolved[strlen(root)] != '/') {
         free(child.output); set_error(result, "desktop entry must remain inside its installed deployment"); return;
     }
     free(child.output);
-    FILE* file = fopen(resolved, "re");
+    FILE* file = safe_fopen_absolute(resolved);
     if (!file) { set_error(result, "installed application has no exported desktop entry"); return; }
     // Localized desktop entries (for example Firefox) exceed the CLI log limit.
     const size_t desktop_limit = 128 * 1024;
@@ -874,7 +831,8 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
     if (!location.output || location.truncated) { free(location.output); set_error(result,"invalid deployment location"); return; }
     location.output[strcspn(location.output,"\r\n")] = 0;
     char root[4096];
-    if (strncmp(location.output,"/data/matonos/linux/flatpak/app/",strlen("/data/matonos/linux/flatpak/app/")) || !realpath(location.output,root)) {
+    if (strncmp(location.output,"/data/matonos/linux/flatpak/app/",strlen("/data/matonos/linux/flatpak/app/")) || !realpath(location.output,root) ||
+            strncmp(root,"/data/matonos/linux/flatpak/app/",strlen("/data/matonos/linux/flatpak/app/"))) {
         free(location.output); set_error(result,"invalid deployment location"); return;
     }
     free(location.output);
@@ -887,7 +845,7 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
         if (strncmp(resolved,root,strlen(root)) || resolved[strlen(root)]!='/') continue;
         struct stat metadata;
         if (stat(resolved,&metadata) || !S_ISREG(metadata.st_mode) || metadata.st_size<8 || metadata.st_size>256*1024) continue;
-        file=fopen(resolved,"re"); if (file) break;
+        file=safe_fopen_absolute(resolved); if (file) break;
     }
     /* appstream-compose writes flatpak-context PNGs into every deployment it
      * processed; apps exporting only SVG (Brave) still have icons here. */
@@ -899,7 +857,7 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
             if (strncmp(resolved,root,strlen(root)) || resolved[strlen(root)]!='/') continue;
             struct stat metadata;
             if (stat(resolved,&metadata) || !S_ISREG(metadata.st_mode) || metadata.st_size<8 || metadata.st_size>256*1024) continue;
-            file=fopen(resolved,"re");
+            file=safe_fopen_absolute(resolved);
         }
     }
     /* AppStream supplies PNG thumbnails when an app exports only SVG. */
@@ -911,7 +869,7 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
             memcpy(app_id,ref+4,app_length);app_id[app_length]=0;
             for(size_t i=0;i<app_length;i++)if(app_id[i]=='.')app_id[i]='/';
             int length=snprintf(media,sizeof(media),"%s/files/share/app-info/media/%s",root,app_id);
-            DIR* directory=length>0 && length<(int)sizeof(media) ? opendir(media) : NULL;
+            DIR* directory=length>0 && length<(int)sizeof(media) ? safe_opendir_absolute(media) : NULL;
             if(directory) {
                 struct dirent* entry;unsigned visited=0;
                 while(!file && visited++<256 && (entry=readdir(directory))) {
@@ -923,7 +881,7 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
                         if(strncmp(resolved,root,strlen(root)) || resolved[strlen(root)]!='/')continue;
                         struct stat metadata;
                         if(stat(resolved,&metadata)||!S_ISREG(metadata.st_mode)||metadata.st_size<8||metadata.st_size>256*1024)continue;
-                        file=fopen(resolved,"re");if(file)break;
+                        file=safe_fopen_absolute(resolved);if(file)break;
                     }
                 }
                 closedir(directory);
@@ -934,14 +892,15 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
         char metadata_root[4096];
         const char* arch_end=strchr(end+1,'/');
         const char* thumbnails[]={"128x128","64x64"};
-        if (arch_end && realpath("/data/matonos/linux/flatpak/appstream/flathub",metadata_root)) {
+        if (arch_end && realpath("/data/matonos/linux/flatpak/appstream/flathub",metadata_root) &&
+                !strncmp(metadata_root,"/data/matonos/linux/flatpak/appstream/",strlen("/data/matonos/linux/flatpak/appstream/"))) {
             for(size_t i=0;i<2;++i) {
                 int length=snprintf(path,sizeof(path),"%s/%.*s/active/icons/%s/%.*s.png",metadata_root,(int)(arch_end-end-1),end+1,thumbnails[i],(int)(end-ref-4),ref+4);
                 if(length<0 || length>=(int)sizeof(path) || !realpath(path,resolved))continue;
                 if(strncmp(resolved,metadata_root,strlen(metadata_root)) || resolved[strlen(metadata_root)]!='/')continue;
                 struct stat metadata;
                 if(stat(resolved,&metadata) || !S_ISREG(metadata.st_mode) || metadata.st_size<8 || metadata.st_size>256*1024)continue;
-                file=fopen(resolved,"re");if(file)break;
+                file=safe_fopen_absolute(resolved);if(file)break;
             }
         }
     }
