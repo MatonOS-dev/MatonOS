@@ -135,60 +135,40 @@ linuxd).
   `code.img` (atomic swap). This mirrors ChromeOS and keeps the neverallows
   intact.
 
-## Planned: images carried in APKs (decided 2026-10-04)
+## Planned: code as plain files under `apps/<uid>/opt`, signed by stubs (decided 2026-10-04)
 
-Flatpaks are installed the way Android installs APKs: the verified code
-images live INSIDE Android packages, and PackageManager does staging,
-signature verification, atomic commit, updates, uninstall, dependency
-tracking and storage accounting. We write no store, declaration, digest or
-GC code of our own. This replaces the shared `runtime.img`, the per-app
-`code.img` store files and the attach records above (they stay until the
-new path is wired).
+Supersedes "images carried in APKs" (erofs images in APK entries, zip reader
+and loop setup in the mount helper) — retired. Kept: stub generation,
+static-library runtime stubs, the bridge's runtime-before-app install order.
 
-* **Install flow.** The glibc Flatpak installer (APEX
-  `com.matonos.flatpak.glibc`, called only by MatonWaylandHost) pulls with
-  `flatpak install --no-deploy`. Each commit becomes an erofs image via
-  `ostree export <commit> | mkfs.erofs --tar` (no deployment, no hardlinks).
-  The system bridge wraps the image into an APK signed with the per-device stub
-  key (Android Keystore, as stubs are today) and installs it through a
-  `PackageInstaller` session. The Wayland app does exported `.desktop`/icon
-  work from the image; triggers are not run.
-* **Packages.**
-  - App: the stub APK (`hasCode=false`) carries `matonos/code.erofs`.
-  - Runtime/extension: a static shared library APK
-    (`<static-library name="<ref>" version="<n>">`) carrying
-    `matonos/runtime.erofs`. App stubs declare `<uses-static-library>` (same
-    certificate), so PackageManager installs runtimes first, refuses to
-    uninstall one still in use, and may prune unused ones under storage
-    pressure.
-  - `apply_extra`: an `extra` split APK of the app's package carrying
-    `matonos/extra.erofs` (see below).
-* **Image entries.** Stored (no compression), 4096-byte aligned
-  (`zipalign -p`, `setAlignmentPreserved(true)`), so they can be loop-mounted
-  in place. The APK signature (v2/v3) covers the whole file, including the
-  image. fs-verity on the APK is a later hardening step.
-* **Mounting.** linuxd gets each package's `codePath` from PackageManager via
-  the bridge (the trusted record; nothing from the app). `matonos-mount-helper`
-  opens the APK with no symlink resolution under `/data/app`, checks owner
-  and label (`apk_data_file`), finds the entry in the zip central directory,
-  rejects it unless stored and aligned, then `LOOP_CONFIGURE`s a read-only,
-  autoclear loop device from that same fd with offset + size limit and mounts
-  it: code -> `/app` (`matonos_app_code_exec:<app level>`), extra ->
-  `/app/extra` (same), runtime -> `/usr` (`matonos_runtime_exec:s0`).
-* **Updates/uninstall.** A new APK version = new code path; running sandboxes
-  keep the old file mounted until they exit (kernel keeps it alive). Uninstall
-  removes everything; app data (`vol.img`, Flatpak data dir) is removed with
-  the stub.
-* **`apply_extra`.** After the code APK is installed: download extra data,
-  check sizes/SHA-256 from the commit metadata, run the app's `apply_extra`
-  through the normal launch chain as the app (no network, downloads bound
-  in) writing into a scratch writable image mounted at `/app/extra` as data
-  (never executable while writable), unmount, `mkfs.erofs` the result and
-  install it as the `extra` split. App updates rerun it.
-* **Costs.** Wrapping copies the image into the APK and signing hashes the
-  whole file (seconds per GB, double disk transiently). Multi-GB images need
-  zip64; to be checked on the VM.
-* **No app-to-app code sharing.** Sharing stops at runtimes/extensions.
+* **Layout.** Every stub — app or runtime — owns
+  `/data/matonos/linux/apps/<stub uid>/`:
+  - `opt/`: the Flatpak deployment files (app: `files/`, `metadata`, exports,
+    `extra/`; runtime: its `files/`). Label `matonos_linux_code_file`
+    (data_file_type): written only by linuxd's publish step, read/execute for
+    `matonos_linux_app`, never writable by any app. Bound read-only at `/app`
+    (app) or `/usr` (runtime) — plain bind mounts, no images or loop devices.
+  - `home/` (app stubs): the app's writable data (`matonos_linux_data_file`).
+  App trees use the app's MLS level; runtime `opt/` trees are labelled `s0` so
+  every app can read them (the runtime stub's own level does not apply).
+* **Stubs are the signed record.** App stubs and runtime stubs (runtime =
+  static-library stub, `<static-library name=<ref> version=<n>>`, app stubs
+  `<uses-static-library>`) carry the OSTree commit checksum of their content in
+  the manifest, signed with the per-device stub key held by the bridge.
+* **Install = check, then publish.** The glibc installer (APEX
+  `com.matonos.flatpak.glibc`) pulls and checks out into a staging dir only.
+  linuxd verifies the staged tree against the commit checksum from the
+  installed, signature-verified stub, then atomically renames it to `opt/`
+  (update: `opt.new` -> `opt`). An exploited installer can only stage content
+  that fails the check. Verified once at publish; no per-launch re-hash.
+* **Lifecycle.** PackageManager refuses to uninstall a runtime stub still
+  declared by installed apps. Stub removal triggers the bridge's reconcile ->
+  linuxd deletes `apps/<uid>/`, deferred while any running sandbox still binds
+  that tree. Boot sweep removes orphans. Project-quota tagging per stub uid
+  makes each app and runtime show up in Android's storage settings.
+* **Safety rules.** Never modify a published `opt/` in place; linuxd never
+  follows symlinks while verifying, publishing or deleting (`openat`,
+  `O_NOFOLLOW`, `unlinkat`).
 
 ## Planned: per-app Linux data in `/data/matonos/linux/apps/<uid>/`; Flatpaks may run downloaded code (decided 2026-10-04)
 
