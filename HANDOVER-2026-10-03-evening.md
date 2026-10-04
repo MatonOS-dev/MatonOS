@@ -148,3 +148,15 @@ compositor minSdk/targetSdk 36 (793fbf4), CLAUDE.md newest-libs rule.
 Running: codex/app-owns (H6 per-app UID/domain + process ownership + sleep).
 Then: H5 (controllers via InputManager), r24 image, test on VM 5562.
 Java port step 2 = dbus-java 6.x + own Android LocalSocket transport.
+
+## 2026-10-04 10:20
+- Codex hit its usage limit (until 13:10). Code-storage design (NOTES
+  "Flatpak code storage and execution") now runs on opencode
+  deepseek/deepseek-v4.1-flash in worktree app-owns
+  (out/pc-logs/agents/opencode-app-store-result.md pending).
+- H5 design done (out/pc-logs/agents/opencode-h5-result.md): linuxd-owned
+  uinput pad per session, only its node bound into that app's sandbox,
+  presented as an Xbox 360 controller; stub forwards InputManager events.
+- Model trial (qwen/qwen3-coder-next vs openai/gpt-oss-120b) on two small
+  r24 fixes in worktrees trial-*, reports out/pc-logs/agents/trial-*-result.md.
+- Headless test VM 5562 restarted on fresh r23 (permissive dev mode).
