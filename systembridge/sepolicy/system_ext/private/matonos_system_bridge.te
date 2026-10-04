@@ -109,7 +109,10 @@ allow matonos_linux_app matonos_flatpak_deployment_file:dir r_dir_perms;
 # data_file_type deployments; appdomain cannot be entered from linuxd and
 # cannot create bwrap user namespaces with capabilities. Do not weaken the
 # assertions or misclassify /data code as system_file_type to hide this.
-allow matonos_linux_app matonos_flatpak_deployment_file:file { read open getattr map };
+allow matonos_linux_app matonos_flatpak_deployment_file:file { read open getattr map execute execute_no_trans };
+# helper-trim: /app now comes straight from the read-only deployment (no code
+# image mount); executing it relies on data_exec_exempt_domain (patch 0001).
+# Replaced by matonos_linux_code_file when the per-uid installations land.
 allow matonos_linux_app matonos_flatpak_deployment_file:lnk_file r_file_perms;
 allow matonos_linuxd matonos_flatpak_deployment_file:dir create_dir_perms;
 allow matonos_linuxd matonos_flatpak_deployment_file:{ file lnk_file } create_file_perms;
@@ -326,9 +329,10 @@ allow matonos_bwrap matonos_app_exec_exec:file { execute getattr open read map }
 allow matonos_app_launch matonos_app_exec_exec:file entrypoint;
 allow matonos_app_launch self:process { setcurrent fork sigchld signal };
 allow matonos_app_launch matonos_linux_app:process dyntransition;
-# r24: the launcher mounts nothing. The verified images are mounted from
-# outside the sandbox by matonos_mount_helper before bubblewrap is released,
-# so this domain keeps no loop, mount or SYS_ADMIN capability at all.
+# r24: the launcher mounts nothing. The verified images are now mounted by
+# stock flatpak run directly (which binds /app and /usr from its own read-only
+# installations). The matonos_mount_helper remains for sandbox identity
+# verification only.
 allow matonos_app_launch matonos_app_code_exec:dir r_dir_perms;
 allow matonos_app_launch matonos_app_code_exec:file { execute execute_no_trans getattr open read map };
 allow matonos_app_launch matonos_runtime_exec:dir r_dir_perms;
@@ -342,77 +346,31 @@ allow matonos_linux_app matonos_app_volume_file:{ file lnk_file sock_file fifo_f
 # JITs (Wine/Proton, Chromium) need executable anonymous mappings.
 allow matonos_linux_app self:process execmem;
 
-# r24: the privileged mount helper. Entered by exec from the launcher
-# (matonos_linuxd). It runs entirely outside the sandbox, setns()es into the
-# sandbox's mount namespace and mounts the installer-attached loop images with
-# mount-time context= labels. It keeps no binder, no app data and no network.
-# The MLS level is derived from the verified stub UID; no label crosses the
-# interface.
+# Vestigial mount helper: verifies sandbox identity outside the sandbox, but
+# no longer mounts code images or volumes (proven on the host: stock flatpak
+# run binds /app and /usr by itself). Still present so that matonos-bwrap's
+# send_mount_request() gets a reply; removing this domain, the binary and its
+# Android.bp module is tracked as a follow-up (no remaining useful work).
 #
-# helper-apk: APK-carried images (v1.2). The helper opens installed APK files
-# under /data/app directly (apk_data_file), verifies ownership and label,
-# parses the embedded zip, and uses LOOP_CONFIGURE to attach the erofs data
-# as a loop device before mounting in the sandbox. The attach-record path
-# below stays as the fallback until linuxd switches.
+# The helper receives a single mount_request (app id + pidfd via SCM_RIGHTS),
+# independently verifies the sandbox process identity (matonos_bwrap domain,
+# expected stub uid, MLS level, parent chain), and replies SUCCESS. Any
+# verification failure is fail-closed (the shim kills the sandbox).
+#
+# Removed: all APK parsing (openat2, zip reader), LOOP_CONFIGURE, erofs mount,
+# legacy attach-record reading, volume mounting, and CAP_SYS_ADMIN.
 type matonos_mount_helper, domain;
 typeattribute matonos_mount_helper coredomain;
 allow matonos_linuxd matonos_mount_helper_exec:file { execute execute_no_trans getattr open read map };
 type_transition matonos_linuxd matonos_mount_helper_exec:process matonos_mount_helper;
 allow matonos_linuxd matonos_mount_helper:process transition;
 allow matonos_mount_helper matonos_mount_helper_exec:file entrypoint;
-allow matonos_mount_helper self:process { fork sigchld signal };
-# CAP_SYS_ADMIN is required for setns(CLONE_NEWNS), fsconfig/fsmount and
-# move_mount. There is no SELinux permission for setns itself: the kernel
-# gates it on CAP_SYS_ADMIN in the target user namespace (ns_capable()), and
-# this helper holds it in an ancestor user namespace.
-allow matonos_mount_helper self:global_capability_class_set sys_admin;
-allow matonos_mount_helper loop_device:blk_file rw_file_perms;
-allowxperm matonos_mount_helper loop_device:blk_file ioctl {
-  BLKGETSIZE64 BLKSSZGET BLKFLSBUF BLKROSET
-  # helper-apk: LOOP_CONFIGURE creates a loop device from the APK fd with
-  # offset+sizelimit pointing at the erofs zip entry. LOOP_GET_STATUS64
-  # allows reading back the loop status for verification.
-  LOOP_CONFIGURE LOOP_GET_STATUS64
-};
-# helper-apk: openat2(RESOLVE_BENEATH) relative to an O_PATH fd of /data/app
-# opens the APK without following symlinks. The open/read/getattr permissions
-# let the helper verify the file is a regular file owned by uid 1000 (system),
-# not group/other writable, and read its SELinux label (security.selinux xattr)
-# via fgetxattr. The search permission on the directory is needed for the
-# RESOLVE_BENEATH lookup.
-allow matonos_mount_helper apk_data_file:dir search;
-allow matonos_mount_helper apk_data_file:file { getattr open read };
-# helper-apk: LOOP_CTL_GET_FREE on /dev/loop-control allocates a free loop
-# device number.
-allow matonos_mount_helper loop_control_device:chr_file rw_file_perms;
-# helper-apk: reading the launch record packages file and the app_id store
-# directory is already covered by the matonos_flatpak_store_file rules below.
-# helper-apk: mount target dirs inside the sandbox (/usr, /app, /app/extra)
-# are covered by matonos_flatpak_deployment_file and matonos_code_fs below.
-allow matonos_mount_helper dev_type:dir r_dir_perms;
-allow matonos_mount_helper dev_type:blk_file getattr;
-# The code image superblock is matonos_code_fs; context= labels its inodes.
-allow matonos_mount_helper matonos_code_fs:filesystem { mount remount relabelfrom relabelto };
-# Mount points: /app (Flatpak deployment) for code, /usr for runtime,
-# /app/extra for extra data, all in-sandbox directories.
-allow matonos_mount_helper matonos_flatpak_deployment_file:dir { search mounton };
-allow matonos_mount_helper matonos_linux_data_file:dir { search mounton };
-# helper-apk: mounting the runtime at the sandbox's /usr needs a mount-point
-# directory with a NON-system label (stock domain.te forbids mounton on
-# system_file_type for every domain but init/dexopt_chroot_setup). TODO: give
-# the sandbox's /usr target its own label; until then the runtime mount fails.
-# Attach records written by the installer. The helper derives the loop device
-# for an app from these, never from a caller-supplied path.
-# helper-apk: the launch record (packages file) also lives under store/apps/.
-allow matonos_mount_helper matonos_flatpak_store_file:dir r_dir_perms;
-allow matonos_mount_helper matonos_flatpak_store_file:file r_file_perms;
 # Rendezvous with the matonos-bwrap shim is an unnamed socketpair created by
 # the matonos_linuxd launcher, so its label is matonos_linuxd. The shim also
-# passes a pidfd for the sandbox process; both arrive as inherited/SENT fds.
+# passes a pidfd for the sandbox process (matonos_bwrap); both arrive as
+# inherited/SENT fds. No CAP_SYS_ADMIN or loop/mount grants are needed.
 allow matonos_mount_helper matonos_linuxd:unix_stream_socket { read write };
 allow matonos_mount_helper matonos_bwrap:fd use;
-# The shim opens a pidfd for the sandbox process (pidfd_open) before passing it;
-# the sandbox is in matonos_bwrap until bubblewrap is released.
 
 # Binder must be completely absent from every sandbox domain. The stock
 # platform policy unconditionally grants every domain `system_server:binder
