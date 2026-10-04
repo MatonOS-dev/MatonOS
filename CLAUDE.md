@@ -41,7 +41,8 @@ exception (user, 2026-09-25; microG moved to v3 on 2026-09-26):** microG signatu
 like LineageOS (patch 0002: only microG-signed gms/vending may present Google's
 signature; no bridge involvement, user 2026-09-28); patch budget = 1. **Second
 (user, 2026-10-04):** `patches/system/sepolicy/0001` (attribute `data_exec_exempt_domain`) exempting
-`matonos_wx_app` (WRITABLE_CODE Flatpaks, non-appdomain, no binder)
+`matonos_flatpak_app` (Flatpak sandboxes, non-appdomain, no binder; they may
+run code downloaded into their own data, user 2026-10-04)
 from the two `domain.te` neverallows that forbid non-app domains executing
 data (see install/linuxd/CODE-STORAGE-r24.md). Record any other dropped
 feature as a known gap in NOTES.md ("Dropped for zero patches") with what it would need. **Also allowed (user,
@@ -274,6 +275,10 @@ lever that says "start". The stub chooses nothing (no arguments, paths,
 mount options, devices, environment or flags); the privileged side derives
 everything from the verified stub identity (UID + per-device signature),
 its installed manifest and its granted Android permissions.
+
+Deliberate exception (user, 2026-10-04): Flatpaks may download and run code
+in their own per-app `linux/` directory by default (no permission), as on a
+Linux desktop; see install/linuxd/CODE-STORAGE-r24.md.
 
 Principle (user, 2026-10-04): containment beats compatibility. Default to
 the tightest permissions; when an app breaks on a missing permission, fix

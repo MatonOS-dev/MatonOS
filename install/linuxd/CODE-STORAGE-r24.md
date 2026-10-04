@@ -190,7 +190,7 @@ new path is wired).
   zip64; to be checked on the VM.
 * **No app-to-app code sharing.** Sharing stops at runtimes/extensions.
 
-## Planned: per-app `linux/` directory and the WRITABLE_CODE domain (decided 2026-10-04)
+## Planned: per-app `linux/` directory; Flatpaks may run downloaded code (decided 2026-10-04)
 
 **All per-app Linux state lives in the stub's own Android data directory:**
 `<ApplicationInfo.dataDir>/linux/` (i.e. /data/user/<userId>/<stub package>/linux;
@@ -199,27 +199,31 @@ the path always comes from PackageManager via the bridge, never computed).
   created by the stub process (StubService runs as the stub uid); the
   listening fds go to the compositor host over binder; X display is always :0.
 - `home/`: the Flatpak app's data/home (replacing the per-app dirs under
-  /data/matonos/linux and `vol.img`); for WRITABLE_CODE apps also the code
+  /data/matonos/linux and `vol.img`); also any code
   they download (e.g. a Steam library under their home).
 Plain `app_data_file` at the stub's MLS level: only that app can touch it, and
 Android handles multi-user, clear-data, uninstall and storage accounting.
 Stubs set `allowBackup=false`. Not `code_cache/` (cleared on app update).
 
-**W^X stays for every Flatpak by default** (`matonos_flatpak_app`; stock
-`domain.te` 1960/2040/792 forbid non-appdomains executing any data or writing
-any exec type). Apps granted `org.matonos.permission.WRITABLE_CODE`
-(dangerous, user consent; generic rule from the Flatpak manifest, never per
-app) run in `matonos_wx_app`: a NON-appdomain (no binder, keeps the
-user-namespace capabilities nested sandboxes such as pressure-vessel need)
-that may execute its own `app_data_file`. Never `execmod`.
+**Flatpaks may download and run code in their own `linux/` by default**
+(user decision 2026-10-04: Linux apps have no concept of a permission for
+this, and on a Linux desktop an app can always run files from its home).
+There is ONE sandbox domain, `matonos_flatpak_app`: a non-appdomain with no
+binder that may execute (execute, execute_no_trans, map) its own
+`app_data_file`, i.e. its stub's `linux/` tree at the stub's MLS level. No
+WRITABLE_CODE permission, no second domain, no prompt. Never `execmod`; never
+write to any exec type. Containment stays: own uid, own MLS level, no binder,
+only its own directory. Verified code images (APK-carried) are still how
+Flatpak-installed code arrives; sealing is no longer needed for code an app
+downloads itself (`RUN_DOWNLOADED_CODE` and `vol.img` retire).
 
-This needs `patches/system/sepolicy/0001-data-exec-exempt-domain.patch` (user decision
-2026-10-04, second patch-budget entry): a private attribute `data_exec_exempt_domain`, given only to `matonos_wx_app`, added to the
-exception lists of the neverallows at `private/domain.te` ~1960 (execute only
+This needs `patches/system/sepolicy/0001-data-exec-exempt-domain.patch` (user
+decision 2026-10-04, second patch-budget entry): a private attribute
+`data_exec_exempt_domain`, given only to `matonos_flatpak_app`, exempted from
+the neverallows at `private/domain.te` ~1960 (non-appdomains execute only
 exec/system/vendor files) and ~2040 (no execute of data_file_type). The
 appdomain route was rejected: appdomains may only be entered from zygote
-(`domain.te` ~1484) and may hold no capabilities (`app.te` ~600)
-(DeepSeek wx-appdomain, verified). Flatpaks never get binder; no exception.
+(`domain.te` ~1484) and may hold no capabilities (`app.te` ~600).
 
 ## Runtime permission
 
