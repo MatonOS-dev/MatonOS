@@ -447,6 +447,30 @@ Feature work continues, but in this shape from now on.
     Remove the vending (and gms) spoof pairs while real Google is active.
   - Data dir carries over (offer "clear data" after switching). Key rotation
     can't do this without Google's private key, hence the patch.
+- **Flatpak code storage and execution (decided 2026-10-04, user).** Android's
+  neverallows forbid non-app domains from executing code on /data
+  (system/sepolicy/private/domain.te ~1958–2051), so Flatpak code cannot run
+  from a /data directory in an enforcing linuxd-created sandbox. Design:
+  - Apps: one read-only, verified code image per app (erofs + verity) built
+    by linuxd's installer domain from the Flatpak deployment, stored on /data,
+    tied to the stub package's lifecycle, mounted only into that app's
+    sandbox with a context= label carrying the stub's MLS categories — only
+    that app can read/execute its code; atomic image swap on update.
+  - Apps that run downloaded code (Steam, Lutris, Heroic, Bottles…): an
+    optional app-owned writable+executable volume (sparse ext4 image on
+    /data, grown/trimmed on demand, same per-app label), gated by a runtime
+    permission prompt; never writable access to the app's code image.
+  - Runtimes and extensions: one shared runtime store owned by the base Linux
+    host app — a sparse, growable image (OSTree dedup kept), executable by
+    every app sandbox domain, writable only by the installer domain.
+  - Domains: linuxd → installer domain (only writer of code/runtime stores);
+    flatpak run in its own narrow domain → exec of bwrap transitions to the
+    bwrap setup domain → exec of the payload transitions to the app domain.
+    No domain has binder; app domain gets execmem for JITs (Wine/Proton,
+    Chromium). Identity/lifetime/permissions come from the stub (app-owns).
+  Rejected: plain /data store (neverallow), app code inside stub APKs
+  (runtime size, no namespaces in app domains), fixed partition (limits app
+  count), proot (slow, weaker).
 - **Split the Linux-app layer into its own repository (user, 2026-10-03;
   long-term, sooner if the provenance audit finds GPL-derived code).** Moves:
   linux/compositor (native, host APK, xwayland-egl), linux/dbus-broker, the
