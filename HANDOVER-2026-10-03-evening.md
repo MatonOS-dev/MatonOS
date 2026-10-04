@@ -134,3 +134,17 @@ likely xdg-dbus-proxy (apps with [Session Bus Policy]) cannot reach the
 bus address unix:path=/proc/<supervisor>/fd/198/bus inside its helper
 sandbox. Codex job codex/bus-proxy (VM access) →
 out/pc-logs/agents/codex-bus-proxy-result.md.
+
+## 2026-10-04 morning progress (r24 work; no r23b)
+
+Merged and pushed to main: Chromium bus fix (a67bbff, verified on headless
+VM 5562), system-app JNI/broker extraction (25d16ad), review fixes H8/H9/M2
+(8211a9f; seccomp runtime test pending r24 image), D-Bus Java step 1
+(a8bc215: Settings/Inhibit/OpenURI in Java), H1 enforcing by default
+(7c96027; build the r24 test image with MATON_SELINUX_PERMISSIVE=1 and run
+sepolicy/r24-enforcing-test-plan.md separately), dependency updates
+(e822e68: bubblewrap 0.13.0, Flatpak 1.18.4, xdg-dbus-proxy 0.1.9),
+compositor minSdk/targetSdk 36 (793fbf4), CLAUDE.md newest-libs rule.
+Running: codex/app-owns (H6 per-app UID/domain + process ownership + sleep).
+Then: H5 (controllers via InputManager), r24 image, test on VM 5562.
+Java port step 2 = dbus-java 6.x + own Android LocalSocket transport.
