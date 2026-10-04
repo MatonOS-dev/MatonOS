@@ -209,12 +209,12 @@ Stubs set `allowBackup=false`. Not `code_cache/` (cleared on app update).
 `domain.te` 1960/2040/792 forbid non-appdomains executing any data or writing
 any exec type). Apps granted `org.matonos.permission.WRITABLE_CODE`
 (dangerous, user consent; generic rule from the Flatpak manifest, never per
-app) run in `matonos_flatpak_wx_app`: a NON-appdomain (no binder, keeps the
+app) run in `matonos_wx_app`: a NON-appdomain (no binder, keeps the
 user-namespace capabilities nested sandboxes such as pressure-vessel need)
 that may execute its own `app_data_file`. Never `execmod`.
 
 This needs `patches/system/sepolicy/0001-data-exec-exempt-domain.patch` (user decision
-2026-10-04, second patch-budget entry): a private attribute `data_exec_exempt_domain`, given only to `matonos_flatpak_wx_app`, added to the
+2026-10-04, second patch-budget entry): a private attribute `data_exec_exempt_domain`, given only to `matonos_wx_app`, added to the
 exception lists of the neverallows at `private/domain.te` ~1960 (execute only
 exec/system/vendor files) and ~2040 (no execute of data_file_type). The
 appdomain route was rejected: appdomains may only be entered from zygote
