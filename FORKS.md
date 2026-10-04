@@ -24,9 +24,9 @@ expects them. Each branch = upstream tag + the tested release snapshot + one com
 
 | Path | Repository | Based on | What we change |
 | --- | --- | --- | --- |
-| `linux/third_party/flatpak/upstream` | [flatpak](https://github.com/MatonOS-dev/flatpak) | fork of flatpak/flatpak `1.14.10` | bionic build fixes |
+| `linux/third_party/flatpak/upstream` | [flatpak](https://github.com/MatonOS-dev/flatpak) | fork of flatpak/flatpak `1.18.4` (local rebase pending commit) | bionic build fixes |
 | `linux/third_party/ostree/upstream` | [ostree](https://github.com/MatonOS-dev/ostree) | fork of ostreedev/ostree `v2024.5` | bionic build fixes |
-| `linux/third_party/bubblewrap/upstream` | [bubblewrap](https://github.com/MatonOS-dev/bubblewrap) | fork of containers/bubblewrap `v0.10.0` | bionic build fixes |
+| `linux/third_party/bubblewrap/upstream` | [bubblewrap](https://github.com/MatonOS-dev/bubblewrap) | fork of containers/bubblewrap `v0.13.0` (local rebase pending commit) | bionic build fixes |
 | `linux/third_party/glib/upstream` | [glib](https://github.com/MatonOS-dev/glib) | fork of GNOME/glib `2.84.4` | bionic build fixes |
 | `linux/third_party/gnupg/upstream` | [gnupg](https://github.com/MatonOS-dev/gnupg) | fork of gpg/gnupg `gnupg-2.5.2` | bionic build fixes |
 | `linux/third_party/npth/upstream` | [npth](https://github.com/MatonOS-dev/npth) | fork of gpg/npth `npth-1.8` | bionic build fixes |

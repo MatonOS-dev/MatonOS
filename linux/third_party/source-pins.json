@@ -1,0 +1,31 @@
+{
+  "bubblewrap": {
+    "version": "0.13.0",
+    "upstream_tag": "v0.13.0",
+    "upstream_commit": "719a4fd474d44b26906bcf2b1b0fb6eddd8d56d0",
+    "release_url": "https://github.com/containers/bubblewrap/releases/download/v0.13.0/bubblewrap-0.13.0.tar.xz",
+    "release_sha256": "4734237473c0e5d695e4e9034a34e43b2dbf5164655bd13fa59ae376b2b7a765",
+    "source_tree_sha256": "c21c3570492fa7b4b90f16b41a498829c9a0da6e031bacee7b5347a123a13104",
+    "fork_revision": "uncommitted on local matonos/v1.2; see FORK-REVISION.md",
+    "review_snapshot_sha256": "0362837ba3155ea2b9f7c676f0914a19eb4e59c3f3c4cb43ff0ba951174e6fd2"
+  },
+  "flatpak": {
+    "version": "1.18.4",
+    "upstream_tag": "1.18.4",
+    "upstream_commit": "a02d0ba48abe9aacc377de15699e5d8c024b5669",
+    "release_url": "https://github.com/flatpak/flatpak/releases/download/1.18.4/flatpak-1.18.4.tar.xz",
+    "release_sha256": "b899a7a00c48d2c626cb8ec33fe556720b376c25805d7222430c0fdca4c6ac8d",
+    "source_tree_sha256": "9e74bea047b1c2aaaf39eaadd6930bb02f04c1e405dc245748bbe4316b25c707",
+    "fork_revision": "uncommitted on local matonos/v1.2; see FORK-REVISION.md",
+    "review_snapshot_sha256": "43f20ceede1d4307db7c66da753d06cb3011d53924cdd89ee47069a50da832d1"
+  },
+  "xdg-dbus-proxy": {
+    "version": "0.1.9",
+    "upstream_tag": "0.1.9",
+    "upstream_commit": "72b40c8f6d9d585cfbdb249690724f740d207087",
+    "release_url": "https://github.com/flatpak/xdg-dbus-proxy/releases/download/0.1.9/xdg-dbus-proxy-0.1.9.tar.xz",
+    "release_sha256": "5450dda586ec3bb3ca709d311e845487883faa3b09cf562608d7e84f4311dced",
+    "source_tree_sha256": "0a8b12c80e51dde17fbe2fa4646f193ed9f8e8387c123249f5316fcc6519104e",
+    "fork_revision": "pristine upstream commit"
+  }
+}

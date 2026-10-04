@@ -8,7 +8,7 @@ from AOSP. It does not add them to the product image yet.
 
 | Component | Pin | Source | SHA-256 of downloaded release archive |
 |---|---|---|---|
-| bubblewrap | 0.10.0 | `containers/bubblewrap` release | `65d92cf44a63a51e1b7771f70c05013dce5bd6b0b2841c4b4be54b0c45565471` |
+| bubblewrap | 0.13.0 | `containers/bubblewrap` release | `4734237473c0e5d695e4e9034a34e43b2dbf5164655bd13fa59ae376b2b7a765` |
 | libseccomp | 2.5.5 | `seccomp/libseccomp` release | `248a2c8a4d9b9858aa6baf52712c34afefcf9c9e94b76dce02c1c9aa25fb3375` |
 | GLib | 2.80.5 | GNOME release | `9f23a9de803c695bbfde7e37d6626b18b9a83869689dd79019bf3ae66c3e6771` |
 | JSON-GLib | 1.8.0 | GNOME release | `97ef5eb92ca811039ad50faef59f3ae914831cff866a23f0bf9d66cfdd0fea29` |
@@ -144,3 +144,11 @@ flatpak run --command=sh org.freedesktop.Platform//26.08 \
 The `.flatpakrepo` form still fails because GPGME has no configured crypto
 engine (`GPGME: Invalid crypto engine`); build/provide GnuPG before enabling
 verified Flathub remotes. A separate CLI application was not installed.
+
+## r24 security dependency rebuild
+
+Current: bubblewrap 0.13.0, Flatpak 1.18.4 with seccomp enabled, and
+xdg-dbus-proxy 0.1.9. Exact upstream commits/archive and fork source-tree
+hashes are in `third_party/source-pins.json`. Fork changes remain uncommitted
+as requested; see `third_party/FORKS-PLAN.md` before reproducing the build.
+Earlier runtime evidence below/above is historical and does not validate r24.
