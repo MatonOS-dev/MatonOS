@@ -28,6 +28,7 @@ allow matonos_linuxd system_file:file { execute execute_no_trans getattr map ope
 allow matonos_linuxd matonos_flatpak_data_file:dir create_dir_perms;
 allow matonos_linuxd matonos_flatpak_data_file:file create_file_perms;
 allow matonos_linuxd matonos_flatpak_data_file:lnk_file create_file_perms;
+allow matonos_linuxd matonos_flatpak_data_file:sock_file create_file_perms;
 allow matonos_linuxd self:capability { setuid setgid sys_admin };
 allow matonos_linuxd self:process { fork sigchld signal };
 net_domain(matonos_linuxd)
@@ -73,6 +74,10 @@ allow matonos_linuxd matonos_compositor_data_file:sock_file { getattr read write
 allow matonos_linuxd matonos_compositor:unix_stream_socket connectto;
 # Wayland SHM descriptors are relayed from the Flatpak process to the host.
 allow matonos_compositor matonos_linuxd:fd use;
+// The native supervisor delegates a directory beneath its private runtime
+// parent. The compositor-owned broker binds only its session bus there.
+allow matonos_compositor matonos_flatpak_data_file:dir { getattr search write add_name remove_name };
+allow matonos_compositor matonos_flatpak_data_file:sock_file create_file_perms;
 allow matonos_compositor matonos_linuxd_tmpfs:file { getattr read write map };
 
 # The APK session broker executes without transition from nativeLibraryDir.
