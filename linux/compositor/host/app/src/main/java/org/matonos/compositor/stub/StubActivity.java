@@ -29,6 +29,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         if(processLife==null)processLife=android.os.ParcelFileDescriptor.createPipe();
         return processLife[0];
     }
+    private android.os.PowerManager.WakeLock portalWake;
     private boolean stopped;
     private String ref;
     private volatile int window;
@@ -60,8 +61,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         public void onInhibitChanged(boolean active) {
             runOnUiThread(() -> {
                 if(destroyed)return;
-                if(active)getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                setInhibited(active);
             });
         }
         public void onWindowClosed(int id) {
@@ -110,7 +110,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             },"flatpak-stub-launch").start();
         }
         public void onServiceDisconnected(ComponentName name) {
-            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            setInhibited(false);
             session=null;attached=false;
             failure("Compositor disconnected",new IllegalStateException("The compositor stopped unexpectedly."));
             window=0;view=null;surface=null;
@@ -165,6 +165,24 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             bound=bindService(host,connection,BIND_AUTO_CREATE);
             if(!bound)message("Cannot connect to the compositor.");
         } catch(Exception e){failure("Cannot connect to the compositor",e);}
+    }
+    // Runs on the activity thread, in the generated stub package's UID.
+    private void setInhibited(boolean active) {
+        if(active) {
+            if(portalWake==null) {
+                portalWake=getSystemService(android.os.PowerManager.class).newWakeLock(
+                        android.os.PowerManager.PARTIAL_WAKE_LOCK,"MatonOS:JavaPortalInhibit");
+                portalWake.setReferenceCounted(false);
+            }
+            // Generated stubs request WAKE_LOCK; an older stub without it keeps
+            // only the screen-on flag instead of crashing.
+            try {if(!portalWake.isHeld())portalWake.acquire();}
+            catch(SecurityException e){android.util.Log.w("MatonStub","WAKE_LOCK not granted",e);}
+            getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        } else {
+            if(portalWake!=null && portalWake.isHeld())portalWake.release();
+            getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        }
     }
     private void showWindow(int id) {
         window=id;
@@ -225,6 +243,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     @Override protected void onSaveInstanceState(Bundle state){state.putInt(WINDOW,window);super.onSaveInstanceState(state);}
     @Override protected void onDestroy(){
         destroyed=true;
+        setInhibited(false);
         if(session!=null){
             try{if(attached)session.detachWindow(window);}catch(Exception ignored){}
             try{if(isFinishing()&&window!=0)session.closeWindow(window);}catch(Exception ignored){}

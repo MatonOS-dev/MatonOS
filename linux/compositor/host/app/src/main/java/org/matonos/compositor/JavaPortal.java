@@ -10,7 +10,6 @@ import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
 import android.net.Uri;
 import android.os.ParcelFileDescriptor;
-import android.os.PowerManager;
 import android.system.Os;
 import android.system.OsConstants;
 import android.util.Log;
@@ -27,7 +26,6 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
     private final Context context;
     private final Consumer<Boolean> changed;
     private final Launcher launcher;
-    private final PowerManager.WakeLock wake;
     private final LocalSocket bound=new LocalSocket();
     private final LocalServerSocket server;
     private final File path;
@@ -41,7 +39,6 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
     JavaPortal(Context context,File directory,Consumer<Boolean> changed,Launcher launcher) throws Exception {
         this.context=context;this.changed=changed;this.launcher=launcher;
         new java.security.SecureRandom().nextBytes(secret);
-        wake=context.getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MatonOS:JavaPortalInhibit");wake.setReferenceCounted(false);
         path=new File(directory,"portal-backend");if(path.exists()&&!path.delete())throw new IOException("Stale portal socket");
         bound.bind(new LocalSocketAddress(path.getAbsolutePath(),LocalSocketAddress.Namespace.FILESYSTEM));Os.chmod(path.getAbsolutePath(),0600);
         server=new LocalServerSocket(bound.getFileDescriptor());new Thread(this::serve,"java-portals").start();
@@ -131,7 +128,8 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
     @Override public synchronized void hold(boolean active) {
         active=active&&!stopped;
         if(active==held)return;
-        if(active)wake.acquire();else if(wake.isHeld())wake.release();held=active;
+        // The verified stub acquires/releases under its own UID via changed.
+        held=active;
         try{changed.accept(active);}catch(RuntimeException e){Log.w("MatonPortal","Inhibit listener failed",e);}
     }
     @Override public boolean open(String method,Object target,Map<String,Variant> options) throws Exception {

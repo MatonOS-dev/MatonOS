@@ -223,8 +223,8 @@ public final class CompositorService extends Service {
                 try {for(int i=count-1;i>=0;i--)try {if(listeners.getBroadcastItem(i).openUri(intent))return true;}catch(android.os.RemoteException ignored){} }
                 finally {listeners.finishBroadcast();}
             }
-            try {startActivity(new Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));return true;}
-            catch(android.content.ActivityNotFoundException e){return false;}
+            // Never substitute the host identity when the stub is unavailable.
+            return false;
         }
         void inhibited(boolean active) {
             if(standalone)sendBroadcast(new Intent(ACTION_INHIBIT).setPackage(getPackageName()).putExtra("active",sessionInhibited()));
