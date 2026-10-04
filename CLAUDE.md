@@ -239,6 +239,14 @@ service_manager rights, guarded by a neverallow. Binder device nodes that
 are visible in the sandbox (e.g. via `devices=all`) are therefore unusable.
 Everything Android-side goes through our sockets (Wayland/X11/D-Bus/portals)
 to the compositor host and the System Bridge.
+Bubblewrap is itself confined (user, 2026-10-04): two domains, each with
+exactly the permissions it needs — exec of bwrap transitions linuxd into a
+narrow bwrap setup domain (namespaces, mounts/pivot_root inside them,
+uid/gid maps, reading the Flatpak deployment, binding the granted sockets
+and devices, only the capabilities bwrap really uses); bwrap's exec of the
+app payload (Flatpak deployment files with their own exec type) transitions
+again into the app domain, which keeps none of the setup rights. Seccomp and
+no_new_privs from Flatpak apply on top.
 
 ## Rule: our native code is plain C (user, 2026-09-28)
 
