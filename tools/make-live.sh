@@ -4,7 +4,10 @@
 #
 # Usage:
 #   ./make-live.sh -o <aosp product out dir> [-k <bzImage>] [-b <systemd-bootx64.efi>]
-#                  [-d <output image>] [-c "<extra kernel cmdline>"] [-S]
+#                  [-d <output image>] [-c "<extra kernel cmdline>"] [-S] [-R]
+#
+# -R (or MATON_RELEASE=1): release packaging, refuses permissive development mode.
+# MATON_SELINUX_PERMISSIVE=1: explicit development boot profile (default enforcing).
 #
 # Layout (GPT, write to a USB stick with dd):
 #   1 esp    FAT32, systemd-boot + bzImage + ramdisks + loader entries
@@ -25,6 +28,7 @@ DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
 AOSP=$(readlink -f "$DEVICE_DIR/../../..")
 # secureboot: early CPU microcode is included for every boot profile.
 source "$DEVICE_DIR/secureboot/microcode.sh"
+source "$DEVICE_DIR/tools/selinux-boot.sh"
 PRODUCT_OUT=""
 KERNEL=$DEVICE_DIR/prebuilt/bzImage
 BOOTEFI=/usr/lib/systemd/boot/efi/systemd-bootx64.efi
@@ -38,7 +42,7 @@ ESP_MIB=1024
 GROUP=pc_dynamic_partitions
 PARTITIONS=(system system_ext product vendor odm)
 
-while getopts "o:k:b:d:c:Sh" opt; do
+while getopts "o:k:b:d:c:SRh" opt; do
   case $opt in
     o) PRODUCT_OUT=$OPTARG ;;
     k) KERNEL=$OPTARG ;;
@@ -46,9 +50,15 @@ while getopts "o:k:b:d:c:Sh" opt; do
     d) IMAGE=$OPTARG ;;
     c) EXTRA_CMDLINE=$OPTARG ;;
     S) SECURE_BOOT=1 ;;
+    R) export MATON_RELEASE=1 ;;
     *) sed -n '2,19p' "$0"; exit 1 ;;
   esac
 done
+
+maton_selinux_init || die "invalid SELinux boot profile"
+
+maton_selinux_validate "$EXTRA_CMDLINE" || die "invalid extra boot command line"
+[[ ! " $EXTRA_CMDLINE " =~ [[:space:]]androidboot\.selinux= ]] || die "use MATON_SELINUX_PERMISSIVE, not -c, to select SELinux mode"
 
 PRODUCT_OUT=${PRODUCT_OUT:-$AOSP/out/target/product/pc_x86_64}
 IMAGE=${IMAGE:-$PRODUCT_OUT/matonos-live-x86_64.img}
@@ -131,7 +141,7 @@ cmdline+=" androidboot.slot_suffix=_a"
 # and starts the install service only here, never on installed systems.
 cmdline+=" androidboot.matonos.live=1"
 cmdline+=" androidboot.boot_part_uuid=$esp_uuid"
-cmdline+=" androidboot.selinux=permissive androidboot.verifiedbootstate=orange"
+cmdline+=" androidboot.selinux=$MATON_SELINUX_MODE androidboot.verifiedbootstate=orange"
 [[ -n $EXTRA_CMDLINE ]] && cmdline+=" $EXTRA_CMDLINE"
 debug_cmdline="loglevel=7 printk.devkmsg=on androidboot.console=ttyS0 vt.global_cursor_default=1 fbcon=vc:1-6"
 
@@ -185,9 +195,12 @@ console-mode keep
 editor no
 EOF
 # Vendor ramdisk first, then the generic ramdisk (boot image v4 order).
+selinux_title=""
+[[ $MATON_SELINUX_MODE == permissive ]] && selinux_title=" (DEVELOPMENT: SELinux permissive)"
+# Debug adds logging and the serial root console; it does not change SELinux.
 for entry in live debug; do
-  if [[ $entry == live ]]; then title="MatonOS Live"; opts=$cmdline
-  else title="MatonOS Live (debug)"; opts="$cmdline $debug_cmdline"; fi
+  if [[ $entry == live ]]; then title="MatonOS Live$selinux_title"; opts=$cmdline
+  else title="MatonOS Live (debug)$selinux_title"; opts="$cmdline $debug_cmdline"; fi
   if (( SECURE_BOOT )); then
     uki=matonos-live.efi
     [[ $entry == debug ]] && uki=matonos-live-debug.efi
@@ -217,7 +230,8 @@ EOF
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img" "$work/ventoy-initrd.img"
   sb_build_uki "$work/matonos-live-debug.efi" "$KERNEL" "$cmdline $debug_cmdline" "$work/matonos.sbat" "$work" \
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img" "$work/ventoy-initrd.img"
-  installed_a="console=ttyS0,115200 console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=2 brd.rd_size=8388608 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=permissive androidboot.verifiedbootstate=orange"
+  # Installed UKIs always enforce, including on permissive development media.
+  installed_a="console=ttyS0,115200 console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=2 brd.rd_size=8388608 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange"
   installed_b=${installed_a/_a /_b }
   sb_build_uki "$work/matonos-installed-a.efi" "$KERNEL" "$installed_a" "$work/matonos.sbat" "$work" \
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"

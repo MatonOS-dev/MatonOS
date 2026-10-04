@@ -3,7 +3,10 @@
 #
 # Usage:
 #   ./make-payload.sh -o <aosp product out dir> -k <bzImage> [-b <systemd-bootx64.efi>]
-#                     [-s <super partition bytes>] [-c "<kernel cmdline>"] [-d <payload dir>] [-S]
+#                     [-s <super partition bytes>] [-c "<kernel cmdline>"] [-d <payload dir>] [-S] [-R]
+#
+# -R (or MATON_RELEASE=1): release packaging, refuses permissive development mode.
+# MATON_SELINUX_PERMISSIVE=1: explicit development boot profile (default enforcing).
 #
 # Example:
 #   ./make-payload.sh -o ~/aosp/out/target/product/pc_x86_64 \
@@ -20,16 +23,17 @@ info() { echo "==> $*"; }
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
 # secureboot: pinned AMD/Intel microcode is an always-on early-initrd input.
 source "$DEVICE_DIR/secureboot/microcode.sh"
+source "$DEVICE_DIR/tools/selinux-boot.sh"
 
 OUT=""
 KERNEL=""
 BOOTEFI="/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
 SUPER_SIZE_BYTES=8589934592          # must equal BOARD_SUPER_PARTITION_SIZE
-CMDLINE="console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware androidboot.hardware=pc_x86_64 androidboot.selinux=permissive androidboot.verifiedbootstate=orange"
+CMDLINE="console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware androidboot.hardware=pc_x86_64 androidboot.verifiedbootstate=orange"
 PAYLOAD="$PWD/payload"
 SECURE_BOOT=0
 
-while getopts "o:k:b:s:c:d:Sh" opt; do
+while getopts "o:k:b:s:c:d:SRh" opt; do
   case $opt in
     o) OUT=$OPTARG ;;
     k) KERNEL=$OPTARG ;;
@@ -38,9 +42,14 @@ while getopts "o:k:b:s:c:d:Sh" opt; do
     c) CMDLINE=$OPTARG ;;
     d) PAYLOAD=$OPTARG ;;
     S) SECURE_BOOT=1 ;;
+    R) export MATON_RELEASE=1 ;;
     *) sed -n '2,15p' "$0"; exit 1 ;;
   esac
 done
+
+maton_selinux_init || die "invalid SELinux boot profile"
+
+CMDLINE=$(maton_selinux_cmdline "$CMDLINE") || die "invalid payload boot command line"
 
 [[ -d $OUT ]]     || die "product out dir not found (-o)"
 [[ -f $KERNEL ]]  || die "kernel bzImage not found (-k)"

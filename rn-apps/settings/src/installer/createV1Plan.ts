@@ -241,13 +241,13 @@ export function createV1Plan(
       files: [
         {
           relativePath: "A+3-0.conf",
-          inlineContents: `title MatonOS (slot A)\nefi /EFI/Linux/matonos-a.efi\noptions androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.boot_part_uuid=${esp.partGuid} androidboot.boot_devices=${bootDevice} androidboot.matonos.live=0 androidboot.selinux=permissive androidboot.verifiedbootstate=orange firmware_class.path=/vendor/firmware console=ttyS0,115200 console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6\n`,
+          inlineContents: `title MatonOS (slot A)\nefi /EFI/Linux/matonos-a.efi\noptions androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.boot_part_uuid=${esp.partGuid} androidboot.boot_devices=${bootDevice} androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange firmware_class.path=/vendor/firmware console=ttyS0,115200 console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6\n`,
         },
         {
           // systemd-boot ignores this extension until bootctrl atomically
           // restores it as B+3-0.conf after an OTA has populated slot B.
           relativePath: "B.DIS",
-          inlineContents: `title MatonOS (slot B)\nefi /EFI/Linux/matonos-b.efi\noptions androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_b androidboot.boot_part_uuid=${esp.partGuid} androidboot.boot_devices=${bootDevice} androidboot.matonos.live=0 androidboot.selinux=permissive androidboot.verifiedbootstate=orange firmware_class.path=/vendor/firmware console=ttyS0,115200 console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6\n`,
+          inlineContents: `title MatonOS (slot B)\nefi /EFI/Linux/matonos-b.efi\noptions androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_b androidboot.boot_part_uuid=${esp.partGuid} androidboot.boot_devices=${bootDevice} androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange firmware_class.path=/vendor/firmware console=ttyS0,115200 console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6\n`,
         },
       ],
     },
