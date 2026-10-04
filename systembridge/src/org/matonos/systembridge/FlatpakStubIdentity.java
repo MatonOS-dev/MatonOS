@@ -37,6 +37,11 @@ final class FlatpakStubIdentity {
     static boolean isGeneratedStub(String packageName) {
         return packageName!=null&&(packageName.startsWith(PREFIX)||packageName.startsWith(LEGACY_PREFIX));
     }
+    /** The caller-supplied ref must be exactly the ref the calling stub declares
+     * in its own manifest; the bridge never trusts a caller-chosen string. */
+    static boolean refMatchesDeclared(String callerRef, String declaredRef) {
+        return callerRef!=null&&callerRef.equals(declaredRef);
+    }
     static boolean matches(int callerUid,int packageUid,String[] uidPackages,String expectedPackage,
             byte[][] signers,byte[] expectedCertificate) {
         return callerUid==packageUid&&callerUid>=0&&uidPackages!=null&&uidPackages.length==1&&

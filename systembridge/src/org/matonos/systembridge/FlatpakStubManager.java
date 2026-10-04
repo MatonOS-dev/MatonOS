@@ -110,16 +110,37 @@ final class FlatpakStubManager {
 
     boolean ownsStub(int uid,String ref) {
         try {
-            String pkg=packageFor(ref);
+            if(ref==null)return false;
             PackageManager manager=context.getPackageManager();
+            String[] packages=manager.getPackagesForUid(uid);
+            String pkg=BridgeCallerIdentity.solePackage(packages);
+            // The caller must be exactly one generated stub package; never
+            // attribute a shared UID and never trust a caller-supplied ref.
+            if(pkg==null||!FlatpakStubIdentity.isGeneratedStub(pkg))return false;
+            String declared=declaredRef(pkg);
+            if(!FlatpakStubIdentity.refMatchesDeclared(ref,declared))return false;
+            // The package name must also be the one this ref maps to, so a
+            // mismatched package/ref pair can never borrow another identity.
+            if(!pkg.equals(packageFor(declared)))return false;
             PackageInfo info=manager.getPackageInfo(pkg,PackageManager.GET_SIGNING_CERTIFICATES);
             if(info.applicationInfo==null||info.signingInfo==null)return false;
             android.content.pm.Signature[] signatures=info.signingInfo.getApkContentsSigners();
             byte[][] signers=new byte[signatures.length][];
             for(int i=0;i<signatures.length;i++)signers[i]=signatures[i].toByteArray();
-            return FlatpakStubIdentity.matches(uid,info.applicationInfo.uid,manager.getPackagesForUid(uid),
+            return FlatpakStubIdentity.matches(uid,info.applicationInfo.uid,packages,
                 pkg,signers,StubGenerator.getExistingSigningCertificate());
         }catch(Exception error){Log.w(TAG,"Cannot verify generated launcher",error);return false;}
+    }
+
+    /** The Flatpak ref a generated stub declares in its own activity metadata. */
+    private String declaredRef(String pkg) {
+        try {
+            android.content.pm.ActivityInfo activity=context.getPackageManager().getActivityInfo(
+                new android.content.ComponentName(pkg,StubGenerator.HOST_ACTIVITY),
+                PackageManager.GET_META_DATA);
+            if(activity.metaData==null)return null;
+            return activity.metaData.getString(StubGenerator.REF_META);
+        }catch(Exception error){return null;}
     }
 
     boolean hasGameControllers(String ref) {
