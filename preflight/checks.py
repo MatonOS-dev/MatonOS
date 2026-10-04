@@ -146,7 +146,7 @@ def check_android_bp() -> None:
             if module_type.startswith("prebuilt_") or "prebuilt" in module_type:
                 for prop in ("src", "apk"):
                     value = string_property(block, prop)
-                    if value and not (path.parent / value).is_file():
+                    if value and not value.startswith(":") and not (path.parent / value).is_file():
                         error(path, f"{module_type} {name} {prop} is missing: {value}")
                 srcs = re.search(r"(?m)^\s*srcs\s*:\s*\[([^\]]*)\]", block, re.S)
                 if srcs:

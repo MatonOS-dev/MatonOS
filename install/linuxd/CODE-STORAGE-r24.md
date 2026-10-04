@@ -135,6 +135,80 @@ linuxd).
   `code.img` (atomic swap). This mirrors ChromeOS and keeps the neverallows
   intact.
 
+## Planned: images carried in APKs (decided 2026-10-04)
+
+Flatpaks are installed the way Android installs APKs: the verified code
+images live INSIDE Android packages, and PackageManager does staging,
+signature verification, atomic commit, updates, uninstall, dependency
+tracking and storage accounting. We write no store, declaration, digest or
+GC code of our own. This replaces the shared `runtime.img`, the per-app
+`code.img` store files and the attach records above (they stay until the
+new path is wired).
+
+* **Install flow.** The glibc Flatpak installer (APEX
+  `com.matonos.flatpak.glibc`, called only by MatonWaylandHost) pulls with
+  `flatpak install --no-deploy`. Each commit becomes an erofs image via
+  `ostree export <commit> | mkfs.erofs --tar` (no deployment, no hardlinks).
+  The system bridge wraps the image into an APK signed with the per-device stub
+  key (Android Keystore, as stubs are today) and installs it through a
+  `PackageInstaller` session. The Wayland app does exported `.desktop`/icon
+  work from the image; triggers are not run.
+* **Packages.**
+  - App: the stub APK (`hasCode=false`) carries `matonos/code.erofs`.
+  - Runtime/extension: a static shared library APK
+    (`<static-library name="<ref>" version="<n>">`) carrying
+    `matonos/runtime.erofs`. App stubs declare `<uses-static-library>` (same
+    certificate), so PackageManager installs runtimes first, refuses to
+    uninstall one still in use, and may prune unused ones under storage
+    pressure.
+  - `apply_extra`: an `extra` split APK of the app's package carrying
+    `matonos/extra.erofs` (see below).
+* **Image entries.** Stored (no compression), 4096-byte aligned
+  (`zipalign -p`, `setAlignmentPreserved(true)`), so they can be loop-mounted
+  in place. The APK signature (v2/v3) covers the whole file, including the
+  image. fs-verity on the APK is a later hardening step.
+* **Mounting.** linuxd gets each package's `codePath` from PackageManager via
+  the bridge (the trusted record; nothing from the app). `matonos-mount-helper`
+  opens the APK with no symlink resolution under `/data/app`, checks owner
+  and label (`apk_data_file`), finds the entry in the zip central directory,
+  rejects it unless stored and aligned, then `LOOP_CONFIGURE`s a read-only,
+  autoclear loop device from that same fd with offset + size limit and mounts
+  it: code -> `/app` (`matonos_app_code_exec:<app level>`), extra ->
+  `/app/extra` (same), runtime -> `/usr` (`matonos_runtime_exec:s0`).
+* **Updates/uninstall.** A new APK version = new code path; running sandboxes
+  keep the old file mounted until they exit (kernel keeps it alive). Uninstall
+  removes everything; app data (`vol.img`, Flatpak data dir) is removed with
+  the stub.
+* **`apply_extra`.** After the code APK is installed: download extra data,
+  check sizes/SHA-256 from the commit metadata, run the app's `apply_extra`
+  through the normal launch chain as the app (no network, downloads bound
+  in) writing into a scratch writable image mounted at `/app/extra` as data
+  (never executable while writable), unmount, `mkfs.erofs` the result and
+  install it as the `extra` split. App updates rerun it.
+* **Costs.** Wrapping copies the image into the APK and signing hashes the
+  whole file (seconds per GB, double disk transiently). Multi-GB images need
+  zip64; to be checked on the VM.
+* **No app-to-app code sharing.** Sharing stops at runtimes/extensions.
+
+## Planned: writable+executable game library (decided 2026-10-04)
+
+Apps that download and run their own code in place (Steam-like launchers:
+games, Proton, self-updates patched in place) cannot use sealing. They get
+an optional, separately labelled, expandable library image that is writable
+AND executable for that app only, gated by a custom dangerous permission
+(working name `org.matonos.permission.RUN_DOWNLOADED_CODE`'s stronger
+sibling, e.g. `org.matonos.permission.WRITABLE_CODE`) plus explicit user
+consent. Generic rule from the Flatpak manifest, never per app. Everything
+else keeps W^X. Checked against stock system/sepolicy (2026-10-04): the
+W^X neverallows (`app_neverallows.te`: app_data_file execute_no_trans,
+app_exec_data_file write) bind `all_untrusted_apps`/`appdomain` and named
+types only; `matonos_flatpak_app` is `domain, coredomain`, not an appdomain.
+A new type declared like `matonos_app_volume_file` (`file_type,
+data_file_type, core_data_file_type`; NOT `app_data_file_type`, not an
+`fs_type`, so `context=` relabelto is not restricted) may get
+write + execute + execute_no_trans + map. Never `execmod` (forbidden for
+every domain except untrusted_app_25/27; text relocations stay broken).
+
 ## Runtime permission
 
 `org.matonos.permission.RUN_DOWNLOADED_CODE` (`dangerous`, declared by
@@ -154,7 +228,8 @@ user with no wheel/sudo/admin/adm membership and no sudo/su/pkexec path.
 
 * Thread the RUN_DOWNLOADED_CODE grant through Bridge → linuxd → installer so
   `vol-ensure`/`vol-attach` run on first launch of an entitled app.
-* Point Flatpak's runtime/extension install at the shared store image; today
+* Replace the single writable `runtime.img` with per-commit runtime images
+  carried in APKs (see "Planned: images carried in APKs" below); today
   the installer seals the existing `/data/matonos/linux/flatpak` deployment.
 * Wire the loop hand-off end to end: linuxd calls `app-attach`/`vol-attach`
   (which write the per-app attach records the helper reads), then launches the
