@@ -31,10 +31,13 @@
  *   matonos-flatpak-store selftest
  *
  * The installer only *attaches* (and detaches) loop devices. The per-app code
- * image and volume are mounted by matonos-app-exec inside that app's sandbox
- * mount namespace, so they never appear at a shared host path. No per-app
- * command takes MLS categories: the level is derived from the verified stub
- * UID (see MatonMls.h) inside the sandbox, never from an argument.
+ * image and volume are mounted by the privileged matonos-mount-helper, outside
+ * the sandbox, into that app's sandbox mount namespace, so they never appear
+ * at a shared host path. Each attach also writes a small record
+ * (`apps/<id>/code.loop`, `vol.loop`) that the helper reads to derive the loop
+ * device itself. No per-app command takes MLS categories: the level is derived
+ * from the verified stub UID (see MatonMls.h) by the helper, never from an
+ * argument.
  */
 
 #include "FlatpakStore.h"
@@ -391,10 +394,13 @@ static int app_build(const char* app_id, const char* source) {
 }
 
 /* Attach a per-app image to a free loop device and print its path. The image
- * is *not* mounted here: matonos-app-exec mounts it inside the sandbox mount
- * namespace. The level is a function of the verified UID, computed in the
- * sandbox (MatonMls.h), so no categories cross this interface. */
-static int attach_image(const char* app_id, const char* name) {
+ * is *not* mounted here: the privileged matonos-mount-helper mounts it inside
+ * the sandbox mount namespace. We also write a small attach record
+ * (<dir>/<record>.loop) so the helper can derive the loop device itself,
+ * instead of taking a loop path from any caller. The level is a function of
+ * the verified UID, computed in the helper (MatonMls.h), so no categories
+ * cross this interface. */
+static int attach_image(const char* app_id, const char* name, const char* record_name) {
     if (!valid_app_id(app_id)) return fail("invalid app id");
     char dir[512], image[600];
     if (app_dir(app_id, dir, sizeof(dir))) return fail("app path too long");
@@ -405,12 +411,20 @@ static int attach_image(const char* app_id, const char* name) {
     char loop_path[64];
     if (loop_attach(image, &lfd, loop_path, sizeof(loop_path))) return 1;
     close(lfd); /* the configured loop stays attached until loop-detach */
+    char record[640];
+    snprintf(record, sizeof(record), "%s/%s.loop", dir, record_name);
+    int rfd = open(record, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (rfd < 0) return fail("write attach record %s: %s", record, strerror(errno));
+    size_t length = strlen(loop_path);
+    ssize_t written = write(rfd, loop_path, length);
+    close(rfd);
+    if (written != (ssize_t)length) return fail("short attach record %s", record);
     printf("%s\n", loop_path);
     return 0;
 }
 
-static int app_attach(const char* app_id) { return attach_image(app_id, "code.img"); }
-static int vol_attach(const char* app_id) { return attach_image(app_id, "vol.img"); }
+static int app_attach(const char* app_id) { return attach_image(app_id, "code.img", "code"); }
+static int vol_attach(const char* app_id) { return attach_image(app_id, "vol.img", "vol"); }
 
 static int valid_loop_device(const char* path) {
     static const char prefix[] = "/dev/block/loop";
@@ -422,6 +436,33 @@ static int valid_loop_device(const char* path) {
     return 1;
 }
 
+/* Drop attach records that point at a loop device, so a stale record can never
+ * make the mount helper reopen a reused loop. */
+static void forget_attach_records(const char* loop_path) {
+    DIR* dir = opendir(MATON_STORE_APPS);
+    if (!dir) return;
+    struct dirent* entry;
+    while ((entry = readdir(dir))) {
+        if (entry->d_name[0] == '.') continue;
+        static const char* const names[] = { "code.loop", "vol.loop" };
+        for (unsigned i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+            char path[640], stored[128];
+            if (snprintf(path, sizeof(path), MATON_STORE_APPS "/%s/%s", entry->d_name, names[i]) >= (int)sizeof(path))
+                continue;
+            int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+            if (fd < 0) continue;
+            ssize_t n = read(fd, stored, sizeof(stored) - 1);
+            close(fd);
+            if (n <= 0) continue;
+            stored[n] = 0;
+            char* newline = strchr(stored, '\n');
+            if (newline) *newline = 0;
+            if (!strcmp(stored, loop_path)) unlink(path);
+        }
+    }
+    closedir(dir);
+}
+
 /* Detach a loop device previously returned by app-attach/vol-attach. */
 static int loop_detach_device(const char* path) {
     if (!valid_loop_device(path)) return fail("not a loop device: %s", path ? path : "(null)");
@@ -429,7 +470,9 @@ static int loop_detach_device(const char* path) {
     if (fd < 0) return fail("open %s: %s", path, strerror(errno));
     int rc = ioctl(fd, LOOP_CLR_FD, 0);
     close(fd);
-    return rc ? fail("detach %s: %s", path, strerror(errno)) : 0;
+    if (rc) return fail("detach %s: %s", path, strerror(errno));
+    forget_attach_records(path);
+    return 0;
 }
 
 static int vol_ensure(const char* app_id, unsigned long long size_mb) {
