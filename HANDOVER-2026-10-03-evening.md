@@ -191,3 +191,11 @@ Java port step 2 = dbus-java 6.x + own Android LocalSocket transport.
 - Running: GLM design pass -> glm-applayer-design.md; DeepSeek small fixes
   (worktree ds/small-fixes -> ds-small-result.md). DeepSeek covers codex's
   queue until codex returns (13:10). Then: move phases, H5, r24 build.
+- DECISION (supersedes app-layer launcher plan): Flatpak stack ships as an
+  updatable APEX `com.matonos.flatpak` (Flatpak + bwrap + shim + app-exec +
+  mount helper + store helper + portal + xdg-dbus-proxy, versioned/tested as a
+  pair). `flatpak run` stays the sandbox assembler. linuxd stays in system_ext.
+  App layer keeps decisions (store UI, consent). Format-neutral launcher parked
+  until AppImage/OCI is wanted. GLM's design kept for reference.
+- Merged 3fc99da: DeepSeek small fixes. Running: DeepSeek ds/flatpak-apex
+  (brief ds-apex-brief.md). Codex at 13:10: H5.
