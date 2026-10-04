@@ -50,3 +50,12 @@ Device repo `main` pushed to `MatonOS-dev/MatonOS`.
 5. Open: hourly check-ins until 18:00 (cron afbdc69e) — final summary at 18:00;
    UPDATE-PLAYBOOK.md question unanswered; later D-Bus Java step 2,
    PipeWire pass-through, Java portals, Digitalis.
+
+## 13:25 check-in
+- ds/flatpak-apex run died at 13:00 with no report (24 files left uncommitted,
+  intact). Restarted as a continuation: brief ds-apex-continue-brief.md, log
+  ds-apex-2.log. Note: `opencode run` has no `--dir`; cd into the worktree.
+- Codex H5 phase 1 started (plan steps 1, 4, 5: uinput policy, linuxd uinput
+  pad module, bwrap node list): worktree out/worktrees/h5, branch codex/h5,
+  brief codex-h5-brief.md, log codex-h5.log. `codex exec` needs `</dev/null`
+  under nohup or it blocks on stdin.
