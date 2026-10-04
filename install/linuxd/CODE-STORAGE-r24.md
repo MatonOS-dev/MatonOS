@@ -135,40 +135,52 @@ linuxd).
   `code.img` (atomic swap). This mirrors ChromeOS and keeps the neverallows
   intact.
 
-## Planned: code as plain files under `apps/<uid>/opt`, signed by stubs (decided 2026-10-04)
+## Planned: each stub uid is a Flatpak installation, code as hardlinked checkouts (decided 2026-10-04)
 
-Supersedes "images carried in APKs" (erofs images in APK entries, zip reader
-and loop setup in the mount helper) — retired. Kept: stub generation,
+Supersedes "images carried in APKs" (retired: erofs images in APK entries,
+zip reader and loop setup in the mount helper). Kept: stub generation,
 static-library runtime stubs, the bridge's runtime-before-app install order.
 
-* **Layout.** Every stub — app or runtime — owns
-  `/data/matonos/linux/apps/<stub uid>/`:
-  - `opt/`: the Flatpak deployment files (app: `files/`, `metadata`, exports,
-    `extra/`; runtime: its `files/`). Label `matonos_linux_code_file`
-    (data_file_type): written only by linuxd's publish step, read/execute for
-    `matonos_linux_app`, never writable by any app. Bound read-only at `/app`
-    (app) or `/usr` (runtime) — plain bind mounts, no images or loop devices.
-  - `home/` (app stubs): the app's writable data (`matonos_linux_data_file`).
-  App trees use the app's MLS level; runtime `opt/` trees are labelled `s0` so
-  every app can read them (the runtime stub's own level does not apply).
-* **Stubs are the signed record.** App stubs and runtime stubs (runtime =
-  static-library stub, `<static-library name=<ref> version=<n>>`, app stubs
-  `<uses-static-library>`) carry the OSTree commit checksum of their content in
-  the manifest, signed with the per-device stub key held by the bridge.
-* **Install = check, then publish.** The glibc installer (APEX
-  `com.matonos.flatpak.glibc`) pulls and checks out into a staging dir only.
-  linuxd verifies the staged tree against the commit checksum from the
-  installed, signature-verified stub, then atomically renames it to `opt/`
-  (update: `opt.new` -> `opt`). An exploited installer can only stage content
-  that fails the check. Verified once at publish; no per-launch re-hash.
+* **Layout = Flatpak installation per stub uid.**
+  ```
+  /data/matonos/linux/apps/<app uid>/
+    app/<id>/<arch>/<branch>/<commit>/   files/ metadata export/ deploy
+    app/<id>/<arch>/<branch>/active      -> <commit>
+    home/                                the app's writable data
+  /data/matonos/linux/apps/<runtime uid>/
+    runtime/<id>/<arch>/<branch>/<commit>/ (+ active)
+  ```
+  At launch linuxd sets `FLATPAK_USER_DIR=/data/matonos/linux/apps/<uid>`
+  (empty system installation) and bind-mounts the declared runtime's tree at
+  `runtime/<id>/...` inside the launch namespace only, so `flatpak run`
+  finds everything where it always looks. Updates: new `<commit>/` beside the
+  old one, flip `active`; running apps keep theirs.
+* **Code is a hardlinked OSTree checkout** (`ostree checkout -H`): files in
+  `<commit>/files` are the repo's objects, so no doubled disk, dedup across
+  apps/runtimes, and the repo is always kept (delta updates).
+* **Stubs are the signed record.** App and runtime stubs carry the OSTree
+  commit checksum in the manifest, signed with the per-device stub key.
+* **Install = verify, freeze, publish.** The glibc installer
+  (`com.matonos.flatpak.glibc`) pulls into the repo with a staging label it can
+  write. A no-network verifier (`ostree fsck` of the commit named by the
+  installed, signature-verified stub) checks it; linuxd then relabels the
+  verified objects to `matonos_linux_code_file` (the installer cannot write
+  that label; OSTree never rewrites objects), hardlink-checks-out into the
+  uid's tree and flips `active`. Verification and checkout use the same frozen
+  bytes; an exploited installer can only stage content that fails the check.
+* **Labels.** `app/`, `runtime/` trees: `matonos_linux_code_file` at `s0`
+  (shared inodes have one label; Flathub code is public), read/execute for
+  `matonos_linux_app`, writable by nobody but linuxd's publish step.
+  `home/`: `matonos_linux_data_file` at the app's MLS level.
 * **Lifecycle.** PackageManager refuses to uninstall a runtime stub still
-  declared by installed apps. Stub removal triggers the bridge's reconcile ->
-  linuxd deletes `apps/<uid>/`, deferred while any running sandbox still binds
-  that tree. Boot sweep removes orphans. Project-quota tagging per stub uid
-  makes each app and runtime show up in Android's storage settings.
-* **Safety rules.** Never modify a published `opt/` in place; linuxd never
-  follows symlinks while verifying, publishing or deleting (`openat`,
-  `O_NOFOLLOW`, `unlinkat`).
+  declared by installed apps; stub removal -> bridge reconcile -> linuxd
+  deletes `apps/<uid>/` (only links: content goes when the last link does,
+  open files survive). Boot sweep removes orphans; project-quota tagging per
+  stub uid for Android's storage settings.
+* **Safety rules.** Never modify a published `<commit>/`; linuxd never
+  follows symlinks (reads `active` itself and validates it as a 64-hex commit);
+  reject extra files, setuid, device nodes, hardlinks to anything outside the
+  repo. Later option: fs-verity on objects (tamper detection at rest).
 
 ## Planned: per-app Linux data in `/data/matonos/linux/apps/<uid>/`; Flatpaks may run downloaded code (decided 2026-10-04)
 
