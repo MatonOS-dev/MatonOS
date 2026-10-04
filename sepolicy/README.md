@@ -41,3 +41,18 @@ consume the state.
 5. Repeat the boot and missing-hardware checks on Surface Pro 3 and HP
    ProDesk 600 G1. Missing or hotplugged radios and audio devices must not
    prevent boot or change the shared domain assignment.
+
+## H5 / L3 fixed system_ext policy inventory
+
+The preflight file-set guard also covers `sepolicy/system_ext/private`
+(`matonos_setup.te`, `matonos_controllers.te`, `property.te`,
+`property_contexts`, `file_contexts`) and
+`systembridge/sepolicy/system_ext/private` (`matonos_system_bridge.te`,
+`file_contexts`, `genfs_contexts`, `seapp_contexts`, `service_contexts`).
+H5 changes existing files only. The controller exception is linuxd-owned
+uinput with per-session evdev binds: payloads and setup/CLI domains have
+explicit uinput/hidraw neverallows; payload evdev ioctl access is enumerated.
+No new generic device, sysfs, capability or sandbox uinput permission is
+part of H5. Linuxd uses its existing CHOWN capability only on event nodes
+resolved from its own UI_GET_SYSNAME; input-device setattr enables ownership
+by the verified stub UID without adding an input group to payloads.
