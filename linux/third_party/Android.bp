@@ -58,6 +58,10 @@ cc_library_shared {
         "-Wno-unused-parameter",
     ],
     system_ext_specific: true,
+    // Ships inside com.matonos.flatpak (the Flatpak CLI links it).
+    apex_available: ["com.matonos.flatpak"],
+    // APEX payload module; must support the APEX's min_sdk_version (37).
+    min_sdk_version: "37",
     compile_multilib: "64",
 }
 
@@ -82,5 +86,14 @@ cc_binary {
     ],
     shared_libs: ["libcap"],
     system_ext_specific: true,
+    // Ships inside com.matonos.flatpak. bwrap's libcap dependency is a
+    // platform library: external/libcap already installs libcap.so to
+    // /system/lib64, and the APEX namespace can resolve it. Because libcap is
+    // not listed as apex_available for com.matonos.flatpak, the APEX build
+    // requires the one-line AOSP change documented in linux/flatpak/APEX.md
+    // ("AOSP prerequisite: libcap") before it will analyse.
+    apex_available: ["com.matonos.flatpak"],
+    // APEX payload module; must support the APEX's min_sdk_version (37).
+    min_sdk_version: "37",
     compile_multilib: "64",
 }

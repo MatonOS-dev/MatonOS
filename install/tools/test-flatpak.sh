@@ -39,8 +39,8 @@ adb_cmd shell setprop persist.vendor.maton.flatpak_test 1
 # The real path runs the launcher as linuxd's system UID (1000). Running it as
 # root would leave root-owned files under /data/matonos/linux (machine-id) and
 # poison later real launches, so switch to that UID first.
-adb_cmd shell su 1000 /system_ext/bin/flatpak --version
-adb_cmd shell su 1000 /system_ext/bin/flatpak --help >/dev/null
+adb_cmd shell su 1000 /apex/com.matonos.flatpak/bin/flatpak --version
+adb_cmd shell su 1000 /apex/com.matonos.flatpak/bin/flatpak --help >/dev/null
 if [[ $MODE == --list ]]; then
   bridge_call list_installed '{}'
   bridge_call list_remotes '{}'

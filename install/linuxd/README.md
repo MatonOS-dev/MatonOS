@@ -2,8 +2,10 @@
 
 `matonos-linuxd` exposes the Flatpak manager to the system bridge through the
 existing `ILinuxd` Binder interface. It accepts structured JSON only, validates
-refs and app IDs before invoking the fixed `/system_ext/bin/flatpak` binary,
-and runs package operations on a worker while reporting progress. It starts
+refs and app IDs before invoking the fixed
+`/apex/com.matonos.flatpak/bin/flatpak` launcher (the Flatpak stack ships in the
+updatable `com.matonos.flatpak` APEX), and runs package operations on a worker
+while reporting progress. It starts
 after `sys.boot_completed`; a missing service or Flatpak payload does not block
 boot.
 

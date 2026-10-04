@@ -26,7 +26,11 @@
 
 extern char** environ;
 
-static const char k_flatpak[] = "/system_ext/bin/flatpak";
+/* r24: linuxd stays in system_ext; the Flatpak stack ships in the updatable
+ * com.matonos.flatpak APEX, mounted at /apex/com.matonos.flatpak. This is the
+ * launcher (platform-signed Flatpak env wrapper); it execs the CLI in the
+ * same APEX. */
+static const char k_flatpak[] = "/apex/com.matonos.flatpak/bin/flatpak";
 static const size_t k_output_limit = 24 * 1024;
 static pthread_mutex_t g_operation_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_package_state_mutex = PTHREAD_MUTEX_INITIALIZER;
