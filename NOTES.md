@@ -468,7 +468,12 @@ Feature work continues, but in this shape from now on.
     flatpak run in its own narrow domain → exec of bwrap transitions to the
     bwrap setup domain → exec of the payload transitions to the app domain.
     No domain has binder; app domain gets execmem for JITs (Wine/Proton,
-    Chromium). Identity/lifetime/permissions come from the stub (app-owns).
+    Chromium).
+  - Per-app image mounts happen from outside (user, 2026-10-04): bwrap
+    waits (--info-fd/--block-fd) while a privileged linuxd-side helper
+    setns()es into the sandbox's mount namespace and mounts the image with
+    the app's MLS context; then bwrap execs the payload. No capability ever
+    enters the sandbox. Identity/lifetime/permissions come from the stub (app-owns).
   Rejected: plain /data store (neverallow), app code inside stub APKs
   (runtime size, no namespaces in app domains), fixed partition (limits app
   count), proot (slow, weaker).
