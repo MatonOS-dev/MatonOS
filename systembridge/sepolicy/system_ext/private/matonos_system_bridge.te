@@ -399,13 +399,10 @@ allow matonos_mount_helper matonos_code_fs:filesystem { mount remount relabelfro
 # /app/extra for extra data, all in-sandbox directories.
 allow matonos_mount_helper matonos_flatpak_deployment_file:dir { search mounton };
 allow matonos_mount_helper matonos_flatpak_app_data_file:dir { search mounton };
-# helper-apk: the runtime is mounted at /usr, which in the sandbox is a tmpfs.
-# UNVERIFIED (check on the VM, then narrow): we need mounton on /usr, assumed
-# which carries the sandbox's system_file label. bwrap's root is always a
-# tmpfs labelled system_file_type. Granting mounton on system_file:dir is
-# safe: this helper is the only domain with setns+CAP_SYS_ADMIN on the launch
-# path, and /usr is always a directory inside the sandbox root.
-allow matonos_mount_helper system_file:dir mounton;
+# helper-apk: mounting the runtime at the sandbox's /usr needs a mount-point
+# directory with a NON-system label (stock domain.te forbids mounton on
+# system_file_type for every domain but init/dexopt_chroot_setup). TODO: give
+# the sandbox's /usr target its own label; until then the runtime mount fails.
 # Attach records written by the installer. The helper derives the loop device
 # for an app from these, never from a caller-supplied path.
 # helper-apk: the launch record (packages file) also lives under store/apps/.
