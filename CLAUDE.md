@@ -40,7 +40,7 @@ give that feature up for the time being** — no fallback patch. **The one
 exception (user, 2026-09-25; microG moved to v3 on 2026-09-26):** microG signature spoofing, implemented exactly
 like LineageOS (patch 0002: only microG-signed gms/vending may present Google's
 signature; no bridge involvement, user 2026-09-28); patch budget = 1. **Second
-(user, 2026-10-04):** a commit in our `system/sepolicy` fork exempting
+(user, 2026-10-04):** `patches/system/sepolicy/0001` (attribute `data_exec_exempt_domain`) exempting
 `matonos_flatpak_wx_app` (WRITABLE_CODE Flatpaks, non-appdomain, no binder)
 from the two `domain.te` neverallows that forbid non-app domains executing
 data (see install/linuxd/CODE-STORAGE-r24.md). Record any other dropped

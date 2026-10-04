@@ -213,8 +213,8 @@ app) run in `matonos_flatpak_wx_app`: a NON-appdomain (no binder, keeps the
 user-namespace capabilities nested sandboxes such as pressure-vessel need)
 that may execute its own `app_data_file`. Never `execmod`.
 
-This needs one commit in our `system/sepolicy` fork (user decision
-2026-10-04, second patch-budget entry): add `-matonos_flatpak_wx_app` to the
+This needs `patches/system/sepolicy/0001-data-exec-exempt-domain.patch` (user decision
+2026-10-04, second patch-budget entry): a private attribute `data_exec_exempt_domain`, given only to `matonos_flatpak_wx_app`, added to the
 exception lists of the neverallows at `private/domain.te` ~1960 (execute only
 exec/system/vendor files) and ~2040 (no execute of data_file_type). The
 appdomain route was rejected: appdomains may only be entered from zygote

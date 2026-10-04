@@ -1,0 +1,48 @@
+sepolicy: let one MatonOS domain execute its own app data (WRITABLE_CODE)
+
+Adds the private attribute data_exec_exempt_domain and exempts it from the
+two domain.te neverallows that forbid non-app domains executing data files
+(execute only exec/system/vendor files; no execute of data_file_type).
+Nothing in AOSP carries the attribute. MatonOS gives it only to
+matonos_flatpak_wx_app: Flatpak sandboxes of apps the user granted
+org.matonos.permission.WRITABLE_CODE (e.g. game launchers that download and
+run code in place). That domain is not an appdomain (appdomains can only be
+entered from zygote and may hold no capabilities) and has no binder. Every
+other domain keeps W^X. See install/linuxd/CODE-STORAGE-r24.md.
+
+MatonOS: user-approved second patch-budget entry (2026-10-04).
+
+diff --git a/private/attributes b/private/attributes
+index d0c07e0e5..8ee9287af 100644
+--- a/private/attributes
++++ b/private/attributes
+@@ -27,3 +27,9 @@ expandattribute update_provider false;
+ # of the OMAPI services. Remove once the RELEASE_NATIVE_OMAPI flag is cleaned
+ # up and the app-based implementation is removed.
+ attribute omapi_server;
++
++# MatonOS: non-app domains that may execute their own app data
++# (WRITABLE_CODE Flatpak sandboxes, matonos_flatpak_wx_app). Exempts them
++# from the two domain.te neverallows that forbid non-app domains executing
++# data files. Nothing in AOSP carries this attribute.
++attribute data_exec_exempt_domain;
+diff --git a/private/domain.te b/private/domain.te
+index 248a42f62..2fca67364 100644
+--- a/private/domain.te
++++ b/private/domain.te
+@@ -1970,6 +1970,7 @@ neverallow {
+     userdebug_or_eng(`-mediaextractor')
+     userdebug_or_eng(`-mediaswcodec')
+     userdebug_or_eng(`-overlay_remounter')
++    -data_exec_exempt_domain
+ } {
+     file_type
+     -system_file_type
+@@ -2042,6 +2043,7 @@ neverallow {
+   domain
+   -appdomain
+   userdebug_or_eng(`-overlay_remounter')
++  -data_exec_exempt_domain
+ } {
+   data_file_type
+   -apex_art_data_file
