@@ -1,5 +1,25 @@
 # Linux third-party fork plan
 
+## r24 update (2026-10-04)
+
+Bubblewrap 0.13.0 and Flatpak 1.18.4 have been rebased and NDK-built in
+`codex/deps-update`. The user forbids commits for this task: their worktree-local
+`upstream/` repositories are on `matonos/v1.2` at the exact upstream release
+commits with **uncommitted** MatonOS changes. No fork revision was published.
+The manifest branch names remain unchanged; it cannot reproduce these changes
+until the fork changes are reviewed and committed separately. Do not treat an
+upstream base commit as a complete MatonOS fork revision.
+
+See each component's `FORK-REVISION.md` and `source-pins.json` for verified
+archive hashes and exact source-tree hashes. `verify-source.py` rejects stale
+or edited sources before builds. The former bubblewrap/Flatpak patch series
+are removed; `apply-patches.sh` now verifies the forks without modifying them.
+No new patch series was created. The historical preparation below applies to
+the other components; its clean/committed statements do not apply to these
+two uncommitted r24 checkouts.
+
+## Historical preparation
+
 Local repositories have been prepared under each component's `upstream/`
 directory on branch `matonos/v1.2`. Each branch starts at the actual upstream
 Git tag, then imports the complete pinned release source snapshot, then carries
@@ -20,9 +40,9 @@ separately before removing the import layer.
 
 | Component | Upstream git URL | Release tag (resolved commit) | MatonOS commits |
 |---|---|---|---|
-| flatpak | https://github.com/flatpak/flatpak.git | `1.14.10` (`5a2503f1e8ef94364e3060ec440546cc47af7fa5`) | `0001-bionic-glnx-compat`; `0002-bionic-prefix-host-paths` |
+| flatpak | https://github.com/flatpak/flatpak.git | `1.18.4` (`a02d0ba48abe9aacc377de15699e5d8c024b5669`) | libglnx bionic macros; consumer-only Meson/host-path port; GLib sort compatibility (local uncommitted fork) |
 | ostree | https://github.com/ostreedev/ostree.git | `v2024.5` (`f3b66e8c2db4953c14cef048f59a39c039d53433`) | `0001-bionic-strdupa`; `0002-bionic-iftodt`; `0003-bionic-version-string-compare`; `0004-bionic-endian-conversion` |
-| bubblewrap | https://github.com/containers/bubblewrap.git | `v0.10.0` (`dc63ec667e6546f34e0b6c088cdf8ae7c7dea0f3`) | `0001-c23-bool-guard`; `0002-bionic-getcwd`; `0003-bionic-root-bind-realpath`; `0004-bionic-newroot-subpath-realpath` |
+| bubblewrap | https://github.com/containers/bubblewrap.git | `v0.13.0` (`719a4fd474d44b26906bcf2b1b0fb6eddd8d56d0`) | bionic getcwd only (local uncommitted fork); bool and realpath patches retired |
 | glib | https://gitlab.gnome.org/GNOME/glib.git | `2.84.4` (`41eca60845d3fc309af361f5e7f801ba339099aa`) | `0001-bionic-avoid-c23-bool-identifier` |
 | gnupg | https://github.com/gpg/gnupg.git | `gnupg-2.5.2` (`84e1781201489e50888c9415bb2625f9dd27cb8a`) | `0001-only-build-gpg-disable-agent` |
 | npth | https://github.com/gpg/npth.git | `npth-1.8` (`64905e765aad9de6054ef70a97fc30bd992ce999`) | `0001-bionic-probe-pthread-create` |

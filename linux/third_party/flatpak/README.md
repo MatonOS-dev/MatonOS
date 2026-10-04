@@ -1,170 +1,30 @@
-# Flatpak bionic portability spike
+# Flatpak bionic consumer fork
 
-Upstream Flatpak 1.14.10 builds as an x86_64 bionic CLI using NDK r30/API 35
-and the NDK-built dependency stack under `out/matonos/flatpak-ndk/prefix`.
-This is a feasibility spike; it is not integrated into the system image.
+Current release: **1.18.4**, NDK r30 / API 35 / x86_64-v2. See
+`FORK-REVISION.md` and `../source-pins.json` for exact source provenance.
+The former two patch files are retired; build the reviewed fork directly.
 
-## Configuration
+Run `MATON_AOSP=/path/to/aosp bash linux/flatpak/build-seccomp.sh` with the
+matching NDK dependency prefix and AOSP product libraries. Maximum four jobs.
+The script uses Meson, builds all targets, checks `ENABLE_SECCOMP`, compares
+filter syscall numbers against libseccomp's table, checks BPF-export linkage,
+and regenerates the shipped CLI, portal and revokefs helpers. It refreshes
+`seccomp-config.h` and `seccomp.sha256` for staging. No image is built.
 
-The NDK build uses GLib/GIO/GObject/GModule, JSON-GLib, libarchive, GPGME,
-libgpg-error, libassuan, OSTree, AppStream, libxmlb, libyaml and libfyaml from
-the NDK prefix. HTTPS and XML use the image's `/system/lib64/libcurl.so` and
-`libxml2.so`; curl is the platform build against BoringSSL. XZ is statically
-linked into libostree because AOSP's `liblzma.so` is a different library.
-The historical spike configured Flatpak without seccomp. The current CLI is
-rebuilt by `linux/flatpak/build-seccomp.sh` with `--enable-seccomp`, linked to
-the packaged `libseccomp_matonos.so`. The script checks ENABLE_SECCOMP,
-BPF-export linkage and the `--seccomp` argument, and compares all filter
-syscall numbers with libseccomp's x86_64 table under NDK/bionic. Staging
-requires the generated seccomp define and matching CLI SHA-256. Systemd,
-system helper, SELinux module, documentation, xauth and privileged mode remain
-disabled. Runtime filter installation and application compatibility still need
-device verification. Its CLI uses the `FLATPAK_BWRAP`
-environment override to select the test bwrap; D-Bus proxy integration is
-still absent.
+Dependencies retain the existing NDK GLib/GIO, JSON-GLib, libarchive, GPGME,
+OSTree, AppStream and related stack. HTTPS/XML link the matching Android
+platform libcurl/BoringSSL and libxml2. Seccomp stays linked to
+`libseccomp_matonos.so`. Systemd, system helper, SELinux module, xauth,
+introspection, docs, tests, dconf, malcontent, zstd and Wayland security-context
+integration are disabled in this consumer cross-build. Apps still connect
+through the existing Wayland/X11 socket and per-app broker plumbing.
 
-The AppStream library is real (not a stub). Its build disables introspection,
-docs, stemming, compose, Qt, Vala and tests. A small upstream Meson options
-patch gates the appstreamcli/package-data generators and tests for this
-library-only build.
+Bionic retains the libglnx macros, consumer-only CLI/icon exclusions and host
+libc/ldconfig exclusions. New GNU sort calls use GLib on Android. See the fork
+revision notes for exact files and rationale. Runtime filter installation,
+signed installation/update/removal, metadata, portal spawning and graphical
+apps require the later r24 device test.
 
-## Bionic patch
-
-`patches/0001-bionic-glnx-compat.patch` adds a guarded `strdupa` compatibility
-macro using GLib's stack allocator and an `IFTODT` mode conversion for bionic,
-which does not provide those glibc macros. It applies cleanly to the pinned
-Flatpak upstream tree. Equivalent OSTree fixes are in
-`../ostree/patches/`.
-
-Autotools `make flatpak` does not build all `BUILT_SOURCES` when a named target
-is requested, so the scratch build explicitly generates `libglnx-config.h`,
-`common/flatpak-variant-private.h`, and `common/flatpak-enum-types.h` first.
-This is a build invocation detail, not an upstream source patch.
-
-## Spike results
-
-The NDK build produced a 1.4 MiB dynamically linked PIE `flatpak` executable.
-Its direct dynamic dependencies are the listed NDK libraries plus bionic,
-platform libcurl, platform libxml2, and zlib. No OpenSSL library is linked.
-
-Historical initial smoke test: an early 2026-09-29 VM run used URL-only
-remote-add with GPG verification disabled and confirmed the basic 26.08 runtime
-shell. That run predates the NDK GnuPG engine and the signed Flathub install
-verification documented in the final VM results below.
-
-## Open items
-
-- The settings/control bridge API remains a separate integration concern.
-- D-Bus proxy behavior and graphical apps/compositor integration remain
-  untested.
-- The Android.bp Soong port remains deferred; the current image uses NDK
-  prebuilts.
-
-## Bionic consumer-only build (patch 0002)
-
-`0002-bionic-prefix-host-paths.patch` is gated to the NDK `linux-android`
-target. On bionic, Flatpak omits icon validation and build/export support.
-The store app will decode icons with Android `BitmapFactory` when it creates
-stubs. The CLI build commands removed are `build-init`, `build`,
-`build-finish`, `build-export`, `build-bundle`, `build-import-bundle`,
-`build-sign`, `build-update-repo`, and `build-commit-from`. The matching
-sources are excluded from the bionic build; `install --bundle` and consumer
-commands remain. This also keeps `flatpak-validate-icon` out of the image.
-
-Bionic skips Flatpak's host OS libc exports and its glibc `ldconfig` /
-`ld.so.cache` path. Other Linux builds keep these upstream behaviors.
-`flatpak-builder` is a separate project and is not included in this Flatpak
-source build.
-
-The `gdk-pixbuf`, `libpng`, and `libjpeg-turbo` third-party source directories
-remain in `linux/third_party/` but are unused by this bionic Flatpak build.
-They are retained for possible later use by the store app. The old stray
-`libksba 1.6.7` and `npth 1.8` directories contained only empty scaffolding;
-the canonical `libksba/` and `npth/` trees remain.
-
-The NDK r30/API 35 build passed `make -j2 all` and `make install`. The staged
-stripped bundle is `out/pc-logs/flatpak-spike/ndk-runtime-gpg-consumer/`.
-Compared with the prior GDK-enabled bundle, it saves 1,261,952 bytes total:
-1,156,816 bytes from the removed icon validator and gdk-pixbuf/PNG/JPEG
-libraries, plus 105,136 bytes from the smaller stripped `flatpak` executable
-after removing build-only commands. Bundle totals are 27,506,072 bytes before
-and 26,244,120 bytes after. `tools/preflight.sh` passes and both Flatpak
-patches apply to the pinned upstream tree.
-
-### VM verification
-
-On a copy of the 2026-09-29 23:27:20 OK image (QEMU `-g none -m 4096`, port
-5565, SELinux permissive), the no-codecs bundle passed `flatpak --version`
-(1.14.10), imported signed Flathub, and installed
-`org.freedesktop.Platform//26.08` and `io.github.zyedidia.micro` with GPG
-verification enabled. The Platform shell returned 0 and reported kernel
-`7.2.7-dirty`; `micro --version` returned 0 and printed 2.0.15. Flatpak on
-Android needs a writable 0700 `XDG_RUNTIME_DIR` (Android has no `/run/user`).
-Full command output is in `out/pc-logs/flatpak-spike/no-codecs-vm-evidence.txt`.
-
-UID 10999 ran `flatpak --version`, the Platform shell, and Micro 2.0.15
-without root; the shell reported `uid=10999(u0_a999)` and returned 0. Root
-added `/tmp/.X11-unix` mode 1777 after the first Micro launch failed with
-`bwrap: Can't mkdir /tmp/.X11-unix: Permission denied` (`/tmp` was
-`shell:shell` mode 0771). Flatpak/bwrap itself did not need root once that
-shared X11 socket directory and a 0700 user-owned `XDG_RUNTIME_DIR` existed.
-
-The test UID still could not fetch Flathub, even with supplementary group
-3003 (`inet`): `remote-add` failed with curl error `[6] Could not resolve
-hostname`. It has no installed package / Android `INTERNET` permission record.
-Root therefore seeded a signed, GPG-verified system install for the UID launch
-test; Flatpak refuses root `--user install` with `Refusing to operate on a
-user installation as root!`. In production, Software Center must hold the
-Android `INTERNET` permission and perform its user installation as its own
-package UID. MatonOS also needs to create `/tmp/.X11-unix` mode 1777 during
-boot for unprivileged apps that request X11. Full results and errors are in
-`out/pc-logs/flatpak-spike/no-codecs-vm-evidence.txt`.
-
-## Open items
-
-- The settings/control bridge API remains a separate integration concern.
-- D-Bus proxy behavior and graphical apps/compositor integration remain
-  untested.
-- The Android.bp Soong port remains deferred; the current image uses NDK
-  prebuilts.
-
-## Release image prebuilt handoff (2026-09-30)
-
-Until the Soong port is ready, `linux/flatpak/flatpak.mk` copies the tested
-NDK runtime into system_ext. `/system_ext/bin/flatpak` is a small launcher
-which sets `LD_LIBRARY_PATH=/system_ext/lib64`, puts `/system_ext/bin` on
-`PATH` for GPGME, selects the image's `/system_ext/bin/bwrap` and
-`/system_ext/bin/revokefs-fuse`, then execs
-`/system_ext/bin/matonos-flatpak`. The integration includes `gpg`,
-`ostree`, 22 shared libraries, and Flatpak trigger data;
-the existing Soong `bwrap` and platform `libcurl`, `libxml2`, and `libz`
-remain image dependencies. The staged files total 26,029,425 bytes after
-moving the payload and helper into `bin` for Soong fsgen compatibility.
-
-`device.mk` includes this product fragment. The existing system_ext
-`file_contexts` assigns these files the existing `system_file` type; no new
-SELinux policy type or policy file was introduced. The Flathub signing key
-is supplied by the signed `.flatpakrepo` and imported into the installation
-under `/data/matonos/linux/flatpak`; no private signing key is bundled.
-
-This integration is pending a release image build and VM verification through
-linuxd. The previously documented NDK VM tests used pushed binaries and do
-not verify this image prebuilt handoff.
-
-### Release image build and VM attempt (2026-09-30 12:37)
-
-The 12:37 full image build succeeded and `installed-files-system_ext.txt`
-contains the launcher, Flatpak payload, `gpg`, `ostree`, `revokefs-fuse`, all
-22 bundled libraries, and the trigger files. The generated
-`system_ext_file_contexts` labels the added paths with the existing
-`system_file` type. `tools/check-selinux-labels.sh -o
-out/target/product/pc_x86_64` passed for all nine init-started vendor
-programs.
-
-The required home-disk image copy was tested at port 5565 with `-g std` and
-4096 MiB. The kernel restarted into the bootloader after about 1.77 seconds,
-repeatedly, before init/ADB/linuxd became available. The bt-fix agent reported
-the same failure on this image at port 5567. Therefore `add_flathub` and the
-Calculator install through linuxd could not be exercised. Serial evidence is
-at `/home/hanro50/matonos/vm/flatpak-spike/serial.log`; the temporary image
-copy is being removed after stopping the VM.
+The broker minimum remains 1.14.10: RequestSession's signature/version and
+monitor `path` key still match. Packaged version and compatibility floor are
+separate. No `portals.c`, `session-control.h` or compositor source was changed.

@@ -68,6 +68,8 @@ cc_binary {
         "bubblewrap/upstream/bubblewrap.c",
         "bubblewrap/upstream/network.c",
         "bubblewrap/upstream/utils.c",
+        "bubblewrap/upstream/chroot_realpath.c",
+        "bubblewrap/upstream/safe_openat.c",
     ],
     local_include_dirs: [
         "bubblewrap",
