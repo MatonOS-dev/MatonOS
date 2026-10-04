@@ -229,6 +229,16 @@ keep our patches small enough to rebase each time (forks, not patch series).
 Prefer the newest stable over prereleases; note any deliberate exception
 (and why) next to its pin.
 
+## Rule: Flatpak apps never get binder (user, 2026-10-04)
+
+Linux/Flatpak app sandboxes must have no access to Android binder: never
+expose /dev/binder, /dev/hwbinder or /dev/vndbinder (nor other Android-only
+nodes) inside the sandbox, even for `devices=all` — the bwrap shim masks
+them — and the app sandbox SELinux domain gets no binder_use/binder_call/
+service_manager rights, guarded by a neverallow. Everything Android-side
+goes through our sockets (Wayland/X11/D-Bus/portals) to the compositor host
+and the System Bridge.
+
 ## Rule: our native code is plain C (user, 2026-09-28)
 
 New native code we write from scratch (daemons, helpers, services) is plain
