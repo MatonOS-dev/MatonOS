@@ -46,8 +46,10 @@
 
   <!-- Linux apps (Flatpak on bionic): patched components, nested inside the
        device tree where linux/third_party/<name>/Android.bp expects them -->
-  <project path="device/maton/pc_x86_64/linux/third_party/flatpak/upstream" name="flatpak"
-           remote="matonos-dev" revision="matonos/v1.2" />
+  <!-- flatpak: MatonOS-dev/flatpak was recreated (2026-10-04) with only
+       matonos/v26.10 (1.16.6 + static trim), which the static stack fetches
+       by commit; the old matonos/v1.2 bionic branch exists only in the local
+       checkout below until integration. -->
   <!-- The other bionic-Flatpak forks/snapshots (ostree, bubblewrap, glib,
        gnupg, npth, libgpg-error, libfyaml, appstream, gdk-pixbuf, gpgme,
        json-glib, libarchive, libassuan, libgcrypt, libjpeg-turbo, libksba,
