@@ -8,6 +8,11 @@
         android:label="@string/game_controllers_label"
         android:description="@string/game_controllers_description"
         android:protectionLevel="dangerous" />
+    <permission
+        android:name="org.matonos.permission.RUN_DOWNLOADED_CODE"
+        android:label="Run downloaded code"
+        android:description="Allow this Linux application to keep a private writable volume whose contents the installer can seal into its verified code image."
+        android:protectionLevel="dangerous" />
     <!-- Shelf's provider service is protected by this capability; the platform-signed
          bridge requests it so only the audited gatekeeper can bind the built-in provider. -->
     <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />

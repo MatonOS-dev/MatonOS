@@ -25,7 +25,7 @@ typedef struct FlatpakResult {
 typedef void (*FlatpakProgressCallback)(const char* line, void* context);
 typedef void (*FlatpakCompleteCallback)(const FlatpakResult* result, void* context);
 
-void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, FlatpakResult* result);
+void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, int stub_uid, int stub_pid, int lifeline_fd, FlatpakResult* result);
 void flatpak_manager_init(void);
 void flatpak_manager_set_callbacks(FlatpakProgressCallback progress,
         FlatpakCompleteCallback complete, void* context);

@@ -18,6 +18,7 @@ public final class CompositorService extends Service {
     private static native void nativeStop();
     private static native boolean nativeAddSession(int id, String path);
     private static native boolean nativeXwaylandInit(String socketDir, String xwaylandPath);
+    private static native void nativeStopped(int window, boolean stopped);
     private static native String nativeAddXwayland(int session, int uid);
     private static native void nativeClose(int id);
     private static native void nativeLaunchDemo();
@@ -109,35 +110,7 @@ public final class CompositorService extends Service {
             return super.onTransact(code, data, reply, flags);
         }
         public String launchFlatpak(String ref) {
-            if (ref == null || !ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"))
-                return "{\"ok\":false,\"error\":\"Invalid application reference\"}";
-            if (!ready) return "{\"ok\":false,\"error\":\"Compositor failed to start\"}";
-            synchronized (launching) {
-                Long last = launching.get(ref);
-                if (last != null && android.os.SystemClock.elapsedRealtime() - last < 5000)
-                    return "{\"ok\":true}";
-                try {
-                    EmbeddedSession session;
-                    synchronized (sessions) {
-                        session=sessions.get("host:"+ref);
-                        if(session==null) {
-                            if(sessions.size()>=128)throw new IllegalStateException("Too many application sessions");
-                            session=new EmbeddedSession(android.os.Process.myUid(),ref,nextSession.getAndIncrement());
-                            session.standalone=true;
-                            sessionsById.put(session.id,session);sessions.put("host:"+ref,session);
-                        }
-                    }
-                    if(!session.bus.isAlive())throw new IllegalStateException("Session broker exited");
-                    session.ensureXwayland();
-                    String reply = FlatpakLauncher.launch(CompositorService.this, ref,session.directory,session.x11Display);
-                    if (new org.json.JSONObject(reply).optBoolean("ok")) launching.put(ref, android.os.SystemClock.elapsedRealtime());
-                    return reply;
-                } catch (Exception e) {
-                    Log.e(TAG, "Flatpak launch failed", e);
-                    try { return new org.json.JSONObject().put("ok",false).put("error",e.getMessage()).toString(); }
-                    catch (Exception ignored) { return "{\"ok\":false}"; }
-                }
-            }
+            return "{\"ok\":false,\"error\":\"Launch from the application stub\"}";
         }
         public String getLaunchStatus(String ref) {
             try {return FlatpakLauncher.status(CompositorService.this,ref);}
@@ -157,9 +130,10 @@ public final class CompositorService extends Service {
     };
 
     private final IEmbeddedHost.Stub embedded = new IEmbeddedHost.Stub() {
-        public IEmbeddedSession openSession(String ref, IEmbeddedWindowListener listener) {
+        public IEmbeddedSession openSession(String ref, IEmbeddedWindowListener listener, android.os.ParcelFileDescriptor lifeline) {
+            int pid = android.os.Binder.getCallingPid();
             int uid = android.os.Binder.getCallingUid();
-            if (listener == null || ref == null || !ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"))
+            if (lifeline == null || listener == null || ref == null || !ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"))
                 throw new SecurityException("Invalid stub session");
             long identity = android.os.Binder.clearCallingIdentity();
             try {
@@ -168,12 +142,22 @@ public final class CompositorService extends Service {
                 if (!ready) throw new IllegalStateException("Compositor failed to start");
                 synchronized (sessions) {
                     EmbeddedSession session = sessions.get(ref);
+                    if (session != null && session.pid != pid) {
+                        // A new process cannot adopt an old process's lifetime.
+                        String status=FlatpakLauncher.status(CompositorService.this,ref);
+                        if(new org.json.JSONObject(status).optBoolean("ok"))throw new IllegalStateException("Previous app process is still stopping");
+                        session.bus.close();if(session.lifeline!=null)session.lifeline.close();
+                        sessionsById.remove(session.id);sessions.remove(ref);session=null;
+                    }
                     if (session == null) {
                         if (sessions.size() >= 128) throw new IllegalStateException("Too many application sessions");
                         session = new EmbeddedSession(uid, ref, nextSession.getAndIncrement());
+                        session.pid=pid; session.lifeline=lifeline;
                         sessionsById.put(session.id, session);
                         sessions.put(ref, session);
                     }
+                    if (session.pid != pid) throw new SecurityException("Previous stub session is still registered; restart the host session");
+                    if (session.lifeline != lifeline) lifeline.close();
                     if (session.uid != uid) throw new SecurityException("Session belongs to another UID");
                     session.listeners.register(listener);
                     listener.onInhibitChanged(session.bus.portals.isHeld());
@@ -188,6 +172,8 @@ public final class CompositorService extends Service {
 
     private final class EmbeddedSession extends IEmbeddedSession.Stub {
         final int uid, id;
+        int pid;
+        android.os.ParcelFileDescriptor lifeline;
         final String ref;
         final java.io.File directory;
         final java.util.concurrent.ConcurrentHashMap<Integer, int[]> windows = new java.util.concurrent.ConcurrentHashMap<>();
@@ -201,7 +187,7 @@ public final class CompositorService extends Service {
             directory=new java.io.File(getFilesDir(),"wayland/s"+id);
             if (!directory.isDirectory() && !directory.mkdirs()) throw new java.io.IOException("Cannot create application socket directory");
             android.system.Os.chmod(directory.getAbsolutePath(),0711);
-            bus=new SessionBus(CompositorService.this,directory,ref,this::inhibited,this::openUri);
+            bus=new SessionBus(CompositorService.this,directory,ref,uid,this::inhibited,this::openUri);
             if (!nativeAddSession(id,new java.io.File(directory,"wayland-0").getAbsolutePath())) {
                 bus.close();
                 throw new java.io.IOException("Cannot create application Wayland socket");
@@ -286,7 +272,7 @@ public final class CompositorService extends Service {
                     if (new org.json.JSONObject(status).optBoolean("ok")) return status;
                 }
                 if(!bus.isAlive())throw new IllegalStateException("Session broker exited");
-                String reply=FlatpakLauncher.launch(CompositorService.this,ref,directory,x11Display);
+                String reply=FlatpakLauncher.launch(CompositorService.this,ref,directory,x11Display,uid,pid,lifeline);
                 launched=new org.json.JSONObject(reply).optBoolean("ok");
                 return reply;
             } catch(Exception e) { return failure(e); }
@@ -303,6 +289,7 @@ public final class CompositorService extends Service {
         public void detachWindow(int window){checkWindow(window);nativeDetach(window);}
         public void resizeWindow(int window,int width,int height){checkWindow(window);nativeResize(window,width,height);}
         public void closeWindow(int window){checkWindow(window);nativeClose(window);}
+        public void setWindowStopped(int window,boolean stopped){checkWindow(window);nativeStopped(window,stopped);}
         public void keyEvent(int window,int key,int scan,int action,int meta,long time){checkWindow(window);nativeKey(window,key,scan,action,meta,time);}
         public void motionEvent(int window,float x,float y,float vs,float hs,int action,int buttons,long time){checkWindow(window);nativeMotion(window,x,y,vs,hs,action,buttons,time);}
     }

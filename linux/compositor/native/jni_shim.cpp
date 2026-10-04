@@ -130,4 +130,7 @@ Java_org_matonos_compositor_CompositorService_nativeMotion(JNIEnv*, jclass, jint
 }
 
 extern "C" JNIEXPORT void JNICALL
+Java_org_matonos_compositor_CompositorService_nativeStopped(JNIEnv*, jclass, jint id, jboolean stopped) { maton_core_stopped(id,stopped); }
+
+extern "C" JNIEXPORT void JNICALL
 Java_org_matonos_compositor_CompositorService_nativeClose(JNIEnv*, jclass, jint id) { maton_core_close(id); }

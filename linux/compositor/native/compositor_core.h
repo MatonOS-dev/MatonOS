@@ -10,6 +10,7 @@ extern "C" {
 
 bool maton_core_start(const char* socket_name, const char* runtime_dir);
 void maton_core_close(int id);
+void maton_core_stopped(int id, bool stopped);
 bool maton_core_add_session(int session, const char* socket_path);
 bool maton_core_xwayland_init(const char* socket_dir, const char* xwayland_path);
 bool maton_core_add_xwayland(int session, int uid, char* display, size_t display_size);

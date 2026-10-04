@@ -1,0 +1,152 @@
+# r24: Flatpak code storage and verified execution
+
+This resolves the H6/app-owns enforcing blocker (`domain.te` forbids executing
+data_file_type from /data and forbids writing exec_type) **without any platform
+policy exception**. It implements the design decided 2026-10-04 (NOTES.md).
+
+## Why the previous design was blocked
+
+Two stock `system/sepolicy/private/domain.te` neverallows encircle /data code:
+
+1. `neverallow { domain -appdomain ... } { ... }:file execute;` and the /data
+   variant forbid a non-appdomain from executing a `data_file_type`.
+2. `neverallow { domain ... } { system_file_type vendor_file_type exec_type }:
+   dir_file_class_set { ... write ... }` forbids every domain from writing an
+   `exec_type` (so writable+executable is impossible).
+3. `full_treble_only`: a `coredomain` may only take `file:entrypoint` from
+   `system_file_type` or `postinstall_file`; a non-coredomain only from
+   `vendor_file_type`/`init_exec`.
+
+The old code therefore deliberately left deployed-code execution denied.
+
+## Resolution: mount labels, not relabels
+
+Flatpak code is stored in sparse images on /data and **loop-mounted with a
+mount-time label**, exactly like vold's AppFuse:
+
+```
+fscontext=u:object_r:matonos_code_fs:s0
+context=u:object_r:matonos_app_code_exec:s0:<stub MLS categories>
+```
+
+* The superblock label (`fscontext=`) carries `contextmount_type`
+  (`domain.te` restricts context mounts to that attribute). Stock policy only
+  lets a non-allowlisted domain mount `sdcard_type`/`fusefs_type`
+  filesystems, so the image also carries `fusefs_type`, just as FUSE mounts
+  do; the installer still needs explicit `mount`/`relabelto` grants.
+* The inode label (`context=`) is an **`exec_type`, not a `data_file_type`**,
+  so the /data execution neverallow does not apply.
+* The image is mounted **read-only**, and writing `exec_type` is neverallowed,
+  so verified code cannot change under a running app.
+* Because the label comes from the mount (kernel-applied), no policy
+  `relabelto` on an exec_type inode is needed; the only checked permission is
+  `filesystem relabelto` on `matonos_code_fs`, which the installer holds.
+
+### Payload entry without file:entrypoint
+
+`matonos_app_code_exec` is a genuine exec_type and is never mislabelled as
+system/vendor code, so it cannot be a `coredomain` entrypoint. bwrap instead
+execs `matonos-app-exec`, a tiny system_ext launcher that runs in the narrow
+`matonos_app_launch` domain. That domain is `mlstrustedsubject` for MLS only
+(the kernel's `mlsconstrain process { transition dyntransition }` requires
+equal levels unless the source is trusted, exactly as with `zygote`), so it can
+move to the stub's per-app level. The launcher computes that level from the UID
+it actually runs as (the verified stub UID) with the same algorithm Android
+uses for app processes, mounts the app's code image and volume inside the
+sandbox mount namespace, drops `CAP_SYS_ADMIN`, `setcon()`s to the untrusted
+app domain at that level and `execve()`s the payload with `execute_no_trans`.
+No file entrypoint is involved and the app domain keeps no setup rights.
+
+## Domains
+
+| Domain | Entered by | Purpose |
+| --- | --- | --- |
+| `matonos_linuxd` | init | trusted coordinator; owns the Bridge transport and execs the installer helper |
+| `matonos_flatpak_installer` | exec of `matonos-flatpak-store` | **only** writer/attacher of the store images; runs Flatpak management |
+| `matonos_flatpak_run` | dyntransition (verified stub) | Flatpak CLI while it prepares one sandbox |
+| `matonos_bwrap` | exec of bwrap/matonos-bwrap | user namespaces and mounts only; no app data, no binder |
+| `matonos_app_launch` | exec of `matonos-app-exec` | trusted-for-MLS-only launcher: mounts the code image/volume in the sandbox namespace, then enters the app domain at the stub's level |
+| `matonos_flatpak_app` | dyntransition in `matonos-app-exec` | payload: verified code, its volume, its sockets, /dev/dri, execmem; zero binder |
+
+Every sandbox domain (`matonos_flatpak_app`, `matonos_flatpak_run`,
+`matonos_bwrap`, `matonos_app_launch`) is covered by neverallows that forbid
+all Android Binder, binder-device and service-manager access beyond the
+unavoidable stock baseline. The stock platform policy unconditionally grants
+every domain `system_server:binder call` and `rw_file_perms` on
+`binder_device`/`hwbinder_device` chr_file (`private/domain.te`); those grants
+cannot be subtracted from private policy, so the assertions carve out exactly
+that baseline, and the runtime seccomp filter rejects every Binder ioctl, which
+is the real enforcement. An app can never re-enter the bwrap setup domain or
+execute bwrap itself (nested sandboxes go through `flatpak-portal` under
+linuxd).
+
+## Stores
+
+```
+/data/matonos/linux/store/runtime.img        shared runtime/extensions (ext4)
+/data/matonos/linux/store/runtime/           its mount point (host namespace)
+/data/matonos/linux/store/apps/<appid>/code.img   per-app verified code (erofs)
+/data/matonos/linux/store/apps/<appid>/vol.img    optional writable volume (ext4)
+```
+
+* `matonos-flatpak-store` builds an erofs image from the Flatpak deployment
+  (`mkfs.erofs`), enables fs-verity on the image file (`FS_IOC_ENABLE_VERITY`;
+  loop reads then go through the kernel verifier), writes a SHA-256 sidecar,
+  and renames the pair into place atomically. Growing is sparse
+  (`ftruncate`); removal trims with `FITRIM`.
+* The installer only **attaches** a per-app image to a free loop device
+  (`app-attach`/`vol-attach` print the loop path; `loop-detach` clears it). It
+  never mounts per-app code in the host namespace. `matonos-app-exec` mounts
+  the loop *inside the app's sandbox mount namespace* with
+  `context=u:object_r:matonos_app_code_exec:<stub level>` (volume:
+  `matonos_app_volume_file`), so the mount exists only in that sandbox and is
+  never reachable at a shared path. The MLS level is computed from the verified
+  stub UID (`MatonMls.h`, mirroring AOSP `android_seapp.c` `levelFrom=all`),
+  never passed in. The shared runtime is the one exception: it is mounted once
+  in the host namespace as `matonos_runtime_exec:s0` and is readable and
+  executable by every app (every app level dominates `s0`).
+* The tool pins: newest stable `erofs-utils` for `mkfs.erofs` (shipped as a
+  system_ext prebuilt) and the kernel's fs-verity; where /data lacks fs-verity
+  the helper records an explicit degraded mode and still checks the sidecar
+  digest at mount. dm-verity is the fallback if fs-verity is unavailable.
+* The writable+executable volume of the original design is **not**
+  simultaneously writable and executable: that is impossible under stock
+  neverallows. `vol.img` is a persistent writable **data** volume
+  (`context=matonos_app_volume_file`); code an app downloads into it is made
+  executable only after the installer **seals** it into a new verified
+  `code.img` (atomic swap). This mirrors ChromeOS and keeps the neverallows
+  intact.
+
+## Runtime permission
+
+`org.matonos.permission.RUN_DOWNLOADED_CODE` (`dangerous`, declared by
+`org.matonos.systembridge`) is requested by a generated stub only when the
+Flatpak manifest declares a broad writable or persistent filesystem pattern
+(`filesystems=host|home|~|~/...`, or any `persistent=`); default deny. Narrow
+`ro` grants do not request it. See `StubGenerator.permissionsForMetadata`.
+
+## Sandbox user
+
+Flatpak generates `/etc/passwd` and `/etc/group`; the wrapper joins as the
+stub UID (>= 10000) with supplementary groups reduced to inet plus (only when
+granted) the controller GID, so the sandbox sees one ordinary unprivileged
+user with no wheel/sudo/admin/adm membership and no sudo/su/pkexec path.
+
+## Still to wire (r24 image / r25)
+
+* Thread the RUN_DOWNLOADED_CODE grant through Bridge → linuxd → installer so
+  `vol-ensure`/`vol-attach` run on first launch of an entitled app.
+* Point Flatpak's runtime/extension install at the shared store image; today
+  the installer seals the existing `/data/matonos/linux/flatpak` deployment.
+* Wire the loop hand-off end to end: linuxd records the `app-attach`/
+  `vol-attach` loop paths, exports `MATON_CODE_LOOP`/`MATON_VOLUME_LOOP` (and
+  the in-sandbox `MATON_CODE_MOUNT`/`MATON_VOLUME_MOUNT` targets) to the
+  launcher, and calls `loop-detach` when the sandbox exits.
+* The `matonos-flatpak-store` helper must run with `SYS_ADMIN`. It is exec'd
+  by linuxd, whose init caps now include SYS_ADMIN; the MAC grants limit the
+  actual loop ability to the installer domain. `matonos-app-exec` gets
+  `CAP_SYS_ADMIN` in the sandbox user namespace only for the mount, then drops
+  it before exec'ing the payload. A file-caps/root service variant is the
+  alternative if linuxd should not hold the capability.
+* Device matrix in `APP-OWNERSHIP-r24.md` still applies (this change adds the
+  mount/verity and domain-entry steps; the identity/cgroup work is unchanged).

@@ -92,6 +92,10 @@ public final class SystemBridgeService extends Service {
         }
 
         @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, android.os.ParcelFileDescriptor x11Directory, String x11Display) {
+            throw new SecurityException("A signed stub process and lifeline are required");
+        }
+
+        @Override public String launchOwnedFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, android.os.ParcelFileDescriptor x11Directory, String x11Display, int stubUid, int stubPid, android.os.ParcelFileDescriptor lifeline) {
             try {
                 String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
                 if (!"org.matonos.compositor".equals(caller) || runtimeDirectory == null)
@@ -100,6 +104,9 @@ public final class SystemBridgeService extends Service {
                 if (x11Display != null && x11Display.length() > 0 &&
                         (!x11Display.matches("X[0-9]+") || x11Directory == null))
                     throw new SecurityException("Invalid compositor X11 socket capability");
+                if (lifeline == null || stubPid <= 0 || stubUid < 10000 ||
+                        !flatpakStubManager.ownsStub(stubUid, ref))
+                    throw new SecurityException("Unverified stub owner");
                 long identity = Binder.clearCallingIdentity();
                 try {
                     ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
@@ -113,7 +120,7 @@ public final class SystemBridgeService extends Service {
                         dns.append(server.getHostAddress());
                     }
                     return daemon.launchGraphical(ref, runtimeDirectory, dns.toString(), x11Directory, x11Display,
-                            flatpakStubManager.hasGameControllers(ref));
+                            flatpakStubManager.hasGameControllers(ref), stubUid, stubPid, lifeline);
                 } finally {
                     Binder.restoreCallingIdentity(identity);
                 }
@@ -126,6 +133,7 @@ public final class SystemBridgeService extends Service {
                 Log.e(TAG, "launchFlatpak failed for " + ref, error);
                 throw error;
             } finally {
+                if (lifeline != null) try { lifeline.close(); } catch (java.io.IOException ignored) { }
                 if (runtimeDirectory != null) try { runtimeDirectory.close(); } catch (java.io.IOException ignored) { }
                 if (x11Directory != null) try { x11Directory.close(); } catch (java.io.IOException ignored) { }
             }

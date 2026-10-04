@@ -2,11 +2,15 @@
 # platform-side policy, never by vendor file_contexts).
 /system_ext/bin/matonos-linuxd u:object_r:matonos_linuxd_exec:s0
 /data/matonos/linux(/.*)? u:object_r:matonos_flatpak_data_file:s0
+# r24 code/runtime image store. The image files and their mount points are
+# data; the *contents* of a mounted image are labelled only by the mount's
+# context= (matonos_(app_code|runtime)_exec), never by this directory.
+/data/matonos/linux/store(/.*)? u:object_r:matonos_flatpak_store_file:s0
 # Per-app Xwayland display sockets live in their own directory so the
 # compositor can hand each socket to its application's uid.
 # flatpak-spike: NDK runtime files use the existing system_file type, which
 # matonos-linuxd is already allowed to execute/read; no new policy type needed.
-/system_ext/bin/(flatpak|gpg|ostree|matonos-flatpak|revokefs-fuse|Xwayland) u:object_r:system_file:s0
+/system_ext/bin/(flatpak|gpg|ostree|revokefs-fuse|Xwayland) u:object_r:system_file:s0
 /system_ext/lib64/lib[^/]+\.so u:object_r:system_file:s0
 /system_ext/share/flatpak(/.*)? u:object_r:system_file:s0
 
@@ -22,3 +26,17 @@
 # The instance can exceed four digits; only this device's uevent is readable.
 /sys/devices(/[^/]+)*/[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-Fa-f]+/uevent -- u:object_r:sysfs_matonos_input:s0
 /sys/devices/virtual/misc/uinput/dev -- u:object_r:sysfs_matonos_input:s0
+
+/data/matonos/linux/apps/[0-9]+(/.*)? u:object_r:matonos_flatpak_app_data_file:s0
+/data/matonos/linux/flatpak(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
+/data/matonos/linux/runtime(/.*)? u:object_r:matonos_flatpak_socket_file:s0
+/data/matonos/linux/(machine-id|udev)(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
+
+/system_ext/bin/matonos-flatpak u:object_r:matonos_flatpak_cli_exec:s0
+# r24: installer helper (exec'd by linuxd) and the two bwrap layers.
+/system_ext/bin/matonos-flatpak-store u:object_r:matonos_flatpak_installer_exec:s0
+/system_ext/bin/matonos-bwrap u:object_r:matonos_bwrap_exec:s0
+/system_ext/bin/bwrap u:object_r:matonos_bwrap_exec:s0
+/system_ext/bin/matonos-app-exec u:object_r:matonos_app_exec_exec:s0
+
+/data/matonos/linux/cache/launch-[^/]+\.log u:object_r:matonos_flatpak_log_file:s0

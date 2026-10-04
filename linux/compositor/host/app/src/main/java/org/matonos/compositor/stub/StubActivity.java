@@ -22,6 +22,14 @@ import org.matonos.compositor.IEmbeddedWindowListener;
 /** Shared activity code runs in the generated app's own package and task. */
 public final class StubActivity extends Activity implements SurfaceHolder.Callback {
     private static final String WINDOW = "org.matonos.linuxhost.WINDOW_ID";
+    // Kept for the process lifetime, including activity recreation and all
+    // windows. Only process death closes the writer; no compositor-held copy.
+    private static android.os.ParcelFileDescriptor[] processLife;
+    private static synchronized android.os.ParcelFileDescriptor lifeline() throws java.io.IOException {
+        if(processLife==null)processLife=android.os.ParcelFileDescriptor.createPipe();
+        return processLife[0];
+    }
+    private boolean stopped;
     private String ref;
     private volatile int window;
     private boolean bound, attached;
@@ -66,7 +74,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             new Thread(() -> {
                 IEmbeddedSession opened=null;
                 try {
-                    opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener);
+                    opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener,lifeline());
                     final IEmbeddedSession active=opened;
                     boolean needsLaunch=window==0;
                     runOnUiThread(() -> {
@@ -84,9 +92,16 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
                         for(int i=0;i<30&&!destroyed&&window==0;i++) {
                             Thread.sleep(1000);
                             JSONObject state=new JSONObject(active.getLaunchStatus());
-                            if (!state.optBoolean("ok")) { message(state.optString("error","Application exited"));return; }
+                            if (!state.optBoolean("ok")) { runOnUiThread(() -> {if(!destroyed)finish();});return; }
                         }
                         if(!destroyed&&window==0)message("Application is running, but no window has appeared.");
+                    }
+                    // Every window observes process exit, including secondary
+                    // activities after the first window has closed.
+                    while(!destroyed) {
+                        Thread.sleep(1000);
+                        JSONObject state=new JSONObject(active.getLaunchStatus());
+                        if(!state.optBoolean("ok")) {runOnUiThread(() -> {if(!destroyed)finish();});break;}
                     }
                 } catch(Exception e) { failure("Cannot start application",e); }
                 finally {
@@ -115,17 +130,23 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         if(minimum>HostContract.getInterfaceVersion()){message("Update the Linux host to launch this application.");return;}
         try {
             String[] requested = getPackageManager().getPackageInfo(getPackageName(), PackageManager.GET_PERMISSIONS).requestedPermissions;
-            if (window == 0 && requested != null && java.util.Arrays.asList(requested).contains("org.matonos.permission.GAME_CONTROLLERS")
-                    && checkSelfPermission("org.matonos.permission.GAME_CONTROLLERS") != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{"org.matonos.permission.GAME_CONTROLLERS"}, 2900);
-                return;
+            String[] runtime = {"org.matonos.permission.GAME_CONTROLLERS", "org.matonos.permission.RUN_DOWNLOADED_CODE"};
+            int[] codes = {2900, 2901};
+            if (window == 0 && requested != null) {
+                java.util.List<String> declared = java.util.Arrays.asList(requested);
+                for (int i = 0; i < runtime.length; i++) {
+                    if (declared.contains(runtime[i]) && checkSelfPermission(runtime[i]) != PackageManager.PERMISSION_GRANTED) {
+                        requestPermissions(new String[]{runtime[i]}, codes[i]);
+                        return;
+                    }
+                }
             }
         } catch (PackageManager.NameNotFoundException error) { failure("Cannot read permissions", error); return; }
         connectHost();
     }
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grants) {
         super.onRequestPermissionsResult(requestCode, permissions, grants);
-        if (requestCode == 2900 && !destroyed) connectHost();
+        if ((requestCode == 2900 || requestCode == 2901) && !destroyed) connectHost();
     }
     private void connectHost() {
         Intent host=new Intent("org.matonos.compositor.EMBEDDED")
@@ -156,9 +177,18 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             if(view!=null)setContentView(status);
         });
     }
+    @Override protected void onStart() {
+        super.onStart(); stopped=false; reportStopped();
+    }
+    @Override protected void onStop() {
+        stopped=true; reportStopped(); super.onStop();
+    }
+    private void reportStopped() {
+        if(session!=null && window!=0)try{session.setWindowStopped(window,stopped);}catch(Exception ignored){}
+    }
     private void attachIfReady() {
         if(attached||session==null||surface==null||!surface.isValid()||window==0)return;
-        try{session.attachWindow(window,surface,view.getWidth(),view.getHeight());attached=true;}
+        try{session.attachWindow(window,surface,view.getWidth(),view.getHeight());attached=true;reportStopped();}
         catch(Exception e){failure("Cannot display application window",e);}
     }
     public void surfaceCreated(SurfaceHolder holder){surface=holder.getSurface();attachIfReady();}

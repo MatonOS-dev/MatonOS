@@ -73,7 +73,7 @@ struct XwaylandSession {
   struct wl_listener ready, new_surface, destroy;
   struct XwaylandSession* next;
 };
-enum CommandKind { CMD_ATTACH, CMD_DETACH, CMD_RESIZE, CMD_KEY, CMD_MOTION, CMD_RELEASE, CMD_CLOSE, CMD_STOP, CMD_ADD_SESSION, CMD_ADD_XWAYLAND };
+enum CommandKind { CMD_STOPPED, CMD_ATTACH, CMD_DETACH, CMD_RESIZE, CMD_KEY, CMD_MOTION, CMD_RELEASE, CMD_CLOSE, CMD_STOP, CMD_ADD_SESSION, CMD_ADD_XWAYLAND };
 struct Command {
   enum CommandKind kind;
   int id, a, b, c;
@@ -86,6 +86,7 @@ struct Command {
 };
 struct Window {
   int id, width, height, activity, session;
+  bool stopped;
   struct MatonSurfaceOutput surface;
   struct wlr_output* output;
   struct wlr_scene_output* scene_output;
@@ -206,7 +207,7 @@ static void on_commit(struct wl_listener* l,void* data) {
 }
 static int on_present_retry(void* data) {
   struct Window* w=data;
-  if(w->output)wlr_output_schedule_frame(w->output);
+  if(w->output && !w->stopped)wlr_output_schedule_frame(w->output);
   return 0;
 }
 static void on_frame(struct wl_listener* l,void* data) {
@@ -214,7 +215,7 @@ static void on_frame(struct wl_listener* l,void* data) {
   struct Window* w=window_from_listener(l,offsetof(struct Window,frame));
   /* Windows are not composited: each visible buffer becomes its own Android
    * layer (presenter.c), so client dma-bufs reach SurfaceFlinger untouched. */
-  if(w->scene_output&&w->presenter){
+  if(!w->stopped && w->scene_output&&w->presenter){
     /* A busy shm pool skips a layer's new content; retry shortly so the
      * last commit is not left unshown when the client goes idle. Not on the
      * next frame: the headless output fires that at once, and a layer whose
@@ -487,7 +488,7 @@ static void on_xoverlay_associate(struct wl_listener* l,void* data) {
   wlr_scene_node_set_position(&o->tree->node,o->xs->x,o->xs->y);
   __android_log_print(ANDROID_LOG_DEBUG,"MatonCompositor","X overlay %ux%u+%d+%d class=%s on window %d",
       o->xs->width,o->xs->height,o->xs->x,o->xs->y,o->xs->class?o->xs->class:"-",w->id);
-  if(w->output)wlr_output_schedule_frame(w->output);
+  if(w->output && !w->stopped)wlr_output_schedule_frame(w->output);
 }
 static void on_xoverlay_dissociate(struct wl_listener* l,void* data) {
   (void)data;struct XOverlay* o=(struct XOverlay*)((char*)l-offsetof(struct XOverlay,dissociate));
@@ -644,6 +645,12 @@ static void process_commands(void) {
       }
       break;
     case CMD_ADD_XWAYLAND:handle_add_xwayland(c->a,(uid_t)c->b);break;
+    case CMD_STOPPED:
+      if(w){w->stopped=c->a;
+        if(w->toplevel && w->toplevel->base->initialized)wlr_xdg_toplevel_set_suspended(w->toplevel,w->stopped);
+        if(w->stopped && w->retry){wl_event_source_remove(w->retry);w->retry=NULL;}
+        if(!w->stopped && w->output)wlr_output_schedule_frame(w->output);
+      }break;
     case CMD_ATTACH:monitor_cover(c->a,c->b);attach_output(c);break;
     case CMD_DETACH:if(w){w->activity=0;destroy_output(w);}break;
     case CMD_RESIZE:if(c->a>0&&c->b>0)monitor_cover(c->a,c->b);if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);bool committed=wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(committed){if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_size(w->toplevel,c->a,c->b);else if(w->xsurface)wlr_xwayland_surface_configure(w->xsurface,0,0,c->a,c->b);wlr_output_schedule_frame(w->output);}}}break;
@@ -845,6 +852,7 @@ void maton_core_resize(int id,int width,int height){command(CMD_RESIZE,id,width,
 void maton_core_key(int id,int keycode,int scan,int action,int meta,int64_t time){(void)meta;command(CMD_KEY,id,keycode,scan,action,time,0,0,0,0,NULL,NULL);}
 void maton_core_motion(int id,float x,float y,float vs,float hs,int action,int buttons,int64_t time){command(CMD_MOTION,id,action,buttons,0,time,x,y,vs,hs,NULL,NULL);}
 
+void maton_core_stopped(int id,bool stopped){command(CMD_STOPPED,id,stopped,0,0,0,0,0,0,0,NULL,NULL);}
 void maton_core_close(int id){command(CMD_CLOSE,id,0,0,0,0,0,0,0,0,NULL,NULL);}
 
 bool maton_core_xwayland_init(const char* socket_dir,const char* xwayland_path) {
