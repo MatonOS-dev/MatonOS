@@ -2,7 +2,7 @@
 service matonos-linuxd /system_ext/bin/matonos-linuxd
     class late_start
     user system
-    group system inet
+    group system inet vendor_linuxd_uinput
     # Only the child launcher changes supplementary groups. SYS_ADMIN is
     # inherited only by the exec'd matonos-flatpak-store helper, whose SELinux
     # installer domain is the sole holder of the code-store mount/loop grants.

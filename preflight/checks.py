@@ -191,14 +191,19 @@ def check_bundle_registry() -> None:
 
 
 def check_fixed_sepolicy_files() -> None:
-    allowed = {"matonos_driver.te", "matonos_bridge.te", "file_contexts", "property.te", "property_contexts", "service_contexts"}
-    root = DEVICE / "sepolicy/matonos"
-    if not root.is_dir():
-        error(root, "fixed MatonOS SELinux policy directory is missing")
-        return
-    for path in root.iterdir():
-        if path.is_file() and path.name not in allowed:
-            error(path, f"new file violates the fixed sepolicy/matonos file set (allowed: {', '.join(sorted(allowed))})")
+    inventories = {
+        "sepolicy/matonos": {"matonos_driver.te", "matonos_bridge.te", "file_contexts", "property.te", "property_contexts", "service_contexts"},
+        "sepolicy/system_ext/private": {"matonos_controllers.te", "matonos_setup.te", "property.te", "property_contexts", "file_contexts"},
+        "systembridge/sepolicy/system_ext/private": {"matonos_system_bridge.te", "file_contexts", "genfs_contexts", "seapp_contexts", "service_contexts"},
+    }
+    for directory, allowed in inventories.items():
+        root = DEVICE / directory
+        if not root.is_dir():
+            error(root, "fixed MatonOS SELinux policy directory is missing")
+            continue
+        for path in root.iterdir():
+            if path.is_file() and path.name not in allowed:
+                error(path, f"new file violates the fixed {directory} file set (allowed: {', '.join(sorted(allowed))})")
 
 
 # User-approved exceptions to the zero-patches rule (CLAUDE.md), by path

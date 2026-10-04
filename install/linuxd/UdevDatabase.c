@@ -19,6 +19,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -338,7 +339,9 @@ static bool scan_class(const char *subsystem, Seen **seen) {
     closedir(dir);
     return ok;
 }
-static void refresh(void) {
+static pthread_mutex_t refresh_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int refresh(void) {
+    pthread_mutex_lock(&refresh_mutex);
     Seen *seen = NULL;
     bool ok = scan_class("input", &seen);
     ok = scan_class("hidraw", &seen) && ok;
@@ -369,6 +372,9 @@ static void refresh(void) {
     }
     if (dir) closedir(dir);
     while (seen) { Seen *next = seen->next; free(seen); seen = next; }
+    pthread_mutex_unlock(&refresh_mutex);
+    if(!ok)errno=EIO;
+    return ok?0:-1;
 }
 
 static bool relevant(const char *buf, size_t n) {
@@ -439,3 +445,19 @@ static void start_once(void) {
     else pthread_detach(thread);
 }
 void maton_udev_start(void) { pthread_once(&started, start_once); }
+
+int maton_udev_refresh(void) { maton_udev_start(); return refresh(); }
+
+void maton_udev_forget_pad(dev_t device) {
+    char id[64],path[PATH_MAX],old[DB_SIZE];
+    snprintf(id,sizeof(id),"c%u:%u",major(device),minor(device));
+    pthread_mutex_lock(&refresh_mutex);
+    bool exists=read_text(MATON_UDEV_ROOT "/data",id,old,sizeof(old));
+    snprintf(path,sizeof(path),MATON_UDEV_ROOT "/data/%s",id);unlink(path);
+    snprintf(path,sizeof(path),MATON_UDEV_ROOT "/tags/seat/%s",id);unlink(path);
+    if(exists) {
+        size_t n=strlen(old);if(n+1<sizeof(old)){old[n]='\n';old[n+1]=0;}
+        broadcast(old,"remove","input");
+    }
+    pthread_mutex_unlock(&refresh_mutex);
+}

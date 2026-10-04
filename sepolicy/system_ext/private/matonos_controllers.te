@@ -1,8 +1,22 @@
-# Payloads use the stub UID; DAC gates the controller grant.
-allow matonos_flatpak_app { hidraw_device uhid_device }:chr_file { getattr open read write ioctl };
-# HID feature/report operations (H) and uinput device setup/event operations (U).
-allowxperm matonos_flatpak_app hidraw_device:chr_file ioctl { 0x4800-0x48ff };
-allowxperm matonos_flatpak_app uhid_device:chr_file ioctl { 0x5500-0x55ff };
+# H5: sandbox mounts contain only linuxd's session event nodes.
+allow matonos_flatpak_app input_device:dir { getattr search open read watch };
+allow matonos_flatpak_app input_device:chr_file { getattr open read write ioctl };
+# evdev query ABI: fixed identity/state, variable-length names/bitmaps/absinfo.
+# No EVIOCGRAB, EVIOCREVOKE, EVIOCSABS, keymap or mask setters.
+allowxperm matonos_flatpak_app input_device:chr_file ioctl {
+    0x4501 0x4502 0x4506-0x4509 0x4518-0x451b 0x4520-0x457f
+    0x4580 0x4581 0x4584 0x45a0
+};
+neverallow { matonos_flatpak_app matonos_bwrap matonos_flatpak_run } uhid_device:chr_file { open read write ioctl };
+neverallow { matonos_flatpak_app matonos_bwrap matonos_flatpak_run } hidraw_device:chr_file { open read write ioctl };
+# SELinux xperms cannot distinguish ioctl direction; omit repeat/keymap
+# queries because their setters share the same low 16 bits.
+# Setup can bind only the granted evdev nodes; no broad device grant.
+allow matonos_bwrap input_device:dir { getattr search };
+allow matonos_bwrap input_device:chr_file { getattr mounton };
+allow matonos_linuxd input_device:chr_file { getattr setattr };
+allow matonos_linuxd uhid_device:chr_file { getattr open read write ioctl };
+allowxperm matonos_linuxd uhid_device:chr_file ioctl { 0x5500-0x55ff };
 
 # Verify the bridge UID via the existing platform permission Binder service.
 binder_call(matonos_linuxd, system_server)

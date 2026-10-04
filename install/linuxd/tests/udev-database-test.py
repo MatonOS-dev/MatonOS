@@ -73,6 +73,7 @@ int main(int argc, char **argv) {{
         return 0;
     }}
     refresh();
+    if (argc == 2 && !strcmp(argv[1], "forget")) maton_udev_forget_pad(makedev(13,0));
     return 0;
 }}
 ''')
@@ -186,5 +187,8 @@ int main(int argc, char **argv) {{
     for minor in [0, 32, 11]:
         assert not (db / f"data/c13:{minor}").exists()
         assert not (db / f"tags/seat/c13:{minor}").exists()
+    subprocess.run([str(executable), "forget"], check=True)
+    assert not (db / "data/c13:0").exists()
+    assert not (db / "tags/seat/c13:0").exists()
     subprocess.run([str(executable), "events"], check=True)
     print("PASS: classification, all node families, identity, tags, stable/changed DB, add/remove, partial-scan safety, uevent parsing, monitor wire format")

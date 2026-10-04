@@ -152,3 +152,41 @@ the PNG signature; otherwise the stub keeps its fallback icon.
   pending a fresh image.
 - Runtime confirmation of automatic stub installation is pending the local
   repair image build.
+
+## H5 phase 1: session pads (relay deferred)
+
+`SessionPads.h` is a plain C API. Create up to four Xbox 360 uinput pads
+from a descriptor-keyed `MatonPadInventory` array and the verified stub UID;
+Linux evdev axis codes/ranges are supplied by the future Android relay.
+Missing axes use Xbox defaults. The session owns all FDs, its FF worker and
+a comma-separated node-list string. `maton_pads_send` accepts bounded,
+validated button/axis/SYN_REPORT batches; `maton_pads_release` resets buttons,
+sticks/hats and triggers and cancels rumble. Destroy joins the worker,
+releases inputs, destroys kernel pads, closes FDs and refreshes the udev DB.
+FF advertises rumble only when both inventory and callback support it;
+unsupported effects or delayed starts return ENOSYS. The callback reports
+strong/weak magnitudes, and zero/zero on stop/erase/timeout/release/teardown.
+It runs serialized with FF handling and must not reenter/destroy the session.
+
+Normal launches currently create an empty inventory and export an empty
+`MATON_SESSION_PAD_NODES`; no physical input nodes are exposed. The launcher
+preserves this field across clearenv, and bwrap reads Flatpak's bundled
+arguments as well as the direct environment. It binds only enumerated event
+nodes, keeps `/run/udev` and `SDL_JOYSTICK_DISABLE_UDEV=1`, and never binds
+hidraw or uinput. Controller permission/group retirement is a separate phase.
+Future relay work must check identity and permission, create pads before
+spawn, then attach the session to the reaper and forward normalized batches.
+Hotplug after launch is deferred to the next launch.
+
+Host check (no devices):
+
+```
+cc -Wall -Wextra -Werror -pthread install/linuxd/tests/session-pads-test.c -o /tmp/session-pads-test
+/tmp/session-pads-test
+```
+
+Optional local kernel hook (not run in phase 1): compile
+`tests/session-pads-local.c` with `SessionPads.c`, `UdevDatabase.c` and
+`-pthread`. On a disposable authorized target it creates one pad owned by
+UID 10000, prints its node, logs FF callbacks, and destroys it on Enter.
+This is a local C hook, not a socket protocol or Android vibrator relay.

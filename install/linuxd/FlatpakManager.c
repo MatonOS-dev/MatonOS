@@ -2,6 +2,7 @@
 #include <android/log.h>
 #include "FlatpakManager.h"
 #include "UdevDatabase.h"
+#include "SessionPads.h"
 #include "SafePath.h"
 
 #include <errno.h>
@@ -421,7 +422,7 @@ static void run_async(const char* app_id, const char* const* extra, size_t extra
     set_error(result, "Launch through the signed Android stub");
 }
 
-typedef struct GraphicalChild { pid_t pid; int directory, listener, slot, x11_directory, x11_listener; char path[108], x11_path[108], x11_name[64]; } GraphicalChild;
+typedef struct GraphicalChild { pid_t pid; int directory, listener, slot, x11_directory, x11_listener; MatonSessionPads *pads; char path[108], x11_path[108], x11_name[64]; } GraphicalChild;
 static pthread_mutex_t g_launch_mutex=PTHREAD_MUTEX_INITIALIZER;
 static struct { char ref[512], log[512]; pid_t pid; int alive; } g_launches[128];
 static int record_launch(const char* ref,const char* log,pid_t pid) {
@@ -487,6 +488,7 @@ static void* reap_graphical(void* argument) {
             if(error){free(relay);close(client);close(upstream);}else pthread_detach(thread);
         }
     }
+    maton_pads_destroy(child->pads);
     record_exit(child->slot,child->pid);
     close_graphical_sockets(child->listener,child->path,child->directory,child->x11_listener,child->x11_path,child->x11_directory);free(child);return NULL;
 }
@@ -621,6 +623,11 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     if (owner_fd < 0) rc = errno;
     if (!rc) rc = posix_spawn_file_actions_adddup2(&actions, owner_fd, 196);
     if (!rc && has_x11) rc = posix_spawn_file_actions_adddup2(&actions, x11_capability, 199);
+    /* Phase 1: no Android inventory relay yet; fail closed with no pads. */
+    MatonSessionPads *pads=maton_pads_create(NULL,0,(unsigned)stub_uid,NULL,NULL);
+    if(!pads)rc=errno;
+    char pad_env[320];
+    snprintf(pad_env,sizeof(pad_env),"MATON_SESSION_PAD_NODES=%s",maton_pads_nodes(pads));
     char owner_env[384];
     snprintf(owner_env,sizeof(owner_env),"MATON_APP_OWNER=%d:%d:%d:%.*s",stub_uid,stub_pid,controllers,(int)(strchr(ref+4,'/')-ref-4),ref+4);
     char display_env[128];
@@ -631,7 +638,7 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     snprintf(x11_env,sizeof(x11_env),"MATON_SESSION_X11_NAME=%s",has_x11?x11_display:"");
     size_t env_count = 0;
     while (environ[env_count]) ++env_count;
-    char** env = calloc(env_count + 9, sizeof(char*));
+    char** env = calloc(env_count + 10, sizeof(char*));
     size_t n = 0;
     if (env) {
         for (size_t i = 0; i < env_count; ++i)
@@ -640,7 +647,9 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
                     strncmp(environ[i],"DISPLAY=",8) != 0 &&
                     strncmp(environ[i],"MATON_GAME_CONTROLLERS=",23) != 0 &&
                     strncmp(environ[i],"MATON_SESSION_DIRECTORY_FD=",27) != 0 &&
-                    strncmp(environ[i],"MATON_SESSION_X11_",18) != 0) env[n++] = environ[i];
+                    strncmp(environ[i],"MATON_SESSION_X11_",18) != 0 &&
+                    strncmp(environ[i],"MATON_SESSION_PAD_NODES=",24) != 0) env[n++] = environ[i];
+        env[n++] = pad_env;
         env[n++] = owner_env;
         env[n++] = "MATON_APP_LIFELINE=196";
         env[n++] = display_env;
@@ -665,13 +674,14 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     posix_spawn_file_actions_destroy(&actions);
     if (owner_fd >= 0) close(owner_fd);
     if (logfd >= 0) close(logfd); free(env);
-    if (rc) { close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability); set_error(result, strerror(rc)); return; }
+    if (rc) { maton_pads_destroy(pads); close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability); set_error(result, strerror(rc)); return; }
     int launch_slot=record_launch(ref,log_path,child);
-    if(launch_slot<0){kill(child,SIGTERM);while(waitpid(child,NULL,0)<0&&errno==EINTR){}close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability);set_error(result,"Too many active launches");return;}
+    if(launch_slot<0){maton_pads_destroy(pads);kill(child,SIGTERM);while(waitpid(child,NULL,0)<0&&errno==EINTR){}close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability);set_error(result,"Too many active launches");return;}
     /* Report immediate CLI failures to the launch Activity instead of a blank window. */
     for (int i = 0; i < 8; ++i) {
         int status; pid_t exited = waitpid(child, &status, WNOHANG);
         if (exited == child) {
+            maton_pads_destroy(pads);
             record_exit(launch_slot,child);
             FILE* log = fopen(log_path, "re");
             char message[4096] = "Flatpak exited before opening a window";
@@ -684,10 +694,10 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     }
     GraphicalChild* state = malloc(sizeof(*state));
     pthread_t reaper;
-    if (state) { state->pid = child; state->slot=launch_slot; state->directory = capability; state->listener = listener; state->x11_directory=x11_capability; state->x11_listener=x11_listener;
+    if (state) { state->pads=pads; state->pid = child; state->slot=launch_slot; state->directory = capability; state->listener = listener; state->x11_directory=x11_capability; state->x11_listener=x11_listener;
         snprintf(state->x11_path,sizeof(state->x11_path),"%s",x11_path);snprintf(state->x11_name,sizeof(state->x11_name),"%s",has_x11?x11_display:""); snprintf(state->path,sizeof(state->path),"%s",socket_path); }
     if (!state || pthread_create(&reaper, NULL, reap_graphical, state)) {
-        record_exit(launch_slot,child);free(state); close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability); kill(child, SIGTERM); while (waitpid(child, NULL, 0) < 0 && errno == EINTR) { }
+        maton_pads_destroy(pads);record_exit(launch_slot,child);free(state); close_graphical_sockets(listener,socket_path,capability,x11_listener,x11_path,x11_capability); kill(child, SIGTERM); while (waitpid(child, NULL, 0) < 0 && errno == EINTR) { }
         set_error(result, "cannot reap Flatpak process"); return;
     }
     pthread_detach(reaper);
