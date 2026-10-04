@@ -217,6 +217,18 @@ daemon sockets; daemons validate strictly. New daemon commands/events then
 need no bridge or AIDL change; typed per-area wrappers live in the Gradle
 client library.
 
+## Rule: newest libraries as the base (user, 2026-10-04)
+
+When possible, build on the newest stable release of every third-party
+library, toolkit and SDK we use (Flatpak, bubblewrap, xdg-dbus-proxy, GLib,
+wlroots, Xwayland, Mesa, PipeWire, dbus-java, Gradle/AGP/NDK, npm/Expo
+packages, API levels…). MatonOS releases every 6 months and each release has
+to survive until the next one, so at every release cut we move to the newest
+versions rather than keeping old pins. Pin by version + SHA-256/commit, and
+keep our patches small enough to rebase each time (forks, not patch series).
+Prefer the newest stable over prereleases; note any deliberate exception
+(and why) next to its pin.
+
 ## Rule: our native code is plain C (user, 2026-09-28)
 
 New native code we write from scratch (daemons, helpers, services) is plain
