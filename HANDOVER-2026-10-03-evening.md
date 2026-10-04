@@ -160,3 +160,21 @@ Java port step 2 = dbus-java 6.x + own Android LocalSocket transport.
 - Model trial (qwen/qwen3-coder-next vs openai/gpt-oss-120b) on two small
   r24 fixes in worktrees trial-*, reports out/pc-logs/agents/trial-*-result.md.
 - Headless test VM 5562 restarted on fresh r23 (permissive dev mode).
+
+## 2026-10-04 11:20
+- Merged 4afd519: Flatpak code storage + app ownership (per-app erofs+verity
+  images at the stub's MLS level, shared runtime store owned by the
+  compositor host, RUN_DOWNLOADED_CODE volume, installer/flatpak_run/bwrap/
+  app_launch/flatpak_app domains; policy passes neverallows). Untested on
+  device. Stock domain.te grants all domains /dev/binder + system_server
+  binder call (cannot be removed); protection = no servicemanager access +
+  seccomp + neverallows.
+- Running: DeepSeek ds/setns-mount — image mounts from outside the sandbox
+  (bwrap --info-fd/--block-fd + one-shot, limited-by-design setns helper).
+- Model trial: qwen3-coder-next (logic bug) and gpt-oss-120b (stalled) not
+  adopted. Agents: codex (limit until 13:10), DeepSeek v4.1-flash, GLM.
+- VM 5562 stable since sleepd idle sleep disabled (sleep_idle_s=0); hard
+  rule: Android never handles sleep.
+- Queue for codex after 13:10: H5 (opencode-h5-result.md design), the two
+  small fixes (machine-id message, controller prompt re-ask + typos — NOT
+  via shouldShowRequestPermissionRationale), bridge derives ref from stub.
