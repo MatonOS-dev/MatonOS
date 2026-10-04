@@ -92,7 +92,7 @@ DEVICE_MANIFEST_FILE += $(DEVICE_PATH)/manifest.xml
 
 # ---------------------------------------------------------------- sepolicy
 # Enforcement is controlled by androidboot.selinux on the kernel cmdline
-# (permissive for bring-up; only honoured on userdebug/eng).
+# (default enforcing; explicit development permissive only on userdebug/eng).
 BOARD_VENDOR_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy/matonos
 # AOSP components we configure (graphics HALs, block devices, Mesa/gralloc
 # same-process libs, pc-gpu-detect/pc-wakeup). Dropped by the 2026-09-25

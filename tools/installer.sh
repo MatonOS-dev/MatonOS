@@ -49,7 +49,7 @@ done
 # Parse only the documented scalar fields; never execute payload-controlled shell.
 declare -A conf=()
 while IFS= read -r line || [[ -n $line ]]; do
-  [[ $line =~ ^([A-Z_]+)=(.*)$ ]] || continue
+  [[ $line =~ ^([A-Z_][A-Z_0-9]*)=(.*)$ ]] || continue
   key=${BASH_REMATCH[1]} value=${BASH_REMATCH[2]}
   value=${value%\"}; value=${value#\"}
   [[ $value != *$'\n'* && $value != *$'\r'* ]] || die "invalid payload config value: $key"
@@ -61,6 +61,15 @@ KERNEL_CMDLINE=${conf[KERNEL_CMDLINE]:-} DEBUG_CMDLINE=${conf[DEBUG_CMDLINE]:-}
 SECURE_BOOT=${conf[SECURE_BOOT]:-0}
 : "${SUPER_SIZE_BYTES:?} ${SUPER_SHA256:?} ${ESP_SIZE_MIB:?} ${MIN_USERDATA_MIB:?} ${KERNEL_CMDLINE:?}"
 [[ $SUPER_SIZE_BYTES =~ ^[0-9]+$ && $ESP_SIZE_MIB =~ ^[0-9]+$ && $MIN_USERDATA_MIB =~ ^[0-9]+$ && $SUPER_SHA256 =~ ^[a-fA-F0-9]{64}$ && $SECURE_BOOT =~ ^[01]$ ]] || die "payload config has invalid numeric or hash fields"
+# Refuse old permissive payloads unless the operator explicitly opts into
+# development installation. Check BOTH entries before offering or wiping a disk.
+source "$(dirname "$(readlink -f "$0")")/selinux-boot.sh"
+maton_selinux_init || die "invalid SELinux boot profile"
+maton_selinux_validate "$KERNEL_CMDLINE $DEBUG_CMDLINE" || die "unsafe payload boot profile"
+KERNEL_CMDLINE=$(maton_selinux_cmdline "$KERNEL_CMDLINE") || die "invalid payload boot command line"
+if [[ " $KERNEL_CMDLINE $DEBUG_CMDLINE " =~ [[:space:]]androidboot\.selinux=permissive ]]; then
+  LABEL+=" (DEVELOPMENT: SELinux permissive)"
+fi
 # secureboot: CPU microcode is a required first-initrd asset in every installer profile.
 for f in microcode.cpio licenses/Fedora-shim-x64-BSD-3-Clause.txt \
          licenses/Intel-Microcode-LICENSE.txt licenses/AMD-WHENCE.txt; do

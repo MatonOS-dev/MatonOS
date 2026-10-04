@@ -1183,7 +1183,7 @@ Each entry: what, why no non-patch way, what it would need.
 | super | 8 GiB, one group `pc_dynamic_partitions` (super − 4 MiB): system, system_ext, product, vendor | `BOARD_SUPER_PARTITION_SIZE` == `SUPER_SIZE_BYTES` (8589934592) |
 | RO fs | erofs | Smaller super; erofs is in mainline |
 | AVB | off | No verification in the boot chain |
-| SELinux | policy enforced by build, `androidboot.selinux=permissive` on cmdline | Only honoured on userdebug/eng |
+| SELinux | default enforcing for live and installed entries; explicit `MATON_SELINUX_PERMISSIVE=1` development live/payload profile | Debug means logging/serial console; release packaging (`-R` / `MATON_RELEASE=1`) refuses permissive. See tools/README.md and sepolicy/r24-enforcing-test-plan.md |
 | Encryption | FBE v2 `aes-256-xts:aes-256-cts:v2`, no `inlinecrypt` | No inline crypto engines on PCs |
 | Metadata encryption | **off** (no `keydirectory=`) | Needs `dm-default-key`, which is Android-common-kernel only, not mainline |
 | Userdata checkpoint | **off** (no `checkpoint=block`) | Needs `dm-bow` (ACK only); also irrelevant for non-A/B |
@@ -1342,7 +1342,7 @@ commercial (monthly security updates would then be expected).
   (intel-ucode/amd-ucode from linux-firmware) as the first initrd in the
   loader entries (live + installed); old machines (Surface Pro 3) often have
   stale BIOS microcode.
-- v1 builds are not secure builds (userdebug, permissive SELinux, AOSP test
+- v1 builds are not secure builds (userdebug, historically permissive SELinux, AOSP test
   keys, no AVB). Secure releases (≈v3): `user` builds, enforcing SELinux,
   own release keys, AVB, signed shim/Secure Boot.
 - **Versioning: Ubuntu-style `YY.MM.P`** (e.g. 26.12, point release
