@@ -190,24 +190,19 @@ new path is wired).
   zip64; to be checked on the VM.
 * **No app-to-app code sharing.** Sharing stops at runtimes/extensions.
 
-## Planned: writable+executable game library (decided 2026-10-04)
+## Rejected: writable+executable game library (2026-10-04)
 
-Apps that download and run their own code in place (Steam-like launchers:
-games, Proton, self-updates patched in place) cannot use sealing. They get
-an optional, separately labelled, expandable library image that is writable
-AND executable for that app only, gated by a custom dangerous permission
-(working name `org.matonos.permission.RUN_DOWNLOADED_CODE`'s stronger
-sibling, e.g. `org.matonos.permission.WRITABLE_CODE`) plus explicit user
-consent. Generic rule from the Flatpak manifest, never per app. Everything
-else keeps W^X. Checked against stock system/sepolicy (2026-10-04): the
-W^X neverallows (`app_neverallows.te`: app_data_file execute_no_trans,
-app_exec_data_file write) bind `all_untrusted_apps`/`appdomain` and named
-types only; `matonos_flatpak_app` is `domain, coredomain`, not an appdomain.
-A new type declared like `matonos_app_volume_file` (`file_type,
-data_file_type, core_data_file_type`; NOT `app_data_file_type`, not an
-`fs_type`, so `context=` relabelto is not restricted) may get
-write + execute + execute_no_trans + map. Never `execmod` (forbidden for
-every domain except untrusted_app_25/27; text relocations stay broken).
+Idea: Steam-like apps (download and run code in place) get a W+X library
+image behind a custom permission. **Not possible without AOSP patches** —
+stock `system/sepolicy/private/domain.te` forbids it for every non-appdomain,
+which `matonos_flatpak_app` must stay (appdomain's `app.te` grants binder):
+- 1960: non-appdomains may execute only exec_type/system/vendor files;
+- 2040: non-appdomains may never execute any data_file_type;
+- 792: no domain may write exec_type/system/vendor files.
+(First check missed these; verified by the DeepSeek wx-check against the
+policy rig, out/pc-logs/agents/wx-check-result.md.) Downloaded code must use
+the sealing path above (write as data, seal into a verified read-only image).
+Steam-like launchers stay a known gap until a generic sealing trigger exists.
 
 ## Runtime permission
 
