@@ -38,5 +38,7 @@
 /system_ext/bin/matonos-bwrap u:object_r:matonos_bwrap_exec:s0
 /system_ext/bin/bwrap u:object_r:matonos_bwrap_exec:s0
 /system_ext/bin/matonos-app-exec u:object_r:matonos_app_exec_exec:s0
+# r24: privileged outside-the-sandbox mount helper.
+/system_ext/bin/matonos-mount-helper u:object_r:matonos_mount_helper_exec:s0
 
 /data/matonos/linux/cache/launch-[^/]+\.log u:object_r:matonos_flatpak_log_file:s0

@@ -50,12 +50,21 @@ execs `matonos-app-exec`, a tiny system_ext launcher that runs in the narrow
 `matonos_app_launch` domain. That domain is `mlstrustedsubject` for MLS only
 (the kernel's `mlsconstrain process { transition dyntransition }` requires
 equal levels unless the source is trusted, exactly as with `zygote`), so it can
-move to the stub's per-app level. The launcher computes that level from the UID
-it actually runs as (the verified stub UID) with the same algorithm Android
-uses for app processes, mounts the app's code image and volume inside the
-sandbox mount namespace, drops `CAP_SYS_ADMIN`, `setcon()`s to the untrusted
-app domain at that level and `execve()`s the payload with `execute_no_trans`.
-No file entrypoint is involved and the app domain keeps no setup rights.
+move to the stub's per-app level. The launcher **mounts nothing and holds no
+capability**: it verifies its own `matonos_app_launch` label and the per-app
+level derived from the UID it actually runs as (the verified stub UID), then
+`setcon()`s to the untrusted app domain at that level and `execve()`s the
+payload with `execute_no_trans`. No file entrypoint is involved and the app
+domain keeps no setup rights.
+
+The verified code image and optional volume are mounted **from outside the
+sandbox** by `matonos-mount-helper` (domain `matonos_mount_helper`), the only
+holder of `CAP_SYS_ADMIN` on the launch path. bubblewrap is started with
+`--info-fd` (sandbox child PID) and `--block-fd` (it waits before exec'ing the
+payload); the privileged side `setns()`es into `/proc/<child>/ns/mnt`, mounts
+the installer-attached images with `context=` labels, and only then releases
+`--block-fd`. No capability, loop device or `mount(2)` ability ever enters the
+sandbox. See `out/pc-logs/agents/ds-setns-result.md`.
 
 ## Domains
 
@@ -65,7 +74,8 @@ No file entrypoint is involved and the app domain keeps no setup rights.
 | `matonos_flatpak_installer` | exec of `matonos-flatpak-store` | **only** writer/attacher of the store images; runs Flatpak management |
 | `matonos_flatpak_run` | dyntransition (verified stub) | Flatpak CLI while it prepares one sandbox |
 | `matonos_bwrap` | exec of bwrap/matonos-bwrap | user namespaces and mounts only; no app data, no binder |
-| `matonos_app_launch` | exec of `matonos-app-exec` | trusted-for-MLS-only launcher: mounts the code image/volume in the sandbox namespace, then enters the app domain at the stub's level |
+| `matonos_mount_helper` | exec of `matonos-mount-helper` | privileged outside-sandbox mounter: setns into the sandbox mount ns, mount verified code/volume; no app data, no binder |
+| `matonos_app_launch` | exec of `matonos-app-exec` | trusted-for-MLS-only launcher: verify own label/level, dyntransition to the app domain, exec the payload; no mount, no capability |
 | `matonos_flatpak_app` | dyntransition in `matonos-app-exec` | payload: verified code, its volume, its sockets, /dev/dri, execmem; zero binder |
 
 Every sandbox domain (`matonos_flatpak_app`, `matonos_flatpak_run`,
@@ -95,14 +105,22 @@ linuxd).
   and renames the pair into place atomically. Growing is sparse
   (`ftruncate`); removal trims with `FITRIM`.
 * The installer only **attaches** a per-app image to a free loop device
-  (`app-attach`/`vol-attach` print the loop path; `loop-detach` clears it). It
-  never mounts per-app code in the host namespace. `matonos-app-exec` mounts
-  the loop *inside the app's sandbox mount namespace* with
+  (`app-attach`/`vol-attach` print the loop path and record it in the app's
+  store directory; `loop-detach` clears both). It never mounts per-app code in
+  the host namespace. The **privileged `matonos-mount-helper`**, outside the
+  sandbox, `setns()`es into the app's sandbox mount namespace and attaches the
+  loop image there with
   `context=u:object_r:matonos_app_code_exec:<stub level>` (volume:
   `matonos_app_volume_file`), so the mount exists only in that sandbox and is
-  never reachable at a shared path. The MLS level is computed from the verified
-  stub UID (`MatonMls.h`, mirroring AOSP `android_seapp.c` `levelFrom=all`),
-  never passed in. The shared runtime is the one exception: it is mounted once
+  never reachable at a shared path. The helper receives only the verified app
+  id and a pidfd over an unnamed socketpair created by the launcher; it
+  verifies the sandbox process itself (`matonos_bwrap`, expected stub uid,
+  descendant of this launch's wrapper, foreign mount namespace), derives the
+  loop device from the attach record and uses fixed targets (`/app`, the app's
+  Flatpak data directory). The MLS level is computed from the verified stub UID
+  (`MatonMls.h`, mirroring AOSP `android_seapp.c` `levelFrom=all`), never from
+  a string supplied by the sandbox. `matonos-app-exec` mounts nothing and needs
+  no capability. The shared runtime is the one exception: it is mounted once
   in the host namespace as `matonos_runtime_exec:s0` and is readable and
   executable by every app (every app level dominates `s0`).
 * The tool pins: newest stable `erofs-utils` for `mkfs.erofs` (shipped as a
@@ -138,15 +156,16 @@ user with no wheel/sudo/admin/adm membership and no sudo/su/pkexec path.
   `vol-ensure`/`vol-attach` run on first launch of an entitled app.
 * Point Flatpak's runtime/extension install at the shared store image; today
   the installer seals the existing `/data/matonos/linux/flatpak` deployment.
-* Wire the loop hand-off end to end: linuxd records the `app-attach`/
-  `vol-attach` loop paths, exports `MATON_CODE_LOOP`/`MATON_VOLUME_LOOP` (and
-  the in-sandbox `MATON_CODE_MOUNT`/`MATON_VOLUME_MOUNT` targets) to the
-  launcher, and calls `loop-detach` when the sandbox exits.
-* The `matonos-flatpak-store` helper must run with `SYS_ADMIN`. It is exec'd
-  by linuxd, whose init caps now include SYS_ADMIN; the MAC grants limit the
-  actual loop ability to the installer domain. `matonos-app-exec` gets
-  `CAP_SYS_ADMIN` in the sandbox user namespace only for the mount, then drops
-  it before exec'ing the payload. A file-caps/root service variant is the
-  alternative if linuxd should not hold the capability.
+* Wire the loop hand-off end to end: linuxd calls `app-attach`/`vol-attach`
+  (which write the per-app attach records the helper reads), then launches the
+  app; the launcher exports the unnamed socketpair fd that connects the
+  `matonos-bwrap` shim to `matonos-mount-helper`, and calls `loop-detach` when
+  the sandbox exits. No loop path or target is ever passed to the helper.
+* The privileged mounter is `matonos-mount-helper`, exec'd by the launcher
+  wrapper while it still holds `CAP_SYS_ADMIN`. It needs no capability grant to
+  `matonos-app-exec` or any sandbox domain: it performs `setns(CLONE_NEWNS)`,
+  `fsopen`/`fsconfig`/`fsmount` and `move_mount` itself. `matonos-flatpak-store`
+  still holds `SYS_ADMIN` for loop attach and fs-verity. A file-caps/root
+  service variant is the alternative if linuxd should not hold the capability.
 * Device matrix in `APP-OWNERSHIP-r24.md` still applies (this change adds the
   mount/verity and domain-entry steps; the identity/cgroup work is unchanged).
