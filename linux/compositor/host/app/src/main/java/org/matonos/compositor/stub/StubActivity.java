@@ -134,11 +134,20 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             int[] codes = {2900, 2901};
             if (window == 0 && requested != null) {
                 java.util.List<String> declared = java.util.Arrays.asList(requested);
+                // Ask at most once per permission, per stub (SharedPreferences is
+                // package-scoped). A denial is remembered so the prompt is never
+                // repeated; the app still launches either way. We must not gate on
+                // shouldShowRequestPermissionRationale(): it is false before the
+                // first request, so the prompt would never appear.
+                android.content.SharedPreferences answered = getSharedPreferences("flatpak_stub_permissions", MODE_PRIVATE);
                 for (int i = 0; i < runtime.length; i++) {
-                    if (declared.contains(runtime[i]) && checkSelfPermission(runtime[i]) != PackageManager.PERMISSION_GRANTED) {
-                        requestPermissions(new String[]{runtime[i]}, codes[i]);
-                        return;
-                    }
+                    String permission = runtime[i];
+                    if (!declared.contains(permission)) continue;
+                    if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) continue;
+                    if (answered.getBoolean("asked_" + permission, false)) continue;
+                    answered.edit().putBoolean("asked_" + permission, true).apply();
+                    requestPermissions(new String[]{permission}, codes[i]);
+                    return;
                 }
             }
         } catch (PackageManager.NameNotFoundException error) { failure("Cannot read permissions", error); return; }

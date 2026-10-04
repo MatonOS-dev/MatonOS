@@ -36,8 +36,11 @@ adb_cmd root >/dev/null
 adb_cmd wait-for-device
 adb_cmd shell setprop persist.vendor.maton.flatpak_test 1
 # Verify the expected spike executable before network or repository changes.
-adb_cmd shell /system_ext/bin/flatpak --version
-adb_cmd shell /system_ext/bin/flatpak --help >/dev/null
+# The real path runs the launcher as linuxd's system UID (1000). Running it as
+# root would leave root-owned files under /data/matonos/linux (machine-id) and
+# poison later real launches, so switch to that UID first.
+adb_cmd shell su 1000 /system_ext/bin/flatpak --version
+adb_cmd shell su 1000 /system_ext/bin/flatpak --help >/dev/null
 if [[ $MODE == --list ]]; then
   bridge_call list_installed '{}'
   bridge_call list_remotes '{}'

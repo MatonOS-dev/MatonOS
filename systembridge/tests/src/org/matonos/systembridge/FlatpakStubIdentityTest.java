@@ -38,4 +38,10 @@ public final class FlatpakStubIdentityTest {
         assertNotEquals(FlatpakStubIdentity.packageFor(REF),FlatpakStubIdentity.packageFor("app/org.mozilla.firefox/x86_64/beta"));
         assertNotEquals(FlatpakStubIdentity.packageFor(REF),FlatpakStubIdentity.packageFor("app/org.mozilla.firefox/aarch64/stable"));
     }
+    @Test public void callerSuppliedRefMustEqualTheStubsDeclaredRef() {
+        assertTrue(FlatpakStubIdentity.refMatchesDeclared(REF,REF));
+        assertFalse(FlatpakStubIdentity.refMatchesDeclared("app/com.example.other/x86_64/stable",REF));
+        assertFalse(FlatpakStubIdentity.refMatchesDeclared(null,REF));
+        assertFalse(FlatpakStubIdentity.refMatchesDeclared(REF,null));
+    }
 }
