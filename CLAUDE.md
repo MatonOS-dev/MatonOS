@@ -231,13 +231,14 @@ Prefer the newest stable over prereleases; note any deliberate exception
 
 ## Rule: Flatpak apps never get binder (user, 2026-10-04)
 
-Linux/Flatpak app sandboxes must have no access to Android binder: never
-expose /dev/binder, /dev/hwbinder or /dev/vndbinder (nor other Android-only
-nodes) inside the sandbox, even for `devices=all` — the bwrap shim masks
-them — and the app sandbox SELinux domain gets no binder_use/binder_call/
-service_manager rights, guarded by a neverallow. Everything Android-side
-goes through our sockets (Wayland/X11/D-Bus/portals) to the compositor host
-and the System Bridge.
+Linux/Flatpak app sandboxes must have no access to Android binder. The
+mechanism is SELinux: executing bwrap transitions out of linuxd's domain
+into the app sandbox domain, so bwrap and everything below it (the app,
+its children, nested sandboxes) have no binder_use/binder_call/
+service_manager rights, guarded by a neverallow. Binder device nodes that
+are visible in the sandbox (e.g. via `devices=all`) are therefore unusable.
+Everything Android-side goes through our sockets (Wayland/X11/D-Bus/portals)
+to the compositor host and the System Bridge.
 
 ## Rule: our native code is plain C (user, 2026-09-28)
 
