@@ -5,3 +5,5 @@ matonos-flathub	rn-apps/flathub	expo	Flathub.apk
 matonos-audio-tone-test	audio/testapp	:app:assembleRelease	AudioToneTest.apk
 # compositor: v4 Wayland compositor host (Java; libmaton_compositor.so from linux/compositor/build-compositor.sh)
 matonos-wayland-host	linux/compositor/host	:app:assembleRelease	MatonWaylandHost.apk
+# linux runtimes: owns the UID for Flatpak SYSTEM installations, no privileged access
+matonos-linux-runtimes	linux/runtimes/app	:app:assembleRelease	LinuxRuntimes.apk

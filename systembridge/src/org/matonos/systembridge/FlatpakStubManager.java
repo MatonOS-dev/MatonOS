@@ -111,32 +111,32 @@ final class FlatpakStubManager {
         } catch (Exception error) { return false; }
     }
 
-    /** PackageManager paths only; caller paths never enter the launch record. */
-    String imagePackages(int uid, String ref) throws Exception {
+    /**
+     * Returns the declared commit information from a verified stub's manifest.
+     * Reads APP_COMMIT_META, RUNTIME_REF_META, and RUNTIME_COMMIT_META from
+     * the stub activity's meta-data. Returns JSON with appCommit, runtimeRef,
+     * runtimeCommit (or an empty object if the stub has no commit info).
+     */
+    String stubCommits(int uid, String ref) throws Exception {
         if (!ownsStub(uid, ref)) throw new SecurityException("Unverified stub");
-        PackageManager pm = context.getPackageManager();
-        android.content.pm.ApplicationInfo app = pm.getApplicationInfo(packageFor(ref), PackageManager.GET_SHARED_LIBRARY_FILES);
-        StringBuilder record = new StringBuilder("code " + checkedPath(app.sourceDir) + "\n");
-        StubGenerator.checkImageEntry(new File(app.sourceDir), "matonos/code.erofs");
-        if (app.splitNames != null) for (int i = 0; i < app.splitNames.length; i++) {
-            if (!"extra".equals(app.splitNames[i])) continue;
-            String path = checkedPath(app.splitSourceDirs[i]);
-            StubGenerator.checkImageEntry(new File(path), "matonos/extra.erofs");
-            record.append("extra ").append(path).append('\n');
+        String pkg = packageFor(ref);
+        JSONObject result = new JSONObject();
+        try {
+            android.content.pm.ActivityInfo activity = context.getPackageManager().getActivityInfo(
+                    new android.content.ComponentName(pkg, StubGenerator.HOST_ACTIVITY),
+                    PackageManager.GET_META_DATA);
+            if (activity != null && activity.metaData != null) {
+                String appCommit = activity.metaData.getString(StubGenerator.APP_COMMIT_META);
+                String runtimeRef = activity.metaData.getString(StubGenerator.RUNTIME_REF_META);
+                String runtimeCommit = activity.metaData.getString(StubGenerator.RUNTIME_COMMIT_META);
+                if (appCommit != null) result.put("appCommit", appCommit);
+                if (runtimeRef != null) result.put("runtimeRef", runtimeRef);
+                if (runtimeCommit != null) result.put("runtimeCommit", runtimeCommit);
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "Cannot read commit meta-data from stub " + pkg, error);
         }
-        String runtime = null;
-        for (android.content.pm.SharedLibraryInfo library : app.getSharedLibraryInfos()) {
-            if (!library.isStatic() || !library.getName().startsWith("runtime/")) continue;
-            if (runtime != null) throw new SecurityException("Ambiguous runtime");
-            android.content.pm.VersionedPackage declaring = library.getDeclaringPackage();
-            PackageInfo info = pm.getPackageInfo(declaring, PackageManager.GET_SIGNING_CERTIFICATES | PackageManager.MATCH_STATIC_SHARED_AND_SDK_LIBRARIES);
-            if (!signedByDevice(info) || !StubGenerator.runtimePackage(library.getName()).equals(declaring.getPackageName()))
-                throw new SecurityException("Unverified runtime");
-            runtime = checkedPath(info.applicationInfo.sourceDir);
-            StubGenerator.checkImageEntry(new File(runtime), "matonos/runtime.erofs");
-        }
-        if (runtime == null) throw new SecurityException("Missing runtime");
-        return record.append("runtime ").append(runtime).append('\n').toString();
+        return result.toString();
     }
 
     private static String checkedPath(String path) {
@@ -152,131 +152,6 @@ final class FlatpakStubManager {
         byte[] cert = StubGenerator.getExistingSigningCertificate();
         android.content.pm.Signature[] signers = info.signingInfo.getApkContentsSigners();
         return cert != null && signers.length == 1 && MessageDigest.isEqual(cert, signers[0].toByteArray());
-    }
-
-    // FDs are copied before returning to the caller, so asynchronous sessions
-    // never depend on caller-owned paths or mutable APK files.
-    private File copyApk(android.os.ParcelFileDescriptor descriptor) throws Exception {
-        File file = File.createTempFile("image-install-", ".apk", context.getCacheDir());
-        try (java.io.InputStream in = new android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor);
-                FileOutputStream out = new FileOutputStream(file)) {
-            byte[] bytes = new byte[65536]; int n;
-            while ((n = in.read(bytes)) != -1) out.write(bytes, 0, n);
-            return file;
-        } catch (Exception error) { file.delete(); throw error; }
-    }
-
-    synchronized int reserveRuntimeVersion(String ref) throws Exception {
-        StubGenerator.runtimePackage(ref); // validate before persistence
-        android.content.SharedPreferences prefs = context.getSharedPreferences("flatpak-runtime-versions", Context.MODE_PRIVATE);
-        int previous = prefs.getInt(ref, 0);
-        if (previous == Integer.MAX_VALUE) throw new IllegalStateException("Runtime version exhausted");
-        if (!prefs.edit().putInt(ref, previous + 1).commit()) throw new java.io.IOException("Cannot persist runtime version");
-        return previous + 1;
-    }
-
-    private static JSONObject imageManifest(File apk) throws Exception {
-        String ns = "http://schemas.android.com/apk/res/android";
-        JSONObject result = new JSONObject();
-        android.content.res.ApkAssets assets = android.content.res.ApkAssets.loadFromPath(apk.getPath());
-        try (android.content.res.XmlResourceParser xml = assets.openXml("AndroidManifest.xml")) {
-            while (xml.next() != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
-                if (xml.getEventType() != org.xmlpull.v1.XmlPullParser.START_TAG) continue;
-                if ("manifest".equals(xml.getName())) {
-                    result.put("package", xml.getAttributeValue(null, "package"));
-                    result.put("split", xml.getAttributeValue(null, "split"));
-                    result.put("versionCode", xml.getAttributeIntValue(ns, "versionCode", -1));
-                } else if ("static-library".equals(xml.getName()) || "uses-static-library".equals(xml.getName())) {
-                    if (result.has("library")) throw new SecurityException("Multiple runtime declarations");
-                    result.put("library", xml.getAttributeValue(ns, "name"));
-                    result.put("version", xml.getAttributeIntValue(ns, "version", -1));
-                    result.put("digest", xml.getAttributeValue(ns, "certDigest"));
-                    result.put("static", "static-library".equals(xml.getName()));
-                }
-            }
-        }
-        finally { assets.close(); }
-        return result;
-    }
-
-    int installImages(String ref, android.os.ParcelFileDescriptor runtimeFd,
-            android.os.ParcelFileDescriptor appFd) throws Exception {
-        File runtime = copyApk(runtimeFd), app = null;
-        try {
-            app = copyApk(appFd);
-            PackageManager pm = context.getPackageManager();
-            PackageInfo rt = pm.getPackageArchiveInfo(runtime.getPath(), PackageManager.GET_SIGNING_CERTIFICATES);
-            PackageInfo stub = pm.getPackageArchiveInfo(app.getPath(), PackageManager.GET_SIGNING_CERTIFICATES | PackageManager.GET_ACTIVITIES | PackageManager.GET_META_DATA);
-            if (!signedByDevice(rt) || !signedByDevice(stub) || !packageFor(ref).equals(stub.packageName))
-                throw new SecurityException("Invalid image package signer/identity");
-            boolean declared = false;
-            if (stub.activities != null) for (android.content.pm.ActivityInfo activity : stub.activities)
-                if (StubGenerator.HOST_ACTIVITY.equals(activity.name) && activity.metaData != null && ref.equals(activity.metaData.getString(StubGenerator.REF_META))) declared = true;
-            JSONObject rm = imageManifest(runtime), am = imageManifest(app);
-            String runtimeRef = rm.optString("library");
-            StringBuilder digest = new StringBuilder();
-            for (byte b : MessageDigest.getInstance("SHA-256").digest(StubGenerator.getExistingSigningCertificate()))
-                digest.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
-            if (!declared || !StubGenerator.runtimePackage(runtimeRef).equals(rt.packageName) ||
-                    !rm.optBoolean("static") || am.optBoolean("static") || rm.has("split") || am.has("split") ||
-                    rm.optInt("version") <= 0 || rm.optInt("version") != rm.optInt("versionCode") ||
-                    !runtimeRef.equals(am.optString("library")) || rm.optInt("version") != am.optInt("version") ||
-                    !digest.toString().equalsIgnoreCase(am.optString("digest")))
-                throw new SecurityException("Invalid image manifest/dependency");
-            synchronized (this) {
-                android.content.SharedPreferences prefs = context.getSharedPreferences("flatpak-runtime-versions", Context.MODE_PRIVATE);
-                int version = rm.getInt("version");
-                // Reserved versions survive failed installs; never reuse a number
-                // for a newly generated runtime. Existing versions can be reused.
-                if (version > prefs.getInt(runtimeRef, 0) && !prefs.edit().putInt(runtimeRef, version).commit())
-                    throw new java.io.IOException("Cannot persist runtime version");
-            }
-            StubGenerator.checkImageEntry(runtime, "matonos/runtime.erofs");
-            StubGenerator.checkImageEntry(app, "matonos/code.erofs");
-            final File appFile = app;
-            // Commit the app only after PackageInstaller reports runtime success.
-            return installApk(runtime, rt.packageName, false, () -> {
-                try { installApk(appFile, stub.packageName, false, null, () -> appFile.delete()); }
-                catch (Exception error) { appFile.delete(); Log.e(TAG, "App image install failed", error); }
-            }, () -> { runtime.delete(); appFile.delete(); });
-        } catch (Exception error) { runtime.delete(); if (app != null) app.delete(); throw error; }
-    }
-
-    int installExtra(String ref, android.os.ParcelFileDescriptor fd) throws Exception {
-        String pkg = packageFor(ref);
-        PackageInfo installed = context.getPackageManager().getPackageInfo(pkg, 0);
-        if (!ownsStub(installed.applicationInfo.uid, ref)) throw new SecurityException("Unverified stub");
-        File apk = copyApk(fd);
-        try {
-            JSONObject manifest = imageManifest(apk);
-            if (!pkg.equals(manifest.optString("package")) || !"extra".equals(manifest.optString("split")) ||
-                    manifest.optInt("versionCode") != installed.getLongVersionCode() || manifest.has("library"))
-                throw new SecurityException("Invalid extra manifest");
-            StubGenerator.checkImageEntry(apk, "matonos/extra.erofs");
-            // PackageInstaller also checks package, split name/version and signer
-            // against the existing base before accepting the inherited session.
-            return installApk(apk, pkg, true, null, () -> apk.delete());
-        } catch (Exception error) { apk.delete(); throw error; }
-    }
-
-    private int installApk(File apk, String pkg, boolean inherit, Runnable next, Runnable cleanup) throws Exception {
-        PackageInstaller installer = context.getPackageManager().getPackageInstaller();
-        PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(inherit ?
-                PackageInstaller.SessionParams.MODE_INHERIT_EXISTING : PackageInstaller.SessionParams.MODE_FULL_INSTALL);
-        params.setAppPackageName(pkg);
-        params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
-        int id = installer.createSession(params);
-        try (PackageInstaller.Session session = installer.openSession(id)) {
-            try (FileInputStream input = new FileInputStream(apk); java.io.OutputStream out = session.openWrite(inherit ? "extra.apk" : "base.apk", 0, apk.length())) {
-                byte[] buffer = new byte[65536]; int n;
-                while ((n = input.read(buffer)) != -1) out.write(buffer, 0, n);
-                session.fsync(out);
-            }
-            if (next != null) afterInstall.put(id, next);
-            installCleanup.put(id, cleanup);
-            session.commit(resultSender);
-            return id;
-        } catch (Exception error) { afterInstall.remove(id); installCleanup.remove(id); installer.abandonSession(id); throw error; }
     }
 
     private static String packageFor(String ref) throws Exception {
@@ -425,6 +300,8 @@ final class FlatpakStubManager {
             JSONObject metadata = new JSONObject(daemon.call("metadata", new JSONObject().put("ref", ref).toString()));
             if (!metadata.optBoolean("ok") || metadata.optBoolean("outputTruncated"))
                 throw new java.io.IOException("Flatpak metadata unavailable");
+            // Generate a plain stub without commit info (reconciliation doesn't
+            // know the commits yet; those are added during Flatpak install).
             StubGenerator.generate(work, ref, desktop, iconBytes,
                     StubGenerator.permissionsForMetadata(metadata.optString("output")), pkg, apk);
             PackageInstaller installer = context.getPackageManager().getPackageInstaller();

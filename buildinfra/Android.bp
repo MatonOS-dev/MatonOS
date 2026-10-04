@@ -145,3 +145,13 @@ prebuilt_bin {
     src: ":matonos-apk-session-broker-extract",
     system_ext_specific: true,
 }
+
+// MatonOS Linux Runtimes: owns a UID for Flatpak SYSTEM installations.
+// Not privileged, not platform-signed. Its only purpose is a stable UID
+// that linuxd uses for FLATPAK_SYSTEM_DIR ownership.
+android_app_import {
+    name: "MatonOSLinuxRuntimes",
+    apk: "apps-built/LinuxRuntimes.apk",
+    system_ext_specific: true,
+    preprocessed: true,
+}
