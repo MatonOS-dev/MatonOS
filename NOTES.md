@@ -1693,3 +1693,11 @@ system_server's environment (`BOOTCLASSPATH` etc.): prefix them with
 `export $(tr '\0' '\n' < /proc/$(pidof system_server)/environ | xargs);`.
 ANR traces are in `/data/anr`. If a headless VM stops answering, check QMP
 `query-status` for `suspended` and send `system_wakeup`.
+
+### Flatpak APEX updates (2026-10-04)
+`com.matonos.flatpak` updates out-of-cycle (CVE fixes, newer Flatpak/bwrap
+pair) via staged install (adb install for dev; System Bridge/updater via
+PackageInstaller staged sessions later). Same APEX key + higher version,
+activates on reboot, apexd rolls back on failed boot. Live images (RAM /data)
+cannot keep staged updates: they get new images. Release key: generate once,
+keep offline (dev key in repo until then).
