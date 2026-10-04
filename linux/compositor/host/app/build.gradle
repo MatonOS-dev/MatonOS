@@ -28,7 +28,7 @@ android {
     namespace 'org.matonos.compositor'
     compileSdk 36
     defaultConfig {
-        applicationId 'org.matonos.compositor'; minSdk 30; targetSdk 35; versionCode 1; versionName '1.0'
+        applicationId 'org.matonos.compositor'; minSdk 36; targetSdk 36; versionCode 1; versionName '1.0'
         ndk { abiFilters 'x86_64' }
         externalNativeBuild { cmake { arguments '-DMATON_COMPOSITOR_ROOT=' + projectDir.absolutePath + '/../..', '-DMATON_AOSP_ROOT=' + aospRoot, '-DMATON_COMPOSITOR_BUILD=' + (System.getenv('MATON_COMPOSITOR_BUILD') ?: "$aospRoot/out/matonos/compositor") } }
     }
