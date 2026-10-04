@@ -199,9 +199,9 @@ any other label there (`app_neverallows.te` ~194); symlinks don't help).
 - The existing `/data/matonos/linux/apps/` tree, labelled via our `file_contexts` as
   `matonos_linux_data_file`; per-uid dirs are created by linuxd, owned by the
   stub uid, at the stub's MLS level (set the create context explicitly).
-- `run/`: the session's XDG_RUNTIME_DIR content (`wayland-0`, `X11/X0`).
-  linuxd binds the listening sockets and returns them to the compositor host
-  through the launch call (stubs create nothing); X display is always :0.
+- Session sockets stay owned by the compositor host exactly as today (its
+  runtime/X11 dirs passed to launchOwnedFlatpak; user decision 2026-10-04
+  after the host audit) — no per-uid run/.
 - `home/`: the Flatpak app's data/home (replacing the per-app dirs under
   /data/matonos/linux and `vol.img`), including any code it downloads.
 - Lifecycle: the bridge's stub reconcile (FlatpakStubManager) asks linuxd to
