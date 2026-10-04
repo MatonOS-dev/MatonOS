@@ -79,6 +79,9 @@ allow matonos_compositor matonos_linuxd:fd use;
 allow matonos_compositor matonos_flatpak_data_file:dir { getattr search write add_name remove_name };
 allow matonos_compositor matonos_flatpak_data_file:sock_file create_file_perms;
 allow matonos_compositor matonos_linuxd_tmpfs:file { getattr read write map };
+# OpenURI portal files arrive as SCM_RIGHTS capabilities. Java fstats and
+# preads/pwrites those descriptors; it does not open native storage paths.
+allow matonos_compositor matonos_flatpak_data_file:file { getattr read write };
 
 # The APK session broker executes without transition: updates use nativeLibraryDir,
 # while the image extracts its APK copy to /system_ext/bin/matonos-apk-session-broker.

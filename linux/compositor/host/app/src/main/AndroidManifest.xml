@@ -11,6 +11,8 @@
     </queries>
     <application android:label="Maton Wayland" android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:multiArch="true" android:extractNativeLibs="true">
+        <provider android:name=".PortalFiles" android:authorities="org.matonos.compositor.portal.files"
+            android:process=":compositor" android:exported="false" android:grantUriPermissions="true" />
         <library android:name="org.matonos.linuxhost" />
         <!-- Exported embedded Binder authenticates the exact generated stub;
              the legacy full compositor Binder remains restricted to this UID. -->
