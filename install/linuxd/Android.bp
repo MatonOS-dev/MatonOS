@@ -44,6 +44,10 @@ cc_binary {
     ],
     init_rc: [],
     system_ext_specific: true,
+    // Ships inside com.matonos.flatpak, not system_ext (see flatpak.mk).
+    apex_available: ["com.matonos.flatpak"],
+    // APEX payload module; must support the APEX's min_sdk_version (37).
+    min_sdk_version: "37",
     compile_multilib: "64",
     cflags: [
         "-Wall",

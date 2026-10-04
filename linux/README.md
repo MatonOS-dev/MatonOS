@@ -1,8 +1,11 @@
 # Linux app host feasibility spike
 
-This is an early bionic/Soong spike for the Flatpak host stack. The selected
-design keeps the host binaries in `system_ext` and links platform libraries
-from AOSP. It does not add them to the product image yet.
+This is an early bionic/Soong spike for the Flatpak host stack. The r24 design
+ships the whole stack as one updatable APEX, `com.matonos.flatpak`, preinstalled
+on `system_ext` and mounted at `/apex/com.matonos.flatpak` (see
+`flatpak/APEX.md`); linuxd stays in `system_ext` and links platform libraries
+from AOSP. Historical paths below that say `/system_ext/bin` or
+`/system_ext/lib64` predate the APEX move.
 
 ## Source pins
 
@@ -35,9 +38,11 @@ libc++, libcap, and libffi.
 The module-only build completed at 2026-09-29 00:41. It produced:
 
 - `out/target/product/pc_x86_64/system_ext/bin/bwrap`: 101,472 bytes stripped
-  (171,024 bytes unstripped).
+  (171,024 bytes unstripped). (r24: inside the APEX at
+  `/apex/com.matonos.flatpak/bin/bwrap`.)
 - `out/target/product/pc_x86_64/system_ext/lib64/libseccomp_matonos.so`:
-  134,480 bytes stripped (226,024 bytes unstripped).
+  134,480 bytes stripped (226,024 bytes unstripped). (r24: inside the APEX at
+  `/apex/com.matonos.flatpak/lib64/libseccomp_matonos.so`.)
 
 The first bwrap VM smoke used the last OK image and pushed both files to
 `/data/local/tmp`; boot completed as root with SELinux permissive. `bwrap

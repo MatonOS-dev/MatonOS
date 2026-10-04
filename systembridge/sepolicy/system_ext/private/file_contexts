@@ -8,11 +8,10 @@
 /data/matonos/linux/store(/.*)? u:object_r:matonos_flatpak_store_file:s0
 # Per-app Xwayland display sockets live in their own directory so the
 # compositor can hand each socket to its application's uid.
-# flatpak-spike: NDK runtime files use the existing system_file type, which
-# matonos-linuxd is already allowed to execute/read; no new policy type needed.
-/system_ext/bin/(flatpak|gpg|ostree|revokefs-fuse|Xwayland) u:object_r:system_file:s0
-/system_ext/lib64/lib[^/]+\.so u:object_r:system_file:s0
-/system_ext/share/flatpak(/.*)? u:object_r:system_file:s0
+# r24: the Flatpak runtime files (flatpak/gpg/ostree/revokefs-fuse, the Flatpak
+# libraries and share/flatpak triggers) and Xwayland are no longer here:
+# Flatpak now lives in the com.matonos.flatpak APEX, which supplies its own
+# file_contexts, and Xwayland keeps the default system_file label.
 
 # linuxd's sysfs metadata only. Canonical /devices paths cover every bus and
 # hotplug topology; ueventd restorecon does not follow /class symlinks.
@@ -32,13 +31,9 @@
 /data/matonos/linux/runtime(/.*)? u:object_r:matonos_flatpak_socket_file:s0
 /data/matonos/linux/(machine-id|udev)(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
 
-/system_ext/bin/matonos-flatpak u:object_r:matonos_flatpak_cli_exec:s0
-# r24: installer helper (exec'd by linuxd) and the two bwrap layers.
-/system_ext/bin/matonos-flatpak-store u:object_r:matonos_flatpak_installer_exec:s0
-/system_ext/bin/matonos-bwrap u:object_r:matonos_bwrap_exec:s0
-/system_ext/bin/bwrap u:object_r:matonos_bwrap_exec:s0
-/system_ext/bin/matonos-app-exec u:object_r:matonos_app_exec_exec:s0
-# r24: privileged outside-the-sandbox mount helper.
-/system_ext/bin/matonos-mount-helper u:object_r:matonos_mount_helper_exec:s0
+# r24: the Flatpak CLI, installer helper, bwrap layers, app launcher and mount
+# helper moved into the com.matonos.flatpak APEX. Their same exec types are now
+# applied by linux/flatpak/apex_file_contexts at /apex/com.matonos.flatpak/bin;
+# the domains and transitions in matonos_system_bridge.te are unchanged.
 
 /data/matonos/linux/cache/launch-[^/]+\.log u:object_r:matonos_flatpak_log_file:s0

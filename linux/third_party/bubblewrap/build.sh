@@ -12,7 +12,7 @@ python3 "$HERE/../verify-source.py" bubblewrap "$HERE/upstream"
 setup=()
 [[ ! -f $BUILD/meson-private/coredata.dat ]] || setup+=(--reconfigure)
 meson setup "${setup[@]}" "$BUILD" "$HERE/upstream" \
-  --cross-file "$WORK/android-x86_64-api35.ini" --prefix /system_ext \
+  --cross-file "$WORK/android-x86_64-api35.ini" --prefix /apex/com.matonos.flatpak \
   --wrap-mode=nofallback -Dselinux=disabled -Dman=disabled -Dtests=false \
   -Dbash_completion=disabled -Dzsh_completion=disabled -Dc_args=-march=x86-64-v2
 meson compile -C "$BUILD" -j "$JOBS"

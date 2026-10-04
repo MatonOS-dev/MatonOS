@@ -204,8 +204,9 @@ MatonOS Settings app is listed as the built-in caller. A root-only test call
 is exposed through the bridge shell provider only on a debuggable live image
 after `persist.vendor.maton.flatpak_test=1`.
 
-The service invokes only `/system_ext/bin/flatpak` using `posix_spawn` and a
-fixed argv per command; no shell or `flatpak-spawn --host` is involved. It
+The service invokes only `/apex/com.matonos.flatpak/bin/flatpak` (the launcher
+for the Flatpak stack in the updatable `com.matonos.flatpak` APEX) using
+`posix_spawn` and a fixed argv per command; no shell or `flatpak-spawn --host` is involved. It
 accepts complete `app|runtime/ID/ARCH/BRANCH` refs, checks Flatpak app IDs,
 and rejects unknown JSON fields. The system installation and app data live
 under `/data/matonos/linux`; the tree receives the dedicated
@@ -253,8 +254,8 @@ session stayed awake.
 `matonos_flatpak_data_file`. The root/live `flatpak_test_call` hook reached the
 daemon: `list_installed` and `list_remotes` returned exit code 127, and
 `add_flathub` returned exit code 127. The missing-CLI guard stopped at
-`/system_ext/bin/flatpak --version` with `/system/bin/sh: ... inaccessible or
-not found` (exit 127). Install and uninstall hook calls were accepted as
+`/apex/com.matonos.flatpak/bin/flatpak --version` with `/system/bin/sh: ...
+inaccessible or not found` (exit 127). Install and uninstall hook calls were accepted as
 asynchronous operations, but no package was installed and no deletion was
 verified; the Flatpak executable was absent. `run` initially exposed a dead-PID
 response when the CLI was missing. `run_async` now checks executable access
