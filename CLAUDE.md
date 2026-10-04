@@ -265,6 +265,12 @@ system or the raw Android UID) with no wheel/sudo/admin/adm/lpadmin
 membership; no sudo/pkexec/su path; polkit is absent on the bus;
 no_new_privs makes setuid useless. Granted extras (e.g. controllers) appear
 as plain groups, never admin ones.
+Principle (user, 2026-10-04): from the app's side, launching is a single
+lever that says "start". The stub chooses nothing (no arguments, paths,
+mount options, devices, environment or flags); the privileged side derives
+everything from the verified stub identity (UID + per-device signature),
+its installed manifest and its granted Android permissions.
+
 Principle (user, 2026-10-04): containment beats compatibility. Default to
 the tightest permissions; when an app breaks on a missing permission, fix
 that case deliberately later (generically, never per app) rather than
