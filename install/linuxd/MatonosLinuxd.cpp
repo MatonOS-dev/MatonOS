@@ -297,8 +297,9 @@ class LinuxdService final : public BnLinuxd {
                 runtime_commit_storage = request["runtimeCommit"].asString(); runtime_commit = runtime_commit_storage.c_str();
                 remote_storage = request["remote"].asString(); remote = remote_storage.c_str();
                 app_uid = request["uid"].asInt(); runtime_uid = request["runtimeUid"].asInt();
-                if (app_uid < 10000 || runtime_uid < 10000 || app_uid == runtime_uid) {
-                    reply(Encode(Error("valid app and runtime package UIDs are required")));
+                if (app_uid < 10000 || runtime_uid < 10000 || app_uid == runtime_uid ||
+                        app_uid / 100000 != runtime_uid / 100000) {
+                    reply(Encode(Error("valid same-user app and runtime package UIDs are required")));
                     return android::binder::Status::ok();
                 }
             }

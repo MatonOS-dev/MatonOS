@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <pthread.h>
 #include <poll.h>
 #include <spawn.h>
@@ -160,16 +161,96 @@ void flatpak_manager_init(void) {
     setenv("XDG_DATA_HOME", "/data/matonos/linux/flatpak-data/.local/share", 1);
 }
 
+static int valid_install_uid(int uid) {
+    return uid >= 10000 && uid % 100000 >= 10000 && uid % 100000 <= 19999;
+}
+
+static int remember_runtime_install(int uid) {
+    char temporary[160], path[160];
+    char value[32];
+    if (!valid_install_uid(uid)) { errno = EINVAL; return -1; }
+    unsigned android_user = (unsigned)uid / 100000;
+    snprintf(temporary, sizeof(temporary), "/data/matonos/linux/runtime/runtime-installation-%u.tmp", android_user);
+    snprintf(path, sizeof(path), "/data/matonos/linux/runtime/runtime-installation-%u", android_user);
+    int length = snprintf(value, sizeof(value), "%d\n", uid);
+    int fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (fd < 0) return -1;
+    int ok = fchmod(fd, 0600) == 0 && write(fd, value, (size_t)length) == length && fsync(fd) == 0;
+    int saved = errno;
+    close(fd);
+    if (!ok || rename(temporary, path)) {
+        if (ok) saved = errno;
+        unlink(temporary);
+        errno = saved;
+        return -1;
+    }
+    return 0;
+}
+
+static int remembered_runtime_install(int app_uid, int* uid) {
+    char path[160];
+    char value[32];
+    struct stat st;
+    if (!valid_install_uid(app_uid)) { errno = EINVAL; return -1; }
+    snprintf(path, sizeof(path), "/data/matonos/linux/runtime/runtime-installation-%u",
+            (unsigned)app_uid / 100000);
+    int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0) return -1;
+    ssize_t size = read(fd, value, sizeof(value) - 1);
+    int bad = fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_uid != 1000 ||
+            (st.st_mode & 0777) != 0600 || size <= 0 || size >= (ssize_t)sizeof(value) - 1;
+    close(fd);
+    if (bad) { errno = EINVAL; return -1; }
+    value[size] = '\0';
+    char* end = NULL;
+    long parsed = strtol(value, &end, 10);
+    if (!end || (*end != '\n' && *end != '\0') || parsed < 10000 || parsed > INT_MAX ||
+            !valid_install_uid((int)parsed)) {
+        errno = EINVAL;
+        return -1;
+    }
+    *uid = (int)parsed;
+    return 0;
+}
+
 static void publish_progress_line(const char* line) {
     if (g_progress_callback) g_progress_callback(line ? line : "", g_callback_context);
 }
 
-static ChildResult run_cli(const char* const* args, size_t count, int progress) {
+static char** flatpak_environment(const char* system_dir, const char* user_dir) {
+    size_t count = 0, out = 0;
+    while (environ[count]) ++count;
+    char** env = calloc(count + 3, sizeof(char*));
+    if (!env) return NULL;
+    for (size_t i = 0; i < count; ++i) {
+        if ((system_dir && !strncmp(environ[i], "FLATPAK_SYSTEM_DIR=", 19)) ||
+                (user_dir && !strncmp(environ[i], "FLATPAK_USER_DIR=", 17))) continue;
+        env[out] = strdup(environ[i]);
+        if (!env[out++]) goto fail;
+    }
+    if (system_dir && asprintf(&env[out++], "FLATPAK_SYSTEM_DIR=%s", system_dir) < 0) goto fail;
+    if (user_dir && asprintf(&env[out++], "FLATPAK_USER_DIR=%s", user_dir) < 0) goto fail;
+    return env;
+fail:
+    while (out) free(env[--out]);
+    free(env);
+    return NULL;
+}
+
+static void flatpak_environment_free(char** env) {
+    if (!env) return;
+    for (size_t i = 0; env[i]; ++i) free(env[i]);
+    free(env);
+}
+
+static ChildResult run_cli_in(const char* const* args, size_t count, int progress,
+        const char* system_dir, const char* user_dir) {
     ChildResult result;
     int pipes[2] = {-1, -1};
     posix_spawn_file_actions_t actions;
     posix_spawnattr_t attributes;
     char** argv;
+    char** child_env = NULL;
     pid_t child = -1;
     int rc;
     int timed_out = 0;
@@ -219,7 +300,17 @@ static ChildResult run_cli(const char* const* args, size_t count, int progress) 
     }
     argv[0] = (char*)k_flatpak;
     for (size_t i = 0; i < count; ++i) argv[i + 1] = (char*)args[i];
-    rc = posix_spawn(&child, k_flatpak, &actions, &attributes, argv, environ);
+    child_env = flatpak_environment(system_dir, user_dir);
+    if (!child_env) {
+        free(argv);
+        posix_spawn_file_actions_destroy(&actions);
+        posix_spawnattr_destroy(&attributes);
+        close(pipes[0]); close(pipes[1]);
+        snprintf(result.output, k_output_limit + 1, "cannot prepare Flatpak environment");
+        return result;
+    }
+    rc = posix_spawn(&child, k_flatpak, &actions, &attributes, argv, child_env);
+    flatpak_environment_free(child_env);
     free(argv);
     posix_spawn_file_actions_destroy(&actions);
     posix_spawnattr_destroy(&attributes);
@@ -315,6 +406,10 @@ static ChildResult run_cli(const char* const* args, size_t count, int progress) 
     return result;
 }
 
+static ChildResult run_cli(const char* const* args, size_t count, int progress) {
+    return run_cli_in(args, count, progress, NULL, NULL);
+}
+
 static void result_from_child(FlatpakResult* result, ChildResult* child) {
     result->exit_code = child->status;
     result->ok = child->status == 0;
@@ -371,6 +466,10 @@ static void* package_operation_thread(void* data) {
         int rc = flatpak_publish(operation->ref, operation->app_commit,
                 operation->runtime_ref, operation->runtime_commit, operation->remote,
                 "/data/matonos/linux/staging", system_dir, user_dir, error, sizeof(error));
+        if (rc == 0 && remember_runtime_install(operation->runtime_uid)) {
+            snprintf(error, sizeof(error), "published app but cannot record its shared runtime installation");
+            rc = -1;
+        }
         result.ok = rc == 0;
         result.exit_code = rc == 0 ? 0 : 1;
         if (rc != 0) result.error = strdup(error[0] ? error : "Flatpak publish pipeline failed");
@@ -705,12 +804,20 @@ int flatpak_manager_delete_data(int uid) {
 /* The compositor delegates only its socket directories, never its app data root. */
 void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, int stub_uid, int stub_pid, int lifeline_fd, FlatpakResult* result) {
     struct stat directory, socket_info;
+    int runtime_uid = -1;
+    char system_install[128], user_install[128];
     if (stub_uid < 10000 || stub_pid <= 0 || lifeline_fd < 0) {
         set_error(result, "verified stub process required"); return;
     }
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
         set_error(result, "valid installed application ref required"); return;
     }
+    if (!valid_install_uid(stub_uid) || remembered_runtime_install(stub_uid, &runtime_uid) ||
+            runtime_uid / 100000 != stub_uid / 100000) {
+        set_error(result, "shared runtime installation is unavailable"); return;
+    }
+    snprintf(system_install, sizeof(system_install), "/data/matonos/linux/apps/%d", runtime_uid);
+    snprintf(user_install, sizeof(user_install), "/data/matonos/linux/apps/%d", stub_uid);
     bool has_x11 = x11_display && x11_display[0];
     struct stat x11_directory;
     if (has_x11 && (x11_display[0] != 'X' || !x11_display[1] || strlen(x11_display) >= 64 ||
@@ -733,12 +840,12 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
         set_error(result,"cannot prepare verified Linux data");return;
     }
     /* Check the full installed ref rather than accepting arbitrary commands. */
-    const char* info_args[] = {"--system", "info", ref};
-    ChildResult installed = run_cli(info_args, 3, 0);
+    const char* info_args[] = {"--user", "info", ref};
+    ChildResult installed = run_cli_in(info_args, 3, 0, system_install, user_install);
     if (installed.status != 0) { result_from_child(result, &installed); return; }
     free(installed.output);
-    const char* metadata_args[] = {"--system", "info", "--show-metadata", ref};
-    ChildResult metadata = run_cli(metadata_args, 4, 0);
+    const char* metadata_args[] = {"--user", "info", "--show-metadata", ref};
+    ChildResult metadata = run_cli_in(metadata_args, 4, 0, system_install, user_install);
     int controllers = 0, all_devices = 0;
     if (metadata.status == 0 && !metadata.truncated)
         controllers = declared_controllers(metadata.output, &all_devices) && game_controllers;
@@ -801,9 +908,12 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     snprintf(dns_env,sizeof(dns_env),"MATON_FLATPAK_DNS=%s",dns_servers ? dns_servers : "");
     char x11_env[160];
     snprintf(x11_env,sizeof(x11_env),"MATON_SESSION_X11_NAME=%s",has_x11?x11_display:"");
+    char system_install_env[160], user_install_env[160];
+    snprintf(system_install_env, sizeof(system_install_env), "FLATPAK_SYSTEM_DIR=%s", system_install);
+    snprintf(user_install_env, sizeof(user_install_env), "FLATPAK_USER_DIR=%s", user_install);
     size_t env_count = 0;
     while (environ[env_count]) ++env_count;
-    char** env = calloc(env_count + 10, sizeof(char*));
+    char** env = calloc(env_count + 14, sizeof(char*));
     size_t n = 0;
     if (env) {
         for (size_t i = 0; i < env_count; ++i)
@@ -813,7 +923,11 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
                     strncmp(environ[i],"MATON_GAME_CONTROLLERS=",23) != 0 &&
                     strncmp(environ[i],"MATON_SESSION_DIRECTORY_FD=",27) != 0 &&
                     strncmp(environ[i],"MATON_SESSION_X11_",18) != 0 &&
-                    strncmp(environ[i],"MATON_SESSION_PAD_NODES=",24) != 0) env[n++] = environ[i];
+                    strncmp(environ[i],"MATON_SESSION_PAD_NODES=",24) != 0 &&
+                    strncmp(environ[i],"FLATPAK_SYSTEM_DIR=",19) != 0 &&
+                    strncmp(environ[i],"FLATPAK_USER_DIR=",17) != 0) env[n++] = environ[i];
+        env[n++] = system_install_env;
+        env[n++] = user_install_env;
         env[n++] = pad_env;
         env[n++] = owner_env;
         env[n++] = "MATON_APP_LIFELINE=196";
@@ -828,9 +942,11 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
      * ignore the decoration protocol are told to drop their own. The GPU's
      * render node is passed in: Wayland clients render on it and hand their
      * dma-bufs to the compositor, which shows them without a copy. */
-    char* argv[] = {(char*)k_flatpak, "--system", "run",
+    char* argv[] = {(char*)k_flatpak, "--user", "run",
             "--socket=wayland", "--socket=x11", "--no-documents-portal",
-            "--socket=session-bus",
+            /* Session-bus access is the installation's global override.
+             * Keep per-app permissions free of this launch-chain lever. */
+            "--no-a11y-bus",
             "--nodevice=all", "--device=dri",
             "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1", "--env=GTK_CSD=0",
             "--env=NO_AT_BRIDGE=1",
@@ -1071,8 +1187,10 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
     } else if (strcmp(command, "install") == 0 || strcmp(command, "uninstall") == 0) {
         if (!flatpak_manager_valid_ref(ref)) set_error(result, "valid complete Flatpak ref required");
         else if (strcmp(command, "install") == 0 && (!flatpak_manager_valid_ref(runtime_ref) ||
-                strncmp(runtime_ref, "runtime/", 8) || !remote || !*remote || strlen(remote) > 128))
-            set_error(result, "valid pinned runtime ref and remote are required");
+                strncmp(runtime_ref, "runtime/", 8) || !remote || !*remote || strlen(remote) > 128 ||
+                !valid_install_uid(app_uid) || !valid_install_uid(runtime_uid) ||
+                app_uid / 100000 != runtime_uid / 100000))
+            set_error(result, "valid pinned runtime ref, remote, and same-user installation UIDs are required");
         else start_package_operation(strcmp(command, "uninstall") == 0, ref, delete_data,
                 operation_id, app_commit, runtime_ref, runtime_commit, remote,
                 app_uid, runtime_uid, result);

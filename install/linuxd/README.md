@@ -108,6 +108,34 @@ while `--untrusted` makes OSTree check each imported source object's checksum
 during the pull. That validates the imported closure without a separate
 repository-wide `fsck` scan.
 
+Run the real static launch probe after publish with:
+
+```sh
+MATONOS_PUBLISH_RUN_LAUNCH_TEST=1 bash install/linuxd/tests/flatpak-publish-host-test.sh
+```
+
+It starts the installed Calculator through the static Flatpak multicall binary
+and the C bwrap shim, with a fake broker socket. The probe checks the sandbox
+bus address and socket, proxy process execs, Binder device-node visibility,
+and write attempts against the app/runtime mounts.
+
+At installation publication, linuxd writes global `session-bus` socket
+overrides to both the shared system runtime installation S and the app UID's
+user installation U. The override command has no app ID. The verified
+runtime-install UID is retained per Android user in
+`/data/matonos/linux/runtime/runtime-installation-<userId>`; launch resolves S
+from that record and U from the verified stub UID. `flatpak run --user` launches
+the app from U while sharing its runtime from S. The wrapper keeps U as the
+Flatpak install root and uses the separate UID-owned `home` directory for
+HOME/cache/runtime files.
+
+The run path passes the compositor broker address as
+`DBUS_SESSION_BUS_ADDRESS=unix:path=<socket>`. `AT_SPI_BUS_ADDRESS` remains
+unset and linuxd passes Flatpak's `--no-a11y-bus` option, so Flatpak skips the
+accessibility bus lookup. The static APEX contains no `xdg-dbus-proxy`.
+`linux/flatpak/APEX.md` records the Flatpak source-path audit for direct bus
+binding and the accessibility flag.
+
 Before an install can run, the requested remote must already exist in R, S,
 and U with its own trusted key and both verification flags enabled. The
 current linuxd API does not provision remotes or copy keys into those

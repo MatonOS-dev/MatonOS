@@ -291,6 +291,19 @@ static int deploy_ref(const char* system_dir, const char* user_dir,
             sizeof(install_user) / sizeof(install_user[0]));
 }
 
+/* Give every Flatpak installation the session bus at global scope. These
+ * calls have no application ID, so Flatpak stores the socket grant in the
+ * installation's global overrides. Reapplying is idempotent and repairs an
+ * installation after its config is recreated. */
+static int prepare_global_session_bus(const char* system_dir, const char* user_dir) {
+    const char* system_override[] = {"override", "--system", "--socket=session-bus"};
+    const char* user_override[] = {"override", "--user", "--socket=session-bus"};
+    return run_flatpak(system_dir, user_dir, system_override,
+                sizeof(system_override) / sizeof(system_override[0])) ||
+            run_flatpak(system_dir, user_dir, user_override,
+                sizeof(user_override) / sizeof(user_override[0]));
+}
+
 int flatpak_publish(const char* app_ref, const char* app_commit,
         const char* runtime_ref, const char* runtime_commit, const char* remote,
         const char* staging_dir, const char* system_dir, const char* user_dir,
@@ -325,6 +338,11 @@ int flatpak_publish(const char* app_ref, const char* app_commit,
     if (run_flatpak(staging_dir, NULL, config, 5) || run_flatpak(system_dir, NULL, config, 5) ||
             run_flatpak(system_dir, user_dir, user_config, 5)) {
         fail(error, error_size, "cannot set complete Flatpak locale configuration"); return -1;
+    }
+    /* R is a staging repository, not an installation. S and U are actual
+     * Flatpak installations and each needs the open valve at global scope. */
+    if (prepare_global_session_bus(system_dir, user_dir)) {
+        fail(error, error_size, "cannot set global Flatpak session-bus overrides"); return -1;
     }
     int skip_stage = 0;
 #ifdef MATONOS_PUBLISH_HOST_TEST
