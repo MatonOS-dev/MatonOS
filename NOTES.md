@@ -33,7 +33,8 @@ Feature work continues, but in this shape from now on.
 
 - **v1**: basic loading, made **stable**: live image boots reliably to the UI
   on generic PCs (QEMU, build PC, Surface Pro 3).
-- **v1.1**: F-Droid preinstalled (+ Privileged Extension) and the system app
+- **v1.1**: F-Droid preinstalled (+ Privileged Extension; removed 2026-10-05
+  (GPLv3 rule); software centre will replace it) and the system app
   replacements (Fennec, Fossify suite, Open Camera) and the AOSP desktop windowing mode,
   updating from F-Droid's main repo. Our own repo/server pipeline stays v3.
   Also **Bluetooth detection**: v1 patches Bluetooth audio out of the audio
@@ -270,15 +271,14 @@ Feature work continues, but in this shape from now on.
   **han-mc-server** as static HTTPS (decided 2026-09-24). Needs real
   release keys (not AOSP test keys), kept off the build machine.
   **System app updates between OS releases** (Play can't host them;
-  F-Droid itself is preinstalled in **v1.1**; **v3** adds our repo as a
-  ROM-default repo and the server pipeline; v2 apps ship only inside the
-  OS image until then):
+  the software centre is planned to provide the client; **v3** adds our repo
+  and the server pipeline; v2 apps ship only inside the OS image until then):
   preferred = own F-Droid repo (fdroidserver, signed index, static hosting;
   **hosted on han-mc-server**, which also signs the repo index (monthly
   WebView updates happen there; see key rule), served by Caddy/nginx; LAN-only
   for testing, HTTPS + domain before any public use)
-  + preinstalled F-Droid client with Privileged Extension (silent installs;
-  also covers third-party apps). Fallback = small privileged updater app
+  + software-centre integration for the F-Droid repo (silent installs and
+  third-party apps). Fallback = small privileged updater app
   (JSON index, PackageInstaller sessions). Rules from v2 on: sign our apps
   with per-app keys (not the platform key) and grant privileges via the
   privapp allowlist; keep native services thin (only OTA can update them);
@@ -361,7 +361,7 @@ Feature work continues, but in this shape from now on.
   or be functional, and does not endorse this action. MatonOS believes in
   user choice and will not stop you from continuing at your own peril. If
   you intend to use MatonOS for a commercial use case, turn back now."
-- **App stores via MatonOS Settings (user, 2026-09-28)**: Settings is NOT
+- **App stores via MatonOS Settings (user, 2026-09-28, superseded 2026-10-05)**: Settings is NOT
   a store. It only offers to install the two stores: Aurora Store (upstream
   preload build from the MatonOS repo, installed over its placeholder via
   the pinned transitions) and F-Droid (official client from f-droid.org).
@@ -372,14 +372,18 @@ Feature work continues, but in this shape from now on.
   pinned; no repo management, no browsing) it keeps the preinstalled apps
   (Fennec, Fossify, Open Camera, ...), our apps and the stores current, next
   to MatonOS's own OS and add-on updates. F-Droid Basic is dropped from the
-  image once Settings can do this.
-- **App stores (user, 2026-09-28, final)**: F-Droid Basic, built from
+  image once Settings can do this. The later user decision removes F-Droid
+  Basic under the GPLv3 rule; the software centre will provide this role.
+- **App stores (user, 2026-09-28, superseded 2026-10-05)**: F-Droid Basic, built from
   source by us with INSTALL_PACKAGES/DELETE_PACKAGES added to its manifest
   (small in-tree patch), signed with our key, privileged = silent installs;
   updated from our repo later. Preinstalled apps stay on their F-Droid
   builds. Neo Store removed. Aurora Store: a placeholder app (com.aurora.store,
   our key) reserves the package; the real Aurora installs over it via the
   pinned signer-transition table in patch 0003, like microG Companion → Play.
+  **Removal (user, 2026-10-05):** F-Droid Basic (GPLv3) is removed from the
+  image because GPLv3 is banned in user-unreplaceable areas; the MatonOS
+  software centre will replace its role.
 - **Audio (user, 2026-09-28, final)**: Android's audio stays as it is
   (BayLibre AIDL HAL + our ALSA card selector; no PipeWire HAL). For v4
   Linux apps, the bionic PipeWire in the Linux-apps add-on gets a sink
@@ -403,7 +407,7 @@ Feature work continues, but in this shape from now on.
   certificate. No permission, no bridge policy (the bridge-based spoof
   provider and FAKE_PACKAGE_SIGNATURE were dropped). Supersedes the
   "hook that asks the bridge" design below.
-- **App store = Neo Store, privileged; microG pulled forward (user, 2026-09-27)**:
+- **App store = Neo Store, privileged; microG pulled forward (user, 2026-09-27, superseded)**:
   F-Droid 2.0 dropped Privileged Extension support and doesn't request
   INSTALL_PACKAGES, so every install prompted. Neo Store
   (com.machiav3lli.fdroid, f-droid.org repo) requests INSTALL_PACKAGES/
@@ -1494,12 +1498,15 @@ selector failure. Assess SOF firmware/topology separately if needed.
   exposed by sleepd, guarded by a signature/privileged permission (same
   pattern as the v2 installer service). Also later: real display blanking
   before suspend (backlight / DPMS).
-- **Preinstalled apps (decided, v1.1)**: F-Droid + Privileged Extension,
+- **Preinstalled apps (decided, v1.1; F-Droid removed 2026-10-05 under the GPLv3 rule)**:
+  Software centre will replace F-Droid's store role. Existing preinstalled
+  app APKs remain F-Droid-sourced, but the F-Droid client is no longer in the
+  image. Previously planned:
+  F-Droid + Privileged Extension,
   Fennec F-Droid (browser), Fossify Gallery/Calendar/Contacts/Clock/Notes/
   Calculator/Music Player (replacing the AOSP ones), Open Camera.
   Not preinstalled: Fossify File Manager, QuickSearchBox, Dialer, Messaging,
-  HeliBoard, Taskbar. Keyboard stays LatinIME. F-Droid's "Install unknown apps" is on
-  by default (`setup/matonos-setup.sh`, only while untouched).
+  HeliBoard, Taskbar. Keyboard stays LatinIME.
 - **No-GPU fallback = vgem virtual GPU (decided 2026-09-27, user)**: Android always sees a GPU. Without a supported GPU, early boot loads the upstream `vgem` module (render node, shmem dma-bufs); Mesa renders with llvmpipe/lavapipe; minigbm treats vgem as a software GPU; drm_hwcomposer imports the buffers into the real KMS driver (simpledrm on real no-GPU PCs) or copies into dumb buffers where import isn't possible (bochs-drm). vkms not used (keeps real modes/EDID/hotplug). Replaces the gralloc "no render node" crash (SF "output buffer not gpu writeable").
 - **rn-common comes back out of Settings (user, 2026-09-28)**: with a
   second Expo app coming (the Flatpak store / stub generator), the shared

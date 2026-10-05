@@ -53,8 +53,8 @@ Work in progress, not yet ready for daily use.
 - **Apps.**
   - MatonOS Settings is an Expo UI app, opened from Android Settings'
     homepage.
-  - F-Droid Basic is built by us as a privileged app, so installs are
-    silent.
+  - F-Droid Basic was removed on 2026-10-05 under the GPLv3 rule; the
+    MatonOS software centre will replace its role.
   - microG uses LineageOS-style signature spoofing.
   - Aurora Store and YouTube ship as placeholders that the real apps install
     over. Aurora is in the MatonOS F-Droid repo.
@@ -135,7 +135,8 @@ MatonOS is mostly an assembly of other people's excellent open-source work:
 - BayLibre's generic AIDL audio HAL
 - [microG](https://microg.org/) (GmsCore, Companion, GsfProxy); the signature
   spoofing patch follows [LineageOS](https://lineageos.org/)'s approach
-- [F-Droid](https://f-droid.org/) (F-Droid Basic, our own build)
+- [F-Droid](https://f-droid.org/) (repo and app sources; its client is not
+  preinstalled, and software-centre support is planned)
 - Preinstalled apps: [Fossify](https://github.com/FossifyOrg) (Calculator,
   Calendar, Clock, Contacts, Gallery, Music Player, Notes),
   [Fennec F-Droid](https://f-droid.org/packages/org.mozilla.fennec_fdroid/),

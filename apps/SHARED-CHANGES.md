@@ -1,11 +1,6 @@
-# Shared changes requested
+# Historical coordination note (superseded 2026-10-05)
 
-- `gms/README.md`: remove its historical Neo Store paragraphs and test steps
-  (including the obsolete claim that Neo Store replaces F-Droid Basic). The
-  app-selection decision has changed: Neo Store is removed and the source-
-  built privileged F-Droid Basic app now owns silent installs. Left untouched
-  because `gms/` belongs to the GMS area.
-- `setup/matonos-setup.sh`: no edit is needed. There is no existing
-  install-unknown-apps grant in the script, and the privileged
-  `INSTALL_PACKAGES` path lets F-Droid Basic use PackageInstaller sessions
-  without such a per-app user setting.
+F-Droid Basic was removed from the image under the GPLv3 rule. The MatonOS
+software centre will replace its role. `gms/README.md` now marks Neo Store's
+installer flow as historical; `setup/matonos-setup.sh` has no F-Droid-specific
+grant or setup hook.

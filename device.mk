@@ -112,14 +112,14 @@ PRODUCT_PRODUCT_PROPERTIES += \
 # on Wi-Fi-only devices.
 PRODUCT_PACKAGES := $(filter-out Stk SimAppDialog CarrierDefaultApp ImsServiceEntitlement,$(PRODUCT_PACKAGES))
 
-# Preinstalled apps from F-Droid (Fennec, Fossify, ...)
+# Preinstalled apps (Fennec, Fossify, ...) fetched from F-Droid.
 $(call inherit-product, $(LOCAL_PATH)/apps/apps.mk)
 
 # (ro.matonos.always_taskbar / shelf_nav / maximize_fullscreen removed with
 # the retired Launcher3 and frameworks/base patches; the custom Shell/Shelf
 # were retired too.)
 
-# Defaults Android has no config for (F-Droid may install apps), applied
+# Defaults Android has no config for (app stores may install apps), applied
 # after boot by a system_ext script (sepolicy/system_ext).
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/setup/matonos-setup.sh:$(TARGET_COPY_OUT_SYSTEM_EXT)/bin/matonos-setup.sh \
