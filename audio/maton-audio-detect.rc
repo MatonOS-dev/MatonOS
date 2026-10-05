@@ -6,11 +6,11 @@ on post-fs-data && property:persist.vendor.maton.audio.disable_detect=0
 
 on property:vendor.maton.audio.no_output=1
     # AOSP's primary HAL uses its paced stub driver when this boot property is set.
-    setprop ro.boot.audio.tinyalsa.ignore_output true
+    setprop vendor.maton.audio.tinyalsa.ignore_output true
 
 on property:vendor.maton.audio.no_input=1
     # Keep capture available as real-time silence when no ALSA capture PCM exists.
-    setprop ro.boot.audio.tinyalsa.simulate_input true
+    setprop vendor.maton.audio.tinyalsa.simulate_input true
 
 on property:vendor.maton.audio.policy_ready=1
     mount none /data/vendor/maton-audio/primary_audio_policy_configuration.xml /odm/etc/primary_audio_policy_configuration.xml bind

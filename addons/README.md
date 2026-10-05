@@ -80,7 +80,7 @@ The add-on repository is versioned with MatonOS, not the Android platform
 version. For release `26.12.0`, for example, the static HTTPS directory is
 `https://download.hanro50.net.za/matonos/updates/26.12.0/addons/`, beside that
 release's OS update payload. The current OS and Settings resolve the running
-`ro.matonos.version` and read that release's signed add-on index. Each module
+`ro.vendor.matonos.version` and read that release's signed add-on index. Each module
 and complete slot image is built for that release's exact kernel. Upload all
 payloads before publishing the new index. Index and update-manifest files have
 `.hwfm` sidecars with a 60-second cache override, so clients can refresh the
@@ -97,7 +97,7 @@ implements signed local intake and slot writing; release-index download,
 `.hwfm` refresh, Settings lookup and updater staging still need integration.
 
 `addons/tools/test-addon.sh` mirrors its generated test ZIP, image and public
-key under `out/pc-logs/addons-repo/<ro.matonos.version>/addons/` (or
+key under `out/pc-logs/addons-repo/<ro.vendor.matonos.version>/addons/` (or
 `dev-<kernel-release>` when the development image has no MatonOS version
 property). This mirrors the release server path for review without publishing
 anything. Set `MATON_ADDON_TEST_REPO_ROOT` to change the local mirror root, or

@@ -20,10 +20,15 @@ on post-fs-data
 # boot snapshot finds no real phy80211; the module parameter explicitly limits
 # the fallback to one empty nl80211 radio. Real adapters never get a phantom.
 on property:vendor.maton.wifi.hwsim.load=1
-    insmod /vendor/lib/modules/rfkill.ko
-    insmod /vendor/lib/modules/cfg80211.ko
-    insmod /vendor/lib/modules/libarc4.ko
-    insmod /vendor/lib/modules/mac80211.ko
-    insmod /vendor/lib/modules/mac80211_hwsim.ko radios=1
+    start vendor.matonos-hwsim-loader
+
+on property:init.svc.vendor.matonos-hwsim-loader=stopped && property:vendor.maton.wifi.hwsim.load=1
     setprop vendor.maton.wifi.present 1
     setprop vendor.maton.wifi.hwsim.load 0
+
+service vendor.matonos-hwsim-loader /vendor/bin/modprobe -d /vendor/lib/modules mac80211_hwsim radios=1
+    class core
+    user root
+    group root
+    disabled
+    oneshot

@@ -12,7 +12,6 @@
 /data/vendor/matonos-addons(/.*)? u:object_r:matonos_addon_data_file:s0
 # Add-on images are built off-device with immutable SELinux xattrs. The
 # manager's writable intake lives under /data, never on this mount.
-/mnt/vendor/addons(/.*)? u:object_r:vendor_file:s0
 /mnt/vendor/addons/firmware(/.*)? u:object_r:matonos_addon_firmware_lookup:s0
 /mnt/vendor/addons/[^/]+/versions/[^/]+/modules(/.*)? u:object_r:vendor_addon_module_file:s0
 /mnt/vendor/addons/[^/]+/versions/[^/]+/firmware(/.*)? u:object_r:vendor_file:s0

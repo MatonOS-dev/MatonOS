@@ -14,6 +14,7 @@ type vendor_addon_module_file, file_type, vendor_file_type, contextmount_type;
 type matonos_addon_data_file, file_type, data_file_type;
 type matonos_addon_manager, domain;
 type matonos_addon_manager_exec, exec_type, vendor_file_type, file_type;
+type hal_audio_default_tmpfs, file_type;
 # Firmware lookup symlinks are baked into the signed ext4 image and mounted
 # read-only. vendor_file_type grants ueventd its normal read/search access.
 type matonos_addon_firmware_lookup, file_type, vendor_file_type;
@@ -22,6 +23,12 @@ type matonos_addon_firmware_overlay, file_type, vendor_file_type, contextmount_t
 
 init_daemon_domain(matonos_driver)
 init_daemon_domain(matonos_addon_manager)
+tmpfs_domain(hal_audio_default)
+# vendor_init runs property actions imported from the ODM bundle. The
+# properties use the existing public MatonOS vendor type; no platform-owned
+# properties are writable through this grant.
+set_prop(vendor_init, vendor_maton_prop)
+allow vendor_init mnt_vendor_file:dir { create_dir_perms mounton };
 # This release accepts modules and firmware only. It rejects package daemons,
 # so no dynamic entrypoint under /mnt/vendor needs a vendor-domain transition.
 
@@ -134,6 +141,10 @@ allow matonos_addon_manager vendor_file_type:file { getattr map open read };
 allow matonos_addon_manager self:process { fork sigchld signal };
 binder_call(matonos_addon_manager, matonos_system_bridge)
 domain_auto_trans(matonos_addon_manager, vendor_toolbox_exec, vendor_modprobe)
+binder_use(matonos_addon_manager)
+# modprobe inherits the launcher's standard descriptors across its domain
+# transition (stdout/stderr and the module request pipe).
+allow vendor_modprobe matonos_driver:fd use;
 
 # addons: init creates optional mountpoints under /mnt/vendor and overlays
 # immutable firmware trees at the kernel's single firmware_class.path.
@@ -195,7 +206,41 @@ hal_client_domain(keystore, hal_gatekeeper)
 allow surfaceflinger gpu_device:chr_file rw_file_perms;
 allow surfaceflinger graphics_device:chr_file rw_file_perms;
 allow surfaceflinger graphics_device:dir r_dir_perms;
+allow surfaceflinger udmabuf_device:chr_file rw_file_perms;
+# Mesa's llvmpipe JIT allocates executable code. AOSP has no neverallow on
+# execmem for SurfaceFlinger (only execstack/execheap are globally forbidden).
+allow surfaceflinger self:process execmem;
 allow gpu_sphal_domain gpu_device:chr_file rw_file_perms;
+
+# Mesa reads vendor.mesa.* options from all graphics clients. The type is
+# intentionally vendor_public_prop; make the platform-side readers explicit.
+get_prop(surfaceflinger, vendor_maton_mesa_prop)
+get_prop(zygote, vendor_maton_mesa_prop)
+get_prop(hal_graphics_allocator_default, vendor_maton_mesa_prop)
+get_prop(hal_graphics_allocator_default, default_prop)
+
+# The audio HAL's AIDL FMQ memfds are ordinary tmpfs files on this kernel's
+# memfd-class path. Give the HAL-created queue objects a private label so the
+# HAL can write its shared queues without granting access to global tmpfs.
+
+# One block stat node is read by storaged during its normal disk accounting.
+allow storaged sysfs:file r_file_perms;
+# The software KeyMint implementation reads Android's public device serial.
+get_prop(hal_keymint_default, serialno_prop)
+
+# Init opens the configured UART console and initializes boot-receiver tracing.
+allow init serial_device:chr_file rw_file_perms;
+allow init debugfs_bootreceiver_tracing:dir write;
+
+# kdevtmpfs creates its standard directories (including /dev/input) while it
+# populates devtmpfs. This is directory access only; ueventd applies node labels
+# and permissions after creation.
+allow kernel device:dir write;
+
+# The live/installed super block is discovered as a physical block node. The
+# device context is a dev_type, which stock apexd may stat without block I/O.
+allow apexd matonos_install_block_device:blk_file getattr;
+allow init matonos_install_block_device:blk_file relabelto;
 
 # Boot audio selector (odm/bin/maton-audio-select.sh): its own small domain,
 # NOT a HAL server (HAL servers may neither touch audio_device nor run system

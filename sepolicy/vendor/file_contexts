@@ -19,6 +19,7 @@
 # gralloc0 module (Mesa's u_gralloc), and Mesa itself.
 /vendor/lib64/hw/mapper\.minigbm\.so                  u:object_r:same_process_hal_file:s0
 /vendor/lib64/hw/gralloc\.minigbm_gbm_mesa\.so        u:object_r:same_process_hal_file:s0
+/vendor/lib64/libdrm\.so(\.[0-9]+)*                   u:object_r:same_process_hal_file:s0
 /vendor/lib64/hw/vulkan\.(intel|intel_hasvk|radeon|nouveau|virtio|swrast)\.so(\.[0-9]+)* u:object_r:same_process_hal_file:s0
 /vendor/lib64/egl(/.*)?                               u:object_r:same_process_hal_file:s0
 /vendor/lib64/gbm(/.*)?                               u:object_r:same_process_hal_file:s0
