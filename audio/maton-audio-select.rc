@@ -26,7 +26,7 @@ on property:init.svc.vendor.maton-audio-select=stopped && property:vendor.maton.
 service vendor.maton-audio-select /odm/bin/maton-audio-select.sh
     class core
     user root
-    group root
+    group root audio
     oneshot
     disabled
     timeout_period 3
