@@ -4,6 +4,8 @@ dependencies {
     // 5.2.2 is the newest stable release available for this port. Move to
     // 6.x when it is released; upstream's 6.x line is not released yet.
     implementation files('libs/dbus-java-core-5.2.2.jar', 'libs/slf4j-api-2.0.17.jar', 'libs/slf4j-nop-2.0.17.jar')
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
 }
 
 tasks.register('verifyDbusVendoredJars') {
@@ -55,6 +57,7 @@ android {
     compileSdk 36
     defaultConfig {
         applicationId 'org.matonos.compositor'; minSdk 36; targetSdk 36; versionCode 1; versionName '1.0'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk { abiFilters 'x86_64' }
         externalNativeBuild { cmake { arguments '-DMATON_COMPOSITOR_ROOT=' + projectDir.absolutePath + '/../..', '-DMATON_AOSP_ROOT=' + aospRoot, '-DMATON_COMPOSITOR_BUILD=' + (System.getenv('MATON_COMPOSITOR_BUILD') ?: "$aospRoot/out/matonos/compositor") } }
     }
