@@ -21,3 +21,7 @@ r_dir_file(pc_gpu_detect, vendor_configs_file)
 # Vulkan choice to ro.hardware.vulkan because only init may set that property.
 set_prop(pc_gpu_detect, vendor_maton_prop)
 set_prop(pc_gpu_detect, vendor_maton_mesa_prop)
+
+# PCI GPU device directories are labelled sysfs_gpu; the detector must
+# traverse them to read class/vendor/uevent (it crashed without this).
+r_dir_file(pc_gpu_detect, sysfs_gpu)

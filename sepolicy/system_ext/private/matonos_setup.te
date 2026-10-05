@@ -47,3 +47,7 @@ allow init debugfs_bootreceiver_tracing:dir add_name;
 # The stock neverallow still blocks kernel open/read/write on generic devices.
 allow kernel device:dir { add_name remove_name rmdir };
 allow kernel device:chr_file { create setattr unlink };
+
+# Mesa llvmpipe in the boot animation writes its own memfd buffers
+# (memfd:lp_dma_buf, memfd:allocation fd), which arrive as generic tmpfs.
+allow bootanim tmpfs:file write;
