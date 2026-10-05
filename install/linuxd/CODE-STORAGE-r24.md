@@ -179,13 +179,18 @@ bridge's install flow. Goal: as much unmodified Flatpak plumbing as possible.
   checksum and its runtime ref + commit in the manifest, signed with the
   per-device stub key. Runtimes are verified against what the installing
   app's signed stub declares; the runtimes app itself carries no record.
-* **Install = verify, freeze, publish.** The glibc installer
-  (`com.matonos.flatpak.glibc`) pulls into the repo with a staging label it can
-  write. A no-network verifier (`ostree fsck` of the commit named by the
-  signed stub) checks it; linuxd relabels the verified objects to
-  `matonos_linux_code_file` (installer cannot write it; OSTree never rewrites
-  objects), hardlink-checks-out into the right installation and flips
-  `active`. Verification and checkout use the same frozen bytes.
+* **Install = verify, freeze, publish.** The installer pulls into staging R
+  with a staging label it can write. linuxd checks the staged ref against the
+  commit named by the signed stub, then imports it into the target installation
+  with `ostree pull-local --untrusted --gpg-verify --remote=<r>`. GPG verifies
+  the signed commit; `--untrusted` makes OSTree verify each source object's
+  checksum as it is imported. Because those checks cover the full object
+  closure being transferred, a separate `ostree fsck` would only rescan the
+  target repository (and the static CLI's `fsck` has no commit selector).
+  linuxd then relabels the imported objects to `matonos_linux_code_file`
+  (installer cannot write it; OSTree never rewrites objects), hardlink-checks
+  out into the right installation, and flips `active`. Verification and
+  checkout use the same frozen bytes.
 * **Labels.** `app/`, `runtime/` trees: `matonos_linux_code_file` at `s0`,
   read/execute for `matonos_linux_app`, written only by linuxd's publish step.
   `home/`: `matonos_linux_data_file` at the app's MLS level.

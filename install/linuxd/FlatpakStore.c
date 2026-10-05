@@ -45,6 +45,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <linux/fs.h>
 #include <linux/fsverity.h>
 #include <linux/loop.h>
@@ -69,6 +70,8 @@
 #define DEFAULT_RUNTIME_MB 2048
 #define DEFAULT_VOLUME_MB 1024
 #define CHUNK (64 * 1024)
+#define MATONOS_FLATPAK_WRAPPER "/apex/com.matonos.flatpak/bin/flatpak-env-wrapper"
+#define MATONOS_FLATPAK_INSTALLER_AID 2902
 
 static void say(const char* fmt, ...) {
     va_list args;
@@ -524,6 +527,23 @@ static int print_status(void) {
     return 0;
 }
 
+/* Stage network refs only in the dedicated installer domain and AID. linuxd
+ * supplies a validated remote and ref; this helper fixes every CLI option. */
+static int stage_flatpak_ref(int argc, char** argv) {
+    if (argc != 5) return fail("stage needs staging directory, remote and ref");
+    if (setgroups(0, NULL) || setgid(MATONOS_FLATPAK_INSTALLER_AID) ||
+            setuid(MATONOS_FLATPAK_INSTALLER_AID))
+        return fail("cannot enter Flatpak installer AID: %s", strerror(errno));
+    if (strcmp(argv[2], "/data/matonos/linux/staging"))
+        return fail("invalid staging installation path");
+    if (setenv("MATON_FLATPAK_STAGING_DIR", argv[2], 1))
+        return fail("cannot select staging installation");
+    char* const flatpak_argv[] = {MATONOS_FLATPAK_WRAPPER, "install", "--system",
+        "--no-deploy", "--noninteractive", "--assumeyes", argv[3], argv[4], NULL};
+    execv(MATONOS_FLATPAK_WRAPPER, flatpak_argv);
+    return fail("cannot start static Flatpak staging pull: %s", strerror(errno));
+}
+
 int maton_store_main(int argc, char** argv) {
     if (argc < 2) return fail("usage: matonos-flatpak-store <command> [args]");
     const char* command = argv[1];
@@ -545,6 +565,7 @@ int maton_store_main(int argc, char** argv) {
         return argc > 2 ? loop_detach_device(argv[2]) : fail("loop-detach needs a loop device");
     if (!strcmp(command, "trim")) return argc > 2 ? trim_image(argv[2]) : fail("trim needs a path");
     if (!strcmp(command, "status")) return print_status();
+    if (!strcmp(command, "stage")) return stage_flatpak_ref(argc, argv);
     if (!strcmp(command, "selftest")) return selftest();
     return fail("unknown command: %s", command);
 }

@@ -12,6 +12,7 @@ cc_binary {
     srcs: [
         "MatonosLinuxd.cpp",
         "FlatpakManager.c",
+        "FlatpakPublish.c",
         "UdevDatabase.c",
         "SessionPads.c",
         ":matonos-linuxd-aidl",

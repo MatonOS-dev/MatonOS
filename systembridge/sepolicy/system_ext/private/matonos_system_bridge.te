@@ -29,6 +29,8 @@ allow matonos_linuxd matonos_flatpak_data_file:dir create_dir_perms;
 allow matonos_linuxd matonos_flatpak_data_file:file create_file_perms;
 allow matonos_linuxd matonos_flatpak_data_file:lnk_file create_file_perms;
 allow matonos_linuxd matonos_flatpak_data_file:sock_file create_file_perms;
+allow matonos_linuxd matonos_flatpak_store_file:dir r_dir_perms;
+allow matonos_linuxd matonos_flatpak_store_file:file r_file_perms;
 allow matonos_linuxd self:capability { setuid setgid chown kill };
 allow matonos_linuxd self:process { fork sigchld signal };
 net_domain(matonos_linuxd)
@@ -110,12 +112,18 @@ allow matonos_linux_app matonos_flatpak_deployment_file:dir r_dir_perms;
 # cannot create bwrap user namespaces with capabilities. Do not weaken the
 # assertions or misclassify /data code as system_file_type to hide this.
 allow matonos_linux_app matonos_flatpak_deployment_file:file { read open getattr map execute execute_no_trans };
+allow matonos_linux_app matonos_linux_code_file:dir r_dir_perms;
+allow matonos_linux_app matonos_linux_code_file:file { read open getattr map execute execute_no_trans };
 # helper-trim: /app now comes straight from the read-only deployment (no code
 # image mount); executing it relies on data_exec_exempt_domain (patch 0001).
 # Replaced by matonos_linux_code_file when the per-uid installations land.
 allow matonos_linux_app matonos_flatpak_deployment_file:lnk_file r_file_perms;
 allow matonos_linuxd matonos_flatpak_deployment_file:dir create_dir_perms;
 allow matonos_linuxd matonos_flatpak_deployment_file:{ file lnk_file } create_file_perms;
+allow matonos_linuxd matonos_flatpak_data_file:file relabelfrom;
+allow matonos_linuxd matonos_flatpak_data_file:dir relabelfrom;
+allow matonos_linuxd matonos_linux_code_file:dir { create_dir_perms relabelto relabelfrom setattr };
+allow matonos_linuxd matonos_linux_code_file:file { create_file_perms relabelto relabelfrom setattr };
 allow matonos_linuxd matonos_linux_data_file:dir { create_dir_perms relabelfrom relabelto };
 allow matonos_linux_app matonos_linux_data_file:dir create_dir_perms;
 allow matonos_linux_app matonos_linux_data_file:{ file lnk_file sock_file } create_file_perms;
@@ -189,6 +197,7 @@ type matonos_runtime_exec, exec_type, file_type;
 type matonos_app_volume_file, file_type, data_file_type, core_data_file_type;
 # Image files, mount points and owner records below /data/matonos/linux/store.
 type matonos_flatpak_store_file, file_type, data_file_type, core_data_file_type;
+type matonos_linux_code_file, file_type, data_file_type, core_data_file_type;
 
 # Installer helper, exec'd by linuxd (it inherits linuxd's SYS_ADMIN): the
 # only writer/mounter of the images and the only domain that runs Flatpak's
@@ -202,7 +211,8 @@ allow matonos_linuxd matonos_flatpak_installer:process transition;
 allow matonos_flatpak_installer matonos_flatpak_installer_exec:file entrypoint;
 allow matonos_flatpak_installer self:process { fork sigchld signal };
 allow matonos_flatpak_installer self:global_capability_class_set sys_admin;
-allow matonos_flatpak_installer self:capability { chown fowner fsetid };
+allow matonos_flatpak_installer self:capability { chown fowner fsetid setuid setgid };
+net_domain(matonos_flatpak_installer)
 allow matonos_flatpak_installer loop_control_device:chr_file rw_file_perms;
 allow matonos_flatpak_installer loop_device:blk_file rw_file_perms;
 allowxperm matonos_flatpak_installer loop_device:blk_file ioctl {

@@ -83,6 +83,65 @@ tags each request with an operation ID and ignores completion events for any
 other request. Access is checked with the bridge's
 `org.matonos.permission.SYSTEM_BRIDGE` permission.
 
+## Static Flatpak publish request
+
+`install` now requires the signed stub's `appCommit`, `runtimeRef`, and
+`runtimeCommit`, the configured `remote`, the stub `uid`, and the fixed
+`runtimeUid` for `org.matonos.linuxruntimes`. linuxd checks both 64-character
+commit pins against the staging refs before transferring anything. The
+installer stages both refs in `/data/matonos/linux/staging`; linuxd then
+uses signature-verifying `ostree pull-local` into the runtime system install
+and the per-uid user install, seals the verified objects read-only with the
+code label, and runs `flatpak install --no-pull`.
+Flatpak's deployment transaction publishes each `active` ref atomically.
+
+The same full locale set (`languages=*`) is written to staging, system, and
+user installations. The static CLI is invoked directly for OSTree operations;
+Flatpak operations continue through the APEX environment wrapper. The test
+harness `tests/flatpak-publish-host-test.sh` uses the cached Flathub repo and
+the staged static multicall binary. `MATONOS_PUBLISH_SKIP_STAGE=1` is only a
+test hook for seeding R from the verified cache; production always performs
+the Flatpak no-deploy staging pull. The target import uses
+`ostree pull-local --untrusted --gpg-verify --remote=<remote>`: commit
+signature verification authenticates the commit and its object checksums,
+while `--untrusted` makes OSTree check each imported source object's checksum
+during the pull. That validates the imported closure without a separate
+repository-wide `fsck` scan.
+
+Run the real static launch probe after publish with:
+
+```sh
+MATONOS_PUBLISH_RUN_LAUNCH_TEST=1 bash install/linuxd/tests/flatpak-publish-host-test.sh
+```
+
+It starts the installed Calculator through the static Flatpak multicall binary
+and the C bwrap shim, with a fake broker socket. The probe checks the sandbox
+bus address and socket, proxy process execs, Binder device-node visibility,
+and write attempts against the app/runtime mounts.
+
+At installation publication, linuxd writes global `session-bus` socket
+overrides to both the shared system runtime installation S and the app UID's
+user installation U. The override command has no app ID. The verified
+runtime-install UID is retained per Android user in
+`/data/matonos/linux/runtime/runtime-installation-<userId>`; launch resolves S
+from that record and U from the verified stub UID. `flatpak run --user` launches
+the app from U while sharing its runtime from S. The wrapper keeps U as the
+Flatpak install root and uses the separate UID-owned `home` directory for
+HOME/cache/runtime files.
+
+The run path passes the compositor broker address as
+`DBUS_SESSION_BUS_ADDRESS=unix:path=<socket>`. `AT_SPI_BUS_ADDRESS` remains
+unset and linuxd passes Flatpak's `--no-a11y-bus` option, so Flatpak skips the
+accessibility bus lookup. The static APEX contains no `xdg-dbus-proxy`.
+`linux/flatpak/APEX.md` records the Flatpak source-path audit for direct bus
+binding and the accessibility flag.
+
+Before an install can run, the requested remote must already exist in R, S,
+and U with its own trusted key and both verification flags enabled. The
+current linuxd API does not provision remotes or copy keys into those
+installations; this is a required integration step for Flathub and user-added
+remotes.
+
 ## Build and verification
 
 - The service is compiled by the coordinating AOSP build; do not run `m` or
