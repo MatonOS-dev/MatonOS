@@ -32,3 +32,38 @@ bash install/linuxd/tests/flatpak-publish-host-test.sh
 
 The harness checks good signed refs, bad pins and corrupted objects. Set
 `MATONOS_PUBLISH_RUN_LAUNCH_TEST=1` to include the launch-chain probe.
+
+## First install: the app UID is late-bound
+
+The stub APK is what receives the Android UID, so a first install has no app
+UID yet. Only the shared runtime `--system` installation is known up front (it
+is owned by the preinstalled `org.matonos.linuxruntimes`). The bridge passes
+the calling software store's UID as the **installer UID**. Two workable flows:
+
+### A. Install first, then rename to the stub UID
+1. `install` publishes the runtime to `/data/matonos/linux/apps/<runtime_uid>`
+   and the app to `/data/matonos/linux/apps/<installer_uid>` (`--user`).
+2. The bridge reads that deployment's desktop entry/icon and installs the
+   stub; PackageManager assigns the stub UID.
+3. `adopt` renames `/data/matonos/linux/apps/<installer_uid>` to
+   `/data/matonos/linux/apps/<stub_uid>` and re-homes it: ownership, MLS
+   categories, `<uid>.owner` record, runtime-installation record.
+
+Reuses today's post-install desktop/icon extraction; the cost is the rename
+plus relabel, and the app briefly lives under the store's UID.
+
+### B. Stub first, then install directly to the stub UID (preferred)
+1. linuxd stages the signed commit and exposes the app's `metadata` and
+   exported desktop entry *from the staged commit* (no deploy yet).
+2. The store supplies the icon (Flathub appstream); the bridge maps the
+   metadata to permissions and installs the stub; PackageManager assigns the
+   stub UID.
+3. `install` publishes the runtime to `/data/matonos/linux/apps/<runtime_uid>`
+   and the app straight to `/data/matonos/linux/apps/<stub_uid>`.
+
+No rename or re-home. Requires the store to have the icon before install and
+linuxd to read metadata/desktop from the staging repo.
+
+Both flows keep one owner per install, hardlink the runtime from the shared
+staging repo, and leave the runtime/system side unchanged. Updates to an
+already-installed app use its stub UID directly (no adopt step).
