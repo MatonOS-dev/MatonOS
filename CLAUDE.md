@@ -102,6 +102,10 @@ adapter's networks). No feature re-implementation beyond that.
 Bluetooth equivalent: our HAL is the virtual interface, proxying to the
 chosen real controller or the spoofed Rootcanal one.
 
+## Security zones (user rule, 2026-10-05)
+
+Enforce three zones: **[hardware] MatonOS glue daemons/HALs | A Android system | B apps**. Only the System Bridge crosses the daemon boundary: A may call its named channels, daemons may call the Bridge, and B has no daemon/channel access. Daemons have no network sockets or non-Bridge Android service connections. Android core and apps cannot read daemon-reserved raw-hardware types. Give glue daemons broad read-only hardware discovery through `matonos_hw_reader`, with dedicated labels excluding EFI variables, firmware/ACPI tables, DMI identifiers, debugfs/tracefs, and known side-effect attributes; keep device writes per-device.
+
 ## Principle: MatonOS owns the hardware glue (decided 2026-09-24)
 
 **Preference order (user, 2026-09-25): first prize = a usermode driver
