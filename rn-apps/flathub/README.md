@@ -1,5 +1,11 @@
 # Software Center
 
+This is the current Flathub-only UI prototype. The target shared APK,
+Flatpak and MatonOS APEX design is in
+[`docs/SOFTWARE-CENTRE.md`](../../docs/SOFTWARE-CENTRE.md); this prototype's
+direct Flathub API and existing Flatpak bridge calls are not the final
+multi-Source contract.
+
 An Expo app for browsing Flathub's public v2 API and installing system Flatpaks
 through MatonOS System Bridge. The UI uses Expo UI's Jetpack Compose primitives.
 It has Browse (popular and recently added), search, app details, and Installed

@@ -33,9 +33,16 @@ Feature work continues, but in this shape from now on.
 
 - **v1**: basic loading, made **stable**: live image boots reliably to the UI
   on generic PCs (QEMU, build PC, Surface Pro 3).
-- **v1.1**: F-Droid preinstalled (+ Privileged Extension) and the system app
-  replacements (Fennec, Fossify suite, Open Camera) and the AOSP desktop windowing mode,
-  updating from F-Droid's main repo. Our own repo/server pipeline stays v3.
+- **v1.1 (historical store plan superseded)**: the earlier plan preinstalled
+  F-Droid (+ Privileged Extension) and system-app replacements (Fennec,
+  Fossify suite, Open Camera) updated from F-Droid's main repo. The target
+  store/update architecture is now the
+  [MatonOS Software Centre](docs/SOFTWARE-CENTRE.md); no F-Droid client or
+  GPLv3+ client code is planned for the image (F-Droid Basic was removed
+  from the image 2026-10-05 under the GPLv3 rule). The current privileged app
+  install path is documented under `gms/`; replacement/migration timing is
+  open in the Software Centre plan. The AOSP desktop windowing mode remains.
+  Our own APK repository pipeline is not a separate updater client.
   Also **Bluetooth detection**: v1 patches Bluetooth audio out of the audio
   HAL APEX (`patches/hardware/interfaces`) because not every PC has
   Bluetooth, and audioserver hangs waiting for any declared-but-absent
@@ -100,12 +107,15 @@ Feature work continues, but in this shape from now on.
   `.ia.connect`, `.ia.system`, `.ia.homepage`), title/icon/dynamic summary
   from our app; they open in Settings' two-pane layout on large screens.
   `SearchIndexablesProvider` puts our entries in Settings search; a
-  framework overlay points "System update" at the Updater. No Settings
+  framework overlay points "System update" at the OS Updater. App catalogue
+  and app updates are owned by the MatonOS Software Centre design in
+  [`docs/SOFTWARE-CENTRE.md`](docs/SOFTWARE-CENTRE.md). No Settings
   patch. **Placement (user decision): one top-level "Hardware" entry on the
   Settings homepage (`…category.ia.homepage`)** opening our app's own page
   list: Display, Sleep, Audio devices, Wi-Fi/Bluetooth adapters, cameras,
-  … (not scattered over Settings' categories). The Updater stays on
-  Settings' "System update" entry (overlay). Install me stays separate (live image only). Ownership:
+  … (not scattered over Settings' categories). The OS Updater stays on
+  Settings' "System update" entry (overlay); app updates move to Software
+  Centre. Install me stays separate (live image only). Ownership:
   `settings/` app shell (injection, search, style) by a Settings agent; each
   area delivers daemon + control API + its page in its own subpackage.
 - **Own apps/daemons outside Soong (decided 2026-09-24)**: custom apps
@@ -173,9 +183,11 @@ Feature work continues, but in this shape from now on.
   2. **Install me**: copies the running live system to a drive (**whole drive
      only**, wiped; no dual boot in v2) as an **A/B** install, then removes
      itself from the installed copy (the installed system never shows it).
-  3. **Updater** (moved from v3): fetches and downloads OS updates from
+  3. **OS Updater** (moved from v3): fetches and downloads OS updates from
      **han-mc-server** (static HTTPS feed) and applies them with
      `update_engine` to the inactive slot (A/B design under v3 below, now v2).
+     It handles operating-system images only; app updates belong to the
+     [MatonOS Software Centre](docs/SOFTWARE-CENTRE.md).
 - **v2**: install app: Android-based installer (live image installs itself);
   built together with the user, starting right after v1 testing.
   Design sketch: privileged system_ext app (UI only, platform-signed) +
@@ -257,8 +269,9 @@ Feature work continues, but in this shape from now on.
   choice, repair/reinstall keeping user data, encryption choices). v2's
   install service must be built extensibly (options as a versioned
   request object over the channel, the UI as steps).
-- **v3** (OS updates moved to v2; v3 keeps system-app updates via our own
-  F-Droid repo). OS update design, now built in v2: reuse AOSP `update_engine` (SELinux-confined,
+- **v3** (OS updates moved to v2; app catalogue and updates are now designed
+  by the [MatonOS Software Centre](docs/SOFTWARE-CENTRE.md)). OS update design,
+  now built in v2: reuse AOSP `update_engine` (SELinux-confined,
   downloads signed payload.bin from our server, writes inactive slot) + a
   client app. Needs A/B: "A/B with dynamic partitions" (superseded 2026-09-29: plain Virtual A/B, see below), kernel +
   ramdisks in two XBOOTLDR partitions (boot_a/boot_b, FAT) that systemd-boot
@@ -269,21 +282,17 @@ Feature work continues, but in this shape from now on.
   download → update_engine) is a good base. Feed + OTA files on
   **han-mc-server** as static HTTPS (decided 2026-09-24). Needs real
   release keys (not AOSP test keys), kept off the build machine.
-  **System app updates between OS releases** (Play can't host them;
-  F-Droid itself is preinstalled in **v1.1**; **v3** adds our repo as a
-  ROM-default repo and the server pipeline; v2 apps ship only inside the
-  OS image until then):
-  preferred = own F-Droid repo (fdroidserver, signed index, static hosting;
-  **hosted on han-mc-server**, which also signs the repo index (monthly
-  WebView updates happen there; see key rule), served by Caddy/nginx; LAN-only
-  for testing, HTTPS + domain before any public use)
-  + preinstalled F-Droid client with Privileged Extension (silent installs;
-  also covers third-party apps). Fallback = small privileged updater app
-  (JSON index, PackageInstaller sessions). Rules from v2 on: sign our apps
-  with per-app keys (not the platform key) and grant privileges via the
-  privapp allowlist; keep native services thin (only OTA can update them);
-  app updates can't gain new privileged permissions (allowlist is per OS
-  release).
+  **System app updates between OS releases:** replaced by the
+  [MatonOS Software Centre](docs/SOFTWARE-CENTRE.md), which owns the shared
+  APK, Flatpak and MatonOS APEX catalogue/update experience. The former plan
+  to preinstall the F-Droid client plus Privileged Extension for silent
+  installation is dropped, as is its small privileged JSON-index updater
+  fallback. F-Droid-format repositories remain supported through the APK
+  Source; the client app and its GPLv3+ code do not ship. The Software Centre
+  design retains per-app signing keys, OS-release permission allowlists and
+  the rule that app updates cannot gain newly privileged permissions. Its
+  APEX channel is separate from the F-Droid repository and accepts no custom
+  origins. The A/B OS Updater remains a separate feature.
   **Update 2026-09-30 (coordinator, from installexec's VAB-FEASIBILITY.md):
   plain dm-snapshot VAB is REMOVED in this AOSP** (libsnapshot
   CreateUpdateSnapshots returns an error for the legacy mode,
@@ -403,14 +412,16 @@ Feature work continues, but in this shape from now on.
   certificate. No permission, no bridge policy (the bridge-based spoof
   provider and FAKE_PACKAGE_SIGNATURE were dropped). Supersedes the
   "hook that asks the bridge" design below.
-- **App store = Neo Store, privileged; microG pulled forward (user, 2026-09-27)**:
+- **App store transition = Neo Store, privileged; microG pulled forward (user, 2026-09-27)**:
   F-Droid 2.0 dropped Privileged Extension support and doesn't request
   INSTALL_PACKAGES, so every install prompted. Neo Store
   (com.machiav3lli.fdroid, f-droid.org repo) requests INSTALL_PACKAGES/
   DELETE_PACKAGES → shipped in priv-app with a privapp allowlist = silent
   installs with NO AOSP patch. Replaces F-Droid + Privileged Extension.
   (A trusted-installer PackageInstallerSession patch was considered and
-  dropped.) Built together with microG below (agent `gms`).
+  dropped.) Built together with microG below (agent `gms`). This is the
+  current install-path decision; future shared catalogue and update UX moves
+  to the [MatonOS Software Centre](docs/SOFTWARE-CENTRE.md).
 - **v3: microG (moved up from v4, user 2026-09-26)**: shipped PREINSTALLED
   for app compatibility (many apps need GMS APIs / a Play Store package) —
   a deliberate exception to v4's "sockets, not shipped binaries" (microG is
@@ -1315,8 +1326,10 @@ Each entry: what, why no non-patch way, what it would need.
 ## Base: AOSP (decided)
 
 LineageOS was considered (security merges, Updater, signing tooling) and
-rejected in favour of staying on plain AOSP; its ideas (Updater app, F-Droid
-Privileged Extension) are still reused where useful.
+rejected in favour of staying on plain AOSP. Its A/B updater pattern remains
+relevant to OS image updates. App updates use the
+[MatonOS Software Centre](docs/SOFTWARE-CENTRE.md), not a reused F-Droid
+client or Privileged Extension.
 
 Re-evaluated 2026-09-28 (user): LineageOS 24 (android-17.0.0_r1) now has an
 actively maintained generic PC target (device/pc/basic_x86_64_pc +
@@ -1333,7 +1346,8 @@ commercial (monthly security updates would then be expected).
   WebView don't get Play updates here: they update only with our OS.
 - Kernel: follow mainline stable (7.2.y) closely; move to the 2026 LTS.
 - Mesa/minigbm/drm_hwcomposer: bump with OS releases.
-- Apps (Fennec, Fossify, …): F-Droid updates them independently (v3).
+- Apps (Fennec, Fossify, …): APK updates move to the
+  [MatonOS Software Centre](docs/SOFTWARE-CENTRE.md) APK Source.
 - **System WebView (decided): ships with the OS** (AOSP's built-in
   Chromium WebView), updated with OS releases. Chromium has frequent
   exploited bugs, so use point releases (e.g. 26.12.1) to pick up important
@@ -1486,12 +1500,16 @@ selector failure. Assess SOF firmware/topology separately if needed.
   exposed by sleepd, guarded by a signature/privileged permission (same
   pattern as the v2 installer service). Also later: real display blanking
   before suspend (backlight / DPMS).
-- **Preinstalled apps (decided, v1.1)**: F-Droid + Privileged Extension,
-  Fennec F-Droid (browser), Fossify Gallery/Calendar/Contacts/Clock/Notes/
+- **Preinstalled apps (historical v1.1 plan; store superseded)**: the earlier
+  plan listed F-Droid + Privileged Extension; see the
+  [MatonOS Software Centre](docs/SOFTWARE-CENTRE.md) design for the target
+  app catalogue and updater. Remaining listed apps are Fennec F-Droid
+  (browser), Fossify Gallery/Calendar/Contacts/Clock/Notes/
   Calculator/Music Player (replacing the AOSP ones), Open Camera.
   Not preinstalled: Fossify File Manager, QuickSearchBox, Dialer, Messaging,
-  HeliBoard, Taskbar. Keyboard stays LatinIME. F-Droid's "Install unknown apps" is on
-  by default (`setup/matonos-setup.sh`, only while untouched).
+  HeliBoard, Taskbar. Keyboard stays LatinIME. The earlier F-Droid
+  "Install unknown apps" setup grant is historical; installer privileges and
+  user confirmation follow the Software Centre design.
 - **No-GPU fallback = vgem virtual GPU (decided 2026-09-27, user)**: Android always sees a GPU. Without a supported GPU, early boot loads the upstream `vgem` module (render node, shmem dma-bufs); Mesa renders with llvmpipe/lavapipe; minigbm treats vgem as a software GPU; drm_hwcomposer imports the buffers into the real KMS driver (simpledrm on real no-GPU PCs) or copies into dumb buffers where import isn't possible (bochs-drm). vkms not used (keeps real modes/EDID/hotplug). Replaces the gralloc "no render node" crash (SF "output buffer not gpu writeable").
 - **rn-common comes back out of Settings (user, 2026-09-28)**: with a
   second Expo app coming (the Flatpak store / stub generator), the shared
@@ -1530,16 +1548,17 @@ selector failure. Assess SOF firmware/topology separately if needed.
   only a locale-less subtype until first launch, so the framework never
   enables it as the default IME on a fresh device; users can install it
   from F-Droid.
-  **Requirement: F-Droid must be able to update every preinstalled app.**
-  So each APK comes from the exact repo F-Droid updates from (f-droid.org
+  **Requirement: the Software Centre must be able to update every eligible
+  preinstalled app.** So each APK comes from the exact repository and signer
+  that the APK Source will trust (currently f-droid.org
   main repo; its signer, whether F-Droid's or the developer's for
   reproducible builds), is never re-signed, is never platform-signed or
-  privileged, and stays a normal updatable app. Verify in v3 that F-Droid
-  lists them all as updatable.
+  privileged, and stays a normal updatable app. Verify that each eligible
+  package is discoverable and update-compatible through the Software Centre.
 - Browser: preinstall **Fennec F-Droid** (Firefox rebuilt from Mozilla
-  source, no Firefox trademarks/telemetry; x86_64 builds; updates via F-Droid
-  in v3) as a presigned prebuilt APK in `product` (not privileged, so
-  F-Droid updates replace it). Official Firefox only if Mozilla's trademark/
+  source, no Firefox trademarks/telemetry; x86_64 builds; updates through the
+  Software Centre's APK Source) as a presigned prebuilt APK in `product` (not
+  privileged, so normal PackageInstaller updates replace it). Official Firefox only if Mozilla's trademark/
   distribution terms allow preinstalling, and it wouldn't update without
   Play. Add after the first successful boot (v1).
 - **Vulkan UI per GPU** (after a stable GL baseline): keep
@@ -1688,8 +1707,9 @@ ANR traces are in `/data/anr`. If a headless VM stops answering, check QMP
 
 ### Flatpak APEX updates (2026-10-04)
 `com.matonos.flatpak` updates out-of-cycle (CVE fixes, newer Flatpak/bwrap
-pair) via staged install (adb install for dev; System Bridge/updater via
-PackageInstaller staged sessions later). Same APEX key + higher version,
+pair) via staged install (adb install for dev; the
+[Software Centre APEX Source](docs/SOFTWARE-CENTRE.md) uses System Bridge and
+PackageInstaller staged sessions). Same APEX key + higher version,
 activates on reboot, apexd rolls back on failed boot. Live images (RAM /data)
 cannot keep staged updates: they get new images. Release key: generate once,
 keep offline (dev key in repo until then).

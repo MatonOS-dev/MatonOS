@@ -1,5 +1,11 @@
 # F-Droid Basic
 
+This documents the historical F-Droid Basic client build and install path.
+The target app catalogue and updater is the
+[MatonOS Software Centre](../../docs/SOFTWARE-CENTRE.md), which uses
+F-Droid-format repositories through its APK Source without shipping the
+F-Droid client. This legacy app plan is not the target architecture.
+
 MatonOS builds the upstream F-Droid Client `basic` flavor from F-Droid
 Client 2.0.0, pinned to commit
 `30f467b2c6b8f661191a70ae004af933dad5b5f0`. The source tarball is checked

@@ -53,8 +53,8 @@ Work in progress, not yet ready for daily use.
 - **Apps.**
   - MatonOS Settings is an Expo UI app, opened from Android Settings'
     homepage.
-  - F-Droid Basic is built by us as a privileged app, so installs are
-    silent.
+  - F-Droid Basic was removed on 2026-10-05 under the GPLv3 rule; the
+    MatonOS software centre will replace its role.
   - microG uses LineageOS-style signature spoofing.
   - Aurora Store and YouTube ship as placeholders that the real apps install
     over. Aurora is in the MatonOS F-Droid repo.
@@ -77,7 +77,7 @@ This repository is the device tree; check it out at
 | `./` | Product config, the ODM driver bundle, daemons, sepolicy, the system bridge (`systembridge/`), the installer service (`install/`), add-ons, Secure Boot, and build/test tools (`tools/`). Start with `CLAUDE.md` (rules) and `NOTES.md` (decisions). |
 | `linux/` | Linux apps: the Flatpak-on-bionic stack (`third_party/`, patches over pinned upstream sources) and the Wayland compositor host. |
 | `rn-apps/settings/` | MatonOS Settings (Expo SDK 57, Expo UI Jetpack Compose only), which also contains the installer. |
-| `rn-apps/flathub/` | Software Center: installs Linux apps (Flatpaks from Flathub). |
+| `rn-apps/flathub/` | Current Software Centre UI prototype for Flathub/Flatpak; target architecture is documented in [`docs/SOFTWARE-CENTRE.md`](docs/SOFTWARE-CENTRE.md). |
 | `rn-apps/rn-common/` | Shared React Native library. |
 | `rn-apps/recents` | The earlier custom shell. It is parked, not built into the image; Launcher3 replaced it. (launchme/Shell and shelf were retired and removed 2026-09-30.) |
 | `FORKS.md` | Our forks of AOSP/third-party projects (minigbm, drm_hwcomposer, BayLibre audio, libdrm, libxkbcommon, pixman, wayland, wayland-protocols) in the [MatonOS-dev](https://github.com/MatonOS-dev) org, pulled in by `manifest/maton.xml`. |
@@ -135,7 +135,8 @@ MatonOS is mostly an assembly of other people's excellent open-source work:
 - BayLibre's generic AIDL audio HAL
 - [microG](https://microg.org/) (GmsCore, Companion, GsfProxy); the signature
   spoofing patch follows [LineageOS](https://lineageos.org/)'s approach
-- [F-Droid](https://f-droid.org/) (F-Droid Basic, our own build)
+- [F-Droid](https://f-droid.org/) (repo and app sources; its client is not
+  preinstalled, and software-centre support is planned)
 - Preinstalled apps: [Fossify](https://github.com/FossifyOrg) (Calculator,
   Calendar, Clock, Contacts, Gallery, Music Player, Notes),
   [Fennec F-Droid](https://f-droid.org/packages/org.mozilla.fennec_fdroid/),

@@ -41,3 +41,24 @@ musl-dns-forwarder); summary here.
 D-Bus Java port (dbus-java 6.x), then rework r24 pieces against the static
 stack (publish pipeline, launch chain, DNS forwarder). Later: weekly
 auto-update job on han-mc-server; a Flatpak test suite.
+
+## Update 2026-10-05 08:35 (branches pushed, not merged)
+- `static-flatpak-apex`: static APEX (no symlinks: argv[0] dispatch;
+  matonos-bwrap shim → bwrap), enforcing-boot fixes merged; image build #10 OK (10:10), enforcing VM test running.
+  Main checkout is temporarily detached at its tip for the build (restore
+  after: remove linux/third_party/*/upstream/.find-ignore, checkout main).
+- `codex/enforcing-boot`: 34 enforcing AVCs fixed in device policy (review:
+  surfaceflinger execmem, kernel device:dir write, storaged sysfs read).
+- `codex/publish-pipeline`: linuxd publish = verified `pull-local
+  --untrusted --gpg-verify`; tampered/corrupt/wrong-pin → nothing published.
+- `codex/launch-chain`: global --socket=session-bus override, --no-a11y-bus,
+  static NDK matonos-bwrap/app-exec.
+- `codex/dns-forwarder`: per-app forwarder; linuxd binds :53 and hands the
+  socket to the stub; source-port sock_diag uid check.
+- `codex/dbus-java-2`: dbus-java 5.2.2 (user: until 6.x ships) + LocalSocket
+  transport; check com.sun...UnixSystem on device.
+- `codex/cleanup-obsolete`: RUN_DOWNLOADED_CODE and mount helper removed.
+- Fixed on main: AID 2902 name (<32 chars), bridge manifest description,
+  live RAM-disk labels (enforcing boot loop).
+- Flathub's CDN rejects UA "libostree/… flatpak/…" (403); we send
+  "curl/<ver> flatpak/1.16.6".
