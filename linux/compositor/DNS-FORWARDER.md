@@ -1,56 +1,61 @@
-# Per stub DNS forwarder
+# Per-stub DNS forwarder
 
-`StubActivity` loads `libmaton_dns_forwarder.so` in the generated app package
-and holds a process-local reference while its activities are alive. The native
-worker binds both UDP and TCP on `127.10.(uid >> 8 & 255).(uid & 255)`. It first
-tries port 53, then port 1053 if either socket cannot bind port 53. The port is
-reported as `address:port` by `DnsForwarder.endpoint()`.
+Each generated app stub runs a native DNS forwarder under its own Android UID.
+The loopback address is `127.(10 + ((uid >> 16) & 0x3f)).((uid >> 8) & 0xff).(uid & 0xff)`.
+This maps into `127.10.0.0` through `127.73.255.255` and never overlaps
+`127.0.0.0/16`. The mapping preserves UID bits 0–21; tests include distinct
+multi-user UIDs. The stub always advertises `address:53`; there is no
+high-port fallback.
 
-The endpoint crosses the authenticated `IEmbeddedHost.openSession` call and is
-carried by the compositor's `launchOwnedFlatpak` call. `SystemBridgeService`
-uses that endpoint as the linuxd `dnsServers` value only when it is a valid
-`127.10.x.y:53` endpoint. linuxd's existing environment handoff
-(`MATON_FLATPAK_DNS`) and monitor-file writer then generate the app's
-`/etc/resolv.conf` with the loopback address. The static-apex resolver writer
-is not changed here.
+## Privileged socket handoff
 
-## Current constraints
+`StubActivity` sends its UID-derived address through the authenticated
+`IEmbeddedHost.openSession` Binder call. The compositor verifies the signed
+stub, asks `SystemBridgeService` to have linuxd create and bind UDP and TCP
+sockets at that address on port 53, and returns the resulting
+`ParcelFileDescriptor`s in the same Binder response. Both the bridge and
+linuxd check the caller/UID and address formula before binding. linuxd has the
+low-port capability as an init service; the bridge relays the descriptors and
+retains no sockets. The stub native worker takes ownership of the received
+descriptors and only receives, sends, accepts and serves on those sockets; it
+never binds a port.
 
-An ordinary Android app UID cannot normally bind a port below 1024. The 1053
-fallback is therefore expected unless the platform explicitly grants low-port
-binding. `resolv.conf` names server addresses but cannot encode a port, and the
-current writer accepts IP addresses only. In fallback mode linuxd retains its
-existing DNS server list, so the per-app forwarder is not used. Options to
-close this gap are: arrange a narrowly scoped platform grant for port 53,
-provide a privileged port-53 relay, or change the Linux resolver stack to
-support a per-server port. The last option requires a resolver/writer change
-outside this patch.
+The authenticated `openSession` call carries the address to linuxd in the
+existing `launchOwnedFlatpak` request. The system bridge passes it as linuxd's
+`dnsServers` value, and linuxd's existing `MATON_FLATPAK_DNS` monitor writer
+places it in the app's `/etc/resolv.conf`. The static-apex resolver writer is
+unchanged. Because this resolver format has no port field, port 53 is required;
+failure to bind either socket fails session setup.
 
-The design's `android_res_nquery()` wording does not match the NDK API:
-`android_res_nquery()` builds a query from a domain name and RR type. This
-implementation uses `android_res_nsend(NETWORK_UNSPECIFIED, raw_query, ...)`
-followed by `android_res_nresult()` to retain raw query support and Android's
-resolver network, Private DNS, VPN, UID policy and accounting.
+## Query attribution and forwarding
 
-`NETLINK_SOCK_DIAG` returns a socket's UID for a connected address/port tuple.
-The listener compares the exact source and destination tuple and drops when
-there is no exact match or the UID differs. An unconnected UDP `sendto()`
-socket has no destination in its diagnostic tuple and consequently fails
-closed; whether app DNS clients use connected UDP sockets must be checked on
-device. A platform alternative is needed if they use unconnected sockets.
-This app-domain access also needs an SELinux allow for creating and sending
-`NETLINK_SOCK_DIAG` diagnostic requests. Socket bind/connect permissions for
-loopback UDP/TCP must be allowed by the generated stub's app domain. Do not
-grant broader network diagnostic or low-port access without validating the
-specific AVCs and platform mechanism.
+For TCP and connected UDP, `NETLINK_SOCK_DIAG` checks the exact source and
+destination tuple. For UDP `sendto()` sockets, the worker issues an IPv4 UDP
+inet_diag DUMP filtered by the source port from `recvfrom()`. It accepts a
+candidate only when its local address is the exact source address or wildcard
+`0.0.0.0`. Connected entries must also match the destination tuple. If matching
+`SO_REUSEPORT` candidates carry different UIDs, the packet is dropped. Missing,
+malformed or incomplete diagnostics fail closed. The host C test feeds mocked
+DUMP entries through the same selector used by the netlink parser.
 
-The requested address formula uses only the low 16 UID bits, so Android
-multi-user UID ranges can collide. Device validation should confirm the
-supported user model or replace the mapping before multi-user use.
+The worker rate-limits queries with a token bucket (100 burst, 50 queries per
+second), uses bounded DNS-over-TCP framing, and passes raw packets to
+`android_res_nsend(NETWORK_UNSPECIFIED, ...)` followed by
+`android_res_nresult()`. This retains Android's default-network, Private DNS,
+VPN, per-UID resolver policy and accounting while returning the resolver's
+answer bytes.
+
+## SELinux and runtime requirements
+
+linuxd's init service and SELinux domain grant low-port bind capability and
+DNS-port UDP/TCP socket binding. The forwarder app domain must be able to use
+`NETLINK_SOCK_DIAG` for inet_diag dumps and receive the passed sockets; validate
+the precise AVCs on device before adding any app-domain policy. No policy was
+added for the generated stub domains in this change. Binding, descriptor
+transfer, sock_diag visibility and resolver behavior still need device
+validation.
 
 ## Host unit test
-
-Build and run the pure C tests without Android headers:
 
 ```sh
 cc -std=c11 -Wall -Wextra -Werror \
@@ -60,24 +65,22 @@ cc -std=c11 -Wall -Wextra -Werror \
 /tmp/dns-forwarder-core-test
 ```
 
-## On-device instrumentation plan
+The test covers exact tuple UID checks, mocked UDP inet_diag DUMP attribution
+(including wildcard/exact local binds and conflicting reuseport owners),
+token-bucket behavior, TCP framing and UID-derived addresses for multiple
+Android users.
 
-1. Install a generated Flatpak stub and start it. Confirm the listener address
-   uses the stub UID and that UDP and TCP bind on the same chosen port.
-2. From the Linux app, resolve an A/AAAA name and a response larger than the
-   UDP limit. Confirm regular replies are byte-identical to `android_res_nresult`
-   output and truncated responses retry over TCP.
-3. Send a query from a different Android UID to the listener and confirm no
-   response. Repeat with a same-UID app socket, an unconnected UDP socket and
-   connected UDP/TCP sockets; inspect `sock_diag` results and AVCs.
-4. Test active Private DNS, a VPN, network switching and per-UID network rules;
-   compare results and resolver traffic accounting with the Android resolver.
-5. Exercise token exhaustion/refill, malformed TCP lengths, resolver timeout,
-   activity recreation, multiple windows, process death and relaunch.
-6. Verify `MATON_FLATPAK_DNS`, generated `/etc/resolv.conf`, and port selection.
-   Specifically verify whether the platform allows port 53; if it selects
-   1053, confirm the documented resolver limitation is visible and understood.
+## On-device validation plan
 
-The host unit test covers UID-check logic with a mock diagnostic lookup,
-token-bucket behavior, TCP framing and address formatting. The Android socket,
-SELinux and resolver behaviors above remain device validation items.
+1. Start a generated stub and confirm the privileged bridge binds both UDP and
+   TCP on its full-UID-derived address at port 53, then transfers both FDs.
+2. Resolve A/AAAA records from an unconnected UDP `sendto()` socket and a
+   connected socket. Confirm another UID receives no answer and differing
+   `SO_REUSEPORT` owners are dropped.
+3. Resolve an answer requiring TCP fallback; check the framing and answer bytes.
+4. Test Private DNS, VPN, network switching and per-UID network rules against
+   Android's resolver behavior.
+5. Confirm `/etc/resolv.conf` always names the per-app address, and verify
+   sockets close when the stub process exits and can be rebound on relaunch.
+6. Inspect SELinux AVCs for linuxd low-port binding and stub sock_diag;
+   exercise process death, activity recreation and multiple windows.
