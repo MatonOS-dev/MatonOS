@@ -12,6 +12,8 @@ allow matonos_setup system_file:file rx_file_perms;
 
 binder_use(matonos_setup)
 binder_call(matonos_setup, system_server)
+# The setup helper is called back by system_server while applying MatonOS defaults.
+binder_call(system_server, matonos_setup)
 allow matonos_setup { appops_service settings_service }:service_manager find;
 
 
@@ -19,3 +21,30 @@ allow matonos_setup { appops_service settings_service }:service_manager find;
 # platform-private type, so the rule lives in system_ext private policy.
 allow surfaceflinger udmabuf_device:chr_file rw_file_perms;
 allow bootanim udmabuf_device:chr_file { open read write ioctl };
+
+# Core AVC packet: framework GPU discovery uses read-only PCI metadata.
+allow system_server graphics_device:dir r_dir_perms;
+allow { platform_app priv_app system_app } graphics_device:dir r_dir_perms;
+allow { platform_app priv_app system_app } graphics_device:chr_file getattr;
+allow { platform_app priv_app system_app system_server } sysfs_gpu:file r_file_perms;
+allow storaged sysfs_devices_block:dir search;
+allow storaged sysfs_devices_block:file r_file_perms;
+allow system_suspend sysfs_wakeup:file r_file_perms;
+get_prop(platform_app, bluetooth_lea_prop)
+
+# RenderThread's and Binder's named MessageQueue memfds arrive with the generic
+# tmpfs label on this kernel. Limit access to observed readers and operations.
+allow { hal_power_default mediaswcodec platform_app system_server } tmpfs:file { map read write };
+allow mediaswcodec appdomain_tmpfs:file { getattr map read write };
+
+# Crash dumps inspect mapped resource idmaps and vendor overlays for ELF metadata.
+allow crash_dump resourcecache_data_file:file { getattr map open read };
+allow crash_dump vendor_overlay_file:file { getattr map open read };
+
+# init creates the bootreceiver tracefs entry during boot.
+allow init debugfs_bootreceiver_tracing:dir add_name;
+
+# kdevtmpfs creates/removes nodes before ueventd applies their final labels.
+# The stock neverallow still blocks kernel open/read/write on generic devices.
+allow kernel device:dir { add_name remove_name rmdir };
+allow kernel device:{ blk_file chr_file } { create setattr unlink };
