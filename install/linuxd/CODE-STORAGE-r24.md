@@ -53,16 +53,23 @@ Reuses today's post-install desktop/icon extraction; the cost is the rename
 plus relabel, and the app briefly lives under the store's UID.
 
 ### B. Stub first, then install directly to the stub UID (preferred)
-1. linuxd stages the signed commit and exposes the app's `metadata` and
-   exported desktop entry *from the staged commit* (no deploy yet).
-2. The store supplies the icon (Flathub appstream); the bridge maps the
-   metadata to permissions and installs the stub; PackageManager assigns the
-   stub UID.
-3. `install` publishes the runtime to `/data/matonos/linux/apps/<runtime_uid>`
-   and the app straight to `/data/matonos/linux/apps/<stub_uid>`.
+Verified against a real staged Flathub commit: it carries `/metadata` and
+`/export/share/applications/<id>.desktop`, but often **no exported PNG** under
+`/export`. So the icon comes from the software centre's Flathub appstream
+(already fetched by `rn-apps/flathub/src/FlathubApi.ts`), not the deployment.
+1. `stage` (new): linuxd stages the signature-verified commit and returns the
+   pinned commits, `/metadata` and the exported desktop entry read from the
+   staged commit (`ostree cat <commit> /metadata`, etc.). No deploy yet.
+2. The bridge maps `/metadata` to Android permissions
+   (`StubGenerator.permissionsForMetadata`), takes the icon from the store,
+   and installs the stub; PackageManager assigns the stub UID.
+3. `deploy` (new, split out of publish): hardlink the runtime into
+   `/data/matonos/linux/apps/<runtime_uid>` and the app into
+   `/data/matonos/linux/apps/<stub_uid>`, then record the runtime install.
 
-No rename or re-home. Requires the store to have the icon before install and
-linuxd to read metadata/desktop from the staging repo.
+No rename or re-home, and the app is owned by its stub UID from the start.
+Requires the store to hand the icon (and display name) through the bridge
+before deploy.
 
 Both flows keep one owner per install, hardlink the runtime from the shared
 staging repo, and leave the runtime/system side unchanged. Updates to an
