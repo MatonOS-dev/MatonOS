@@ -95,7 +95,7 @@ public final class SystemBridgeService extends Service {
             throw new SecurityException("A signed stub process and lifeline are required");
         }
 
-        @Override public String launchOwnedFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, android.os.ParcelFileDescriptor x11Directory, String x11Display, int stubUid, int stubPid, android.os.ParcelFileDescriptor lifeline) {
+        @Override public String launchOwnedFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, android.os.ParcelFileDescriptor x11Directory, String x11Display, String dnsForwarder, int stubUid, int stubPid, android.os.ParcelFileDescriptor lifeline) {
             try {
                 String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
                 if (!"org.matonos.compositor".equals(caller) || runtimeDirectory == null)
@@ -115,7 +115,13 @@ public final class SystemBridgeService extends Service {
                     android.net.Network network = connectivity.getActiveNetwork();
                     android.net.LinkProperties link = network == null ? null : connectivity.getLinkProperties(network);
                     StringBuilder dns = new StringBuilder();
-                    if (link != null) for (java.net.InetAddress server : link.getDnsServers()) {
+                    // resolv.conf supports only port 53; prefer the app-local
+                    // endpoint only when the privileged bind succeeded.
+                    String localDns = null;
+                    if (dnsForwarder != null && dnsForwarder.matches("127\\.10\\.[0-9]{1,3}\\.[0-9]{1,3}:53"))
+                        localDns = dnsForwarder.substring(0, dnsForwarder.length() - 3);
+                    if (localDns != null) dns.append(localDns);
+                    else if (link != null) for (java.net.InetAddress server : link.getDnsServers()) {
                         if (dns.length() > 0) dns.append(',');
                         dns.append(server.getHostAddress());
                     }

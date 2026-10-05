@@ -130,7 +130,7 @@ public final class CompositorService extends Service {
     };
 
     private final IEmbeddedHost.Stub embedded = new IEmbeddedHost.Stub() {
-        public IEmbeddedSession openSession(String ref, IEmbeddedWindowListener listener, android.os.ParcelFileDescriptor lifeline) {
+        public IEmbeddedSession openSession(String ref, IEmbeddedWindowListener listener, android.os.ParcelFileDescriptor lifeline, String dnsForwarder) {
             int pid = android.os.Binder.getCallingPid();
             int uid = android.os.Binder.getCallingUid();
             if (lifeline == null || listener == null || ref == null || !ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"))
@@ -151,7 +151,7 @@ public final class CompositorService extends Service {
                     }
                     if (session == null) {
                         if (sessions.size() >= 128) throw new IllegalStateException("Too many application sessions");
-                        session = new EmbeddedSession(uid, ref, nextSession.getAndIncrement());
+                        session = new EmbeddedSession(uid, ref, nextSession.getAndIncrement(), dnsForwarder);
                         session.pid=pid; session.lifeline=lifeline;
                         sessionsById.put(session.id, session);
                         sessions.put(ref, session);
@@ -175,6 +175,7 @@ public final class CompositorService extends Service {
         int pid;
         android.os.ParcelFileDescriptor lifeline;
         final String ref;
+        final String dnsForwarder;
         final java.io.File directory;
         final java.util.concurrent.ConcurrentHashMap<Integer, int[]> windows = new java.util.concurrent.ConcurrentHashMap<>();
         final android.os.RemoteCallbackList<IEmbeddedWindowListener> listeners = new android.os.RemoteCallbackList<>();
@@ -182,8 +183,9 @@ public final class CompositorService extends Service {
         boolean standalone;
         volatile String x11Display;
         boolean launched;
-        EmbeddedSession(int uid, String ref, int id) throws Exception {
+        EmbeddedSession(int uid, String ref, int id, String dnsForwarder) throws Exception {
             this.uid=uid;this.ref=ref;this.id=id;
+            this.dnsForwarder=dnsForwarder;
             directory=new java.io.File(getFilesDir(),"wayland/s"+id);
             if (!directory.isDirectory() && !directory.mkdirs()) throw new java.io.IOException("Cannot create application socket directory");
             android.system.Os.chmod(directory.getAbsolutePath(),0711);
@@ -272,7 +274,7 @@ public final class CompositorService extends Service {
                     if (new org.json.JSONObject(status).optBoolean("ok")) return status;
                 }
                 if(!bus.isAlive())throw new IllegalStateException("Session broker exited");
-                String reply=FlatpakLauncher.launch(CompositorService.this,ref,directory,x11Display,uid,pid,lifeline);
+                String reply=FlatpakLauncher.launch(CompositorService.this,ref,directory,x11Display,dnsForwarder,uid,pid,lifeline);
                 launched=new org.json.JSONObject(reply).optBoolean("ok");
                 return reply;
             } catch(Exception e) { return failure(e); }
