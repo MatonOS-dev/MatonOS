@@ -34,7 +34,7 @@ get_prop(platform_app, bluetooth_lea_prop)
 
 # RenderThread's and Binder's named MessageQueue memfds arrive with the generic
 # tmpfs label on this kernel. Limit access to observed readers and operations.
-allow { hal_power_default mediaswcodec platform_app system_server } tmpfs:file { map read write };
+allow { mediaswcodec platform_app system_server } tmpfs:file { map read write };
 allow mediaswcodec appdomain_tmpfs:file { getattr map read write };
 
 # Crash dumps inspect mapped resource idmaps and vendor overlays for ELF metadata.

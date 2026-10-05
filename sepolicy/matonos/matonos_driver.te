@@ -279,3 +279,7 @@ get_prop(matonos_driver, vendor_maton_prop)
 get_prop(system_server, vendor_maton_prop)
 get_prop(hal_audio_default, vendor_maton_prop)
 get_prop(matonos_system_bridge, vendor_maton_prop)
+
+# hal_power_default (vendor domain) maps its generic-tmpfs MessageQueue memfd;
+# the platform-side readers are in system_ext private policy.
+allow hal_power_default tmpfs:file { map read write };
