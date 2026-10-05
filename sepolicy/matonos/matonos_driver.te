@@ -206,7 +206,6 @@ hal_client_domain(keystore, hal_gatekeeper)
 allow surfaceflinger gpu_device:chr_file rw_file_perms;
 allow surfaceflinger graphics_device:chr_file rw_file_perms;
 allow surfaceflinger graphics_device:dir r_dir_perms;
-allow surfaceflinger udmabuf_device:chr_file rw_file_perms;
 # Mesa's llvmpipe JIT allocates executable code. AOSP has no neverallow on
 # execmem for SurfaceFlinger (only execstack/execheap are globally forbidden).
 allow surfaceflinger self:process execmem;

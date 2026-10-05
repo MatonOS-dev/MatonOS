@@ -19,3 +19,7 @@ allow matonos_setup { appops_service settings_service }:service_manager find;
 allow matonos_setup system_file:file r_file_perms;
 allow matonos_setup { activity_service content_capture_service }:service_manager find;
 binder_call(matonos_setup, mediaprovider_app)
+
+# SurfaceFlinger opens /dev/udmabuf (Mesa/virtio-gpu). udmabuf_device is a
+# platform-private type, so the rule lives in system_ext private policy.
+allow surfaceflinger udmabuf_device:chr_file rw_file_perms;
