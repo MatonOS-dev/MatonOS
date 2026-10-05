@@ -22,11 +22,7 @@ allow matonos_setup { appops_service settings_service }:service_manager find;
 allow surfaceflinger udmabuf_device:chr_file rw_file_perms;
 allow bootanim udmabuf_device:chr_file { open read write ioctl };
 
-# Core AVC packet: framework GPU discovery uses read-only PCI metadata.
-allow system_server graphics_device:dir r_dir_perms;
-allow { platform_app priv_app system_app } graphics_device:dir r_dir_perms;
-allow { platform_app priv_app system_app } graphics_device:chr_file getattr;
-allow { platform_app priv_app system_app system_server } sysfs_gpu:file r_file_perms;
+# PCI hardware discovery belongs to pc_gpu_detect in the MatonOS daemon zone.
 allow storaged sysfs_devices_block:dir search;
 allow storaged sysfs_devices_block:file r_file_perms;
 allow system_suspend sysfs_wakeup:file r_file_perms;
@@ -45,9 +41,23 @@ allow init debugfs_bootreceiver_tracing:dir add_name;
 
 # kdevtmpfs creates/removes nodes before ueventd applies their final labels.
 # The stock neverallow still blocks kernel open/read/write on generic devices.
-allow kernel device:dir { add_name remove_name rmdir };
+allow kernel device:dir { create add_name remove_name rmdir };
 allow kernel device:chr_file { create setattr unlink };
+allow kernel device:blk_file { create setattr unlink };
 
 # Mesa llvmpipe in the boot animation writes its own memfd buffers
 # (memfd:lp_dma_buf, memfd:allocation fd), which arrive as generic tmpfs.
 allow bootanim tmpfs:file write;
+
+# Property-area metadata probes are not property reads; keep them denied but
+# quiet for expected generic app/renderer lookups (AVC phase 2).
+dontaudit appdomain vendor_default_prop:file { getattr map open };
+dontaudit { surfaceflinger bootanim } vendor_default_prop:file { getattr map open };
+
+# Crash tombstone mapping inspection does not need vendor resource-overlay APKs.
+dontaudit crash_dump vendor_overlay_file:file { getattr map open read };
+
+# Media/audio processes consume Binder-transferred shared buffers, never daemon
+# sockets; authorize only the matching shared-memory labels and operations.
+allow mediaswcodec system_server_tmpfs:file { getattr map read write };
+allow audioserver { appdomain_tmpfs system_server_tmpfs }:file { getattr map read write };

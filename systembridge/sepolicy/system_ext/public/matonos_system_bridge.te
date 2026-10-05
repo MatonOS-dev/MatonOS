@@ -14,3 +14,4 @@ attribute matonos_raw_hardware_type;
 attribute matonos_daemon_socket_file;
 type matonos_channel_service, protected_service, hal_service_type, service_manager_type;
 type sysfs_matonos_sensitive, fs_type, sysfs_type;
+type matonos_addon_mount_file, file_type, vendor_file_type;

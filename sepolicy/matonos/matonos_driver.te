@@ -11,7 +11,6 @@ typeattribute matonos_driver_data_file matonos_daemon_socket_file;
 type matonos_install_block_device, dev_type;
 # addons: GPT entries 6/7 hold service-written raw ext4 slot images, mounted RO.
 type matonos_addons_block_device, dev_type;
-type matonos_addon_mount_file, file_type, vendor_file_type;
 type vendor_addon_module_file, file_type, vendor_file_type, contextmount_type;
 type matonos_addon_data_file, file_type, data_file_type;
 type matonos_addon_manager, domain;
@@ -141,15 +140,15 @@ allow matonos_driver matonos_channel_service:service_manager add;
 allow matonos_addon_manager matonos_channel_service:service_manager add;
 neverallow { domain -matonos_driver -matonos_addon_manager } matonos_channel_service:service_manager add;
 # Daemon-side restrictions. The Bridge is an inbound-only Binder client;
-# service-manager calls are limited to registering IChannel services.
- Cross-partition/app-domain assertions live in
-# system_ext private policy, where the private app domains are visible.
+# service-manager registration and init's property socket are the only OS
+# control-plane exceptions. Cross-zone service calls stay Bridge-only.
 neverallow matonos_daemon_zone { domain -matonos_daemon_zone -servicemanager }:binder call;
 neverallow matonos_daemon_zone self:{ tcp_socket udp_socket rawip_socket sctp_socket icmp_socket packet_socket netlink_route_socket } *;
 neverallow matonos_daemon_zone netd:unix_stream_socket connectto;
 neverallow matonos_daemon_zone dnsproxyd_socket:sock_file write;
-neverallow matonos_daemon_zone coredomain_socket:unix_stream_socket connectto;
-neverallow { domain -matonos_daemon_zone -matonos_system_bridge } matonos_daemon_zone:unix_stream_socket connectto;
+neverallow matonos_daemon_zone { coredomain_socket -property_socket }:unix_stream_socket connectto;
+neverallow { domain -matonos_daemon_zone -matonos_system_bridge -init } matonos_daemon_zone:unix_stream_socket connectto;
+neverallow matonos_daemon_zone { domain -matonos_daemon_zone -matonos_system_bridge }:unix_dgram_socket sendto;
 
 # The add-on manager writes only intake/extraction files while they carry the
 # data label. init restorecon assigns immutable vendor labels before loading.
@@ -211,8 +210,7 @@ allow hal_graphics_composer_default graphics_device:dir r_dir_perms;
 # node and enumerates /dev/dri; it does not open the DRM node in this capture.
 allow bootanim graphics_device:chr_file getattr;
 allow bootanim graphics_device:dir r_dir_perms;
-# Mesa clients read only the PCI vendor and uevent metadata for the GPU.
-allow { bootanim hal_graphics_allocator_default surfaceflinger } sysfs_gpu:file { getattr open read };
+# The hardware selector owns PCI identity discovery; Mesa uses DRM interfaces.
 # The composer enumerates the backlight class to discover available outputs.
 type sysfs_pc_backlight, fs_type, sysfs_type;
 allow hal_graphics_composer_default sysfs_pc_backlight:dir r_dir_perms;
@@ -297,3 +295,7 @@ allow hal_power_default tmpfs:file { map read write };
 
 # modprobe/timeout started by pc-gpu-detect inherit its stdio/script fds.
 allow vendor_modprobe pc_gpu_detect:fd use;
+allow vendor_modprobe pc_gpu_detect:fifo_file { getattr read write };
+# pc-gpu-detect's bounded modprobe child reads boot_vga via toolbox cat.
+allow vendor_modprobe sysfs_gpu:dir search;
+allow vendor_modprobe sysfs_gpu:file r_file_perms;

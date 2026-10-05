@@ -104,7 +104,7 @@ chosen real controller or the spoofed Rootcanal one.
 
 ## Security zones (user rule, 2026-10-05)
 
-Enforce three zones: **[hardware] MatonOS glue daemons/HALs | A Android system | B apps**. Only the System Bridge crosses the daemon boundary: A may call its named channels, daemons may call the Bridge, and B has no daemon/channel access. Daemons have no network sockets or non-Bridge Android service connections. Android core and apps cannot read daemon-reserved raw-hardware types. Give glue daemons broad read-only hardware discovery through `matonos_hw_reader`, with dedicated labels excluding EFI variables, firmware/ACPI tables, DMI identifiers, debugfs/tracefs, and known side-effect attributes; keep device writes per-device.
+Enforce three zones: **[hardware] MatonOS glue daemons/HALs | A Android system | B apps**. Only the System Bridge crosses the daemon boundary: A calls daemon channels through the Bridge; daemons do not call the Bridge. The service manager may register services, and init’s property socket may publish `vendor.maton.*` state; only the Bridge may find/call daemon channels. B has no daemon/channel access. Daemons have no network sockets or non-Bridge Android service connections. Android core and apps cannot read daemon-reserved raw-hardware types. Give glue daemons broad read-only hardware discovery through `matonos_hw_reader`, with dedicated labels excluding EFI variables, firmware/ACPI tables, DMI identifiers, debugfs/tracefs, and known side-effect attributes; keep device writes per-device.
 
 ## Principle: MatonOS owns the hardware glue (decided 2026-09-24)
 
