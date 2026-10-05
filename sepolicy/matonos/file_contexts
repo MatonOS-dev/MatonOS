@@ -10,6 +10,8 @@
 /data/vendor/maton-audio(/.*)? u:object_r:matonos_driver_data_file:s0
 # Add-on ZIP/image intake is mutable only in this private staging directory.
 /data/vendor/matonos-addons(/.*)? u:object_r:matonos_addon_data_file:s0
+# The optional mountpoint may remain an empty directory when no add-on disk exists.
+/mnt/vendor/addons u:object_r:matonos_addon_mount_file:s0
 # Add-on images are built off-device with immutable SELinux xattrs. The
 # manager's writable intake lives under /data, never on this mount.
 /mnt/vendor/addons/firmware(/.*)? u:object_r:matonos_addon_firmware_lookup:s0
