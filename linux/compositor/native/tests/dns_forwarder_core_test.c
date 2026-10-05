@@ -1,6 +1,7 @@
 #include "../dns_forwarder_core.h"
 
 #include <assert.h>
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -44,9 +45,41 @@ int main(void) {
     assert(memcmp(framed + 2, message, sizeof(message)) == 0);
     assert(dns_tcp_frame_write(framed, 5, message, sizeof(message), &written) != 0);
 
+    struct in_addr source, destination, other;
+    assert(inet_pton(AF_INET, "127.0.0.1", &source) == 1);
+    assert(inet_pton(AF_INET, "127.10.39.16", &destination) == 1);
+    assert(inet_pton(AF_INET, "127.0.0.2", &other) == 1);
+    /* Mock entries from one inet_diag DUMP reply, including unrelated and
+     * connected sockets. This is the same input shape the netlink parser emits. */
+    struct dns_udp_diag_socket dump[] = {
+        {.uid=22, .local_address=source, .local_port=40124},
+        {.uid=10123, .local_address={.s_addr=htonl(INADDR_ANY)}, .local_port=40123},
+        {.uid=44, .local_address=other, .local_port=40123},
+        {.uid=55, .local_address=source, .local_port=40123,
+         .remote_address=destination, .remote_port=53},
+    };
+    uint32_t owner = 0;
+    assert(dns_forwarder_udp_uid(dump, 4, source, 40123, destination, 53, &owner) == 0);
+    assert(owner == 55);
+    dump[3].remote_port = 54;
+    assert(dns_forwarder_udp_uid(dump, 4, source, 40123, destination, 53, &owner) == 0);
+    assert(owner == 10123);
+    dump[3].remote_port = 53;
+    dump[2].local_address = source;
+    dump[3].remote_port = 54;
+    assert(dns_forwarder_udp_uid(dump, 4, source, 40123, destination, 53, &owner) != 0);
+    dump[2].local_address = other;
+    assert(dns_forwarder_udp_uid(dump, 4, source, 40123, other, 53, &owner) == 0);
+
     char address[16];
-    dns_forwarder_address(0x1234, address);
-    assert(strcmp(address, "127.10.18.52") == 0);
-    puts("PASS: uid check, token bucket, DNS TCP framing and uid-derived address");
+    dns_forwarder_address(0x123456, address);
+    assert(strcmp(address, "127.28.52.86") == 0);
+    dns_forwarder_address(110001, address);
+    assert(strcmp(address, "127.11.173.177") == 0);
+    char other_user[16];
+    dns_forwarder_address(210001, other_user);
+    assert(strcmp(other_user, "127.13.52.81") == 0);
+    assert(strcmp(address, other_user) != 0);
+    puts("PASS: tuple and UDP dump attribution, token bucket, DNS framing and UID addresses");
     return 0;
 }

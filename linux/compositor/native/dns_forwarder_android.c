@@ -20,7 +20,6 @@
 #include <unistd.h>
 
 #define DNS_PORT 53
-#define DNS_FALLBACK_PORT 1053
 #define DNS_RATE_CAPACITY 100.0
 #define DNS_RATE_PER_SECOND 50.0
 #define DNS_RESOLVER_TIMEOUT_MS 10000
@@ -51,24 +50,7 @@ static uint64_t monotonic_ns(void) {
     return (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
 }
 
-static int make_listener(int type, const struct in_addr *address, int port,
-                         int listen_backlog) {
-    int fd = socket(AF_INET, type | SOCK_CLOEXEC, 0);
-    if (fd < 0) return -1;
-    struct sockaddr_in bind_address = {.sin_family = AF_INET,
-        .sin_port = htons((uint16_t)port), .sin_addr = *address};
-    if (bind(fd, (struct sockaddr *)&bind_address, sizeof(bind_address)) != 0 ||
-        (type == SOCK_STREAM && listen(fd, listen_backlog) != 0)) {
-        int saved = errno;
-        close(fd);
-        errno = saved;
-        return -1;
-    }
-    return fd;
-}
-
-/* SOCK_DIAG proves an exact connected socket tuple. A UDP sendto socket has no
- * destination in its inet_diag tuple, so it deliberately fails closed. */
+/* Connected flows use an exact tuple query. */
 static int lookup_peer_uid(void *unused, const void *opaque, uint32_t *uid) {
     (void)unused;
     const struct peer_tuple *peer = opaque;
@@ -85,6 +67,10 @@ static int lookup_peer_uid(void *unused, const void *opaque, uint32_t *uid) {
     query.request.sdiag_family = AF_INET;
     query.request.sdiag_protocol = (uint8_t)peer->protocol;
     query.request.idiag_states = UINT32_MAX;
+    query.request.id.idiag_sport = htons(peer->source_port);
+    query.request.id.idiag_dport = htons(peer->destination_port);
+    query.request.id.idiag_src[0] = peer->source.s_addr;
+    query.request.id.idiag_dst[0] = peer->destination.s_addr;
     struct sockaddr_nl kernel = {.nl_family = AF_NETLINK};
     if (sendto(fd, &query, sizeof(query), 0, (struct sockaddr *)&kernel,
                sizeof(kernel)) < 0) { close(fd); return -1; }
@@ -124,6 +110,92 @@ done:
     return found ? 0 : -1;
 }
 
+/* Unconnected sendto() sockets have no remote tuple. Dump only sockets with
+ * the sender's local port, then authorize an exact loopback bind or wildcard
+ * bind. Conflicting SO_REUSEPORT owners are rejected by the core selector. */
+static int lookup_udp_uid(const struct sockaddr_in *source, uint32_t *uid) {
+    int fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_SOCK_DIAG);
+    if (fd < 0) return -1;
+    struct {
+        struct nlmsghdr header;
+        struct inet_diag_req_v2 request;
+    } query = {0};
+    query.header.nlmsg_len = sizeof(query);
+    query.header.nlmsg_type = SOCK_DIAG_BY_FAMILY;
+    query.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+    query.header.nlmsg_seq = 1;
+    query.request.sdiag_family = AF_INET;
+    query.request.sdiag_protocol = IPPROTO_UDP;
+    query.request.idiag_states = UINT32_MAX;
+    query.request.id.idiag_sport = source->sin_port;
+    struct sockaddr_nl kernel = {.nl_family = AF_NETLINK};
+    if (sendto(fd, &query, sizeof(query), 0, (struct sockaddr *)&kernel,
+               sizeof(kernel)) < 0) { close(fd); return -1; }
+
+    struct dns_udp_diag_socket entries[1024];
+    size_t count = 0;
+    uint8_t buffer[65536];
+    int complete = 0;
+    while (!complete) {
+        struct pollfd pfd = {.fd = fd, .events = POLLIN};
+        if (poll(&pfd, 1, 1000) <= 0) break;
+        struct iovec iov = {.iov_base = buffer, .iov_len = sizeof(buffer)};
+        struct msghdr message = {.msg_iov = &iov, .msg_iovlen = 1};
+        ssize_t received = recvmsg(fd, &message, MSG_TRUNC);
+        if (received <= 0) break;
+        if ((size_t)received > sizeof(buffer) || (message.msg_flags & MSG_TRUNC)) {
+            complete = -1; break;
+        }
+        int remaining = (int)received;
+        for (struct nlmsghdr *header = (struct nlmsghdr *)buffer;
+             remaining >= (int)sizeof(*header) &&
+             header->nlmsg_len >= sizeof(*header) &&
+             header->nlmsg_len <= (uint32_t)remaining;
+             ) {
+            int message_size = (int)NLMSG_ALIGN(header->nlmsg_len);
+            if (message_size > remaining) { complete = -1; break; }
+            if (header->nlmsg_seq != 1) {
+                header = (struct nlmsghdr *)((uint8_t *)header + message_size);
+                remaining -= message_size;
+                continue;
+            }
+            if (header->nlmsg_type == NLMSG_DONE) { complete = 1; remaining = 0; break; }
+            if (header->nlmsg_type == NLMSG_ERROR) { complete = -1; break; }
+            if (header->nlmsg_type != SOCK_DIAG_BY_FAMILY ||
+                header->nlmsg_len < NLMSG_LENGTH(sizeof(struct inet_diag_msg))) {
+                header = (struct nlmsghdr *)((uint8_t *)header + message_size);
+                remaining -= message_size;
+                continue;
+            }
+            struct inet_diag_msg *entry = NLMSG_DATA(header);
+            if (entry->idiag_family != AF_INET ||
+                entry->id.idiag_sport != source->sin_port) {
+                header = (struct nlmsghdr *)((uint8_t *)header + message_size);
+                remaining -= message_size;
+                continue;
+            }
+            if (count == 1024) { complete = -1; break; }
+            entries[count++] = (struct dns_udp_diag_socket){
+                .uid = entry->idiag_uid,
+                .local_address = {.s_addr = entry->id.idiag_src[0]},
+                .local_port = ntohs(entry->id.idiag_sport),
+                .remote_address = {.s_addr = entry->id.idiag_dst[0]},
+                .remote_port = ntohs(entry->id.idiag_dport),
+            };
+            header = (struct nlmsghdr *)((uint8_t *)header + message_size);
+            remaining -= message_size;
+        }
+        if (remaining != 0) complete = -1;
+        if (complete < 0) break;
+    }
+    close(fd);
+    if (complete != 1) return -1;
+    struct in_addr destination = service_address;
+    return dns_forwarder_udp_uid(entries, count, source->sin_addr,
+                                 ntohs(source->sin_port), destination,
+                                 (uint16_t)service_port, uid);
+}
+
 static int authorize(const struct sockaddr_in *source, int protocol) {
     struct peer_tuple peer = {.source = source->sin_addr,
         .destination = service_address,
@@ -157,7 +229,9 @@ static void serve_udp(void) {
     socklen_t source_length = sizeof(source);
     ssize_t size = recvfrom(udp_fd, query, sizeof(query), 0,
                             (struct sockaddr *)&source, &source_length);
-    if (size <= 0 || source.sin_family != AF_INET || !authorize(&source, IPPROTO_UDP) ||
+    uint32_t sender_uid = UINT32_MAX;
+    if (size <= 0 || source.sin_family != AF_INET ||
+        lookup_udp_uid(&source, &sender_uid) != 0 || sender_uid != service_uid ||
         !allow_query()) return;
     int result = resolve_packet(query, (size_t)size, answer, sizeof(answer));
     if (result > 0 && result <= (int)sizeof(answer))
@@ -223,10 +297,13 @@ static void *forwarder_main(void *unused) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_org_matonos_compositor_stub_DnsForwarder_nativeStart(JNIEnv *env, jclass clazz) {
+Java_org_matonos_compositor_stub_DnsForwarder_nativeStart(JNIEnv *env, jclass clazz,
+                                                          jint passed_udp_fd, jint passed_tcp_fd) {
     (void)clazz;
     pthread_mutex_lock(&state_lock);
     if (worker_started) {
+        close(passed_udp_fd);
+        close(passed_tcp_fd);
         char address[16], existing[32];
         dns_forwarder_address(service_uid, address);
         snprintf(existing, sizeof(existing), "%s:%d", address, service_port);
@@ -236,18 +313,12 @@ Java_org_matonos_compositor_stub_DnsForwarder_nativeStart(JNIEnv *env, jclass cl
     service_uid = (uint32_t)getuid();
     char address[16]; dns_forwarder_address(service_uid, address);
     if (inet_pton(AF_INET, address, &service_address) != 1) {
+        close(passed_udp_fd); close(passed_tcp_fd);
         pthread_mutex_unlock(&state_lock); return NULL;
     }
     service_port = DNS_PORT;
-    udp_fd = make_listener(SOCK_DGRAM, &service_address, service_port, 0);
-    tcp_fd = make_listener(SOCK_STREAM, &service_address, service_port, 16);
-    if (udp_fd < 0 || tcp_fd < 0) {
-        if (udp_fd >= 0) close(udp_fd);
-        if (tcp_fd >= 0) close(tcp_fd);
-        service_port = DNS_FALLBACK_PORT;
-        udp_fd = make_listener(SOCK_DGRAM, &service_address, service_port, 0);
-        tcp_fd = make_listener(SOCK_STREAM, &service_address, service_port, 16);
-    }
+    udp_fd = passed_udp_fd;
+    tcp_fd = passed_tcp_fd;
     if (udp_fd < 0 || tcp_fd < 0) {
         if (udp_fd >= 0) close(udp_fd);
         if (tcp_fd >= 0) close(tcp_fd);
@@ -260,7 +331,7 @@ Java_org_matonos_compositor_stub_DnsForwarder_nativeStart(JNIEnv *env, jclass cl
         pthread_mutex_unlock(&state_lock); return NULL;
     }
     worker_started = 1;
-    char endpoint[32]; snprintf(endpoint, sizeof(endpoint), "%s:%d", address, service_port);
+    char endpoint[32]; snprintf(endpoint, sizeof(endpoint), "%s:%d", address, DNS_PORT);
     pthread_mutex_unlock(&state_lock);
     return (*env)->NewStringUTF(env, endpoint);
 }
