@@ -102,14 +102,16 @@ Source: `out/pc-logs/agents/live16-avcs.txt` (81 deduplicated signatures, 120 ev
 
 | Denial signature | Count | Action |
 |---|---:|---|
-| `crash_dump` reading/mapping/statting `vendor_overlay_file` | 28 | Added `dontaudit` for the tombstone mapping metadata/content probes. No access is granted. |
+| `crash_dump` statting/mapping/reading `vendor_overlay_file` | 21 | Added `dontaudit` for these tombstone mapping probes; no access is granted. |
+| `crash_dump` opening `vendor_overlay_file` | 7 | Needs source change: AOSP neverallow forbids the open; no allow/dontaudit exception added. |
 | app domains (`gmscore_app`, `permissioncontroller_app`, `priv_app_36`) enumerating/statting `/dev/dri` | 23 | Needs source change. Apps must not enumerate raw hardware; removed old app graphics metadata grants from `matonos_setup.te`, added no replacement. |
 | `system_server` statting `/dev/dri/card1` | 1 | Needs source change; removed the old framework device-directory metadata grants. No replacement. |
 | `system_suspend` reading `name` under generic sysfs and `sysfs_gpu` wakeup trees | 8 | Needs source change to use a stable mediated wake-source interface. No broad sysfs read was added; per-device wakeup genfs labels cannot cover arbitrary PC device paths. |
 | `pc_gpu_detect` searching `sysfs_gpu` | 1 | Covered by `matonos_hw_reader`; moved the detector to the daemon/read attributes and removed its broad raw `sysfs` rules. This denial is from the older image. |
 | `vendor_modprobe` searching/reading `sysfs_gpu` | 1 | Added narrow directory search and file reads: its bounded child runs toolbox `cat` for `boot_vga`. |
 | `vendor_modprobe` using/writing/stating detector pipe | 3 | `fd use` already existed; added `fifo_file` getattr/read/write for the inherited timeout/stdio pipe. |
-| `kernel` creating generic devtmpfs directory/block nodes and setting/unlinking block nodes | 7 | Added `kernel device:dir create` and `kernel device:blk_file { create setattr unlink }`; existing directory/character-node rules remain. |
+| `kernel` creating a generic devtmpfs directory | 1 | Added `kernel device:dir create`; existing directory/character-node rules remain. |
+| `kernel` creating/statting/unlinking generic block nodes | 6 | Needs source change: stock neverallow forbids operations on generic `device:blk_file`; no allow was added. |
 | `init` mounton and `vendor_init` create on add-on mountpoint | 2 | Added exact `matonos_addon_mount_file:dir` create/mounton grants. |
 | Bridge finding absent `IChannel/nav.recents` (`default_android_service`) | 1 | Needs Bridge source change: Recents is parked and must not be looked up. No service label/find grant added. |
 | `mediaswcodec` reading/mapping system-server shared memfd | 4 | Added scoped `system_server_tmpfs` shared-buffer access; this is Binder-transferred data, outside the hardware zone. |

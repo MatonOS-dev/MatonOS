@@ -43,7 +43,6 @@ allow init debugfs_bootreceiver_tracing:dir add_name;
 # The stock neverallow still blocks kernel open/read/write on generic devices.
 allow kernel device:dir { create add_name remove_name rmdir };
 allow kernel device:chr_file { create setattr unlink };
-allow kernel device:blk_file { create setattr unlink };
 
 # Mesa llvmpipe in the boot animation writes its own memfd buffers
 # (memfd:lp_dma_buf, memfd:allocation fd), which arrive as generic tmpfs.
@@ -55,7 +54,7 @@ dontaudit appdomain vendor_default_prop:file { getattr map open };
 dontaudit { surfaceflinger bootanim } vendor_default_prop:file { getattr map open };
 
 # Crash tombstone mapping inspection does not need vendor resource-overlay APKs.
-dontaudit crash_dump vendor_overlay_file:file { getattr map open read };
+dontaudit crash_dump vendor_overlay_file:file { getattr map read };
 
 # Media/audio processes consume Binder-transferred shared buffers, never daemon
 # sockets; authorize only the matching shared-memory labels and operations.
