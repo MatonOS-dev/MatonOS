@@ -91,8 +91,8 @@ other request. Access is checked with the bridge's
 commit pins against the staging refs before transferring anything. The
 installer stages both refs in `/data/matonos/linux/staging`; linuxd then
 uses signature-verifying `ostree pull-local` into the runtime system install
-and the per-uid user install, fscks both target commits, seals the verified
-objects read-only with the code label, and runs `flatpak install --no-pull`.
+and the per-uid user install, seals the verified objects read-only with the
+code label, and runs `flatpak install --no-pull`.
 Flatpak's deployment transaction publishes each `active` ref atomically.
 
 The same full locale set (`languages=*`) is written to staging, system, and
@@ -101,9 +101,12 @@ Flatpak operations continue through the APEX environment wrapper. The test
 harness `tests/flatpak-publish-host-test.sh` uses the cached Flathub repo and
 the staged static multicall binary. `MATONOS_PUBLISH_SKIP_STAGE=1` is only a
 test hook for seeding R from the verified cache; production always performs
-the Flatpak no-deploy staging pull. `MATONOS_PUBLISH_SKIP_FSCK=1` may be set
-for quick repeat runs; the default harness invokes the real static `ostree
-fsck` against target repositories.
+the Flatpak no-deploy staging pull. The target import uses
+`ostree pull-local --untrusted --gpg-verify --remote=<remote>`: commit
+signature verification authenticates the commit and its object checksums,
+while `--untrusted` makes OSTree check each imported source object's checksum
+during the pull. That validates the imported closure without a separate
+repository-wide `fsck` scan.
 
 Before an install can run, the requested remote must already exist in R, S,
 and U with its own trusted key and both verification flags enabled. The

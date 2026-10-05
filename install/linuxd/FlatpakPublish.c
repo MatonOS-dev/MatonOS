@@ -223,15 +223,6 @@ static int create_local_ref(const char* repo, const char* remote, const char* re
     return run_ostree(repo, args, 4, NULL, 0);
 }
 
-static int fsck_commit(const char* repo, const char* commit) {
-#ifdef MATONOS_PUBLISH_HOST_TEST
-    const char* skip = getenv("MATONOS_PUBLISH_SKIP_FSCK");
-    if (skip && !strcmp(skip, "1")) return 0;
-#endif
-    const char* args[] = {"fsck", "--quiet", commit};
-    return run_ostree(repo, args, 3, NULL, 0);
-}
-
 /* OSTree object payloads are immutable after verification. Keep directories
  * writable for later refs/objects while sealing every object file. */
 static int seal_object_files(const char* repo) {
@@ -281,9 +272,11 @@ static int transfer_and_verify(const char* staging, const char* target,
     /* Check the pin before mutating the target; pull-local's signed commit
      * verification is the actual trust gate, never ostree show. */
     if (compare_remote_commit(source_repo, remote, ref, commit)) return -2;
-    const char* pull[] = {"pull-local", "--gpg-verify", "--remote", remote, source_repo, ref};
+    char remote_arg[160];
+    if (snprintf(remote_arg, sizeof(remote_arg), "--remote=%s", remote) >= (int)sizeof(remote_arg)) return -1;
+    const char* pull[] = {"pull-local", "--untrusted", "--gpg-verify",
+        remote_arg, source_repo, ref};
     if (run_ostree(target_repo, pull, sizeof(pull) / sizeof(pull[0]), NULL, 0)) return -3;
-    if (fsck_commit(target_repo, commit)) return -4;
     return 0;
 }
 
