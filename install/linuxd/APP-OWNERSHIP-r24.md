@@ -29,15 +29,11 @@ payload group (excluding the stub) to empty before reporting Linux exit.
 Every stub window polls launch status and finishes on exit. This requires
 cgroup v2 and the kernel's `cgroup.kill`; no legacy-layout fallback is claimed.
 
-The native flatpak-portal stays in linuxd's domain and outside the payload
-cgroup. Its UID is the stub UID so stock Flatpak can inspect its peer's
-`/proc/<pid>/root/.flatpak-info` without forbidden host CAP_SYS_PTRACE. It
-retains trusted launcher capabilities. Nested wrappers read identity from
-this exact portal parent's immutable environment, rather than accepting
-ownership supplied in a Spawn request, and enter the same cgroup/credentials.
-MAC must deny sandbox ptrace of that trusted portal; permissive boot is not
-an isolation test. The portal's environment is readable to its trusted
-wrapper (dumpable), protected from payload manipulation by that MAC boundary.
+The native flatpak-portal has been dropped. The session bus and portals move
+into the stub app via dbus-java, over the compositor's delegated session
+directory; linuxd launches only the initial verified stub session. Until
+dbus-java lands the compositor owns the broker and portal, so the earlier
+trusted-portal-parent authentication no longer applies.
 
 Homes are `/data/matonos/linux/apps/<uid>`, mode 0700, owned by that UID/GID,
 with a private data type and the stub's MLS categories. A system-owned
@@ -80,5 +76,5 @@ hwbinder_device chr_file; private policy cannot subtract those, so the
 neverallows carve out exactly that baseline and forbid every other Binder,
 binder-device and service-manager access. The mandatory seccomp filter rejects
 all Binder ioctls; that is the real enforcement. An app can never re-enter the
-bwrap setup domain or execute bwrap (nested sandboxes go through
-flatpak-portal under linuxd).
+bwrap setup domain or execute bwrap (nested sandboxes are not supported; the
+stub owns D-Bus and portals via dbus-java).

@@ -254,9 +254,10 @@ allow matonos_compositor matonos_flatpak_run:fd use;
 net_domain(matonos_flatpak_run)
 
 # Only the verified Flatpak CLI (matonos_flatpak_run) may exec the setup
-# domain. An app never re-enters bwrap: nested sandboxes are spawned through
-# flatpak-portal under linuxd, not by the payload. The neverallows below make
-# both the transition and the exec impossible to add back.
+# domain. An app never re-enters bwrap: nested sandboxes are not supported,
+# the stub owns D-Bus and portals via dbus-java, and the payload never
+# re-enters the setup domain. The neverallows below make both the transition
+# and the exec impossible to add back.
 type_transition matonos_flatpak_run matonos_bwrap_exec:process matonos_bwrap;
 allow matonos_flatpak_run matonos_bwrap:process transition;
 allow matonos_flatpak_run matonos_bwrap_exec:file { execute execute_no_trans getattr open read map };
@@ -338,8 +339,8 @@ neverallow { matonos_linux_app matonos_flatpak_run matonos_bwrap matonos_app_lau
     hwbinder_device:chr_file ~{ rw_file_perms };
 neverallow { matonos_linux_app matonos_flatpak_run matonos_bwrap matonos_app_launch }
     vndbinder_device:chr_file *;
-# An app must never re-enter the bwrap setup domain (nested sandboxes go
-# through flatpak-portal under linuxd) and must never execute bwrap itself.
+# An app must never re-enter the bwrap setup domain and must never execute
+# bwrap itself.
 neverallow matonos_linux_app matonos_bwrap:process { transition dyntransition };
 neverallow matonos_linux_app matonos_bwrap_exec:file { execute execute_no_trans };
 neverallow matonos_linux_app matonos_app_exec_exec:file { execute execute_no_trans };

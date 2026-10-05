@@ -151,12 +151,14 @@ void flatpak_manager_set_callbacks(FlatpakProgressCallback progress,
 }
 
 void flatpak_manager_init(void) {
+    /* Per-operation install roots are supplied explicitly (app_install_roots /
+     * flatpak_publish); the app and runtime deployments live under
+     * /data/matonos/linux/apps/<uid>. Only the CLI's own config/home/cache is
+     * global here. */
     maton_udev_start();
     setenv("TMPDIR", "/data/matonos/linux/cache", 1);
     setenv("XDG_RUNTIME_DIR", "/data/matonos/linux/runtime", 1);
-    setenv("FLATPAK_SYSTEM_DIR", "/data/matonos/linux/flatpak", 1);
     setenv("FLATPAK_SYSTEM_CACHE_DIR", "/data/matonos/linux/cache", 1);
-    setenv("FLATPAK_USER_DIR", "/data/matonos/linux/flatpak-user", 1);
     setenv("HOME", "/data/matonos/linux/flatpak-data", 1);
     setenv("XDG_DATA_HOME", "/data/matonos/linux/flatpak-data/.local/share", 1);
 }
@@ -210,6 +212,53 @@ static int remembered_runtime_install(int app_uid, int* uid) {
         return -1;
     }
     *uid = (int)parsed;
+    return 0;
+}
+
+/* r24 storage model: ONE runtime app owns the shared --system installation at
+ * /data/matonos/linux/apps/<runtime_uid>; each stub owns a --user installation
+ * at /data/matonos/linux/apps/<app_uid>. The old global
+ * /data/matonos/linux/flatpak* installation roots are gone. Reuse stock
+ * Flatpak to decide which per-app installation owns a ref. */
+static ChildResult run_cli_in(const char* const* args, size_t count, int progress,
+        const char* system_dir, const char* user_dir);
+
+static int app_uid_for_ref(const char* ref, int* uid_out) {
+    if (!ref || strncmp(ref, "app/", 4) || !flatpak_manager_valid_ref(ref)) return -1;
+    DIR* dir = opendir("/data/matonos/linux/apps");
+    if (!dir) return -1;
+    struct dirent* entry;
+    int found = -1;
+    while ((entry = readdir(dir))) {
+        char* end = NULL;
+        long uid = strtol(entry->d_name, &end, 10);
+        if (!*entry->d_name || *end || uid < 10000 || uid > INT_MAX ||
+                uid % 100000 < 10000 || uid % 100000 > 19999) continue;
+        char user_dir[256], system_dir[256];
+        snprintf(user_dir, sizeof(user_dir), "/data/matonos/linux/apps/%ld", uid);
+        int runtime_uid = -1;
+        if (remembered_runtime_install((int)uid, &runtime_uid) == 0)
+            snprintf(system_dir, sizeof(system_dir), "/data/matonos/linux/apps/%d", runtime_uid);
+        else
+            snprintf(system_dir, sizeof(system_dir), "%s", user_dir);
+        const char* args[] = {"--user", "info", ref};
+        ChildResult child = run_cli_in(args, 3, 0, system_dir, user_dir);
+        free(child.output);
+        if (child.status == 0) { found = (int)uid; break; }
+    }
+    closedir(dir);
+    if (found < 0) return -1;
+    *uid_out = found;
+    return 0;
+}
+
+static int app_install_roots(const char* ref, char* system_dir, size_t system_size,
+        char* user_dir, size_t user_size) {
+    int app_uid = -1, runtime_uid = -1;
+    if (app_uid_for_ref(ref, &app_uid)) return -1;
+    if (remembered_runtime_install(app_uid, &runtime_uid)) return -1;
+    if (snprintf(system_dir, system_size, "/data/matonos/linux/apps/%d", runtime_uid) >= (int)system_size ||
+            snprintf(user_dir, user_size, "/data/matonos/linux/apps/%d", app_uid) >= (int)user_size) return -1;
     return 0;
 }
 
@@ -439,25 +488,35 @@ static void* package_operation_thread(void* data) {
     memset(&result, 0, sizeof(result));
     pthread_mutex_lock(&g_operation_mutex);
     if (operation->uninstall) {
-        const char* args_with_delete[] = {"--system", "uninstall", "--delete-data", "--noninteractive", "--assumeyes", operation->ref};
-        const char* args_keep_data[] = {"--system", "uninstall", "--noninteractive", "--assumeyes", operation->ref};
-        child = operation->delete_data ? run_cli(args_with_delete, sizeof(args_with_delete) / sizeof(args_with_delete[0]), 1) :
-                run_cli(args_keep_data, sizeof(args_keep_data) / sizeof(args_keep_data[0]), 1);
-        result_from_child(&result, &child);
-        free(child.output);
-        if (result.ok) {
-            const char* cleanup_args[] = {"--system", "uninstall", "--unused", "--noninteractive", "--assumeyes"};
-            child = run_cli(cleanup_args, sizeof(cleanup_args) / sizeof(cleanup_args[0]), 1);
-            result.has_unused_cleanup = 1;
-            result.unused_cleanup_ok = child.status == 0;
-            result.unused_cleanup_exit_code = child.status;
-            if (!child.status) {
-                // Keep the primary uninstall output; cleanup status is in fields above.
-            } else {
-                result.ok = 0;
-                if (!result.error) result.error = strdup("App was removed, but unused runtime cleanup failed");
-            }
+        /* The app is a --user deployment in its own UID directory; the shared
+         * runtime lives in the runtime app's --system directory. Both are
+         * resolved from the ref; no legacy global installation exists. */
+        char system_dir[256], user_dir[256];
+        if (app_install_roots(operation->ref, system_dir, sizeof(system_dir),
+                user_dir, sizeof(user_dir))) {
+            result.ok = 0;
+            result.exit_code = 1;
+            result.error = strdup("installed application deployment not found");
+        } else {
+            const char* args_with_delete[] = {"--user", "uninstall", "--delete-data", "--noninteractive", "--assumeyes", operation->ref};
+            const char* args_keep_data[] = {"--user", "uninstall", "--noninteractive", "--assumeyes", operation->ref};
+            child = operation->delete_data ? run_cli_in(args_with_delete, sizeof(args_with_delete) / sizeof(args_with_delete[0]), 1, system_dir, user_dir) :
+                    run_cli_in(args_keep_data, sizeof(args_keep_data) / sizeof(args_keep_data[0]), 1, system_dir, user_dir);
+            result_from_child(&result, &child);
             free(child.output);
+            if (result.ok) {
+                /* Prune unused runtimes from the shared --system installation. */
+                const char* cleanup_args[] = {"--system", "uninstall", "--unused", "--noninteractive", "--assumeyes"};
+                child = run_cli_in(cleanup_args, sizeof(cleanup_args) / sizeof(cleanup_args[0]), 1, system_dir, NULL);
+                result.has_unused_cleanup = 1;
+                result.unused_cleanup_ok = child.status == 0;
+                result.unused_cleanup_exit_code = child.status;
+                if (child.status) {
+                    result.ok = 0;
+                    if (!result.error) result.error = strdup("App was removed, but unused runtime cleanup failed");
+                }
+                free(child.output);
+            }
         }
     } else {
         char system_dir[256], user_dir[256], error[512] = {0};
@@ -639,15 +698,16 @@ static void* reap_graphical(void* argument) {
  * sandbox, where bwrap, running as system, cannot create flatpak's
  * /tmp/.X11-unix mount point. A system-wide override gives every sandbox a
  * private /tmp instead; applied once, it lives in the Flatpak installation. */
-static void deny_host_tmp(void) {
-    static int applied;
-    if (applied) return;
-    char buffer[4096] = {0};
-    int fd = open("/data/matonos/linux/flatpak/overrides/global", O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd >= 0) { ssize_t got = read(fd, buffer, sizeof(buffer) - 1); close(fd); if (got > 0 && strstr(buffer, "!/tmp")) { applied = 1; return; } }
+static void deny_host_tmp(const char* system_dir) {
+    static char applied_dir[256];
+    if (system_dir && !strcmp(applied_dir, system_dir)) return;
+    char override_path[320], buffer[4096] = {0};
+    if (!system_dir || snprintf(override_path, sizeof(override_path), "%s/overrides/global", system_dir) >= (int)sizeof(override_path)) return;
+    int fd = open(override_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd >= 0) { ssize_t got = read(fd, buffer, sizeof(buffer) - 1); close(fd); if (got > 0 && strstr(buffer, "!/tmp")) { snprintf(applied_dir, sizeof(applied_dir), "%s", system_dir); return; } }
     const char* args[] = {"--system", "override", "--nofilesystem=/tmp"};
-    ChildResult child = run_cli(args, 3, 0);
-    if (child.status == 0) applied = 1;
+    ChildResult child = run_cli_in(args, 3, 0, system_dir, NULL);
+    if (child.status == 0) snprintf(applied_dir, sizeof(applied_dir), "%s", system_dir);
     else __android_log_print(ANDROID_LOG_WARN, "matonos-linuxd", "cannot apply the global /tmp override (status %d)", child.status);
     free(child.output);
 }
@@ -851,7 +911,7 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
     if (metadata.status == 0 && !metadata.truncated)
         controllers = declared_controllers(metadata.output, &all_devices) && game_controllers;
     free(metadata.output);
-    deny_host_tmp();
+    deny_host_tmp(system_install);
     /* Keep sources above the fixed child slots 198/199 so spawn dup2 actions
      * cannot overwrite another capability before it has been copied. */
     int capability = fcntl(runtime_directory_fd, F_DUPFD_CLOEXEC, 200);
@@ -992,8 +1052,12 @@ static void read_desktop_entry(const char* ref, FlatpakResult* result) {
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
         set_error(result, "valid installed application ref required"); return;
     }
-    const char* args[] = {"--system", "info", "--show-location", ref};
-    ChildResult child = run_cli(args, 4, 0);
+    char system_dir[256], user_dir[256];
+    if (app_install_roots(ref, system_dir, sizeof(system_dir), user_dir, sizeof(user_dir))) {
+        set_error(result, "installed application deployment not found"); return;
+    }
+    const char* args[] = {"--user", "info", "--show-location", ref};
+    ChildResult child = run_cli_in(args, 4, 0, system_dir, user_dir);
     if (child.status != 0) {
         result_from_child(result, &child); return;
     }
@@ -1006,13 +1070,16 @@ static void read_desktop_entry(const char* ref, FlatpakResult* result) {
     size_t length = (size_t)(slash - (ref + 4));
     if (length >= sizeof(app_id)) { free(child.output); set_error(result, "application ID too long"); return; }
     memcpy(app_id, ref + 4, length); app_id[length] = 0;
-    if (strncmp(child.output, "/data/matonos/linux/flatpak/app/", strlen("/data/matonos/linux/flatpak/app/")) != 0 ||
+    /* The deployment must be a per-app --user install under
+     * /data/matonos/linux/apps/<uid>/app/. */
+    static const char per_app[] = "/data/matonos/linux/apps/";
+    if (strncmp(child.output, per_app, strlen(per_app)) != 0 ||
             snprintf(path, sizeof(path), "%s/export/share/applications/%s.desktop", child.output, app_id) >= (int)sizeof(path)) {
         free(child.output); set_error(result, "invalid application location"); return;
     }
     char root[4096], resolved[4096];
     if (!realpath(child.output, root) ||
-            strncmp(root, "/data/matonos/linux/flatpak/app/", strlen("/data/matonos/linux/flatpak/app/")) ||
+            strncmp(root, per_app, strlen(per_app)) != 0 ||
             !realpath(path, resolved) ||
             strncmp(resolved, root, strlen(root)) != 0 || resolved[strlen(root)] != '/') {
         free(child.output); set_error(result, "desktop entry must remain inside its installed deployment"); return;
@@ -1035,14 +1102,19 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref,"app/",4) != 0) {
         set_error(result,"valid installed application ref required"); return;
     }
-    const char* args[] = {"--system","info","--show-location",ref};
-    ChildResult location = run_cli(args,4,0);
+    char system_dir[256], user_dir[256];
+    if (app_install_roots(ref, system_dir, sizeof(system_dir), user_dir, sizeof(user_dir))) {
+        set_error(result,"installed application deployment not found"); return;
+    }
+    const char* args[] = {"--user","info","--show-location",ref};
+    ChildResult location = run_cli_in(args,4,0,system_dir,user_dir);
     if (location.status != 0) { result_from_child(result,&location); return; }
     if (!location.output || location.truncated) { free(location.output); set_error(result,"invalid deployment location"); return; }
     location.output[strcspn(location.output,"\r\n")] = 0;
     char root[4096];
-    if (strncmp(location.output,"/data/matonos/linux/flatpak/app/",strlen("/data/matonos/linux/flatpak/app/")) || !realpath(location.output,root) ||
-            strncmp(root,"/data/matonos/linux/flatpak/app/",strlen("/data/matonos/linux/flatpak/app/"))) {
+    static const char per_app[] = "/data/matonos/linux/apps/";
+    if (strncmp(location.output,per_app,strlen(per_app)) || !realpath(location.output,root) ||
+            strncmp(root,per_app,strlen(per_app))) {
         free(location.output); set_error(result,"invalid deployment location"); return;
     }
     free(location.output);
@@ -1137,6 +1209,51 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
     free(bytes); result->output=encoded; result->ok=1; result->exit_code=0;
 }
 
+/* List app refs by running stock Flatpak against each per-app --user
+ * installation under /data/matonos/linux/apps/<uid>. There is no global
+ * Flatpak installation any more. */
+static void list_installed_refs(FlatpakResult* result) {
+    size_t capacity = 4096, used = 1;
+    char* list = malloc(capacity);
+    if (!list) { set_error(result, "cannot allocate installed list"); return; }
+    list[0] = '\0';
+    DIR* apps = opendir("/data/matonos/linux/apps");
+    if (!apps) { free(list); set_error(result, "cannot read installed applications"); return; }
+    struct dirent* entry;
+    int truncated = 0;
+    while (!truncated && (entry = readdir(apps))) {
+        char* end = NULL;
+        long uid = strtol(entry->d_name, &end, 10);
+        if (!*entry->d_name || *end || uid < 10000 || uid > INT_MAX ||
+                uid % 100000 < 10000 || uid % 100000 > 19999) continue;
+        char user_dir[256], system_dir[256];
+        snprintf(user_dir, sizeof(user_dir), "/data/matonos/linux/apps/%ld", uid);
+        int runtime_uid = -1;
+        if (remembered_runtime_install((int)uid, &runtime_uid) == 0)
+            snprintf(system_dir, sizeof(system_dir), "/data/matonos/linux/apps/%d", runtime_uid);
+        else
+            snprintf(system_dir, sizeof(system_dir), "%s", user_dir);
+        const char* args[] = {"--user", "list", "--app", "--columns=ref"};
+        ChildResult child = run_cli_in(args, 4, 0, system_dir, user_dir);
+        if (child.status == 0 && child.output) {
+            size_t n = strlen(child.output);
+            if (used + n > capacity) {
+                size_t next = capacity;
+                while (next < used + n) next *= 2;
+                char* grown = realloc(list, next);
+                if (!grown) { truncated = 1; break; }
+                list = grown; capacity = next;
+            }
+            memcpy(list + used - 1, child.output, n + 1);
+            used += n;
+        }
+        free(child.output);
+    }
+    closedir(apps);
+    if (truncated) { free(list); set_error(result, "installed application list too large"); return; }
+    result->output = list; result->ok = 1; result->exit_code = 0;
+}
+
 void flatpak_manager_call(const char* command, const char* ref, const char* app_id,
         const char* const* run_args, size_t run_arg_count, int delete_data,
         const char* operation_id, const char* app_commit, const char* runtime_ref,
@@ -1146,8 +1263,12 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
     memset(result, 0, sizeof(*result));
     result->exit_code = 127;
     if (!command) { set_error(result, "unsupported Flatpak command"); return; }
-    if (strcmp(command, "list_installed") == 0 || strcmp(command, "list_remotes") == 0 ||
-            strcmp(command, "add_flathub") == 0) {
+    if (strcmp(command, "list_installed") == 0) { list_installed_refs(result); return; }
+    /* Remote management still targets a single installation. Like the other
+     * operations it should run against the runtime app's --system install for
+     * the calling Android user; until that UID reaches linuxd it keeps the
+     * legacy defaults from flatpak_manager_init. */
+    if (strcmp(command, "list_remotes") == 0 || strcmp(command, "add_flathub") == 0) {
         ChildResult child;
         int changes_remote = strcmp(command, "add_flathub") == 0;
         // Flatpak supports listing the committed state during a transaction.
@@ -1156,10 +1277,7 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
             set_error(result, "A Flatpak operation is already running. Try again when it finishes.");
             return;
         }
-        if (strcmp(command, "list_installed") == 0) {
-            const char* args[] = {"--system", "list", "--app", "--columns=ref"};
-            child = run_cli(args, sizeof(args) / sizeof(args[0]), 0);
-        } else if (strcmp(command, "list_remotes") == 0) {
+        if (strcmp(command, "list_remotes") == 0) {
             const char* args[] = {"--system", "remotes", "--show-details"};
             child = run_cli(args, sizeof(args) / sizeof(args[0]), 0);
         } else {
@@ -1180,8 +1298,12 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
         if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4)) {
             set_error(result, "valid application ref required"); return;
         }
-        const char* args[] = {"--system", "info", "--show-metadata", ref};
-        ChildResult child = run_cli(args, 4, 0);
+        char system_dir[256], user_dir[256];
+        if (app_install_roots(ref, system_dir, sizeof(system_dir), user_dir, sizeof(user_dir))) {
+            set_error(result, "installed application deployment not found"); return;
+        }
+        const char* args[] = {"--user", "info", "--show-metadata", ref};
+        ChildResult child = run_cli_in(args, 4, 0, system_dir, user_dir);
         result_from_child(result, &child); free(child.output);
     } else if (strcmp(command, "desktop_entry") == 0) {
         read_desktop_entry(ref, result);
