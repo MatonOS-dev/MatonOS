@@ -54,5 +54,43 @@ int dns_tcp_frame_write(uint8_t *output, size_t capacity, const uint8_t *message
 
 void dns_forwarder_address(uint32_t uid, char output[16]) {
     if (output == NULL) return;
-    snprintf(output, 16, "127.10.%u.%u", (uid >> 8) & 0xff, uid & 0xff);
+    snprintf(output, 16, "127.%u.%u.%u", 10 + ((uid >> 16) & 0x3f),
+             (uid >> 8) & 0xff, uid & 0xff);
+}
+
+int dns_forwarder_udp_uid(const struct dns_udp_diag_socket *sockets, size_t count,
+                          struct in_addr source_address, uint16_t source_port,
+                          struct in_addr destination_address, uint16_t destination_port,
+                          uint32_t *uid) {
+    if (sockets == NULL || uid == NULL || source_port == 0) return -1;
+    int found = 0;
+    uint32_t found_uid = 0;
+    /* Prefer the exact connected tuple when inet_diag reports a remote peer. */
+    for (size_t i = 0; i < count; ++i) {
+        if (sockets[i].local_port != source_port || sockets[i].remote_port == 0 ||
+            sockets[i].remote_port != destination_port ||
+            sockets[i].remote_address.s_addr != destination_address.s_addr) continue;
+        uint32_t address = ntohl(sockets[i].local_address.s_addr);
+        uint32_t source = ntohl(source_address.s_addr);
+        if (address != source) continue;
+        if (found && found_uid != sockets[i].uid) return -1;
+        found_uid = sockets[i].uid;
+        found = 1;
+    }
+    if (found) { *uid = found_uid; return 0; }
+    for (size_t i = 0; i < count; ++i) {
+        if (sockets[i].local_port != source_port) continue;
+        if (sockets[i].remote_port != 0) continue;
+        uint32_t address = ntohl(sockets[i].local_address.s_addr);
+        uint32_t source = ntohl(source_address.s_addr);
+        int wildcard = address == INADDR_ANY;
+        int loopback = (address >> 24) == 127;
+        if (!wildcard && (!loopback || address != source)) continue;
+        if (found && found_uid != sockets[i].uid) return -1;
+        found_uid = sockets[i].uid;
+        found = 1;
+    }
+    if (!found) return -1;
+    *uid = found_uid;
+    return 0;
 }
