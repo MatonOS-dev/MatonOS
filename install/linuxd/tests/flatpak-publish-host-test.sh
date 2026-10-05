@@ -4,6 +4,8 @@ set -euo pipefail
 WORKTREE=$(cd "$(dirname "$0")/../../.." && pwd)
 CACHE=${MATONOS_FLATPAK_TEST_REPO:-/mnt/data/aosp/out/pc-logs/musl-324/layout-test-final3/R}
 STATIC=${MATONOS_FLATPAK_TEST_BINARY:-$WORKTREE/linux/flatpak/prebuilt/static/x86_64/matonos-flatpak}
+STORE=${MATONOS_FLATPAK_STORE_TEST_BINARY:-$WORKTREE/linux/flatpak/prebuilt/static/x86_64/matonos-flatpak-store}
+LAUNCHER_PROBE=${MATONOS_FLATPAK_LAUNCHER_PROBE:-}
 APP_REF=app/org.gnome.Calculator/x86_64/stable
 APP_COMMIT=0032886e3396c2e0cb107d453d600301c8090241d3fef31ca3f688510dba0e43
 RUNTIME_REF=runtime/org.gnome.Platform/x86_64/51
@@ -20,6 +22,10 @@ report_case_time() {
 if [[ ! -x "$STATIC" || ! -d "$CACHE" ]]; then
   echo "static Flatpak binary or cached Flathub repo is unavailable" >&2
   exit 2
+fi
+if [[ -x "$STORE" ]]; then
+  "$STORE" selftest
+  echo "PASS static-musl installer store helper selftest"
 fi
 TMP=$(mktemp -d "$WORKTREE/.flatpak-publish-test.XXXXXX")
 cleanup() {
@@ -114,6 +120,7 @@ FLATPAK_SYSTEM_DIR="${GOOD[0]}/S" FLATPAK_USER_DIR="${GOOD[0]}/U" \
    ! -e ${GOOD[0]}/U/overrides/org.gnome.Calculator ]]
 echo "PASS good signed runtime/app published"
 if [[ ${MATONOS_PUBLISH_RUN_LAUNCH_TEST:-0} == 1 ]]; then
+  export MATONOS_FLATPAK_LAUNCHER_PROBE="$LAUNCHER_PROBE"
   bash "$WORKTREE/linux/flatpak/tests/launch-chain-host-probe.sh" "${GOOD[0]}/S" "${GOOD[0]}/U"
 fi
 report_case_time good "$case_start"

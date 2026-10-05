@@ -479,7 +479,7 @@ static int vol_ensure(const char* app_id, unsigned long long size_mb) {
 
 /* Self-test of the host-side primitives; safe without root or device nodes. */
 static int selftest(void) {
-    char dir[] = "/tmp/opencode/matonos-store-selftest-XXXXXX";
+    char dir[] = "/tmp/matonos-store-selftest-XXXXXX";
     if (!mkdtemp(dir)) return fail("mkdtemp: %s", strerror(errno));
     char image[600];
     snprintf(image, sizeof(image), "%s/runtime.img", dir);
