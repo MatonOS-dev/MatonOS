@@ -26,8 +26,8 @@ pins for this branch.
 | Path | Repository | Based on | What we change |
 | --- | --- | --- | --- |
 | `linux/flatpak-static` | [flatpak](https://github.com/MatonOS-dev/flatpak) | `matonos/v26.10`, `03e6b205d01c9560a829941d95065a7c683d9667` | Alpine 3.24 static Flatpak source and build inputs |
-| `linux/flatpak-static/gpgme-lite` | [DullPGP](https://github.com/MatonOS-dev/DullPGP) | MatonOS fork | Portable OpenPGP verification for the static Flatpak/OSTree executable |
-| `linux/flatpak/prebuilt/static` | [MatonOS_apexs](https://github.com/MatonOS-dev/MatonOS_apexs) | output artifact; source commit and SHA-256 are recorded beside the payload | Signed static APEX payload inputs |
+| `linux/flatpak-static/gpgme-lite` | [DullPGP](https://github.com/MatonOS-dev/DullPGP) | `195ed326465e898711012cd877556510f32d3fbc` | Portable OpenPGP verification for the static Flatpak/OSTree executable |
+| `linux/flatpak/prebuilt/static` | [MatonOS_apexs](https://github.com/MatonOS-dev/MatonOS_apexs) | `bbdc6994e618627e6692e6df90ae9c26e61e0421`; binary SHA-256 recorded in `prebuilt/static/SOURCE` | Alpine 3.24 static APEX payload inputs |
 
 Changing a fork: commit on `matonos/v1.2` in the project checkout, push to its
 MatonOS-dev repository, and upstream the fix where it makes sense.
