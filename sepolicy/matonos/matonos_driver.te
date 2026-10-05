@@ -200,8 +200,8 @@ allow hal_graphics_composer_default graphics_device:dir r_dir_perms;
 # node and enumerates /dev/dri; it does not open the DRM node in this capture.
 allow bootanim graphics_device:chr_file getattr;
 allow bootanim graphics_device:dir r_dir_perms;
-# Mesa clients read only the PCI vendor and uevent metadata for the GPU.
-allow { bootanim hal_graphics_allocator_default surfaceflinger } sysfs_gpu:file { getattr open read };
+# Graphics clients can consume the detector's boot-time summary properties.
+get_prop({ bootanim hal_graphics_allocator_default surfaceflinger }, vendor_maton_prop)
 # The composer enumerates the backlight class to discover available outputs.
 type sysfs_pc_backlight, fs_type, sysfs_type;
 allow hal_graphics_composer_default sysfs_pc_backlight:dir r_dir_perms;

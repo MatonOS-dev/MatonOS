@@ -11,30 +11,33 @@
 # Check whether a render node belongs to the driver's expected PCI GPU. This
 # prevents a concurrently loaded vgem node (or a second adapter) from masking
 # the real GPU's not-yet-created node.
-# Does a DRM render node belong to one of the expected GPUs? Match by the
+# Find a DRM render node belonging to one of the expected GPUs. Match by the
 # node's PCI vendor/device. The old code compared the node's *bus* driver
 # (e.g. virtio-pci) against the *DRM* driver name (virtio_gpu); they differ
 # for virtio-gpu and the faux/vgem node, so a real virtio-gpu render node was
 # never recognised and the detector forced the software (llvmpipe) fallback
 # on QEMU virgl. A node with no PCI parent is the faux/vgem software node.
-has_render_node() {
+find_render_node() {
     expected=$1
+    render_node=""
     for node in /sys/class/drm/renderD*; do
         [ -e "$node" ] || continue
         v=""; d=""
         [ -e "$node/device/vendor" ] && read -r v < "$node/device/vendor" 2>/dev/null
         [ -e "$node/device/device" ] && read -r d < "$node/device/device" 2>/dev/null
         if [ -z "$v" ]; then
-            case " $expected " in *" vgem "*) return 0 ;; esac
+            case " $expected " in
+                *" vgem "*) render_node=$node; return 0 ;;
+            esac
             continue
         fi
         for want in $expected; do
             case "$want" in
-                i915|xe)       [ "$v" = "0x8086" ] && return 0 ;;
-                amdgpu|radeon) [ "$v" = "0x1002" ] && return 0 ;;
-                nouveau)       [ "$v" = "0x10de" ] && return 0 ;;
-                virtio_gpu)    [ "$v" = "0x1af4" ] && [ "$d" = "0x1050" ] && return 0 ;;
-                vmwgfx)        [ "$v" = "0x15ad" ] && return 0 ;;
+                i915|xe)       [ "$v" = "0x8086" ] && render_node=$node && return 0 ;;
+                amdgpu|radeon) [ "$v" = "0x1002" ] && render_node=$node && return 0 ;;
+                nouveau)       [ "$v" = "0x10de" ] && render_node=$node && return 0 ;;
+                virtio_gpu)    [ "$v" = "0x1af4" ] && [ "$d" = "0x1050" ] && render_node=$node && return 0 ;;
+                vmwgfx)        [ "$v" = "0x15ad" ] && render_node=$node && return 0 ;;
             esac
         done
     done
@@ -44,6 +47,10 @@ has_render_node() {
 primary=""
 first=""
 supported_drivers=""
+vendor="unknown"
+device="unknown"
+driver="unknown"
+render_node=""
 for dev in /sys/bus/pci/devices/*; do
     read -r class < "$dev/class" 2>/dev/null || continue
     case $class in 0x03*) ;; *) continue ;; esac
@@ -93,7 +100,6 @@ if [ -n "$primary" ]; then
             # virtio-gpu (0x1050); Mesa's venus needs host Vulkan (QEMU venus=on)
             [ "$device" = "0x1050" ] && vk=virtio ;;
     esac
-    setprop vendor.maton.graphics.gpu "$vendor:$device"
 fi
 
 # Wait at most 1.5 seconds for the expected render node. A missing node after
@@ -101,19 +107,19 @@ fi
 # still has a render node and SurfaceFlinger can boot.
 attempt=0
 while [ -n "$supported_drivers" ] && [ "$attempt" -lt 15 ] &&
-      ! has_render_node "$supported_drivers"; do
+      ! find_render_node "$supported_drivers"; do
     sleep 0.1
     attempt=$((attempt + 1))
 done
 
 # A GPU-specific Vulkan HAL cannot create a device without its kernel render
 # node. Match the software EGL fallback in that case.
-if [ -n "$supported_drivers" ] && ! has_render_node "$supported_drivers"; then
+if [ -n "$supported_drivers" ] && ! find_render_node "$supported_drivers"; then
     vk=swrast
 fi
 
-if { [ -z "$supported_drivers" ] || ! has_render_node "$supported_drivers"; } &&
-   ! has_render_node "vgem"; then
+if { [ -z "$supported_drivers" ] || ! find_render_node "$supported_drivers"; } &&
+   ! find_render_node "vgem"; then
     # vgem is a shmem-backed DRM render node. Mesa's kms_swrast/llvmpipe
     # renders into its buffers; drm_hwcomposer sends frames to real KMS.
     #
@@ -140,6 +146,30 @@ if { [ -z "$supported_drivers" ] || ! has_render_node "$supported_drivers"; } &&
         fi
     fi
 fi
+
+# Publish a hardware-independent summary for platform readers. Clients use
+# these properties instead of opening PCI sysfs nodes themselves.
+mode=software
+if [ -n "$supported_drivers" ] && find_render_node "$supported_drivers"; then
+    mode=hardware
+elif ! find_render_node "vgem"; then
+    render_node=""
+fi
+driver_link=""
+if [ -n "$render_node" ]; then
+    driver_link=$(readlink "$render_node/device/driver" 2>/dev/null)
+fi
+[ -z "$driver_link" ] && [ -n "$primary" ] &&
+    driver_link=$(readlink "$primary/driver" 2>/dev/null)
+[ -n "$driver_link" ] && driver=${driver_link##*/}
+render_path="unknown"
+[ -n "$render_node" ] && render_path="/dev/dri/${render_node##*/}"
+setprop vendor.maton.graphics.gpu "$vendor:$device"
+setprop vendor.maton.graphics.vendor "$vendor"
+setprop vendor.maton.graphics.device "$device"
+setprop vendor.maton.graphics.driver "$driver"
+setprop vendor.maton.graphics.render_node "$render_path"
+setprop vendor.maton.graphics.mode "$mode"
 
 # No hardware Vulkan driver for this GPU (old Intel, VMware, unknown): swrast
 # is Mesa's LLVM software Vulkan implementation.

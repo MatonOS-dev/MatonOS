@@ -34,10 +34,15 @@ forced to `egl-headless` by the VM rule.
 
 ## GPU detection and fallback
 
-At early-init, init starts `pc-gpu-detect.sh` in the background. The bounded
-detector chooses the Vulkan HAL from the primary display PCI ID and writes
-`vendor.maton.graphics.vulkan`; an init property trigger sets
-`ro.hardware.vulkan`, which the loader uses. It waits up to 1.5 seconds for
+At early-init, init runs `pc-gpu-detect.sh` synchronously. This completes
+before the later core-service start actions, including SurfaceFlinger and the
+allocator. The bounded detector chooses the Vulkan HAL from the primary
+display PCI ID and writes `vendor.maton.graphics.vulkan`; an init property
+trigger sets `ro.hardware.vulkan`, which the loader uses. It also publishes
+`vendor.maton.graphics.{vendor,device,driver,render_node,mode}` using the
+existing `vendor.maton.` property context and `vendor_maton_prop` type. These
+properties report PCI IDs, the DRM driver, `/dev/dri/renderD*` (or `unknown`),
+and `hardware` or `software` rendering mode. It waits at most 1.5 seconds for
 the selected kernel driver, then attempts a three-second vgem load and enables
 Mesa software rendering if no expected render node appears. Detection errors
 leave Android's boot path free to continue; the software Vulkan HAL is the
@@ -47,6 +52,15 @@ The vgem/llvmpipe no-GPU path has not been verified on physical hardware. Its
 DMA-BUF import and scanout behavior depends on the active KMS driver; keep
 the boot fallback report and test checklist below current as that path is
 validated.
+
+The device tree's only GPU PCI metadata reader is this detector. Mesa, minigbm,
+drm_hwcomposer, boot animation, and AOSP framework implementations are staged
+or built outside this tree, so their source-level sysfs behavior could not be
+changed here. The former policy grants show that `bootanim`, the graphics
+allocator, SurfaceFlinger, `system_server`, and platform apps had GPU sysfs
+read access. They now have no such grant; any remaining direct reads will
+produce SELinux denials and need source/configuration changes in the owning
+component. Check AVCs on the debug-permissive real-hardware boot.
 
 ## Real hardware checks
 
