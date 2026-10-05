@@ -1383,7 +1383,7 @@ commercial (monthly security updates would then be expected).
   own release keys, AVB, signed shim/Secure Boot.
 - **Versioning: Ubuntu-style `YY.MM.P`** (e.g. 26.12, point release
   26.12.1; internally 26.12.0). v1–v4 remain development milestones;
-  releases are named by date. Set in the rename pass: `ro.matonos.version`,
+  releases are named by date. Set in the rename pass: `ro.vendor.matonos.version`,
   build display ID ("MatonOS 26.12" in Settings → About), image/OTA file
   names (`matonos-26.12.0-live-x86_64.img`), updater feed comparisons.
 - **Release schedule: twice a year**, each release tracking one AOSP source

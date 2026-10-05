@@ -29,7 +29,7 @@ fi
 DEVICE_RELEASE=$($ADB -s "$SERIAL" shell uname -r | tr -d '\r')
 RELEASE=$(cat "$KOUT/include/config/kernel.release")
 [[ $DEVICE_RELEASE == "$RELEASE" ]] || die "prepared kernel $RELEASE differs from booted image $DEVICE_RELEASE"
-MATONOS_VERSION=${MATONOS_VERSION:-$($ADB -s "$SERIAL" shell getprop ro.matonos.version | tr -d '\r')}
+MATONOS_VERSION=${MATONOS_VERSION:-$($ADB -s "$SERIAL" shell getprop ro.vendor.matonos.version | tr -d '\r')}
 MATONOS_VERSION=${MATONOS_VERSION:-dev-$RELEASE}
 [[ $MATONOS_VERSION =~ ^[A-Za-z0-9._+-]{1,64}$ ]] || die "unsafe MatonOS release value"
 RELEASE_REPO=${MATON_ADDON_TEST_REPO_ROOT:-$AOSP/out/pc-logs/addons-repo}/$MATONOS_VERSION/addons

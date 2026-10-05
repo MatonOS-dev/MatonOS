@@ -197,9 +197,9 @@ StreamPrimary::AlsaDeviceId StreamPrimary::getCardAndDeviceId(
 bool StreamPrimary::useStubStream(
         bool isInput, const ::aidl::android::media::audio::common::AudioDevice& device) {
     static const bool kSimulateInput =
-            GetBoolProperty("ro.boot.audio.tinyalsa.simulate_input", false);
+            GetBoolProperty("vendor.maton.audio.tinyalsa.simulate_input", false);
     static const bool kSimulateOutput =
-            GetBoolProperty("ro.boot.audio.tinyalsa.ignore_output", false);
+            GetBoolProperty("vendor.maton.audio.tinyalsa.ignore_output", false);
     if (isInput) {
         return kSimulateInput || device.type.type == AudioDeviceType::IN_TELEPHONY_RX ||
                device.type.type == AudioDeviceType::IN_FM_TUNER ||
