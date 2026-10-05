@@ -1191,6 +1191,24 @@ static void list_installed_refs(FlatpakResult* result) {
     result->output = list; result->ok = 1; result->exit_code = 0;
 }
 
+int flatpak_manager_prepare(const char* ref, const char* remote,
+        char* app_commit, unsigned long app_commit_size,
+        char* runtime_ref, unsigned long runtime_ref_size,
+        char* runtime_commit, unsigned long runtime_commit_size,
+        char* metadata, unsigned long metadata_size,
+        char* desktop, unsigned long desktop_size,
+        char* error, unsigned long error_size) {
+    if (error && error_size) error[0] = '\0';
+    if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4)) {
+        if (error && error_size) snprintf(error, error_size, "valid application ref required");
+        return -1;
+    }
+    return flatpak_prepare(ref, (remote && *remote) ? remote : "flathub",
+            "/data/matonos/linux/staging", app_commit, app_commit_size,
+            runtime_ref, runtime_ref_size, runtime_commit, runtime_commit_size,
+            metadata, metadata_size, desktop, desktop_size, error, error_size);
+}
+
 void flatpak_manager_call(const char* command, const char* ref, const char* app_id,
         int delete_data, const char* operation_id, const char* app_commit,
         const char* runtime_ref, const char* runtime_commit, const char* remote,

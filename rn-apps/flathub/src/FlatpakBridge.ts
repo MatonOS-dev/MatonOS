@@ -25,9 +25,29 @@ export async function callFlatpak(command: string, args: unknown = {}) {
   return response;
 }
 
-export async function installApp(ref: string, operationId: string) {
+export async function installApp(ref: string, operationId: string, iconBase64?: string) {
   await callFlatpak("add_flathub");
-  return callFlatpak("install", { ref, operationId });
+  const args: Record<string, string> = { ref, operationId };
+  if (iconBase64) args.icon = iconBase64;
+  return callFlatpak("install", args);
+}
+
+/** Fetch a Flathub appstream icon as base64 for the stub generator. */
+export async function fetchIconBase64(url: string): Promise<string | undefined> {
+  if (!url) return undefined;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return undefined;
+    const blob = await response.blob();
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+    const comma = dataUrl.indexOf(",");
+    return comma >= 0 ? dataUrl.slice(comma + 1) : undefined;
+  } catch { return undefined; }
 }
 
 export async function uninstallApp(ref: string, operationId: string, deleteData = false) {

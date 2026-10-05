@@ -273,6 +273,36 @@ class LinuxdService final : public BnLinuxd {
             }
             closedir(dir);reply(Encode(out));return android::binder::Status::ok();
         }
+        if (command == "stage") {
+            /* Flow B: stage a signed app and return its pins plus the metadata
+             * and exported desktop entry, so the stub can be built first. */
+            if (!OnlyKeys(request, {"ref", "remote"}) || !request["ref"].isString() ||
+                    HasEmbeddedNul(request["ref"].asString()) ||
+                    (request.isMember("remote") && (!request["remote"].isString() ||
+                            HasEmbeddedNul(request["remote"].asString())))) {
+                reply(Encode(Error("a Flatpak ref is required")));
+                return android::binder::Status::ok();
+            }
+            const std::string ref = request["ref"].asString();
+            const std::string remote = request.isMember("remote") ? request["remote"].asString() : std::string("flathub");
+            std::vector<char> app_commit(65), runtime_ref(512), runtime_commit(65), metadata(16384), desktop(131072), error(512);
+            if (flatpak_manager_prepare(ref.c_str(), remote.c_str(),
+                    app_commit.data(), app_commit.size(), runtime_ref.data(), runtime_ref.size(),
+                    runtime_commit.data(), runtime_commit.size(), metadata.data(), metadata.size(),
+                    desktop.data(), desktop.size(), error.data(), error.size())) {
+                reply(Encode(Error(error[0] ? error.data() : "cannot prepare Flatpak install")));
+                return android::binder::Status::ok();
+            }
+            Json::Value out; out["ok"] = true;
+            out["ref"] = ref;
+            out["appCommit"] = app_commit.data();
+            out["runtimeRef"] = runtime_ref.data();
+            out["runtimeCommit"] = runtime_commit.data();
+            out["metadata"] = metadata.data();
+            out["desktopEntry"] = desktop.data();
+            reply(Encode(out));
+            return android::binder::Status::ok();
+        }
         std::string ref_storage;
         std::string app_id_storage;
         const char* ref = nullptr;

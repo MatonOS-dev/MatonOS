@@ -319,4 +319,117 @@ final class FlatpakStubManager {
             } catch (Exception e) { pending.remove(pkg); installer.abandonSession(id); throw e; }
         } finally { desktop.delete(); apk.delete(); }
     }
+
+    /* ---- Flow B: stub first, then deploy ---------------------------------
+     * Stage the signed app, build its stub from the staged metadata/desktop
+     * (icon from the store when supplied), and once PackageManager has
+     * assigned the stub UID, publish the deployment to that UID. Runs on the
+     * worker so the Binder call returns immediately. */
+    String installAsync(String ref, org.json.JSONObject args) throws Exception {
+        if (ref == null || ref.length() > 255 || !ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"))
+            throw new IllegalArgumentException("Invalid application reference");
+        final String remote = args.optString("remote", "flathub");
+        final String icon = args.optString("icon", null);
+        final String operationId = args.optString("operationId", "");
+        worker.execute(() -> {
+            try { installStub(ref, stage(ref, remote), icon, remote, operationId); }
+            catch (Exception error) { Log.e(TAG, "Flatpak install failed for " + ref, error); }
+        });
+        return new JSONObject().put("ok", true).put("accepted", true).toString();
+    }
+
+    private JSONObject stage(String ref, String remote) throws Exception {
+        JSONObject request = new JSONObject().put("ref", ref).put("remote", remote);
+        JSONObject staged = new JSONObject(daemon().call("stage", request.toString()));
+        if (!staged.optBoolean("ok"))
+            throw new java.io.IOException(staged.optString("error", "Flatpak staging failed"));
+        return staged;
+    }
+
+    private void installStub(String ref, JSONObject staged, String icon, String remote,
+            String operationId) throws Exception {
+        String pkg = packageFor(ref);
+        File work = new File(context.getCacheDir(), "flatpak-stubs");
+        if (!work.isDirectory() && !work.mkdirs()) throw new java.io.IOException("Cannot create stub scratch directory");
+        File desktop = new File(work, pkg + ".desktop");
+        File apk = new File(work, pkg + ".apk");
+        try {
+            try (FileOutputStream out = new FileOutputStream(desktop)) {
+                out.write(staged.optString("desktopEntry").getBytes(StandardCharsets.UTF_8));
+            }
+            byte[] iconBytes = iconFromBase64(icon);
+            if (iconBytes == null) iconBytes = fallbackIcon();
+            StubGenerator.generate(work, ref, desktop, iconBytes,
+                    StubGenerator.permissionsForMetadata(staged.optString("metadata")), pkg, apk);
+            PackageInstaller installer = context.getPackageManager().getPackageInstaller();
+            PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+            params.setAppPackageName(pkg);
+            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED);
+            int id = installer.createSession(params);
+            try (PackageInstaller.Session session = installer.openSession(id)) {
+                try (FileInputStream input = new FileInputStream(apk); java.io.OutputStream output = session.openWrite("base.apk", 0, apk.length())) {
+                    byte[] buffer = new byte[32768]; int count;
+                    while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                    session.fsync(output);
+                }
+                /* Deploy only after PackageManager has installed the stub (so
+                 * the deployment lands in the stub UID's directory). */
+                afterInstall.put(id, () -> deployStub(ref, pkg, staged, remote, operationId));
+                pending.add(pkg);
+                session.commit(resultSender);
+            } catch (Exception e) { pending.remove(pkg); afterInstall.remove(id); installer.abandonSession(id); throw e; }
+        } finally { desktop.delete(); apk.delete(); }
+    }
+
+    private void deployStub(String ref, String pkg, JSONObject staged, String remote, String operationId) {
+        try {
+            PackageInfo info = context.getPackageManager().getPackageInfo(pkg, 0);
+            int stubUid = info.applicationInfo.uid;
+            int runtimeUid = runtimeAppUid(android.os.UserHandle.getUserId(stubUid));
+            if (stubUid < 10000 || runtimeUid < 10000) throw new java.io.IOException("Missing stub or runtime UID");
+            JSONObject request = new JSONObject()
+                    .put("ref", ref)
+                    .put("operationId", operationId == null ? "" : operationId)
+                    .put("appCommit", staged.getString("appCommit"))
+                    .put("runtimeRef", staged.getString("runtimeRef"))
+                    .put("runtimeCommit", staged.getString("runtimeCommit"))
+                    .put("remote", remote)
+                    .put("uid", stubUid)
+                    .put("runtimeUid", runtimeUid);
+            daemon().call("install", request.toString());
+        } catch (Exception error) { Log.e(TAG, "Flatpak deploy failed for " + ref, error); }
+    }
+
+    private ILinuxd daemon() throws Exception {
+        ILinuxd service = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
+        if (service == null) throw new IllegalStateException("Flatpak service is unavailable");
+        return service;
+    }
+
+    private int runtimeAppUid(int userId) {
+        try {
+            return context.getPackageManager().getApplicationInfoAsUser("org.matonos.linuxruntimes", 0, userId).uid;
+        } catch (Exception error) { return -1; }
+    }
+
+    private static byte[] fallbackIcon() {
+        Bitmap bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap); canvas.drawColor(Color.rgb(55, 95, 45));
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG); paint.setColor(Color.WHITE); paint.setTextSize(52); paint.setTextAlign(Paint.Align.CENTER);
+        canvas.drawText("L", 48, 67, paint);
+        ByteArrayOutputStream icon = new ByteArrayOutputStream(); bitmap.compress(Bitmap.CompressFormat.PNG, 100, icon); bitmap.recycle();
+        return icon.toByteArray();
+    }
+
+    private static byte[] iconFromBase64(String base64) {
+        if (base64 == null || base64.isEmpty()) return null;
+        try {
+            byte[] candidate = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
+            android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeByteArray(candidate, 0, candidate.length, bounds);
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth > 1024 || bounds.outHeight > 1024) return null;
+            return normalizeIcon(candidate);
+        } catch (Exception error) { return null; }
+    }
 }

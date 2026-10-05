@@ -384,3 +384,109 @@ int flatpak_publish(const char* app_ref, const char* app_commit,
     if (error && error_size) error[0] = '\0';
     return 0;
 }
+
+/* ---- Stub-first prepare (flow B) ----------------------------------------
+ * Stage the signed refs and read the app's /metadata and exported desktop
+ * entry straight from the staged commit, so the bridge can create the stub
+ * before anything is deployed. deploy then re-verifies the returned pins. */
+
+static int resolve_ref_commit(const char* repo, const char* remote, const char* ref,
+        char* out, size_t size) {
+    char rev[1024];
+    if (snprintf(rev, sizeof(rev), "%s:%s", remote, ref) >= (int)sizeof(rev)) return -1;
+    const char* args[] = {"rev-parse", rev};
+    if (run_ostree(repo, args, 2, out, size)) return -1;
+    out[strcspn(out, "\r\n \t")] = '\0';
+    return strlen(out) == 64 ? 0 : -1;
+}
+
+static int read_commit_file(const char* repo, const char* commit, const char* path,
+        char* out, size_t size) {
+    if (size) out[0] = '\0';
+    const char* args[] = {"cat", commit, path};
+    return run_ostree(repo, args, 3, out, size);
+}
+
+static int metadata_runtime_ref(const char* metadata, char* out, size_t size) {
+    const char* section = strstr(metadata ? metadata : "", "[Application]");
+    if (!section) return -1;
+    const char* end = strchr(section + 1, '[');
+    for (const char* line = section; line && (!end || line < end); ) {
+        const char* nl = strchr(line, '\n');
+        size_t len = nl ? (size_t)(nl - line) : strlen(line);
+        if (len > 8 && !strncmp(line, "runtime=", 8)) {
+            size_t vlen = len - 8;
+            while (vlen && (line[8 + vlen - 1] == '\r' || line[8 + vlen - 1] == ' ')) --vlen;
+            if (!vlen || vlen >= size) return -1;
+            memcpy(out, line + 8, vlen); out[vlen] = '\0';
+            return 0;
+        }
+        if (!nl) break;
+        line = nl + 1;
+    }
+    return -1;
+}
+
+static int app_id_from_ref(const char* ref, char* out, size_t size) {
+    if (!ref || strncmp(ref, "app/", 4)) return -1;
+    const char* first = strchr(ref + 4, '/');
+    if (!first) return -1;
+    size_t len = (size_t)(first - (ref + 4));
+    if (!len || len >= size) return -1;
+    memcpy(out, ref + 4, len); out[len] = '\0';
+    return 0;
+}
+
+int flatpak_prepare(const char* app_ref, const char* remote, const char* staging_dir,
+        char* app_commit, unsigned long app_commit_size,
+        char* runtime_ref_out, unsigned long runtime_ref_size,
+        char* runtime_commit, unsigned long runtime_commit_size,
+        char* metadata, unsigned long metadata_size,
+        char* desktop, unsigned long desktop_size,
+        char* error, unsigned long error_size) {
+    char staging_repo[PATH_MAX], app_install[512], runtime_install[512];
+    char runtime_ref[512] = {0}, app_id[256];
+    if (!app_ref || !remote || !staging_dir || !app_commit || !runtime_ref_out ||
+            !runtime_commit || !metadata || !desktop || !*remote ||
+            strncmp(app_ref, "app/", 4) || !valid_remote(remote)) {
+        fail(error, error_size, "invalid prepare request"); return -1;
+    }
+    if (snprintf(staging_repo, sizeof(staging_repo), "%s/repo", staging_dir) >= (int)sizeof(staging_repo)) {
+        fail(error, error_size, "staging path too long"); return -1;
+    }
+    if (!remote_verification_enabled(staging_repo, remote)) {
+        fail(error, error_size, "remote GPG verification and summary verification must both be enabled"); return -1;
+    }
+    if (make_install_ref(app_ref, app_install, sizeof(app_install)) ||
+            app_id_from_ref(app_ref, app_id, sizeof(app_id))) {
+        fail(error, error_size, "invalid application ref"); return -1;
+    }
+    if (stage_ref(staging_dir, remote, app_install)) {
+        fail(error, error_size, "signature-verified application staging pull failed"); return -1;
+    }
+    if (resolve_ref_commit(staging_repo, remote, app_ref, app_commit, app_commit_size)) {
+        fail(error, error_size, "cannot resolve staged application commit"); return -1;
+    }
+    metadata[0] = '\0';
+    if (read_commit_file(staging_repo, app_commit, "/metadata", metadata, metadata_size)) {
+        fail(error, error_size, "cannot read staged application metadata"); return -1;
+    }
+    if (metadata_runtime_ref(metadata, runtime_ref, sizeof(runtime_ref))) {
+        fail(error, error_size, "staged application declares no runtime"); return -1;
+    }
+    if (make_install_ref(runtime_ref, runtime_install, sizeof(runtime_install)) ||
+            stage_ref(staging_dir, remote, runtime_install)) {
+        fail(error, error_size, "signature-verified runtime staging pull failed"); return -1;
+    }
+    if (resolve_ref_commit(staging_repo, remote, runtime_ref, runtime_commit, runtime_commit_size)) {
+        fail(error, error_size, "cannot resolve staged runtime commit"); return -1;
+    }
+    snprintf(runtime_ref_out, runtime_ref_size, "%s", runtime_ref);
+    char desktop_path[512];
+    desktop[0] = '\0';
+    if (snprintf(desktop_path, sizeof(desktop_path),
+            "/export/share/applications/%s.desktop", app_id) < (int)sizeof(desktop_path))
+        (void)read_commit_file(staging_repo, app_commit, desktop_path, desktop, desktop_size);
+    if (error && error_size) error[0] = '\0';
+    return 0;
+}

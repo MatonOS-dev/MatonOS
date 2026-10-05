@@ -4,7 +4,7 @@ import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgress
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { clickable, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import { getAppById, getAppDetails, getCollection, searchApps, type StoreApp } from "./FlathubApi";
-import { getInstalledRefs, installApp, runApp, uninstallApp, type ProgressEvent } from "./FlatpakBridge";
+import { fetchIconBase64, getInstalledRefs, installApp, runApp, uninstallApp, type ProgressEvent } from "./FlatpakBridge";
 import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
 
 type Page = "browse" | "installed";
@@ -178,7 +178,8 @@ export default function App() {
     operationKindRef.current = "install";
     setBusyRef(app.ref); setProgress("Preparing installation…"); setPercent(null); setMessage("");
     try {
-      await installApp(app.ref, operationId);
+      const icon = await fetchIconBase64(app.icon);
+      await installApp(app.ref, operationId, icon);
       if (operationIdRef.current !== operationId) return;
       setProgress("Downloading and installing…");
       setTimeout(() => {

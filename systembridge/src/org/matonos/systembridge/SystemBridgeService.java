@@ -434,6 +434,12 @@ public final class SystemBridgeService extends Service {
                         long identity = Binder.clearCallingIdentity();
                         try { result = flatpakStubManager.launch(args.getString("appId")); }
                         finally { Binder.restoreCallingIdentity(identity); }
+                    } else if ("install".equals(command)) {
+                        /* Flow B: stage, create the stub, then deploy to the
+                         * stub UID once PackageManager assigns it. */
+                        if (!args.has("ref") || !(args.get("ref") instanceof String))
+                            throw new IllegalArgumentException("An application reference is required");
+                        result = flatpakStubManager.installAsync(args.getString("ref"), args);
                     } else {
                         if (("add_flathub".equals(command) || "list_remotes".equals(command)) && !args.has("runtimeUid")) {
                             int runtimeUid = runtimesUid(UserHandle.getUserId(Binder.getCallingUid()));
@@ -1180,7 +1186,7 @@ public final class SystemBridgeService extends Service {
                             !"1".equals(android.os.SystemProperties.get("persist.vendor.maton.flatpak_test")) ||
                             !"1".equals(android.os.SystemProperties.get("ro.boot.matonos.live")))
                         throw new SecurityException("flatpak test channel requires an armed live debug image and root");
-                    if (!Set.of("list_installed", "list_remotes", "add_flathub", "install",
+                    if (!Set.of("stage", "list_installed", "list_remotes", "add_flathub", "install",
                             "uninstall", "kill").contains(arg))
                         throw new IllegalArgumentException("unsupported flatpak test command");
                     String encoded = extras == null ? null : extras.getString("payload_b64");

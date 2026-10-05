@@ -34,20 +34,11 @@ Supersedes the "In flight"/"Next" of HANDOVER-2026-10-05-evening.md. Read
   `linux/flatpak/prebuilt/static/SOURCE` pin updated. Stale
   `out/.maton-build.lock` cleared.
 
-## Image build in progress
-Started by the coordinator while this was written:
-
-```sh
-cd device/maton/pc_x86_64
-MATON_BUILD_COORDINATOR=1 tools/build.sh -K -M -j 16
-```
-
-`-K -M` reuse the kernel/Mesa prebuilts (this build only needs AOSP + apps +
-the APEX + the live image). Log: `/tmp/opencode/image-build.log`; the
-coordinator also records status/artifact paths under
-`out/pc-logs/agents/` and the image under `~/matonos-images/` (or
-`$MATON_IMAGES_DIR`). Soong analysis alone peaks around 18 GB, so do not start
-a second build.
+## Image build stopped to land flow B
+The coordinator build was started (`MATON_BUILD_COORDINATOR=1 tools/build.sh -K
+-M -j 16`) and then stopped during Soong analysis so the first-install flow
+could be written into the tree; no image was produced. The stale
+`out/.maton-build.lock` was cleared. Rerun that command after this lands.
 
 ## Not validated on device
 Everything above is source-complete only. Nothing has booted since the static
@@ -71,18 +62,14 @@ APEX landed. MatonOS was never deployed — reset userdata, no migration.
    and its policy.
 
 ## Known open items
-- **First-install is two-phase (app UID is late-bound).** The app's `--user`
-  install UID is only known after its stub APK is installed (PackageManager
-  allocates it), so it is unavailable when the store first requests an
-  install. Intended flow: linuxd stages and installs into a temp directory
-  under the software store's UID (no stub exists yet); the bridge reads the
-  desktop entry/icon from that deployment, creates and installs the stub, and
-  PackageManager returns the stub UID; linuxd then re-homes/relabels the
-  deployment to `/data/matonos/linux/apps/<stub_uid>` and records the shared
-  runtime install. `flatpak_publish` currently takes `app_uid`/`runtime_uid`
-  up front, so it must be reworked to this flow. The shared `--system`
-  runtime install is owned by the Runtimes app and *is* known up front.
-  `add_flathub`/`list_remotes` are done.
+- **First-install flow B is implemented** (not device-validated): linuxd's
+  `stage` command stages the signed app + runtime and returns the pins,
+  `/metadata` and the exported desktop entry from the staged commit; the
+  bridge builds the stub with the store's appstream icon
+  (`FlatpakStubManager.installAsync`) and, once PackageManager installs it,
+  deploys to the stub UID (`install`). `add_flathub`/`list_remotes` inject the
+  runtime UID. The alternative install-then-rename flow (A) is documented in
+  `install/linuxd/CODE-STORAGE-r24.md`.
 - **dbus-java** 6.x is the eventual target (5.2.2 until it ships).
 - **Local-only, unpushed branches:** `codex/zones`, `codex/gpu-props`,
   `claude/musl-static-116`, `ds/glibc-integrate`.
