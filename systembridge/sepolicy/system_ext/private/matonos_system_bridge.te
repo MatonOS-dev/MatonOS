@@ -29,7 +29,8 @@ allow matonos_linuxd matonos_flatpak_data_file:dir create_dir_perms;
 allow matonos_linuxd matonos_flatpak_data_file:file create_file_perms;
 allow matonos_linuxd matonos_flatpak_data_file:lnk_file create_file_perms;
 allow matonos_linuxd matonos_flatpak_data_file:sock_file create_file_perms;
-allow matonos_linuxd self:capability { setuid setgid chown kill };
+allow matonos_linuxd self:capability { setuid setgid chown kill net_bind_service };
+allow matonos_linuxd dns_port:{ udp_socket tcp_socket } name_bind;
 allow matonos_linuxd self:process { fork sigchld signal };
 net_domain(matonos_linuxd)
 
