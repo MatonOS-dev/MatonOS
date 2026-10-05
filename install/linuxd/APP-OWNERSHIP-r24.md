@@ -73,11 +73,10 @@ labelled `matonos_app_code_exec`/`matonos_runtime_exec` via `context=` at
 mount time. The inodes are an exec_type (so the /data execution neverallow
 does not apply) and the images are read-only (so the exec_type write
 neverallow cannot be bypassed). Per-app code and volume are mounted only by the
-privileged `matonos_mount_helper`, outside the sandbox, which `setns()`es into
-the sandbox mount namespace; the payload is entered through the
-`matonos-app-exec` launcher's dyntransition at the stub's per-app MLS level,
-never a file entrypoint, and no capability enters the sandbox. No assertion was
-disabled and no AOSP project was modified; the policy compiles with
+stock `flatpak run`, which binds its app and runtime deployment. The payload is
+entered through the `matonos-app-exec` launcher's dyntransition at the stub's
+per-app MLS level, never a file entrypoint, and no capability enters the
+sandbox. No assertion was disabled and no AOSP project was modified; the policy compiles with
 `sepolicy_neverallows` and the merged `secilc` both passing.
 
 The sandbox chain is also asserted binder-free. Stock `domain.te` grants every

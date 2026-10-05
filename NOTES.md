@@ -451,19 +451,19 @@ Feature work continues, but in this shape from now on.
   neverallows forbid non-app domains from executing code on /data
   (system/sepolicy/private/domain.te ~1958–2051), so Flatpak code cannot run
   from a /data directory in an enforcing linuxd-created sandbox. Design:
-  - Apps: one read-only, verified code image per app (erofs + verity) built
-    by linuxd's installer domain from the Flatpak deployment, stored on /data,
-    tied to the stub package's lifecycle, mounted only into that app's
-    sandbox with a context= label carrying the stub's MLS categories — only
-    that app can read/execute its code; atomic image swap on update.
+  - Apps: one Flatpak USER installation per stub UID under
+    `/data/matonos/linux/apps/<uid>/`. The signed stub records the app and
+    runtime commits; linuxd verifies and publishes deployments, which Flatpak
+    binds read-only into that app's sandbox. Each app's writable home is in
+    the same UID-owned tree.
   - Flatpaks may download and execute code in their own app home under
     `/data/matonos/linux/apps/<uid>/` by default. The existing
     `data_exec_exempt_domain` policy patch covers this; the sandbox remains
     isolated by UID, MLS level, and its private home.
-  - Runtimes and extensions: one shared runtime store owned by the base app —
-    the Wayland compositor host (MatonWaylandHost, org.matonos.compositor),
-    which every stub inherits from (uses-library) — a sparse, growable image (OSTree dedup kept), executable by
-    every app sandbox domain, writable only by the installer domain.
+  - Runtimes and extensions: one Flatpak SYSTEM installation owned by the
+    preinstalled MatonOS Linux Runtimes app. App deployments hardlink from a
+    shared OSTree repo; the installer publishes updates, and sandboxes see
+    their runtimes read-only.
   - Domains: linuxd → installer domain (only writer of code/runtime stores);
     flatpak run in its own narrow domain → exec of bwrap transitions to the
     bwrap setup domain → exec of the payload transitions to the app domain.

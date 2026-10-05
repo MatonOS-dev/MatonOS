@@ -239,9 +239,6 @@ typeattribute matonos_bwrap coredomain;
 type matonos_bwrap_exec, exec_type, system_file_type, file_type;
 # Tiny launcher that dyntransitions to the app domain and execs the payload.
 type matonos_app_exec_exec, exec_type, system_file_type, file_type;
-# r24 privileged mount helper: the only holder of CAP_SYS_ADMIN on the app
-# launch path, and the only domain that mounts verified app code/volumes.
-type matonos_mount_helper_exec, exec_type, system_file_type, file_type;
 
 # flatpak-run domain: the Flatpak CLI while it prepares one sandbox. It is
 # entered by dyntransition after linuxd has verified the stub identity.
@@ -329,10 +326,8 @@ allow matonos_bwrap matonos_app_exec_exec:file { execute getattr open read map }
 allow matonos_app_launch matonos_app_exec_exec:file entrypoint;
 allow matonos_app_launch self:process { setcurrent fork sigchld signal };
 allow matonos_app_launch matonos_linux_app:process dyntransition;
-# r24: the launcher mounts nothing. The verified images are now mounted by
-# stock flatpak run directly (which binds /app and /usr from its own read-only
-# installations). The matonos_mount_helper remains for sandbox identity
-# verification only.
+# The launcher mounts nothing. Stock flatpak run binds /app and /usr from its
+# read-only installations.
 allow matonos_app_launch matonos_app_code_exec:dir r_dir_perms;
 allow matonos_app_launch matonos_app_code_exec:file { execute execute_no_trans getattr open read map };
 allow matonos_app_launch matonos_runtime_exec:dir r_dir_perms;
@@ -345,32 +340,6 @@ allow matonos_linux_app matonos_app_volume_file:dir create_dir_perms;
 allow matonos_linux_app matonos_app_volume_file:{ file lnk_file sock_file fifo_file } create_file_perms;
 # JITs (Wine/Proton, Chromium) need executable anonymous mappings.
 allow matonos_linux_app self:process execmem;
-
-# Vestigial mount helper: verifies sandbox identity outside the sandbox, but
-# no longer mounts code images or volumes (proven on the host: stock flatpak
-# run binds /app and /usr by itself). Still present so that matonos-bwrap's
-# send_mount_request() gets a reply; removing this domain, the binary and its
-# Android.bp module is tracked as a follow-up (no remaining useful work).
-#
-# The helper receives a single mount_request (app id + pidfd via SCM_RIGHTS),
-# independently verifies the sandbox process identity (matonos_bwrap domain,
-# expected stub uid, MLS level, parent chain), and replies SUCCESS. Any
-# verification failure is fail-closed (the shim kills the sandbox).
-#
-# Removed: all APK parsing (openat2, zip reader), LOOP_CONFIGURE, erofs mount,
-# legacy attach-record reading, volume mounting, and CAP_SYS_ADMIN.
-type matonos_mount_helper, domain;
-typeattribute matonos_mount_helper coredomain;
-allow matonos_linuxd matonos_mount_helper_exec:file { execute execute_no_trans getattr open read map };
-type_transition matonos_linuxd matonos_mount_helper_exec:process matonos_mount_helper;
-allow matonos_linuxd matonos_mount_helper:process transition;
-allow matonos_mount_helper matonos_mount_helper_exec:file entrypoint;
-# Rendezvous with the matonos-bwrap shim is an unnamed socketpair created by
-# the matonos_linuxd launcher, so its label is matonos_linuxd. The shim also
-# passes a pidfd for the sandbox process (matonos_bwrap); both arrive as
-# inherited/SENT fds. No CAP_SYS_ADMIN or loop/mount grants are needed.
-allow matonos_mount_helper matonos_linuxd:unix_stream_socket { read write };
-allow matonos_mount_helper matonos_bwrap:fd use;
 
 # Binder must be completely absent from every sandbox domain. The stock
 # platform policy unconditionally grants every domain `system_server:binder

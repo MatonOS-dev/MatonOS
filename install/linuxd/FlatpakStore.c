@@ -30,14 +30,9 @@
  *   matonos-flatpak-store digest <file>
  *   matonos-flatpak-store selftest
  *
- * The installer only *attaches* (and detaches) loop devices. The per-app code
- * image and volume are mounted by the privileged matonos-mount-helper, outside
- * the sandbox, into that app's sandbox mount namespace, so they never appear
- * at a shared host path. Each attach also writes a small record
- * (`apps/<id>/code.loop`, `vol.loop`) that the helper reads to derive the loop
- * device itself. No per-app command takes MLS categories: the level is derived
- * from the verified stub UID (see MatonMls.h) by the helper, never from an
- * argument.
+ * The loop-attachment commands are retained for the image-store tooling.
+ * They are not part of the current Flatpak launch chain, which uses stock
+ * Flatpak deployments and has no privileged mount helper.
  */
 
 #include "FlatpakStore.h"
@@ -393,13 +388,7 @@ static int app_build(const char* app_id, const char* source) {
     return 0;
 }
 
-/* Attach a per-app image to a free loop device and print its path. The image
- * is *not* mounted here: the privileged matonos-mount-helper mounts it inside
- * the sandbox mount namespace. We also write a small attach record
- * (<dir>/<record>.loop) so the helper can derive the loop device itself,
- * instead of taking a loop path from any caller. The level is a function of
- * the verified UID, computed in the helper (MatonMls.h), so no categories
- * cross this interface. */
+/* Attach a per-app image to a free loop device and print its path. */
 static int attach_image(const char* app_id, const char* name, const char* record_name) {
     if (!valid_app_id(app_id)) return fail("invalid app id");
     char dir[512], image[600];
@@ -436,8 +425,7 @@ static int valid_loop_device(const char* path) {
     return 1;
 }
 
-/* Drop attach records that point at a loop device, so a stale record can never
- * make the mount helper reopen a reused loop. */
+/* Drop stale attachment records before a loop device can be reused. */
 static void forget_attach_records(const char* loop_path) {
     DIR* dir = opendir(MATON_STORE_APPS);
     if (!dir) return;
