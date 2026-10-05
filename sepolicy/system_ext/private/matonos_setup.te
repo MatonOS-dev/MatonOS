@@ -23,3 +23,7 @@ binder_call(matonos_setup, mediaprovider_app)
 # SurfaceFlinger opens /dev/udmabuf (Mesa/virtio-gpu). udmabuf_device is a
 # platform-private type, so the rule lives in system_ext private policy.
 allow surfaceflinger udmabuf_device:chr_file rw_file_perms;
+
+# storaged reads one block stat node during disk accounting (storaged is a
+# platform-private domain, so this lives in system_ext private policy).
+allow storaged sysfs:file r_file_perms;

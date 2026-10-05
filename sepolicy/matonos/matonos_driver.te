@@ -222,8 +222,6 @@ get_prop(hal_graphics_allocator_default, default_prop)
 # memfd-class path. Give the HAL-created queue objects a private label so the
 # HAL can write its shared queues without granting access to global tmpfs.
 
-# One block stat node is read by storaged during its normal disk accounting.
-allow storaged sysfs:file r_file_perms;
 # The software KeyMint implementation reads Android's public device serial.
 get_prop(hal_keymint_default, serialno_prop)
 
