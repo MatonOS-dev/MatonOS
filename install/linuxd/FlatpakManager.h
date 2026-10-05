@@ -33,7 +33,9 @@ int flatpak_manager_valid_ref(const char* value);
 int flatpak_manager_valid_app_id(const char* value);
 void flatpak_manager_call(const char* command, const char* ref, const char* app_id,
         const char* const* run_args, size_t run_arg_count, int delete_data,
-        const char* operation_id, FlatpakResult* result);
+        const char* operation_id, const char* app_commit, const char* runtime_ref,
+        const char* runtime_commit, const char* remote, int app_uid, int runtime_uid,
+        FlatpakResult* result);
 int flatpak_manager_delete_data(int uid);
 void flatpak_manager_result_clear(FlatpakResult* result);
 

@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include <android/log.h>
 #include "FlatpakManager.h"
+#include "FlatpakPublish.h"
 #include "UdevDatabase.h"
 #include "SessionPads.h"
 #include "SafePath.h"
@@ -327,6 +328,12 @@ typedef struct PackageOperation {
     int delete_data;
     char* operation_id;
     char* ref;
+    char* app_commit;
+    char* runtime_ref;
+    char* runtime_commit;
+    char* remote;
+    int app_uid;
+    int runtime_uid;
 } PackageOperation;
 
 static void* package_operation_thread(void* data) {
@@ -357,10 +364,17 @@ static void* package_operation_thread(void* data) {
             free(child.output);
         }
     } else {
-        const char* args[] = {"--system", "install", "--noninteractive", "--assumeyes", "flathub", operation->ref};
-        child = run_cli(args, sizeof(args) / sizeof(args[0]), 1);
-        result_from_child(&result, &child);
-        free(child.output);
+        char system_dir[256], user_dir[256], error[512] = {0};
+        snprintf(system_dir, sizeof(system_dir), "/data/matonos/linux/apps/%d", operation->runtime_uid);
+        snprintf(user_dir, sizeof(user_dir), "/data/matonos/linux/apps/%d", operation->app_uid);
+        publish_progress_line("Verifying pinned Flatpak commits and publishing runtime/app");
+        int rc = flatpak_publish(operation->ref, operation->app_commit,
+                operation->runtime_ref, operation->runtime_commit, operation->remote,
+                "/data/matonos/linux/staging", system_dir, user_dir, error, sizeof(error));
+        result.ok = rc == 0;
+        result.exit_code = rc == 0 ? 0 : 1;
+        if (rc != 0) result.error = strdup(error[0] ? error : "Flatpak publish pipeline failed");
+        result.output = strdup(rc == 0 ? "Flatpak app and pinned runtime published" : error);
     }
     pthread_mutex_unlock(&g_operation_mutex);
     pthread_mutex_lock(&g_package_state_mutex);
@@ -370,13 +384,19 @@ static void* package_operation_thread(void* data) {
     if (g_complete_callback) g_complete_callback(&result, g_callback_context);
     flatpak_manager_result_clear(&result);
     free(operation->ref);
+    free(operation->app_commit);
+    free(operation->runtime_ref);
+    free(operation->runtime_commit);
+    free(operation->remote);
     free(operation->operation_id);
     free(operation);
     return NULL;
 }
 
 static void start_package_operation(int uninstall, const char* ref, int delete_data,
-        const char* operation_id, FlatpakResult* result) {
+        const char* operation_id, const char* app_commit, const char* runtime_ref,
+        const char* runtime_commit, const char* remote, int app_uid, int runtime_uid,
+        FlatpakResult* result) {
     PackageOperation* operation = calloc(1, sizeof(*operation));
     pthread_t thread;
     int error;
@@ -396,20 +416,37 @@ static void start_package_operation(int uninstall, const char* ref, int delete_d
     }
     operation->uninstall = uninstall;
     operation->delete_data = delete_data;
+    operation->app_uid = app_uid;
+    operation->runtime_uid = runtime_uid;
     operation->operation_id = operation_id ? strdup(operation_id) : NULL;
     if (operation_id && !operation->operation_id) { free(operation); pthread_mutex_lock(&g_package_state_mutex); g_package_operation_active = 0; pthread_mutex_unlock(&g_package_state_mutex); set_error(result, "cannot allocate operation ID"); return; }
     operation->ref = strdup(ref);
+    operation->app_commit = app_commit ? strdup(app_commit) : NULL;
+    operation->runtime_ref = runtime_ref ? strdup(runtime_ref) : NULL;
+    operation->runtime_commit = runtime_commit ? strdup(runtime_commit) : NULL;
+    operation->remote = remote ? strdup(remote) : NULL;
     if (!operation->ref) {
-        free(operation->operation_id);
+        free(operation->operation_id); free(operation->app_commit); free(operation->runtime_ref);
+        free(operation->runtime_commit); free(operation->remote);
         free(operation);
         pthread_mutex_lock(&g_package_state_mutex); g_package_operation_active = 0; pthread_mutex_unlock(&g_package_state_mutex);
         set_error(result, "cannot allocate Flatpak ref");
+        return;
+    }
+    if (!uninstall && (!operation->app_commit || !operation->runtime_ref ||
+            !operation->runtime_commit || !operation->remote)) {
+        free(operation->ref); free(operation->operation_id); free(operation->app_commit);
+        free(operation->runtime_ref); free(operation->runtime_commit); free(operation->remote); free(operation);
+        pthread_mutex_lock(&g_package_state_mutex); g_package_operation_active = 0; pthread_mutex_unlock(&g_package_state_mutex);
+        set_error(result, "cannot allocate pinned Flatpak publish data");
         return;
     }
     error = pthread_create(&thread, NULL, package_operation_thread, operation);
     if (error != 0) {
         free(operation->ref);
         free(operation->operation_id);
+        free(operation->app_commit); free(operation->runtime_ref);
+        free(operation->runtime_commit); free(operation->remote);
         free(operation);
         pthread_mutex_lock(&g_package_state_mutex); g_package_operation_active = 0; pthread_mutex_unlock(&g_package_state_mutex);
         set_error(result, "cannot start Flatpak operation thread");
@@ -985,7 +1022,9 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
 
 void flatpak_manager_call(const char* command, const char* ref, const char* app_id,
         const char* const* run_args, size_t run_arg_count, int delete_data,
-        const char* operation_id, FlatpakResult* result) {
+        const char* operation_id, const char* app_commit, const char* runtime_ref,
+        const char* runtime_commit, const char* remote, int app_uid, int runtime_uid,
+        FlatpakResult* result) {
     if (!result) return;
     memset(result, 0, sizeof(*result));
     result->exit_code = 127;
@@ -1031,7 +1070,12 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
         read_desktop_entry(ref, result);
     } else if (strcmp(command, "install") == 0 || strcmp(command, "uninstall") == 0) {
         if (!flatpak_manager_valid_ref(ref)) set_error(result, "valid complete Flatpak ref required");
-        else start_package_operation(strcmp(command, "uninstall") == 0, ref, delete_data, operation_id, result);
+        else if (strcmp(command, "install") == 0 && (!flatpak_manager_valid_ref(runtime_ref) ||
+                strncmp(runtime_ref, "runtime/", 8) || !remote || !*remote || strlen(remote) > 128))
+            set_error(result, "valid pinned runtime ref and remote are required");
+        else start_package_operation(strcmp(command, "uninstall") == 0, ref, delete_data,
+                operation_id, app_commit, runtime_ref, runtime_commit, remote,
+                app_uid, runtime_uid, result);
     } else if (strcmp(command, "run") == 0) {
         if (!flatpak_manager_valid_app_id(app_id)) set_error(result, "valid Flatpak app ID required");
         else if (run_arg_count > 64) set_error(result, "too many run arguments");
