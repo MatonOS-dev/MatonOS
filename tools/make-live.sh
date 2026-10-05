@@ -36,7 +36,7 @@ IMAGE=""
 EXTRA_CMDLINE=""
 # User boot-chain decision: live and installed kernels ship only as signed UKIs.
 SECURE_BOOT=1
-# Four signed UKIs (live/debug/A/B) share the live ESP; initrds make these
+# Five signed UKIs (live/debug/debug-permissive/A/B) share the live ESP; initrds make these
 # substantially larger than the old raw-kernel boot files.
 ESP_MIB=1024
 GROUP=pc_dynamic_partitions
@@ -198,12 +198,18 @@ EOF
 selinux_title=""
 [[ $MATON_SELINUX_MODE == permissive ]] && selinux_title=" (DEVELOPMENT: SELinux permissive)"
 # Debug adds logging and the serial root console; it does not change SELinux.
-for entry in live debug; do
+# debug-permissive: same as debug but always SELinux permissive, so one boot
+# logs every denial without blocking anything (for collecting AVCs). Live
+# media only; installed UKIs below always enforce.
+permissive_cmdline=${cmdline/androidboot.selinux=$MATON_SELINUX_MODE/androidboot.selinux=permissive}
+for entry in live debug debug-permissive; do
   if [[ $entry == live ]]; then title="MatonOS Live$selinux_title"; opts=$cmdline
-  else title="MatonOS Live (debug)$selinux_title"; opts="$cmdline $debug_cmdline"; fi
+  elif [[ $entry == debug ]]; then title="MatonOS Live (debug)$selinux_title"; opts="$cmdline $debug_cmdline"
+  else title="MatonOS Live (debug-permissive)"; opts="$permissive_cmdline $debug_cmdline"; fi
   if (( SECURE_BOOT )); then
     uki=matonos-live.efi
     [[ $entry == debug ]] && uki=matonos-live-debug.efi
+    [[ $entry == debug-permissive ]] && uki=matonos-live-debug-permissive.efi
     cat > "$work/matonos-$entry.conf" <<EOF
 title   $title
 efi     /EFI/Linux/$uki
@@ -230,6 +236,8 @@ EOF
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img" "$work/ventoy-initrd.img"
   sb_build_uki "$work/matonos-live-debug.efi" "$KERNEL" "$cmdline $debug_cmdline" "$work/matonos.sbat" "$work" \
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img" "$work/ventoy-initrd.img"
+  sb_build_uki "$work/matonos-live-debug-permissive.efi" "$KERNEL" "$permissive_cmdline $debug_cmdline" "$work/matonos.sbat" "$work" \
+    "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img" "$work/ventoy-initrd.img"
   # Installed UKIs always enforce, including on permissive development media.
   # Installed systems do not use RAM-backed /data or /metadata. Keep the
   # ramN nodes absent so the live-only block labels cannot affect installed
@@ -242,6 +250,7 @@ EOF
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"
   mcopy -i "$esp" "$work/matonos-live.efi" ::/EFI/Linux/matonos-live.efi
   mcopy -i "$esp" "$work/matonos-live-debug.efi" ::/EFI/Linux/matonos-live-debug.efi
+  mcopy -i "$esp" "$work/matonos-live-debug-permissive.efi" ::/EFI/Linux/matonos-live-debug-permissive.efi
   mcopy -i "$esp" "$work/matonos-installed-a.efi" ::/EFI/Linux/matonos-installed-a.efi
   mcopy -i "$esp" "$work/matonos-installed-b.efi" ::/EFI/Linux/matonos-installed-b.efi
 else
