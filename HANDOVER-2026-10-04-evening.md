@@ -18,12 +18,12 @@ Nothing below is device-tested yet; all waits for the next image build.
   runtimes. Code is hardlinked from a shared OSTree repo via
   `ostree pull-local` + stock `flatpak install --no-pull`; `flatpak run` works
   with both installations read-only (layout spike, proven on the host).
-  Erofs images, images in APKs, runtime static-library stubs and `vol.img`
-  are retired.
+  Flatpak deployments are published from the shared staging repository and
+  writable app state stays in each app's home directory.
 - **Trust:** app stubs carry the signed OSTree commit (+ runtime ref/commit)
-  in their manifest. Planned publish step: installer pulls (staging label) →
-  no-network `ostree fsck` against the stub's commit → linuxd relabels
-  objects read-only → pull-local + install --no-pull → flip `active`.
+  in their manifest. linuxd uses the stage-only AID 2902 helper for
+  signature-verified staging, checks commit pins, then uses `pull-local` and
+  `install --no-pull` to publish.
 - **Flatpaks may run code they download into their own data** (deliberate
   exception to "containment beats compatibility"). Needs the one AOSP patch
   `patches/system/sepolicy/0001-data-exec-exempt-domain.patch` (attribute

@@ -4,10 +4,6 @@
 /data/matonos/linux/staging(/.*)? u:object_r:matonos_flatpak_store_file:s0
 /data/matonos/linux/apps/[0-9]+/repo/objects(/.*)? u:object_r:matonos_linux_code_file:s0
 /data/matonos/linux(/.*)? u:object_r:matonos_flatpak_data_file:s0
-# r24 code/runtime image store. The image files and their mount points are
-# data; the *contents* of a mounted image are labelled only by the mount's
-# context= (matonos_(app_code|runtime)_exec), never by this directory.
-/data/matonos/linux/store(/.*)? u:object_r:matonos_flatpak_store_file:s0
 # Per-app Xwayland display sockets live in their own directory so the
 # compositor can hand each socket to its application's uid.
 # r24: the Flatpak runtime files (flatpak/gpg/ostree/revokefs-fuse, the Flatpak
