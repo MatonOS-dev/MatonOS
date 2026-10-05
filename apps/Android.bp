@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// MatonOS preinstalled apps. The F-Droid Basic source build is produced by
-// apps/fdroid-basic/build.sh; the other APKs are fetched from F-Droid.
+// MatonOS preinstalled apps. APKs are fetched from F-Droid.
 // The keyboard stays AOSP's LatinIME: HeliBoard only declares a
 // locale-less subtype until first launch, so the framework never enables it
 // as the default IME on a fresh device.
 //
 // APKs come from tools/fetch-apps.sh (pinned in apps.lock, hash- and
-// signer-checked) into apks/ (git-ignored). F-Droid Basic is built and signed
-// with its own MatonOS development key, then imported from fdroid-basic/.
+// signer-checked) into apks/ (git-ignored).
 // Soong does not re-sign preprocessed imports; dexpreopt stays enabled.
 // `overrides` drops the AOSP app each one replaces.
 
@@ -21,22 +19,6 @@ package {
 // skip_preprocessed_apk_checks: only on APKs that fail Soong's checks
 // (compressed JNI libraries; for priv-apps also compressed dex), since Soong
 // rejects it elsewhere; tools/fetch-apps.sh checks it matches.
-
-android_app_import {
-    name: "MatonFdroidBasic",
-    optional_uses_libs: [
-        "androidx.window.extensions",
-        "androidx.window.sidecar",
-    ],
-    apk: "fdroid-basic/FdroidBasic.apk",
-    product_specific: true,
-    privileged: true,
-    preprocessed: true,
-    // F-Droid Basic's minified release stores dex compressed; the APK is
-    // already zip-aligned and signed with our per-app development key.
-    skip_preprocessed_apk_checks: true,
-    required: ["privapp-permissions-org.fdroid.basic.xml"],
-}
 
 // Empty, versionCode 1 package reservations allow stores to offer their
 // upstream signed packages as updates. The signer transitions are pinned in
@@ -69,13 +51,6 @@ android_app_import {
 prebuilt_etc {
     name: "privapp-permissions-com.aurora.store.xml",
     src: "privapp-permissions-com.aurora.store.xml",
-    sub_dir: "permissions",
-    product_specific: true,
-}
-
-prebuilt_etc {
-    name: "privapp-permissions-org.fdroid.basic.xml",
-    src: "privapp-permissions-org.fdroid.basic.xml",
     sub_dir: "permissions",
     product_specific: true,
 }
