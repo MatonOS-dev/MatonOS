@@ -2,6 +2,8 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <limits.h>
+#include <arpa/inet.h>
 
 int dns_forwarder_uid_allowed(dns_uid_lookup_fn lookup, void *context,
                               const void *peer, uint32_t expected_uid) {
@@ -92,5 +94,49 @@ int dns_forwarder_udp_uid(const struct dns_udp_diag_socket *sockets, size_t coun
     }
     if (!found) return -1;
     *uid = found_uid;
+    return 0;
+}
+
+int dns_forwarder_parse_udp_dump_reply(const void *reply, size_t reply_length,
+                                       uint32_t sequence, uint16_t source_port,
+                                       struct dns_udp_diag_socket *sockets,
+                                       size_t capacity, size_t *count, int *done) {
+    if (reply == NULL || reply_length > INT_MAX || count == NULL || done == NULL ||
+        (capacity != 0 && sockets == NULL)) return -1;
+    const uint8_t *bytes = reply;
+    int remaining = (int)reply_length;
+    while (remaining > 0) {
+        if (remaining < (int)sizeof(struct nlmsghdr)) return -1;
+        const struct nlmsghdr *header = (const struct nlmsghdr *)bytes;
+        if (header->nlmsg_len < sizeof(*header) || header->nlmsg_len > (uint32_t)remaining)
+            return -1;
+        size_t aligned = NLMSG_ALIGN(header->nlmsg_len);
+        if (aligned > (size_t)remaining) return -1;
+        if (header->nlmsg_seq == sequence) {
+            if (header->nlmsg_type == NLMSG_DONE) {
+                *done = 1;
+                return 0;
+            }
+            if (header->nlmsg_type == NLMSG_ERROR) return -1;
+            if (header->nlmsg_type == SOCK_DIAG_BY_FAMILY) {
+                if (header->nlmsg_len < NLMSG_LENGTH(sizeof(struct inet_diag_msg))) return -1;
+                const struct inet_diag_msg *entry = NLMSG_DATA(header);
+                if (entry->idiag_family == AF_INET &&
+                    entry->id.idiag_sport == htons(source_port)) {
+                    if (*count >= capacity) return -1;
+                    sockets[*count] = (struct dns_udp_diag_socket){
+                        .uid = entry->idiag_uid,
+                        .local_address = {.s_addr = entry->id.idiag_src[0]},
+                        .local_port = ntohs(entry->id.idiag_sport),
+                        .remote_address = {.s_addr = entry->id.idiag_dst[0]},
+                        .remote_port = ntohs(entry->id.idiag_dport),
+                    };
+                    ++*count;
+                }
+            }
+        }
+        bytes += aligned;
+        remaining -= (int)aligned;
+    }
     return 0;
 }

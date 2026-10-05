@@ -146,47 +146,13 @@ static int lookup_udp_uid(const struct sockaddr_in *source, uint32_t *uid) {
         if ((size_t)received > sizeof(buffer) || (message.msg_flags & MSG_TRUNC)) {
             complete = -1; break;
         }
-        int remaining = (int)received;
-        for (struct nlmsghdr *header = (struct nlmsghdr *)buffer;
-             remaining >= (int)sizeof(*header) &&
-             header->nlmsg_len >= sizeof(*header) &&
-             header->nlmsg_len <= (uint32_t)remaining;
-             ) {
-            int message_size = (int)NLMSG_ALIGN(header->nlmsg_len);
-            if (message_size > remaining) { complete = -1; break; }
-            if (header->nlmsg_seq != 1) {
-                header = (struct nlmsghdr *)((uint8_t *)header + message_size);
-                remaining -= message_size;
-                continue;
-            }
-            if (header->nlmsg_type == NLMSG_DONE) { complete = 1; remaining = 0; break; }
-            if (header->nlmsg_type == NLMSG_ERROR) { complete = -1; break; }
-            if (header->nlmsg_type != SOCK_DIAG_BY_FAMILY ||
-                header->nlmsg_len < NLMSG_LENGTH(sizeof(struct inet_diag_msg))) {
-                header = (struct nlmsghdr *)((uint8_t *)header + message_size);
-                remaining -= message_size;
-                continue;
-            }
-            struct inet_diag_msg *entry = NLMSG_DATA(header);
-            if (entry->idiag_family != AF_INET ||
-                entry->id.idiag_sport != source->sin_port) {
-                header = (struct nlmsghdr *)((uint8_t *)header + message_size);
-                remaining -= message_size;
-                continue;
-            }
-            if (count == 1024) { complete = -1; break; }
-            entries[count++] = (struct dns_udp_diag_socket){
-                .uid = entry->idiag_uid,
-                .local_address = {.s_addr = entry->id.idiag_src[0]},
-                .local_port = ntohs(entry->id.idiag_sport),
-                .remote_address = {.s_addr = entry->id.idiag_dst[0]},
-                .remote_port = ntohs(entry->id.idiag_dport),
-            };
-            header = (struct nlmsghdr *)((uint8_t *)header + message_size);
-            remaining -= message_size;
+        int dump_done = 0;
+        if (dns_forwarder_parse_udp_dump_reply(buffer, (size_t)received, 1,
+                ntohs(source->sin_port), entries, 1024, &count, &dump_done) != 0) {
+            complete = -1;
+            break;
         }
-        if (remaining != 0) complete = -1;
-        if (complete < 0) break;
+        if (dump_done) complete = 1;
     }
     close(fd);
     if (complete != 1) return -1;

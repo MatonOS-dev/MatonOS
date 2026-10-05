@@ -35,8 +35,9 @@ inet_diag DUMP filtered by the source port from `recvfrom()`. It accepts a
 candidate only when its local address is the exact source address or wildcard
 `0.0.0.0`. Connected entries must also match the destination tuple. If matching
 `SO_REUSEPORT` candidates carry different UIDs, the packet is dropped. Missing,
-malformed or incomplete diagnostics fail closed. The host C test feeds mocked
-DUMP entries through the same selector used by the netlink parser.
+malformed or incomplete diagnostics fail closed. The host C test constructs a
+mock netlink DUMP reply, runs it through the production parser and attribution
+selector, and checks truncation and ambiguity handling.
 
 The worker rate-limits queries with a token bucket (100 burst, 50 queries per
 second), uses bounded DNS-over-TCP framing, and passes raw packets to
