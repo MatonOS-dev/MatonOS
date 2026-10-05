@@ -13,6 +13,7 @@
 #include <utils/String8.h>
 
 #include "FlatpakManager.h"
+#include "DnsForwarderSockets.h"
 #include <dirent.h>
 #include <android-base/unique_fd.h>
 
@@ -207,6 +208,23 @@ std::string ToUtf8(const android::String16& value) {
 
 class LinuxdService final : public BnLinuxd {
   public:
+    android::binder::Status createDnsForwarderSockets(const android::String16& address16,
+            int32_t stubUid,
+            std::vector<android::os::ParcelFileDescriptor>* sockets) override {
+        if (!IsTrustedCaller() || stubUid < 10000 || sockets == nullptr)
+            return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
+        int udp = -1, tcp = -1;
+        int result = matonos_dns_create_sockets(ToUtf8(address16).c_str(),
+                static_cast<uint32_t>(stubUid), &udp, &tcp);
+        if (result != 0)
+            return android::binder::Status::fromServiceSpecificError(-result,
+                    "Cannot bind per-app DNS sockets");
+        sockets->clear();
+        sockets->emplace_back(android::base::unique_fd(udp));
+        sockets->emplace_back(android::base::unique_fd(tcp));
+        return android::binder::Status::ok();
+    }
+
     android::binder::Status launchGraphical(const android::String16& ref,
             const android::os::ParcelFileDescriptor& runtimeDirectory,
             const android::String16& dnsServers,

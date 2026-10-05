@@ -32,6 +32,11 @@ final class FlatpakLauncher {
     static boolean verifyStub(Context context,int uid,String ref) throws Exception {
         return request(context,bridge->bridge.isFlatpakStub(uid,ref));
     }
+    static android.os.ParcelFileDescriptor[] createDnsSockets(Context context,int uid,String ref,String endpoint) throws Exception {
+        if(endpoint==null||!endpoint.matches("127\\.(1[0-9]|[2-6][0-9]|7[0-3])\\.[0-9]{1,3}\\.[0-9]{1,3}:53"))
+            throw new SecurityException("Invalid per-app DNS address");
+        return request(context,bridge->bridge.createDnsForwarderSockets(endpoint.substring(0,endpoint.length()-3),uid,ref));
+    }
     private static <T> T request(Context context, Request<T> request) throws Exception {
         CountDownLatch connected = new CountDownLatch(1);
         ISystemBridge[] bridge = new ISystemBridge[1];

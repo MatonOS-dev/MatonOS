@@ -39,7 +39,6 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     private SurfaceView view;
     private Surface surface;
     private IEmbeddedSession session;
-    private boolean dnsAcquired;
     private final IEmbeddedWindowListener listener = new IEmbeddedWindowListener.Stub() {
         public boolean openUri(Intent intent) {
             java.util.concurrent.FutureTask<Boolean> task=new java.util.concurrent.FutureTask<>(() -> {
@@ -75,7 +74,10 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             new Thread(() -> {
                 IEmbeddedSession opened=null;
                 try {
-                    opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener,lifeline(),DnsForwarder.endpoint());
+                    android.os.ParcelFileDescriptor[] dnsSockets = new android.os.ParcelFileDescriptor[2];
+                    opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener,lifeline(),DnsForwarder.endpoint(),dnsSockets);
+                    if (DnsForwarder.acquire(dnsSockets) == null)
+                        throw new IllegalStateException("Privileged DNS sockets could not be activated");
                     final IEmbeddedSession active=opened;
                     boolean needsLaunch=window==0;
                     runOnUiThread(() -> {
@@ -129,8 +131,6 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         } catch(Exception e){failure("Cannot read application reference",e);return;}
         if(ref==null||ref.trim().isEmpty()){message("This launcher has no application reference.");return;}
         if(minimum>HostContract.getInterfaceVersion()){message("Update the Linux host to launch this application.");return;}
-        dnsAcquired = DnsForwarder.acquire() != null;
-        if (!dnsAcquired) android.util.Log.w("MatonStub", "Per-app DNS forwarder could not bind");
         try {
             String[] requested = getPackageManager().getPackageInfo(getPackageName(), PackageManager.GET_PERMISSIONS).requestedPermissions;
             String[] runtime = {"org.matonos.permission.GAME_CONTROLLERS", "org.matonos.permission.RUN_DOWNLOADED_CODE"};
@@ -253,7 +253,6 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             try{session.unregisterListener(listener);}catch(Exception ignored){}
         }
         if(bound)unbindService(connection);
-        if(dnsAcquired) DnsForwarder.release();
         super.onDestroy();
     }
 }

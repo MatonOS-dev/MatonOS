@@ -15,6 +15,7 @@ cc_binary {
         "FlatpakPublish.c",
         "UdevDatabase.c",
         "SessionPads.c",
+        "DnsForwarderSockets.c",
         ":matonos-linuxd-aidl",
     ],
     shared_libs: [
