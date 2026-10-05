@@ -28,7 +28,7 @@ final class PortalBackend {
     private static void signature(Message call,String expected) {if(!expected.equals(call.signature))throw invalid("Expected signature "+expected);}
     private Message response(Message call,int type,String sig,Object... body) {
         Message m=new Message();m.type=type;m.serial=++sequence;if(m.serial==0)m.serial=++sequence;
-        m.destination=call.sender;m.sender=":1.0";m.replySerial=call.serial;m.signature=sig;m.body=Arrays.asList(body);return m;
+        m.destination=call.sender;m.sender=":1.0";m.replySerial=call.serial;m.signature=sig;m.body=Arrays.asList(body);m.replyTo=call.dbusMessage;return m;
     }
     private Message signal(Message call,String path,String iface,String member,String sig,Object... body) {
         Message m=response(call,4,sig,body);m.replySerial=0;m.path=path;m.iface=iface;m.member=member;return m;
