@@ -2,15 +2,15 @@
 # This fixed policy set trades isolation between our drivers for faster Soong
 # analysis; Android and the system bridge remain outside this domain.
 type matonos_driver, domain;
+attribute matonos_hw_reader;
 type matonos_driver_exec, exec_type, vendor_file_type, file_type;
 type matonos_driver_helper, domain;
 type matonos_driver_helper_exec, exec_type, vendor_file_type, file_type;
 type matonos_driver_data_file, file_type, data_file_type;
-type matonos_channel_service, protected_service, hal_service_type, service_manager_type;
+typeattribute matonos_driver_data_file matonos_daemon_socket_file;
 type matonos_install_block_device, dev_type;
 # addons: GPT entries 6/7 hold service-written raw ext4 slot images, mounted RO.
 type matonos_addons_block_device, dev_type;
-type matonos_addon_mount_file, file_type, vendor_file_type;
 type vendor_addon_module_file, file_type, vendor_file_type, contextmount_type;
 type matonos_addon_data_file, file_type, data_file_type;
 type matonos_addon_manager, domain;
@@ -24,6 +24,12 @@ type matonos_addon_firmware_overlay, file_type, vendor_file_type, contextmount_t
 
 init_daemon_domain(matonos_driver)
 init_daemon_domain(matonos_addon_manager)
+typeattribute matonos_driver matonos_daemon_zone;
+typeattribute matonos_driver_helper matonos_daemon_zone;
+typeattribute matonos_addon_manager matonos_daemon_zone;
+typeattribute matonos_driver matonos_hw_reader;
+typeattribute matonos_driver_helper matonos_hw_reader;
+typeattribute matonos_addon_manager matonos_hw_reader;
 tmpfs_domain(hal_audio_default)
 # vendor_init runs property actions imported from the ODM bundle. The
 # properties use the existing public MatonOS vendor type; no platform-owned
@@ -79,8 +85,6 @@ allow audioserver hal_audio_default_tmpfs:file rw_file_perms;
 
 
 # PipeWire stack and proxy.
-allow matonos_driver proc_asound:dir r_dir_perms;
-allow matonos_driver proc_asound:file r_file_perms;
 allow matonos_driver self:capability { setuid setgid sys_nice };
 allow matonos_driver self:process { fork sigchld setsched };
 allow matonos_driver matonos_driver_data_file:dir create_dir_perms;
@@ -91,15 +95,14 @@ allow matonos_driver self:unix_stream_socket create_stream_socket_perms;
 allow matonos_driver matonos_driver_data_file:dir rw_dir_perms;
 allow matonos_driver matonos_driver_data_file:file rw_file_perms;
 allow matonos_driver self:unix_stream_socket connectto;
-# The stock audio HAL may connect to the PipeWire proxy socket.
-allow hal_audio_default matonos_driver_data_file:dir search;
-allow hal_audio_default matonos_driver_data_file:file r_file_perms;
-allow hal_audio_default matonos_driver_data_file:sock_file write;
-allow hal_audio_default matonos_driver:unix_stream_socket connectto;
+# Cross-zone audio socket access is forbidden below. PipeWire needs a
+# Bridge-mediated audio path before enforcing audio works.
 
 # USB, HCI, rfkill and hotplug discovery used by Bluetooth and Wi-Fi drivers.
 type matonos_rfkill_device, dev_type;
 type matonos_vhci_device, dev_type;
+typeattribute matonos_rfkill_device matonos_raw_hardware_type;
+typeattribute matonos_vhci_device matonos_raw_hardware_type;
 # DRM nodes are created dynamically by whichever PCI/display drivers exist.
 # Keep render access on Android's existing GPU device type; cards retain the
 # graphics-device type so the stock composer policy continues to apply.
@@ -109,11 +112,14 @@ allow matonos_driver matonos_rfkill_device:chr_file rw_file_perms;
 allow hal_bluetooth_default matonos_rfkill_device:chr_file rw_file_perms;
 allow matonos_driver matonos_vhci_device:chr_file rw_file_perms;
 allow matonos_driver self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
-allow matonos_driver sysfs:dir r_dir_perms;
-allow matonos_driver sysfs:file r_file_perms;
-allow matonos_driver sysfs:lnk_file r_file_perms;
-r_dir_file(matonos_driver, sysfs_net)
-r_dir_file(matonos_driver, sysfs_type)
+allow matonos_hw_reader { sysfs_type -sysfs_matonos_sensitive -sysfs_power -sysfs_wakeup -sysfs_wakeup_reasons -sysfs_usermodehelper -sysfs_bluetooth_writable -sysfs_nfc_power_writable -sysfs_dt_firmware_android }:dir r_dir_perms;
+allow matonos_hw_reader { sysfs_type -sysfs_matonos_sensitive -sysfs_power -sysfs_wakeup -sysfs_wakeup_reasons -sysfs_usermodehelper -sysfs_bluetooth_writable -sysfs_nfc_power_writable -sysfs_dt_firmware_android }:file r_file_perms;
+allow matonos_hw_reader { sysfs_type -sysfs_matonos_sensitive -sysfs_power -sysfs_wakeup -sysfs_wakeup_reasons -sysfs_usermodehelper -sysfs_bluetooth_writable -sysfs_nfc_power_writable -sysfs_dt_firmware_android }:lnk_file r_file_perms;
+allow matonos_hw_reader { proc_type -proc_security -proc_drop_caches -proc_overcommit_memory -proc_kpageflags -proc_watermark_boost_factor -proc_percpu_pagelist_high_fraction -usermodehelper -proc_qtaguid_ctrl -proc_bluetooth_writable -proc_firmware_config -proc_net }:dir r_dir_perms;
+allow matonos_hw_reader { proc_type -proc_security -proc_drop_caches -proc_overcommit_memory -proc_kpageflags -proc_watermark_boost_factor -proc_percpu_pagelist_high_fraction -usermodehelper -proc_qtaguid_ctrl -proc_bluetooth_writable -proc_firmware_config -proc_net }:file r_file_perms;
+allow matonos_hw_reader { proc_type -proc_security -proc_drop_caches -proc_overcommit_memory -proc_kpageflags -proc_watermark_boost_factor -proc_percpu_pagelist_high_fraction -usermodehelper -proc_qtaguid_ctrl -proc_bluetooth_writable -proc_firmware_config -proc_net }:lnk_file r_file_perms;
+allow matonos_hw_reader dev_type:chr_file getattr;
+allow matonos_hw_reader { matonos_rfkill_device matonos_vhci_device input_device uhid_device }:chr_file { getattr open read };
 # matonos_driver is a HAL server (hal_bootctl) and
 # system/sepolicy/private/hal_neverallows.te forbids halserverdomain from
 # udp_socket/net_admin. The wifi-simplify change removed driver-owned interface
@@ -133,7 +139,16 @@ allow matonos_driver matonos_channel_service:service_manager add;
 # addons has a separate narrowly scoped settings channel.
 allow matonos_addon_manager matonos_channel_service:service_manager add;
 neverallow { domain -matonos_driver -matonos_addon_manager } matonos_channel_service:service_manager add;
-binder_call(matonos_driver, matonos_system_bridge)
+# Daemon-side restrictions. The Bridge is an inbound-only Binder client;
+# service-manager registration and init's property socket are the only OS
+# control-plane exceptions. Cross-zone service calls stay Bridge-only.
+neverallow matonos_daemon_zone { domain -matonos_daemon_zone -servicemanager }:binder call;
+neverallow matonos_daemon_zone self:{ tcp_socket udp_socket rawip_socket sctp_socket icmp_socket packet_socket netlink_route_socket } *;
+neverallow matonos_daemon_zone netd:unix_stream_socket connectto;
+neverallow matonos_daemon_zone dnsproxyd_socket:sock_file write;
+neverallow matonos_daemon_zone { coredomain_socket -property_socket }:unix_stream_socket connectto;
+neverallow { domain -matonos_daemon_zone -matonos_system_bridge -init } matonos_daemon_zone:unix_stream_socket connectto;
+neverallow matonos_daemon_zone { domain -matonos_daemon_zone -matonos_system_bridge }:unix_dgram_socket sendto;
 
 # The add-on manager writes only intake/extraction files while they carry the
 # data label. init restorecon assigns immutable vendor labels before loading.
@@ -145,7 +160,6 @@ allow matonos_addon_manager vendor_file_type:file { getattr map open read };
 # The firmware lookup tree and links are read-only image contents.
 # Bounded modprobe children are reaped or terminated after their timeout.
 allow matonos_addon_manager self:process { fork sigchld signal };
-binder_call(matonos_addon_manager, matonos_system_bridge)
 domain_auto_trans(matonos_addon_manager, vendor_toolbox_exec, vendor_modprobe)
 binder_use(matonos_addon_manager)
 # modprobe inherits the launcher's standard descriptors across its domain
@@ -160,10 +174,6 @@ allow kernel matonos_addon_firmware_overlay:file r_file_perms;
 
 # install: the validated disk-installer operations use a dedicated device
 # type; the daemon remains in the fixed MatonOS driver domain.
-allow matonos_driver proc:lnk_file { getattr read };
-r_dir_file(matonos_driver, proc)
-allow matonos_driver proc_cmdline:file r_file_perms;
-allow matonos_driver proc_swaps:file r_file_perms;
 
 
 # install: BootControl HAL persists A/B state in misc and changes the
@@ -260,6 +270,8 @@ allow init matonos_install_block_device:blk_file relabelto;
 # It reads /proc/asound, runs AOSP's system tinymix to max/unmute playback
 # controls, and sets vendor.maton.audio.*. Async oneshot; failure is benign.
 type matonos_audio_select, domain;
+typeattribute matonos_audio_select matonos_daemon_zone;
+typeattribute matonos_audio_select matonos_hw_reader;
 type matonos_audio_select_exec, exec_type, vendor_file_type, file_type;
 init_daemon_domain(matonos_audio_select)
 typeattribute matonos_audio_select vendor_executes_system_violators;
@@ -268,8 +280,6 @@ allow matonos_audio_select vendor_toolbox_exec:file rx_file_perms;
 allow matonos_audio_select system_file:file { execute execute_no_trans getattr map open read };
 allow matonos_audio_select audio_device:dir r_dir_perms;
 allow matonos_audio_select audio_device:chr_file rw_file_perms;
-allow matonos_audio_select proc_asound:dir r_dir_perms;
-allow matonos_audio_select proc_asound:file r_file_perms;
 set_prop(matonos_audio_select, vendor_maton_prop)
 
 # Every vendor.maton.* property has one type. The driver owns writes; platform
@@ -286,3 +296,7 @@ allow hal_power_default tmpfs:file { map read write };
 
 # modprobe/timeout started by pc-gpu-detect inherit its stdio/script fds.
 allow vendor_modprobe pc_gpu_detect:fd use;
+allow vendor_modprobe pc_gpu_detect:fifo_file { getattr read write };
+# pc-gpu-detect's bounded modprobe child reads boot_vga via toolbox cat.
+allow vendor_modprobe sysfs_gpu:dir search;
+allow vendor_modprobe sysfs_gpu:file r_file_perms;
