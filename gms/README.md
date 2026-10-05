@@ -4,6 +4,10 @@ MatonOS is based on AOSP. This area installs the hash-pinned, upstream microG Gm
 
 F-Droid Basic and Neo Store are not installed in the image. F-Droid Basic was removed on 2026-10-05 under the GPLv3 rule; the MatonOS software centre will provide that role later. The former Neo Store installer flow described in historical test records is not a current image feature.
 
+The shared long-term catalogue and update architecture is the
+[MatonOS Software Centre](../docs/SOFTWARE-CENTRE.md). This document records
+the current Neo Store installer path during that transition.
+
 ## Signature compatibility
 
 Patch 0002 contains the PackageManager hook and policy-call diagnostics. The hook supports both `GET_SIGNATURES` and `GET_SIGNING_CERTIFICATES`, and signature comparisons use the SystemBridge provider's exact package/certificate allowlist. The hook now requires the caller to hold `android.permission.FAKE_PACKAGE_SIGNATURE`. Bridge failure and metadata/policy mismatch fail closed. Patch 0003 keeps the pinned microG-to-Google update signer exception separate from spoofing.
