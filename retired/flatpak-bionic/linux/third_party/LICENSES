@@ -1,7 +1,0 @@
-The source directories contain their respective upstream license files:
-
-  bubblewrap/COPYING (GNU Lesser General Public License, version 2.1 or later)
-  libseccomp/COPYING (GNU Lesser General Public License, version 2.1 or later)
-
-This aggregate license notice is for source attribution. Each upstream
-license applies to its own source directory.

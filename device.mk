@@ -146,8 +146,8 @@ $(call inherit-product-if-exists, $(LOCAL_PATH)/camera/camera.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/input/input.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/bootanim/bootanim.mk)
 
-# flatpak-spike: install the tested bionic CLI/dependency bundle in system_ext
-# until its Android.bp Soong port is ready.
+# Flatpak: the static musl stack ships as the updatable com.matonos.flatpak
+# APEX on system_ext (linux/flatpak/Android.bp). The old bionic bundle is gone.
 $(call inherit-product-if-exists, $(LOCAL_PATH)/linux/flatpak/flatpak.mk)
 
 # addons: product properties/hooks for the signed per-slot driver package

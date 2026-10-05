@@ -60,7 +60,7 @@ Work in progress, not yet ready for daily use.
     over. Aurora is in the MatonOS F-Droid repo.
 - **In progress:** an A/B installer (install from the live image to a
   disk), Secure Boot via shim with our own keys, signed driver add-ons, and
-  v4 Linux app support (Flatpak on bionic plus a wlroots-based
+  v4 Linux app support (a static musl Flatpak APEX plus a wlroots-based
   compositor).
 
 The full roadmap (v2 to v8) and every design decision, with the reasons
@@ -75,7 +75,7 @@ This repository is the device tree; check it out at
 | Path | What |
 |---|---|
 | `./` | Product config, the ODM driver bundle, daemons, sepolicy, the system bridge (`systembridge/`), the installer service (`install/`), add-ons, Secure Boot, and build/test tools (`tools/`). Start with `CLAUDE.md` (rules) and `NOTES.md` (decisions). |
-| `linux/` | Linux apps: the Flatpak-on-bionic stack (`third_party/`, patches over pinned upstream sources) and the Wayland compositor host. |
+| `linux/` | Linux apps: the static musl Flatpak APEX (`flatpak/`), the Wayland compositor host and runtime stubs (`compositor/`, `stubgen/`, `runtimes/`), and the D-Bus broker. |
 | `rn-apps/settings/` | MatonOS Settings (Expo SDK 57, Expo UI Jetpack Compose only), which also contains the installer. |
 | `rn-apps/flathub/` | Current Software Centre UI prototype for Flathub/Flatpak; target architecture is documented in [`docs/SOFTWARE-CENTRE.md`](docs/SOFTWARE-CENTRE.md). |
 | `rn-apps/rn-common/` | Shared React Native library. |
@@ -152,14 +152,12 @@ MatonOS is mostly an assembly of other people's excellent open-source work:
   [libxkbcommon](https://xkbcommon.org/),
   [libdrm](https://gitlab.freedesktop.org/mesa/drm),
   [libffi](https://sourceware.org/libffi/),
-  [Flatpak](https://flatpak.org/) and
-  [xdg-dbus-proxy](https://github.com/flatpak/xdg-dbus-proxy),
+  [Flatpak](https://flatpak.org/),
   [OSTree](https://ostreedev.github.io/ostree/),
   [bubblewrap](https://github.com/containers/bubblewrap),
   [GLib](https://gitlab.gnome.org/GNOME/glib),
-  [libseccomp](https://github.com/seccomp/libseccomp),
-  [GnuPG](https://gnupg.org/) and their dependencies (see
-  `linux/third_party/LICENSES`)
+  [libseccomp](https://github.com/seccomp/libseccomp), DullPGP and
+  BoringSSL and their dependencies (see `linux/flatpak/licenses`)
 
 Each component keeps its own licence; see the upstream projects.
 

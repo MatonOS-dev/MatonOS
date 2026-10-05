@@ -44,17 +44,9 @@
   <project path="hardware/baylibre/audio" name="android_hardware_baylibre_audio"
            remote="matonos-dev" revision="matonos/v1.2" />
 
-  <!-- Linux apps (Flatpak on bionic): patched components, nested inside the
-       device tree where linux/third_party/<name>/Android.bp expects them -->
-  <!-- flatpak: MatonOS-dev/flatpak was recreated (2026-10-04) with only
-       matonos/v26.10 (1.16.6 + static trim), which the static stack fetches
-       by commit; the old matonos/v1.2 bionic branch exists only in the local
-       checkout below until integration. -->
-  <!-- The other bionic-Flatpak forks/snapshots (ostree, bubblewrap, glib,
-       gnupg, npth, libgpg-error, libfyaml, appstream, gdk-pixbuf, gpgme,
-       json-glib, libarchive, libassuan, libgcrypt, libjpeg-turbo, libksba,
-       liblzma, libpng, libseccomp, libxmlb, libyaml) were deleted on GitHub
-       (2026-10-04): the static musl Flatpak stack (MatonOS-dev/matonos-flatpak)
-       replaces them. Existing local checkouts keep the current image building
-       until integration; do not delete them before then. -->
+  <!-- Linux apps: the static musl Flatpak stack ships as the updatable
+       com.matonos.flatpak APEX built from linux/flatpak/ and the
+       MatonOS-dev/MatonOS_apexs release assets. The former bionic-Flatpak
+       forks (flatpak, ostree, bubblewrap, glib, gnupg, ...) were deleted on
+       GitHub (2026-10-04) and are no longer referenced here. -->
 </manifest>

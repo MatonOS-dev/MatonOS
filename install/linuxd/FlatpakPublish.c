@@ -19,8 +19,10 @@ extern char** environ;
 #ifndef MATONOS_FLATPAK_CLI
 #define MATONOS_FLATPAK_CLI "/apex/com.matonos.flatpak/bin/flatpak-env-wrapper"
 #endif
+/* OSTree is an applet of the static multicall ELF; callers set argv[0]="ostree".
+ * The APEX ships no bin/ostree symlink (Soong drops prebuilt-binary symlinks). */
 #ifndef MATONOS_OSTREE_CLI
-#define MATONOS_OSTREE_CLI "/apex/com.matonos.flatpak/bin/ostree"
+#define MATONOS_OSTREE_CLI "/apex/com.matonos.flatpak/bin/matonos-flatpak"
 #endif
 #ifndef MATONOS_FLATPAK_STAGE_HELPER
 #define MATONOS_FLATPAK_STAGE_HELPER "/apex/com.matonos.flatpak/bin/matonos-flatpak-store"
@@ -130,7 +132,8 @@ static int run_flatpak(const char* system_dir, const char* user_dir,
         const char* const input[], size_t count) {
     char** args = calloc(count + 2, sizeof(char*));
     if (!args) return -1;
-    args[0] = (char*)tool_path("flatpak");
+    /* argv[0] selects the applet; the wrapper rejects its own path here. */
+    args[0] = (char*)"flatpak";
     for (size_t i = 0; i < count; ++i) args[i + 1] = (char*)input[i];
     char output[4096] = {0};
     int rc = invoke("flatpak", system_dir, user_dir, args, output, sizeof(output));
@@ -149,7 +152,7 @@ static int run_ostree(const char* repo, const char* const input[], size_t count,
     if (snprintf(repo_arg, sizeof(repo_arg), "--repo=%s", repo) >= (int)sizeof(repo_arg)) return -1;
     char** args = calloc(count + 3, sizeof(char*));
     if (!args) return -1;
-    args[0] = (char*)tool_path("ostree");
+    args[0] = (char*)"ostree";
     args[1] = repo_arg;
     for (size_t i = 0; i < count; ++i) args[i + 2] = (char*)input[i];
     char local_output[4096] = {0};

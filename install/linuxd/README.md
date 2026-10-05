@@ -299,7 +299,7 @@ claim a literal SELinux-only denial of every Binder operation.
 Validation: full policy rig PASS with fresh platform CIL, both neverallow
 checks and merged secilc without -N; build-native.sh PASS; freshly generated
 bridge AIDL + bridge/stubgen javac PASS; linuxd C/C++ and AIDL object compile
-PASS; NDK bwrap and mount-helper compile/link PASS. No compositor Gradle build
+PASS; NDK bwrap and app-exec compile/link PASS. No compositor Gradle build
 is required because its files were restored. Preflight fails only on 19 missing
 worktree APK imports and the approved 0001 patch absent from its filename
 allowlist. No shared image build or fresh QEMU test is claimed.

@@ -51,7 +51,8 @@ static int stage_flatpak_ref(int argc, char** argv) {
         return fail("cannot enter Flatpak installer AID: %s", strerror(errno));
     if (setenv("MATON_FLATPAK_STAGING_DIR", argv[2], 1))
         return fail("cannot select staging installation: %s", strerror(errno));
-    char* const flatpak_argv[] = {MATONOS_FLATPAK_WRAPPER, "install", "--system",
+    /* argv[0] selects the applet; the wrapper dispatches instead of symlinks. */
+    char* const flatpak_argv[] = {"flatpak", "install", "--system",
         "--no-deploy", "--noninteractive", "--assumeyes", argv[3], argv[4], NULL};
     execv(MATONOS_FLATPAK_WRAPPER, flatpak_argv);
     return fail("cannot start static Flatpak staging pull: %s", strerror(errno));

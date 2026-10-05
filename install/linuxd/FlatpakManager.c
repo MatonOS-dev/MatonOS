@@ -943,7 +943,7 @@ void flatpak_manager_launch_graphical(const char* ref, int runtime_directory_fd,
      * ignore the decoration protocol are told to drop their own. The GPU's
      * render node is passed in: Wayland clients render on it and hand their
      * dma-bufs to the compositor, which shows them without a copy. */
-    char* argv[] = {(char*)k_flatpak, "--user", "run",
+    char* argv[] = {(char*)"flatpak", "--user", "run",
             "--socket=wayland", "--socket=x11", "--no-documents-portal",
             /* Session-bus access is the installation's global override.
              * Keep per-app permissions free of this launch-chain lever. */
