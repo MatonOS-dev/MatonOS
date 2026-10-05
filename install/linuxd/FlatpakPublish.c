@@ -22,8 +22,8 @@ extern char** environ;
 #ifndef MATONOS_OSTREE_CLI
 #define MATONOS_OSTREE_CLI "/apex/com.matonos.flatpak/bin/ostree"
 #endif
-#ifndef MATONOS_FLATPAK_STORE_HELPER
-#define MATONOS_FLATPAK_STORE_HELPER "/apex/com.matonos.flatpak/bin/matonos-flatpak-store"
+#ifndef MATONOS_FLATPAK_STAGE_HELPER
+#define MATONOS_FLATPAK_STAGE_HELPER "/apex/com.matonos.flatpak/bin/matonos-flatpak-store"
 #endif
 
 static void fail(char* error, unsigned long size, const char* message) {
@@ -181,10 +181,10 @@ static int stage_ref(const char* staging, const char* remote, const char* instal
         "--assumeyes", remote, install_ref};
     return run_flatpak(staging, NULL, args, sizeof(args) / sizeof(args[0]));
 #else
-    char* args[] = {(char*)MATONOS_FLATPAK_STORE_HELPER, "stage", (char*)staging,
+    char* args[] = {(char*)MATONOS_FLATPAK_STAGE_HELPER, "stage", (char*)staging,
         (char*)remote, (char*)install_ref, NULL};
     char output[4096] = {0};
-    int rc = invoke_path(MATONOS_FLATPAK_STORE_HELPER, NULL, NULL, args, output, sizeof(output));
+    int rc = invoke_path(MATONOS_FLATPAK_STAGE_HELPER, NULL, NULL, args, output, sizeof(output));
     if (rc && output[0]) fprintf(stderr, "installer staging failed (%d): %s\n", rc, output);
     return rc;
 #endif
