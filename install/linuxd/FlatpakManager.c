@@ -216,7 +216,8 @@ static ChildResult run_cli(const char* const* args, size_t count, int progress) 
         snprintf(result.output, k_output_limit + 1, "spawn setup failed");
         return result;
     }
-    argv[0] = (char*)k_flatpak;
+    /* The APEX ships one multicall ELF; its basename dispatches the applet. */
+    argv[0] = (char*)"flatpak";
     for (size_t i = 0; i < count; ++i) argv[i + 1] = (char*)args[i];
     rc = posix_spawn(&child, k_flatpak, &actions, &attributes, argv, environ);
     free(argv);
