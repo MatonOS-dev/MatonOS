@@ -105,7 +105,17 @@ run_publish "${GOOD[0]}" "$APP_COMMIT"
 FLATPAK_SYSTEM_DIR="${GOOD[0]}/S" run_flatpak list --system --columns=ref | grep -F "${RUNTIME_REF#runtime/}" >/dev/null
 FLATPAK_SYSTEM_DIR="${GOOD[0]}/S" FLATPAK_USER_DIR="${GOOD[0]}/U" \
   run_flatpak list --user --columns=ref | grep -F "${APP_REF#app/}" >/dev/null
+FLATPAK_SYSTEM_DIR="${GOOD[0]}/S" run_flatpak override --show --system |
+  grep -F 'sockets=session-bus' >/dev/null
+FLATPAK_SYSTEM_DIR="${GOOD[0]}/S" FLATPAK_USER_DIR="${GOOD[0]}/U" \
+  run_flatpak override --show --user | grep -F 'sockets=session-bus' >/dev/null
+[[ -f ${GOOD[0]}/S/overrides/global && -f ${GOOD[0]}/U/overrides/global ]]
+[[ ! -e ${GOOD[0]}/S/overrides/org.gnome.Calculator &&
+   ! -e ${GOOD[0]}/U/overrides/org.gnome.Calculator ]]
 echo "PASS good signed runtime/app published"
+if [[ ${MATONOS_PUBLISH_RUN_LAUNCH_TEST:-0} == 1 ]]; then
+  bash "$WORKTREE/linux/flatpak/tests/launch-chain-host-probe.sh" "${GOOD[0]}/S" "${GOOD[0]}/U"
+fi
 report_case_time good "$case_start"
 
 # A wrong pin is rejected before pull-local or either Flatpak deployment.
