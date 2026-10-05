@@ -32,7 +32,8 @@ allow matonos_linuxd matonos_flatpak_data_file:sock_file create_file_perms;
 allow matonos_linuxd matonos_flatpak_store_file:dir r_dir_perms;
 allow matonos_linuxd matonos_flatpak_store_file:file r_file_perms;
 allow matonos_linuxd self:capability { setuid setgid chown kill net_bind_service };
-allow matonos_linuxd dns_port:{ udp_socket tcp_socket } name_bind;
+# Port 53 has no dedicated label in Android policy (generic `port` type).
+allow matonos_linuxd port:{ udp_socket tcp_socket } name_bind;
 allow matonos_linuxd self:process { fork sigchld signal };
 net_domain(matonos_linuxd)
 
