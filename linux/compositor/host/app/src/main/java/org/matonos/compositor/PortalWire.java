@@ -24,6 +24,15 @@ import java.util.Map;
 final class PortalWire {
     static final int MAX_MESSAGE = 1024 * 1024, MAX_FDS = 16;
 
+    static int[] validateFrameHeader(byte[] header) {
+        if (header.length != 8) throw new IllegalArgumentException("Invalid portal frame header");
+        ByteBuffer b = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
+        int size = b.getInt(), fds = b.getInt();
+        if (size < 16 || size > MAX_MESSAGE || fds < 0 || fds > MAX_FDS)
+            throw new IllegalArgumentException("Malformed portal frame header");
+        return new int[] { size, fds };
+    }
+
     static final class Variant {
         final String signature;
         final Object value;
@@ -135,6 +144,9 @@ final class PortalWire {
         if("(ddd)".equals(sig)) {List<?> rgb=(List<?>)value;return new AccentColor(((Number)rgb.get(0)).doubleValue(),((Number)rgb.get(1)).doubleValue(),((Number)rgb.get(2)).doubleValue());}
         return value;
     }
+
+    static Object toDbusValue(String signature,Object value){return toDbus(signature,value);}
+    static Object fromDbusValue(String signature,Object value){return fromDbus(signature,value);}
 
     private static Object fromDbus(String sig,Object value) {
         if(sig.isEmpty())return value;
