@@ -34,6 +34,11 @@
 # Input wake sources for s2idle (power/pc-wakeup.sh)
 /vendor/bin/pc-wakeup\.sh                             u:object_r:pc_wakeup_exec:s0
 
+# Graphics clients inspect PCI GPU metadata and enumerate the backlight class.
+# Keep these labels on read-only sysfs nodes instead of granting generic sysfs.
+/sys/devices/pci[^/]+/[^/]+/(vendor|uevent) --          u:object_r:sysfs_gpu:s0
+/sys/class/backlight                                 u:object_r:sysfs_pc_backlight:s0
+
 # pc-wakeup: only power/wakeup files on PCI/USB and i8042 serio paths.
 # The script selects USB controllers/hubs/HID using the read-only metadata.
 /sys/devices/pci[^/]+(/[^/]+)*/power/wakeup -- u:object_r:sysfs_pc_wakeup:s0

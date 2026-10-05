@@ -194,6 +194,15 @@ allow hal_graphics_allocator_default gpu_device:chr_file rw_file_perms;
 allow hal_graphics_allocator_default graphics_device:dir r_dir_perms;
 allow hal_graphics_composer_default graphics_device:chr_file rw_file_perms;
 allow hal_graphics_composer_default graphics_device:dir r_dir_perms;
+# BootAnimation uses DRM to render the boot animation. It only stats a card
+# node and enumerates /dev/dri; it does not open the DRM node in this capture.
+allow bootanim graphics_device:chr_file getattr;
+allow bootanim graphics_device:dir r_dir_perms;
+# Mesa clients read only the PCI vendor and uevent metadata for the GPU.
+allow { bootanim hal_graphics_allocator_default surfaceflinger } sysfs_gpu:file { getattr open read };
+# The composer enumerates the backlight class to discover available outputs.
+type sysfs_pc_backlight, fs_type, sysfs_type;
+allow hal_graphics_composer_default sysfs_pc_backlight:dir r_dir_perms;
 # install: generic DRM composer listens for kernel hotplug events. Without this
 # stock HWC cannot initialize on virtio-vga and SurfaceFlinger never starts.
 allow hal_graphics_composer_default self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
