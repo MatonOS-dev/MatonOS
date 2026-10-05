@@ -1,8 +1,5 @@
-# pc-gpu-detect.sh: runs once at early-init (graphics/init.pc_x86_64.graphics.rc)
-# to pick the Vulkan HAL from the primary GPU's PCI IDs. Minimal domain so
-# init can exec it; the device is permissive for bring-up, the full rule set
-# (sysfs PCI reads, setting ro.hardware.vulkan / vendor.pc.*) comes with
-# enforcing mode.
+# pc-gpu-detect.sh: runs synchronously at early-init to publish GPU summary
+# properties and select the Vulkan HAL before graphics services start.
 type pc_gpu_detect, domain;
 type pc_gpu_detect_exec, exec_type, vendor_file_type, file_type;
 
@@ -22,6 +19,6 @@ r_dir_file(pc_gpu_detect, vendor_configs_file)
 set_prop(pc_gpu_detect, vendor_maton_prop)
 set_prop(pc_gpu_detect, vendor_maton_mesa_prop)
 
-# PCI GPU device directories are labelled sysfs_gpu; the detector must
-# traverse them to read class/vendor/uevent (it crashed without this).
+# PCI GPU metadata nodes are labelled sysfs_gpu; only this detector receives
+# access to them. Other graphics clients consume its vendor properties.
 r_dir_file(pc_gpu_detect, sysfs_gpu)

@@ -5,8 +5,3 @@ genfscon sysfs /devices/virtual/input u:object_r:sysfs_matonos_input:s0
 genfscon sysfs /class/input u:object_r:sysfs_matonos_discovery:s0
 genfscon sysfs /class/hidraw u:object_r:sysfs_matonos_discovery:s0
 genfscon sysfs /class/misc u:object_r:sysfs_matonos_discovery:s0
-
-# Core AVC packet: label only observed GPU, wakeup and USB block sysfs paths.
-genfscon sysfs /devices/pci0000:00/0000:00:03.0 u:object_r:sysfs_gpu:s0
-genfscon sysfs /devices/pci0000:00/0000:00:04.0/wakeup u:object_r:sysfs_wakeup:s0
-genfscon sysfs /devices/pci0000:00/0000:00:01.0/usb2/2-1/2-1:1.0/host6/target6:0:0/6:0:0:0/block u:object_r:sysfs_devices_block:s0

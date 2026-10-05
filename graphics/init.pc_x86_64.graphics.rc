@@ -1,8 +1,9 @@
 # Graphics setup for pc_x86_64 (installed to /vendor/etc/init/).
 
 on early-init
-    # Detection/modprobe are bounded; run in the background so boot proceeds.
-    exec_background -- /vendor/bin/pc-gpu-detect.sh
+    # Publish GPU properties and select the Vulkan HAL before core services
+    # (SurfaceFlinger and the allocator) start. Detection is bounded.
+    exec -- /vendor/bin/pc-gpu-detect.sh
 
 # Only init may set ro.hardware.*. The detector publishes the selected HAL
 # through the vendor property namespace, then this trigger commits the choice.
