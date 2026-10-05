@@ -3,7 +3,15 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int matonos_dns_create_sockets(const char *address, uint32_t uid,
                                int *udp_fd, int *tcp_fd);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
