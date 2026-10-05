@@ -1129,63 +1129,6 @@ static void read_exported_icon(const char* ref, FlatpakResult* result) {
         if (stat(resolved,&metadata) || !S_ISREG(metadata.st_mode) || metadata.st_size<8 || metadata.st_size>256*1024) continue;
         file=safe_fopen_absolute(resolved); if (file) break;
     }
-    /* appstream-compose writes flatpak-context PNGs into every deployment it
-     * processed; apps exporting only SVG (Brave) still have icons here. */
-    if (!file) {
-        const char* flat_sizes[] = {"512x512","256x256","128x128","128x128@2","64x64","64x64@2","48x48","32x32"};
-        for (size_t i=0;i<sizeof(flat_sizes)/sizeof(flat_sizes[0]) && !file;++i) {
-            int length = snprintf(path,sizeof(path),"%s/files/share/app-info/icons/flatpak/%s/%.*s.png",root,flat_sizes[i],(int)(end-ref-4),ref+4);
-            if (length<0 || length>=(int)sizeof(path) || !realpath(path,resolved)) continue;
-            if (strncmp(resolved,root,strlen(root)) || resolved[strlen(root)]!='/') continue;
-            struct stat metadata;
-            if (stat(resolved,&metadata) || !S_ISREG(metadata.st_mode) || metadata.st_size<8 || metadata.st_size>256*1024) continue;
-            file=safe_fopen_absolute(resolved);
-        }
-    }
-    /* AppStream supplies PNG thumbnails when an app exports only SVG. */
-    if (!file) {
-        // Some deployments bundle their AppStream PNG alongside their SVG export.
-        char app_id[256], media[4096];
-        size_t app_length=(size_t)(end-ref-4);
-        if(app_length<sizeof(app_id)) {
-            memcpy(app_id,ref+4,app_length);app_id[app_length]=0;
-            for(size_t i=0;i<app_length;i++)if(app_id[i]=='.')app_id[i]='/';
-            int length=snprintf(media,sizeof(media),"%s/files/share/app-info/media/%s",root,app_id);
-            DIR* directory=length>0 && length<(int)sizeof(media) ? safe_opendir_absolute(media) : NULL;
-            if(directory) {
-                struct dirent* entry;unsigned visited=0;
-                while(!file && visited++<256 && (entry=readdir(directory))) {
-                    if(entry->d_name[0]=='.')continue;
-                    const char* thumbnails[]={"128x128@2","128x128","64x64"};
-                    for(size_t i=0;i<3;i++) {
-                        length=snprintf(path,sizeof(path),"%s/%s/icons/%s/%.*s.png",media,entry->d_name,thumbnails[i],(int)app_length,ref+4);
-                        if(length<0 || length>=(int)sizeof(path) || !realpath(path,resolved))continue;
-                        if(strncmp(resolved,root,strlen(root)) || resolved[strlen(root)]!='/')continue;
-                        struct stat metadata;
-                        if(stat(resolved,&metadata)||!S_ISREG(metadata.st_mode)||metadata.st_size<8||metadata.st_size>256*1024)continue;
-                        file=safe_fopen_absolute(resolved);if(file)break;
-                    }
-                }
-                closedir(directory);
-            }
-        }
-    }
-    if (!file) {
-        char metadata_root[4096];
-        const char* arch_end=strchr(end+1,'/');
-        const char* thumbnails[]={"128x128","64x64"};
-        if (arch_end && realpath("/data/matonos/linux/flatpak/appstream/flathub",metadata_root) &&
-                !strncmp(metadata_root,"/data/matonos/linux/flatpak/appstream/",strlen("/data/matonos/linux/flatpak/appstream/"))) {
-            for(size_t i=0;i<2;++i) {
-                int length=snprintf(path,sizeof(path),"%s/%.*s/active/icons/%s/%.*s.png",metadata_root,(int)(arch_end-end-1),end+1,thumbnails[i],(int)(end-ref-4),ref+4);
-                if(length<0 || length>=(int)sizeof(path) || !realpath(path,resolved))continue;
-                if(strncmp(resolved,metadata_root,strlen(metadata_root)) || resolved[strlen(metadata_root)]!='/')continue;
-                struct stat metadata;
-                if(stat(resolved,&metadata) || !S_ISREG(metadata.st_mode) || metadata.st_size<8 || metadata.st_size>256*1024)continue;
-                file=safe_fopen_absolute(resolved);if(file)break;
-            }
-        }
-    }
     if (!file) { set_error(result,"application has no exported PNG icon"); return; }
     unsigned char* bytes=malloc(256*1024+1);
     if (!bytes) { fclose(file); set_error(result,"cannot allocate icon"); return; }

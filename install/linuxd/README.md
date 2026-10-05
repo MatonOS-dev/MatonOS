@@ -187,19 +187,12 @@ Linuxd and the bridge use matching one-way progress listener definitions.
 The store shows numeric progress when Flatpak reports percentages and an
 indeterminate bar during other stages.
 
-The validated `icon` command returns base64 PNG data. Lookup inside the
-deployment root, in order:
-
-1. exported `export/share/icons/hicolor/<size>/apps/<ref>.png`;
-2. appstream-compose's `files/share/app-info/icons/flatpak/<size>/<ref>.png`
-   (covers apps whose hicolor export is SVG-only, e.g. Brave);
-3. AppStream media thumbnails under
-   `files/share/app-info/media/<ref as path>/<release>/icons/<size>/<ref>.png`;
-4. the Flathub repo's extracted appstream branch under
-   `/data/matonos/linux/flatpak/appstream/flathub/<ref as path>/active/icons/`.
-
-Every candidate must resolve inside its root, stay under 256 KiB, and carry
-the PNG signature; otherwise the stub keeps its fallback icon.
+The validated `icon` command returns base64 PNG data from the app's exported
+hicolor icon, `export/share/icons/hicolor/<size>/apps/<ref>.png`, inside the
+deployment root. Appstream is stripped from the Flatpak build, so there is no
+app-info or appstream-branch fallback. The icon must resolve inside its root,
+stay under 256 KiB, and carry the PNG signature; otherwise the stub keeps its
+fallback icon.
 
 ## Open issues
 
