@@ -59,6 +59,8 @@ allow matonos_addon_manager self:capability sys_admin;
 allow matonos_addon_manager matonos_addon_data_file:dir create_dir_perms;
 allow matonos_addon_manager matonos_addon_data_file:file create_file_perms;
 allow matonos_addon_manager vendor_addon_module_file:file { getattr map open read };
+# Traverse /mnt/vendor to reach the already-labeled add-on subtree.
+allow matonos_addon_manager mnt_vendor_file:dir search;
 get_prop(matonos_addon_manager, exported_default_prop)
 # The standard loader reads image-labeled module files through vendor_file_type.
 allow vendor_modprobe vendor_addon_module_file:system module_load;
@@ -70,6 +72,8 @@ allow matonos_driver_helper system_file:file { execute execute_no_trans getattr 
 allow matonos_driver_helper system_file:dir r_dir_perms;
 
 # (No audio HAL of ours: BayLibre generic AIDL HAL runs as hal_audio_default.)
+# audioserver consumes the generic HAL's shared FMQ memfds.
+allow audioserver hal_audio_default_tmpfs:file rw_file_perms;
 
 
 # PipeWire stack and proxy.
@@ -214,6 +218,7 @@ allow gpu_sphal_domain gpu_device:chr_file rw_file_perms;
 # Mesa reads vendor.mesa.* options from all graphics clients. The type is
 # intentionally vendor_public_prop; make the platform-side readers explicit.
 get_prop(surfaceflinger, vendor_maton_mesa_prop)
+get_prop(bootanim, vendor_maton_mesa_prop)
 get_prop(zygote, vendor_maton_mesa_prop)
 get_prop(hal_graphics_allocator_default, vendor_maton_mesa_prop)
 
