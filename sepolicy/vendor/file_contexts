@@ -2,6 +2,11 @@
 /dev/block/by-name/metadata     u:object_r:metadata_block_device:s0
 /dev/block/by-name/super        u:object_r:super_block_device:s0
 /dev/block/by-name/userdata     u:object_r:userdata_block_device:s0
+# Live image RAM disks: fstab.pc_x86_64.live formats ram0 as /data and
+# ram1 as /metadata. Give them the same stock labels as their physical peers
+# so init/e2fs/vold use the existing block-device rules.
+/dev/block/ram0                u:object_r:userdata_block_device:s0
+/dev/block/ram1                u:object_r:metadata_block_device:s0
 /dev/block/zram0                u:object_r:swap_block_device:s0
 
 # Graphics HALs (minigbm allocator, drm_hwcomposer): without these labels
