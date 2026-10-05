@@ -190,9 +190,9 @@ if [[ $DO_AOSP == 1 ]]; then
     # once ccache is installed (see CLAUDE.md).
     # Switching it on or off changes every compile command, so the first
     # build afterwards recompiles all C/C++ once. MATON_CCACHE=0 disables.
-    # The cache must live under out/: the build sandbox makes everything
-    # else read-only ("ccache: error: Read-only file system").
-    ccache_dir=${CCACHE_DIR:-$AOSP/out/ccache}
+    # The cache lives at $AOSP/ccache so out/ wipes keep it; the build sandbox
+    # keeps it writable via BUILD_BROKEN_SRC_DIR_RW_ALLOWLIST (BoardConfig.mk).
+    ccache_dir=${CCACHE_DIR:-$AOSP/ccache}
     if [[ ${MATON_CCACHE:-1} != 0 ]] && command -v ccache >/dev/null &&
        mkdir -p "$ccache_dir"; then
       [[ -f $ccache_dir/ccache.conf ]] || CCACHE_DIR=$ccache_dir ccache -M 40G >/dev/null

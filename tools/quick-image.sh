@@ -77,7 +77,7 @@ export SOONG_INCREMENTAL_ANALYSIS=${SOONG_INCREMENTAL_ANALYSIS:-true}
 if [[ -f $AOSP/.maton-pruned ]]; then
   export ALLOW_MISSING_DEPENDENCIES=true
 fi
-ccache_dir=${CCACHE_DIR:-$AOSP/out/ccache}
+ccache_dir=${CCACHE_DIR:-$AOSP/ccache}
 if [[ ${MATON_CCACHE:-1} != 0 ]] && command -v ccache >/dev/null && mkdir -p "$ccache_dir"; then
   [[ -f $ccache_dir/ccache.conf ]] || CCACHE_DIR=$ccache_dir ccache -M 40G >/dev/null
   export USE_CCACHE=true CCACHE_DIR=$ccache_dir
