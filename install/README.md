@@ -241,8 +241,8 @@ headless QEMU boot, run the bridge `flatpak_test_call` with commands
 `list_installed`, `list_remotes`, `add_flathub`, `install`, and `uninstall`;
 watch `progress` for install and uninstall. A CLI test ref is
 `app/fi.mooc.tmc.tmc-cli-rust/x86_64/stable`. Confirm its ref disappears from
-`list_installed` and `/data/matonos/linux/flatpak/app/fi.mooc.tmc.tmc-cli-rust`
-(and its matching app data) is gone after uninstall. Also exercise `run` and
+`list_installed` and the app's `/data/matonos/linux/apps/<uid>/app/fi.mooc.tmc.tmc-cli-rust`
+deployment (and its matching app data) are gone after uninstall. Also exercise
 `kill`; the test runner must verify the returned PID and process exit.
 
 The 2026-09-29 05:59 full image was copied to
@@ -258,9 +258,9 @@ daemon: `list_installed` and `list_remotes` returned exit code 127, and
 `/apex/com.matonos.flatpak/bin/flatpak-env-wrapper --version` with `/system/bin/sh: ...
 inaccessible or not found` (exit 127). Install and uninstall hook calls were accepted as
 asynchronous operations, but no package was installed and no deletion was
-verified; the Flatpak executable was absent. `run` initially exposed a dead-PID
-response when the CLI was missing. `run_async` now checks executable access
-first; the 05:59 image returned `{"error":"No such file or directory",
+verified; the Flatpak executable was absent. The generic run path was later
+removed (launch is driven by the signed stub); the 05:59 image returned
+`{"error":"No such file or directory",
 "exitCode":127,"ok":false}` through the bridge hook. Repeat the
 install/uninstall and data-removal test once the spike image includes Flatpak.
 On real hardware, repeat these calls on the Ryzen 5800X/RX 6600/Intel 7265,

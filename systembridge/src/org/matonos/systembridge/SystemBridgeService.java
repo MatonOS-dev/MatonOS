@@ -61,6 +61,7 @@ import org.matonos.systembridge.ILinuxdListener;
 public final class SystemBridgeService extends Service {
     private static final String TAG = "MatonSystemBridge";
     private static final String PERMISSION = "org.matonos.permission.SYSTEM_BRIDGE";
+    private static final String RUNTIMES_PACKAGE = "org.matonos.linuxruntimes";
     private static final int MAX_EXPOSED_TASKS = 50;
     private static volatile SystemBridgeService activeService;
     private volatile Set<String> allowedCerts;
@@ -434,6 +435,10 @@ public final class SystemBridgeService extends Service {
                         try { result = flatpakStubManager.launch(args.getString("appId")); }
                         finally { Binder.restoreCallingIdentity(identity); }
                     } else {
+                        if (("add_flathub".equals(command) || "list_remotes".equals(command)) && !args.has("runtimeUid")) {
+                            int runtimeUid = runtimesUid(UserHandle.getUserId(Binder.getCallingUid()));
+                            if (runtimeUid >= 10000) args.put("runtimeUid", runtimeUid);
+                        }
                         result = service.call(command, args.toString());
                     }
                 } else {
@@ -1176,7 +1181,7 @@ public final class SystemBridgeService extends Service {
                             !"1".equals(android.os.SystemProperties.get("ro.boot.matonos.live")))
                         throw new SecurityException("flatpak test channel requires an armed live debug image and root");
                     if (!Set.of("list_installed", "list_remotes", "add_flathub", "install",
-                            "uninstall", "run", "kill").contains(arg))
+                            "uninstall", "kill").contains(arg))
                         throw new IllegalArgumentException("unsupported flatpak test command");
                     String encoded = extras == null ? null : extras.getString("payload_b64");
                     if (encoded == null || encoded.length() > 90000)
@@ -1344,6 +1349,16 @@ public final class SystemBridgeService extends Service {
     private ILinuxd linuxdFor() {
         IBinder service = ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default");
         return ILinuxd.Stub.asInterface(service);
+    }
+
+    /** UID of the preinstalled runtime app that owns the shared --system install. */
+    private int runtimesUid(int userId) {
+        try {
+            return getPackageManager().getApplicationInfoAsUser(RUNTIMES_PACKAGE, 0, userId).uid;
+        } catch (Exception error) {
+            Log.w(TAG, "Runtime app UID unavailable for user " + userId);
+            return -1;
+        }
     }
 
     private boolean channelAvailable(String target) {

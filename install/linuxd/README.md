@@ -75,8 +75,8 @@ inside a `--device=all` sandbox, compare libudev enumeration with sysfs,
 and plug/unplug a controller while an SDL2/SDL3 app runs. Device access and
 the separate controller-permission branch must be checked independently.
 
-Run arguments are passed after `--`, and caller-provided values beginning with
-`-` are rejected. Uninstall keeps app data unless `deleteData: true` is supplied.
+Launch is driven by the signed stub: linuxd accepts no caller-supplied run
+arguments. Uninstall keeps app data unless `deleteData: true` is supplied.
 Operations have a ten-minute CLI limit; listener callbacks run on a separate
 bounded queue outside both operation and listener locks. Only one install or uninstall is accepted at a time. The store
 tags each request with an operation ID and ignores completion events for any
@@ -150,9 +150,9 @@ remotes.
   Android NDK into `out/pc-logs/dbus-broker/android`.
 - Run `tools/preflight.sh` before requesting an image build.
 - Runtime verification requires a freshly booted image: install, launch, and
-  uninstall a harmless Flathub app; confirm option-looking run args are
-  rejected, no-data uninstall preserves app data, progress/completion reach the
-  store, and the system bridge is the only caller accepted by linuxd.
+  uninstall a harmless Flathub app; confirm no-data uninstall preserves app
+  data, progress/completion reach the store, and the system bridge is the only
+  caller accepted by linuxd.
 
 ## Real hardware check
 
@@ -166,9 +166,9 @@ remotes.
 3. Launch the installed app, then uninstall it with the default choice and
    confirm app data is retained. Repeat with explicit `deleteData: true` and
    verify that data is removed.
-4. From an authorized bridge test call, pass a run argument beginning with
-   `--filesystem=` and confirm linuxd rejects it. Pass a normal positional
-   argument and confirm Flatpak receives it after the `--` delimiter.
+4. From an authorized bridge test call, confirm the generic `run` command is
+   gone and that a launch is driven entirely by the signed stub (ref, runtime
+   ref and pinned commits); caller-supplied arguments must have no effect.
 5. While an install is active, submit a second install and confirm linuxd
    rejects it promptly. Kill the linuxd process and confirm init restarts it
    without affecting boot or the rest of the running system.

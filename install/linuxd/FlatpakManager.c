@@ -616,12 +616,6 @@ static void start_package_operation(int uninstall, const char* ref, int delete_d
     result->accepted = 1;
 }
 
-static void run_async(const char* app_id, const char* const* extra, size_t extra_count,
-        FlatpakResult* result) {
-    (void)app_id; (void)extra; (void)extra_count;
-    set_error(result, "Launch through the signed Android stub");
-}
-
 typedef struct GraphicalChild { pid_t pid; int directory, listener, slot, x11_directory, x11_listener; MatonSessionPads *pads; char path[108], x11_path[108], x11_name[64]; } GraphicalChild;
 static pthread_mutex_t g_launch_mutex=PTHREAD_MUTEX_INITIALIZER;
 static struct { char ref[512], log[512]; pid_t pid; int alive; } g_launches[128];
@@ -1198,22 +1192,22 @@ static void list_installed_refs(FlatpakResult* result) {
 }
 
 void flatpak_manager_call(const char* command, const char* ref, const char* app_id,
-        const char* const* run_args, size_t run_arg_count, int delete_data,
-        const char* operation_id, const char* app_commit, const char* runtime_ref,
-        const char* runtime_commit, const char* remote, int app_uid, int runtime_uid,
-        FlatpakResult* result) {
+        int delete_data, const char* operation_id, const char* app_commit,
+        const char* runtime_ref, const char* runtime_commit, const char* remote,
+        int app_uid, int runtime_uid, FlatpakResult* result) {
     if (!result) return;
     memset(result, 0, sizeof(*result));
     result->exit_code = 127;
     if (!command) { set_error(result, "unsupported Flatpak command"); return; }
     if (strcmp(command, "list_installed") == 0) { list_installed_refs(result); return; }
-    /* Remote management still targets a single installation. Like the other
-     * operations it should run against the runtime app's --system install for
-     * the calling Android user; until that UID reaches linuxd it keeps the
-     * legacy defaults from flatpak_manager_init. */
+    /* Remote management targets the runtime app's --system installation for
+     * the calling Android user (the bridge supplies its UID). */
     if (strcmp(command, "list_remotes") == 0 || strcmp(command, "add_flathub") == 0) {
         ChildResult child;
         int changes_remote = strcmp(command, "add_flathub") == 0;
+        char system_dir[256];
+        int have_runtime = valid_install_uid(runtime_uid) &&
+                snprintf(system_dir, sizeof(system_dir), "/data/matonos/linux/apps/%d", runtime_uid) < (int)sizeof(system_dir);
         // Flatpak supports listing the committed state during a transaction.
         // Never queue a Binder caller behind a ten-minute install.
         if (changes_remote && pthread_mutex_trylock(&g_operation_mutex) != 0) {
@@ -1222,13 +1216,15 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
         }
         if (strcmp(command, "list_remotes") == 0) {
             const char* args[] = {"--system", "remotes", "--show-details"};
-            child = run_cli(args, sizeof(args) / sizeof(args[0]), 0);
+            child = have_runtime ? run_cli_in(args, sizeof(args) / sizeof(args[0]), 0, system_dir, NULL)
+                                 : run_cli(args, sizeof(args) / sizeof(args[0]), 0);
         } else {
             /* remote-add accepts neither transaction flag; --from imports the
              * repository URL and signing key from the .flatpakrepo file. */
             const char* args[] = {"--system", "remote-add", "--if-not-exists", "--from",
                     "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"};
-            child = run_cli(args, sizeof(args) / sizeof(args[0]), 0);
+            child = have_runtime ? run_cli_in(args, sizeof(args) / sizeof(args[0]), 0, system_dir, NULL)
+                                 : run_cli(args, sizeof(args) / sizeof(args[0]), 0);
         }
         if (changes_remote) pthread_mutex_unlock(&g_operation_mutex);
         result_from_child(result, &child);
@@ -1260,17 +1256,6 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
         else start_package_operation(strcmp(command, "uninstall") == 0, ref, delete_data,
                 operation_id, app_commit, runtime_ref, runtime_commit, remote,
                 app_uid, runtime_uid, result);
-    } else if (strcmp(command, "run") == 0) {
-        if (!flatpak_manager_valid_app_id(app_id)) set_error(result, "valid Flatpak app ID required");
-        else if (run_arg_count > 64) set_error(result, "too many run arguments");
-        else {
-            int valid = 1;
-            for (size_t i = 0; i < run_arg_count; ++i) {
-                if (!run_args[i] || run_args[i][0] == '-' || strlen(run_args[i]) > 4096) { valid = 0; break; }
-            }
-            if (!valid) set_error(result, "invalid run argument");
-            else run_async(app_id, run_args, run_arg_count, result);
-        }
     } else if (strcmp(command, "kill") == 0) {
         ChildResult child;
         if (!flatpak_manager_valid_app_id(app_id)) {

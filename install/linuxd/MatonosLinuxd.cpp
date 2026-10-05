@@ -286,8 +286,6 @@ class LinuxdService final : public BnLinuxd {
         int app_uid = -1, runtime_uid = -1;
         std::string operation_id_storage;
         const char* operation_id = nullptr;
-        std::vector<std::string> run_arg_storage;
-        std::vector<const char*> run_args;
         if (command == "install" || command == "uninstall" || (command == "metadata" || command == "desktop_entry" || command == "icon" || command == "launch_status")) {
             const bool uninstall = command == "uninstall";
             const bool install = command == "install";
@@ -323,34 +321,6 @@ class LinuxdService final : public BnLinuxd {
             }
             delete_data = request.get("deleteData", false).asBool() ? 1 : 0;
             if (request.isMember("operationId")) { operation_id_storage = request["operationId"].asString(); operation_id = operation_id_storage.c_str(); }
-        } else if (command == "run") {
-            if (!OnlyKeys(request, {"appId", "args"}) || !request["appId"].isString() ||
-                    HasEmbeddedNul(request["appId"].asString())) {
-                reply(Encode(Error("a Flatpak app ID is required")));
-                return android::binder::Status::ok();
-            }
-            app_id_storage = request["appId"].asString();
-            app_id = app_id_storage.c_str();
-            const Json::Value extra = request["args"];
-            if (!extra.isNull() && !extra.isArray()) {
-                reply(Encode(Error("args must be an array of strings")));
-                return android::binder::Status::ok();
-            }
-            if (extra.isArray()) {
-                if (extra.size() > 64) {
-                    reply(Encode(Error("too many run arguments")));
-                    return android::binder::Status::ok();
-                }
-                for (const auto& arg : extra) {
-                    if (!arg.isString() || arg.asString().size() > 4096 ||
-                            HasEmbeddedNul(arg.asString())) {
-                        reply(Encode(Error("invalid run argument")));
-                        return android::binder::Status::ok();
-                    }
-                    run_arg_storage.push_back(arg.asString());
-                }
-            }
-            for (const std::string& arg : run_arg_storage) run_args.push_back(arg.c_str());
         } else if (command == "kill") {
             if (!OnlyKeys(request, {"appId"}) || !request["appId"].isString() ||
                     HasEmbeddedNul(request["appId"].asString())) {
@@ -359,6 +329,16 @@ class LinuxdService final : public BnLinuxd {
             }
             app_id_storage = request["appId"].asString();
             app_id = app_id_storage.c_str();
+        } else if (command == "list_remotes" || command == "add_flathub") {
+            /* The bridge supplies the preinstalled runtime app's UID so remote
+             * setup targets that app's --system installation. */
+            if (!OnlyKeys(request, {"runtimeUid"}) ||
+                    (request.isMember("runtimeUid") && (!request["runtimeUid"].isInt() ||
+                            request["runtimeUid"].asInt() < 10000))) {
+                reply(Encode(Error("a valid runtimeUid is required")));
+                return android::binder::Status::ok();
+            }
+            if (request.isMember("runtimeUid")) runtime_uid = request["runtimeUid"].asInt();
         } else if (!OnlyKeys(request, {})) {
             reply(Encode(Error("unexpected arguments")));
             return android::binder::Status::ok();
@@ -366,7 +346,7 @@ class LinuxdService final : public BnLinuxd {
 
         if (command == "install" || command == "uninstall") PublishProgress(command + " started");
         FlatpakResult result{};
-        flatpak_manager_call(command.c_str(), ref, app_id, run_args.data(), run_args.size(), delete_data,
+        flatpak_manager_call(command.c_str(), ref, app_id, delete_data,
                 operation_id, app_commit, runtime_ref, runtime_commit, remote, app_uid, runtime_uid, &result);
         reply(Encode(EncodeResult(result)));
         flatpak_manager_result_clear(&result);
