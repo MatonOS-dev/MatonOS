@@ -19,6 +19,7 @@ import android.os.Binder;
 import android.os.IBinder;
 import android.os.SystemClock;
 import android.os.Build;
+import android.os.ParcelFileDescriptor;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.Log;
@@ -95,7 +96,7 @@ public final class SystemBridgeService extends Service {
             throw new SecurityException("A signed stub process and lifeline are required");
         }
 
-        @Override public String launchOwnedFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, android.os.ParcelFileDescriptor x11Directory, String x11Display, int stubUid, int stubPid, android.os.ParcelFileDescriptor lifeline) {
+        @Override public String launchOwnedFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, android.os.ParcelFileDescriptor x11Directory, String x11Display, String dnsForwarder, int stubUid, int stubPid, android.os.ParcelFileDescriptor lifeline) {
             try {
                 String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
                 if (!"org.matonos.compositor".equals(caller) || runtimeDirectory == null)
@@ -111,15 +112,11 @@ public final class SystemBridgeService extends Service {
                 try {
                     ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
                     if (daemon == null) throw new IllegalStateException("Flatpak service is unavailable");
-                    android.net.ConnectivityManager connectivity = getSystemService(android.net.ConnectivityManager.class);
-                    android.net.Network network = connectivity.getActiveNetwork();
-                    android.net.LinkProperties link = network == null ? null : connectivity.getLinkProperties(network);
-                    StringBuilder dns = new StringBuilder();
-                    if (link != null) for (java.net.InetAddress server : link.getDnsServers()) {
-                        if (dns.length() > 0) dns.append(',');
-                        dns.append(server.getHostAddress());
-                    }
-                    return daemon.launchGraphical(ref, runtimeDirectory, dns.toString(), x11Directory, x11Display,
+                    String expectedDns = String.format(Locale.ROOT, "127.%d.%d.%d:53",
+                            10 + ((stubUid >>> 16) & 0x3f), (stubUid >>> 8) & 0xff, stubUid & 0xff);
+                    if (!expectedDns.equals(dnsForwarder))
+                        throw new SecurityException("Per-app DNS endpoint is missing or does not match the stub UID");
+                    return daemon.launchGraphical(ref, runtimeDirectory, expectedDns.substring(0, expectedDns.length() - 3), x11Directory, x11Display,
                             flatpakStubManager.hasGameControllers(ref), stubUid, stubPid, lifeline);
                 } finally {
                     Binder.restoreCallingIdentity(identity);
@@ -145,6 +142,26 @@ public final class SystemBridgeService extends Service {
             long identity=Binder.clearCallingIdentity();
             try{return flatpakStubManager!=null&&flatpakStubManager.ownsStub(uid,ref);}
             finally{Binder.restoreCallingIdentity(identity);}
+        }
+
+        @Override public ParcelFileDescriptor[] createDnsForwarderSockets(String address, int stubUid, String ref) {
+            String caller = enforceAuthorizedCaller("flatpak_launch", "createDnsForwarderSockets");
+            if (!"org.matonos.compositor".equals(caller) || stubUid < 10000 ||
+                    !flatpakStubManager.ownsStub(stubUid, ref))
+                throw new SecurityException("Only the compositor may bind DNS sockets for a verified stub");
+            String expected = String.format(Locale.ROOT, "127.%d.%d.%d",
+                    10 + ((stubUid >>> 16) & 0x3f), (stubUid >>> 8) & 0xff, stubUid & 0xff);
+            if (!expected.equals(address)) throw new SecurityException("DNS address does not match the stub UID");
+            long identity = Binder.clearCallingIdentity();
+            try {
+                ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
+                if (daemon == null) throw new IllegalStateException("linuxd is unavailable");
+                return daemon.createDnsForwarderSockets(address, stubUid);
+            } catch (RemoteException error) {
+                throw new IllegalStateException("linuxd could not bind per-app DNS sockets", error);
+            } finally {
+                Binder.restoreCallingIdentity(identity);
+            }
         }
 
         @Override public String getFlatpakStubCommits(int uid, String ref) {

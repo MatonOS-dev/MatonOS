@@ -74,7 +74,10 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             new Thread(() -> {
                 IEmbeddedSession opened=null;
                 try {
-                    opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener,lifeline());
+                    android.os.ParcelFileDescriptor[] dnsSockets = new android.os.ParcelFileDescriptor[2];
+                    opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener,lifeline(),DnsForwarder.endpoint(),dnsSockets);
+                    if (DnsForwarder.acquire(dnsSockets) == null)
+                        throw new IllegalStateException("Privileged DNS sockets could not be activated");
                     final IEmbeddedSession active=opened;
                     boolean needsLaunch=window==0;
                     runOnUiThread(() -> {
@@ -130,23 +133,19 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         if(minimum>HostContract.getInterfaceVersion()){message("Update the Linux host to launch this application.");return;}
         try {
             String[] requested = getPackageManager().getPackageInfo(getPackageName(), PackageManager.GET_PERMISSIONS).requestedPermissions;
-            String[] runtime = {"org.matonos.permission.GAME_CONTROLLERS", "org.matonos.permission.RUN_DOWNLOADED_CODE"};
-            int[] codes = {2900, 2901};
+            String permission = "org.matonos.permission.GAME_CONTROLLERS";
             if (window == 0 && requested != null) {
                 java.util.List<String> declared = java.util.Arrays.asList(requested);
-                // Ask at most once per permission, per stub (SharedPreferences is
-                // package-scoped). A denial is remembered so the prompt is never
-                // repeated; the app still launches either way. We must not gate on
-                // shouldShowRequestPermissionRationale(): it is false before the
-                // first request, so the prompt would never appear.
+                // Ask at most once per stub. A denial is remembered so the
+                // prompt is never repeated; the app still launches either way.
+                // Do not gate on shouldShowRequestPermissionRationale(): it is
+                // false before the first request, so the prompt would not appear.
                 android.content.SharedPreferences answered = getSharedPreferences("flatpak_stub_permissions", MODE_PRIVATE);
-                for (int i = 0; i < runtime.length; i++) {
-                    String permission = runtime[i];
-                    if (!declared.contains(permission)) continue;
-                    if (checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED) continue;
-                    if (answered.getBoolean("asked_" + permission, false)) continue;
+                if (declared.contains(permission)
+                        && checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED
+                        && !answered.getBoolean("asked_" + permission, false)) {
                     answered.edit().putBoolean("asked_" + permission, true).apply();
-                    requestPermissions(new String[]{permission}, codes[i]);
+                    requestPermissions(new String[]{permission}, 2900);
                     return;
                 }
             }

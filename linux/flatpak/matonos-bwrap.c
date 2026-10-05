@@ -1,4 +1,6 @@
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 /*
  * MatonOS bwrap shim. flatpak-env-wrapper.c routes the Flatpak
  * CLI through $FLATPAK_BWRAP, and flatpak run execs bwrap with
@@ -14,9 +16,9 @@
  * then hand the real bwrap the extended argv.
  */
 #include "controller-access.h"
-#include "maton-mount.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <stddef.h>
@@ -31,21 +33,28 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#ifndef SYS_pidfd_open
-#define SYS_pidfd_open 434
-#endif
-
 /* r24: the Flatpak stack lives in the com.matonos.flatpak APEX. bwrap finds
  * its own libraries through the APEX linker namespace. */
+#ifndef MATON_FLATPAK_BIN
 #define MATON_FLATPAK_BIN "/apex/com.matonos.flatpak/bin"
-#define BWRAP MATON_FLATPAK_BIN "/bwrap"
+#endif
+#ifndef MATON_MACHINE_ID_PATH
+#define MATON_MACHINE_ID_PATH "/data/matonos/linux/machine-id"
+#endif
+#ifndef MATON_UDEV_DB_PATH
+#define MATON_UDEV_DB_PATH "/data/matonos/linux/udev"
+#endif
 #define X11_SOCKET_PATH "/tmp/.X11-unix/X0"
 #define X11_SOCKET_ENV "MATON_X11_SOCKET"
 #define X11_DISPLAY ":0"
 #define JOURNAL_SOCKET_ENV "MATON_JOURNAL_SOCKET"
 #define JOURNAL_SOCKET_PATH "/run/systemd/journal/socket"
-/* r24: bwrap runs matonos-app-exec as the sandbox command; it dyntransitions
- * to the verified app domain before exec'ing the payload. */
+/* SELinux exec chain: matonos_flatpak_run execs the separately labeled
+ * matonos-bwrap shim (matonos_bwrap_exec), entering matonos_bwrap. The shim
+ * then execs matonos-flatpak (matonos_flatpak_cli_exec) with argv[0]="bwrap",
+ * returning to matonos_flatpak_run for bubblewrap's namespace setup. bwrap
+ * runs matonos-app-exec as the sandbox command; it dyntransitions to the
+ * verified app domain before exec'ing the payload. */
 #define APP_EXEC_HOST MATON_FLATPAK_BIN "/matonos-app-exec"
 #define APP_EXEC_SANDBOX "/run/matonos/matonos-app-exec"
 #define APP_LABEL_ENV "MATON_APP_LABEL"
@@ -240,100 +249,21 @@ static int is_socket(const char* path) {
     return path && *path && lstat(path,&info)==0 && S_ISSOCK(info.st_mode);
 }
 
-/* Read the "child-pid" from the JSON bubblewrap writes to --info-fd. The
- * document is small; a bounded read and a scan for the field is enough. */
-static int read_info_pid(int fd,pid_t* pid) {
-    char buffer[4096];size_t used=0;
-    for(;;) {
-        if(used>=sizeof(buffer)-1)break;
-        ssize_t got=read(fd,buffer+used,sizeof(buffer)-1-used);
-        if(got<0) { if(errno==EINTR)continue; break; }
-        if(got==0)break;
-        used+=(size_t)got;
-        if(memchr(buffer,'}',used))break;
-    }
-    buffer[used]=0;
-    char* field=strstr(buffer,"\"child-pid\"");
-    if(!field)return -1;
-    char* colon=strchr(field,':');
-    if(!colon)return -1;
-    long value=strtol(colon+1,NULL,10);
-    if(value<=0)return -1;
-    *pid=(pid_t)value;
+/* The shim and multicall executable are staged beside each other in the
+ * APEX. Resolve the multicall path from this ELF's actual location so host
+ * launch probes can exercise the staged musl shim from a temporary directory
+ * without changing the production executable path or trusting an env var. */
+static int multicall_path(char* path, size_t size) {
+    ssize_t length = readlink("/proc/self/exe", path, size - 1);
+    if (length <= 0 || (size_t)length >= size - 1) return -1;
+    path[length] = '\0';
+    char* slash = strrchr(path, '/');
+    if (!slash) return -1;
+    static const char name[] = "/matonos-flatpak";
+    size_t directory = (size_t)(slash - path);
+    if (directory + sizeof(name) > size) return -1;
+    memcpy(path + directory, name, sizeof(name));
     return 0;
-}
-
-/* Ask the privileged mount helper to mount the verified images into the
- * sandbox's mount namespace. The rendezvous is the connected socketpair end
- * inherited from the launcher wrapper (never bound, so it has no name). We pass
- * a pidfd for the sandbox process - not a bare pid or namespace fd - and the
- * helper independently verifies it before opening the namespace itself. The
- * helper derives the app MLS level from our kernel-provided credentials and the
- * loop device from the installer's store attach record. */
-static int send_mount_request(int mount_fd,const char* app_id,pid_t sandbox) {
-    if(mount_fd<0 || !app_id || !*app_id)return 0;
-    long pidfd=syscall(SYS_pidfd_open,sandbox,0);
-    if(pidfd<0)return 0;
-    struct maton_mount_request request;
-    memset(&request,0,sizeof(request));
-    request.magic=MATON_MOUNT_MAGIC;request.version=MATON_MOUNT_VERSION;
-    snprintf(request.app_id,sizeof(request.app_id),"%s",app_id);
-    char control[CMSG_SPACE(sizeof(int))];
-    struct iovec payload={.iov_base=&request,.iov_len=sizeof(request)};
-    struct msghdr message={.msg_iov=&payload,.msg_iovlen=1,
-        .msg_control=control,.msg_controllen=sizeof(control)};
-    struct cmsghdr* rights=CMSG_FIRSTHDR(&message);
-    rights->cmsg_level=SOL_SOCKET;rights->cmsg_type=SCM_RIGHTS;
-    rights->cmsg_len=CMSG_LEN(sizeof(int));
-    int fd=(int)pidfd;
-    memcpy(CMSG_DATA(rights),&fd,sizeof(int));
-    int ok=0;
-    if(sendmsg(mount_fd,&message,MSG_NOSIGNAL)==(ssize_t)sizeof(request)) {
-        struct maton_mount_reply reply;
-        ssize_t got=recv(mount_fd,&reply,sizeof(reply),0);
-        ok=got==(ssize_t)sizeof(reply) && reply.status==0;
-        if(!ok && got==(ssize_t)sizeof(reply))
-            fprintf(stderr,"matonos-bwrap: mount helper refused: %s\n",reply.error);
-    }
-    close((int)pidfd);
-    return ok;
-}
-
-/* Run bubblewrap and, while it waits on --block-fd before running the payload,
- * have the privileged helper mount the app's verified images into the sandbox.
- * Any failure kills the sandbox (fail closed). Returns bubblewrap's status. */
-static int launch_sandbox(char** argv,int info_write,int info_read,int block_read,
-        int block_write,int mount_fd,const char* app_id) {
-    pid_t child=fork();
-    if(child<0) {
-        perror("matonos-bwrap: fork");
-        return 127;
-    }
-    if(child==0) {
-        close(info_read);close(block_write);
-        if(fcntl(info_write,F_SETFD,0)||fcntl(block_read,F_SETFD,0))_exit(127);
-        execv(BWRAP,argv);
-        _exit(127);
-    }
-    close(info_write);close(block_read);
-    pid_t sandbox=0;
-    int ok=read_info_pid(info_read,&sandbox)==0;
-    close(info_read);
-    if(ok)ok=send_mount_request(mount_fd,app_id,sandbox);
-    if(ok) {
-        char released=1;
-        ok=write(block_write,&released,1)==1;
-    }
-    close(block_write);
-    if(!ok) {
-        fprintf(stderr,"matonos-bwrap: app code mount failed; killing sandbox\n");
-        kill(child,SIGKILL);
-        while(waitpid(child,NULL,0)<0&&errno==EINTR){}
-        return 127;
-    }
-    int status=0;
-    while(waitpid(child,&status,0)<0&&errno==EINTR){}
-    return WIFEXITED(status)?WEXITSTATUS(status):128+WTERMSIG(status);
 }
 
 int main(int argc, char** argv) {
@@ -344,6 +274,14 @@ int main(int argc, char** argv) {
     int command;
     int at;
     char** extended;
+    char multicall[PATH_MAX];
+    const char* machine_id_path = MATON_MACHINE_ID_PATH;
+    const char* udev_db_path = MATON_UDEV_DB_PATH;
+#ifdef MATONOS_HOST_LAUNCH_PROBE
+    char probe_machine_id[PATH_MAX];
+    char probe_udev[PATH_MAX];
+    char* bundled_probe_root = NULL;
+#endif
     char* pad_nodes=NULL;
     char** extra;
     int count=0;
@@ -352,12 +290,6 @@ int main(int argc, char** argv) {
     char* bundled=NULL;
     char* bundled_journal=NULL;
     char* app_label=NULL;
-    char* app_id=NULL;
-    char* mount_fd_text=NULL;
-    int mount_fd=-1;
-    int info_pipe[2]={-1,-1}, block_pipe[2]={-1,-1};
-    int needs_mounts=0;
-    static char info_fd_arg[16], block_fd_arg[16];
     command=scan_argv(argc,argv,&args_end,&dashdash);
     for(int i=1;i<command && strcmp(argv[i],"--");) {
         if(!strcmp(argv[i],"--setenv") && i+2<command && !strcmp(argv[i+1],"FLATPAK_ID"))app_sandbox=1;
@@ -369,38 +301,26 @@ int main(int argc, char** argv) {
      * the variables but have neither and must stay untouched. */
     if(args_end>=0)bundled=args_fd_x11_socket(atoi(argv[args_end-1]),&x11_tmpfs,&bundled_journal,&app_sandbox);
     if(args_end>=0)app_label=args_fd_lookup(atoi(argv[args_end-1]),"MATON_APP_LABEL");
+#ifdef MATONOS_HOST_LAUNCH_PROBE
+    if(args_end>=0)bundled_probe_root=args_fd_lookup(atoi(argv[args_end-1]),"MATONOS_BWRAP_PROBE_ROOT");
+    const char* probe_root=getenv("MATONOS_BWRAP_PROBE_ROOT");
+    if((!probe_root || !*probe_root) && bundled_probe_root)probe_root=bundled_probe_root;
+    if(probe_root && *probe_root) {
+        int machine_len=snprintf(probe_machine_id,sizeof(probe_machine_id),"%s/machine-id",probe_root);
+        int udev_len=snprintf(probe_udev,sizeof(probe_udev),"%s/udev",probe_root);
+        if(machine_len>0 && (size_t)machine_len<sizeof(probe_machine_id) &&
+           udev_len>0 && (size_t)udev_len<sizeof(probe_udev)) {
+            machine_id_path=probe_machine_id;
+            udev_db_path=probe_udev;
+        }
+    }
+    free(bundled_probe_root);
+#endif
     if(!app_label && getenv("MATON_APP_LABEL"))app_label=strdup(getenv("MATON_APP_LABEL"));
-    if(args_end>=0)app_id=args_fd_lookup(atoi(argv[args_end-1]),MATON_APP_ID_ENV);
-    if(!app_id && getenv(MATON_APP_ID_ENV))app_id=strdup(getenv(MATON_APP_ID_ENV));
-    /* r24: the privileged mount helper rendezvous. The launcher created an
-     * unnamed socketpair and left our end inherited (not CLOEXEC); flatpak may
-     * have turned the launcher environment into bundled --setenv triplets, so
-     * look there too. A socketpair cannot be addressed by name, so no app can
-     * connect to or race it. */
-    if(args_end>=0)mount_fd_text=args_fd_lookup(atoi(argv[args_end-1]),MATON_MOUNT_FD_ENV);
-    if(!mount_fd_text && getenv(MATON_MOUNT_FD_ENV))mount_fd_text=strdup(getenv(MATON_MOUNT_FD_ENV));
-    if(mount_fd_text && *mount_fd_text)mount_fd=atoi(mount_fd_text);
-    if(mount_fd>=0 && fcntl(mount_fd,F_GETFD)<0)mount_fd=-1;
     /* Only enter the app domain for the real app sandbox; helpers keep their
      * own flow. The label must be a matonos app context or it is ignored. */
     if(!app_sandbox || !app_label || strncmp(app_label,"u:r:matonos_linux_app:",sizeof("u:r:matonos_linux_app:")-1)) {
         free(app_label);app_label=NULL;
-    }
-    /* A verified app sandbox is always set up by the privileged helper. If the
-     * helper or its rendezvous or the verified app id is missing we fail
-     * closed: never run a verified app unmounted. */
-    needs_mounts=app_sandbox;
-    if(needs_mounts && (mount_fd<0 || !app_id || !*app_id)) {
-        fprintf(stderr,"matonos-bwrap: verified app launch without a mount helper\n");
-        return 127;
-    }
-    if(needs_mounts) {
-        if(pipe2(info_pipe,O_CLOEXEC)||pipe2(block_pipe,O_CLOEXEC)) {
-            perror("matonos-bwrap: pipe");
-            return 127;
-        }
-        snprintf(info_fd_arg,sizeof(info_fd_arg),"%d",info_pipe[1]);
-        snprintf(block_fd_arg,sizeof(block_fd_arg),"%d",block_pipe[0]);
     }
     socket_path=getenv(X11_SOCKET_ENV);
     if(!socket_path || !*socket_path)socket_path=bundled;
@@ -432,16 +352,34 @@ int main(int argc, char** argv) {
     if(app_sandbox && is_socket(journal_path)) {
         extra[count++]="--bind";extra[count++]=(char*)journal_path;extra[count++]=JOURNAL_SOCKET_PATH;
     }
+    /* The launcher generated these four host-config files for this process.
+     * The app root sees only this minimal identity/network configuration and
+     * the Conscrypt trust store, never Android's general /etc tree. */
+    const char* config=getenv("MATON_FLATPAK_CONFIG_DIR");
+    char* config_end=NULL;
+    long config_pid=config && !strncmp(config,"/data/matonos/linux/runtime/flatpak-config-",43) ?
+        strtol(config+43,&config_end,10) : 0;
+    if(app_sandbox && config_pid>0 && config_end && !strcmp(config_end,"-monitor")) {
+        static char passwd[256],group[256],resolv[256];
+        snprintf(passwd,sizeof(passwd),"%s/passwd",config);
+        snprintf(group,sizeof(group),"%s/group",config);
+        snprintf(resolv,sizeof(resolv),"%s/resolv.conf",config);
+        extra[count++]="--ro-bind";extra[count++]=passwd;extra[count++]="/etc/passwd";
+        extra[count++]="--ro-bind";extra[count++]=group;extra[count++]="/etc/group";
+        extra[count++]="--ro-bind";extra[count++]=resolv;extra[count++]="/etc/resolv.conf";
+        extra[count++]="--symlink";extra[count++]="/apex/com.android.conscrypt/cacerts";extra[count++]="/etc/ssl/certs";
+        extra[count++]="--symlink";extra[count++]="/tmp";extra[count++]="/var/tmp";
+    }
     /* flatpak-run.c only uses the host ID if /etc or /var has one.
      * Android has neither. Override both paths after Flatpak mounts /var. */
     if(app_sandbox) {
-        extra[count++]="--ro-bind";extra[count++]="/data/matonos/linux/machine-id";extra[count++]="/etc/machine-id";
-        extra[count++]="--ro-bind";extra[count++]="/data/matonos/linux/machine-id";extra[count++]="/var/lib/dbus/machine-id";
+        extra[count++]="--ro-bind";extra[count++]=(char*)machine_id_path;extra[count++]="/etc/machine-id";
+        extra[count++]="--ro-bind";extra[count++]=(char*)machine_id_path;extra[count++]="/var/lib/dbus/machine-id";
         /* Flatpak already exposes /sys/class, /sys/dev and /sys/devices.
          * Bind the directory itself, so atomic database replacements and
          * future devices are visible in existing sandboxes. Metadata does
          * not grant access to any device node. */
-        extra[count++]="--ro-bind";extra[count++]="/data/matonos/linux/udev";extra[count++]="/run/udev";
+        extra[count++]="--ro-bind";extra[count++]=(char*)udev_db_path;extra[count++]="/run/udev";
         /* Host udev multicast cannot reliably cross Flatpak's net namespace,
          * and linuxd's system UID is not a trusted root udev sender. SDL2/3
          * support this generic hint and watch /dev/input with inotify (or
@@ -462,16 +400,6 @@ int main(int argc, char** argv) {
         extra[count++]="--setenv";extra[count++]="HOME";extra[count++]=home;
         extra[count++]="--ro-bind";extra[count++]=APP_EXEC_HOST;extra[count++]=APP_EXEC_SANDBOX;
         extra[count++]="--setenv";extra[count++]=APP_LABEL_ENV;extra[count++]=app_label;
-    }
-    /* r24: the app's verified images are mounted from *outside* the sandbox by
-     * the privileged matonos-mount-helper. bubblewrap reports the sandbox
-     * child pid on --info-fd and waits on --block-fd before it execs the
-     * payload; the shim performs the helpers' round trip and only then
-     * releases bubblewrap. No loop device, mount right or capability enters
-     * the sandbox. */
-    if(needs_mounts) {
-        extra[count++]="--info-fd";extra[count++]=info_fd_arg;
-        extra[count++]="--block-fd";extra[count++]=block_fd_arg;
     }
     if(count) {
         /* bwrap applies the bundled arguments at the --args pair,
@@ -495,15 +423,27 @@ int main(int argc, char** argv) {
                 char** with_launcher=prepend_argument(extended,argc+count,shifted,APP_EXEC_SANDBOX);
                 if(with_launcher) final_argv=with_launcher;
             }
-            if(needs_mounts)
-                return launch_sandbox(final_argv,info_pipe[1],info_pipe[0],
-                        block_pipe[0],block_pipe[1],mount_fd,app_id);
-            execv(BWRAP,final_argv);
+            /* The APEX multicall ELF selects the bwrap applet from argv[0].
+             * The shim itself was launched as matonos-bwrap, so preserve the
+             * target applet name explicitly across this exec. */
+            final_argv[0]="bwrap";
+            if (multicall_path(multicall, sizeof(multicall)) != 0) {
+                fprintf(stderr,"matonos-bwrap: cannot resolve adjacent multicall binary\n");
+                return 127;
+            }
+            execv(multicall,final_argv);
             perror("matonos-bwrap: exec failed");
             return 127;
         }
     }
-    execv(BWRAP,argv);
+    /* Helper invocations (for example Flatpak's ldconfig setup) have no
+     * injected arguments, but still need multicall applet dispatch. */
+    argv[0]="bwrap";
+    if (multicall_path(multicall, sizeof(multicall)) != 0) {
+        fprintf(stderr,"matonos-bwrap: cannot resolve adjacent multicall binary\n");
+        return 127;
+    }
+    execv(multicall,argv);
     perror("matonos-bwrap: exec failed");
     return 127;
 }

@@ -13,20 +13,20 @@ on property:vendor.maton.audio.codec_preload=done
 on property:vendor.maton.audio.selector_result=no_card
     setprop persist.vendor.audio.primary.card ''
     setprop persist.vendor.audio.primary.device ''
-    setprop ro.boot.audio.tinyalsa.ignore_output true
-    setprop ro.boot.audio.tinyalsa.simulate_input true
+    setprop vendor.maton.audio.tinyalsa.ignore_output true
+    setprop vendor.maton.audio.tinyalsa.simulate_input true
 
 # A crash or timeout is also a no-card result. HAL startup proceeds normally.
 on property:init.svc.vendor.maton-audio-select=stopped && property:vendor.maton.audio.selector_done=0
     setprop persist.vendor.audio.primary.card ''
     setprop persist.vendor.audio.primary.device ''
-    setprop ro.boot.audio.tinyalsa.ignore_output true
-    setprop ro.boot.audio.tinyalsa.simulate_input true
+    setprop vendor.maton.audio.tinyalsa.ignore_output true
+    setprop vendor.maton.audio.tinyalsa.simulate_input true
 
 service vendor.maton-audio-select /odm/bin/maton-audio-select.sh
     class core
     user root
-    group root
+    group root audio
     oneshot
     disabled
     timeout_period 3

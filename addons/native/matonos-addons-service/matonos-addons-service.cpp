@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/utsname.h>
 #include <sys/wait.h>
 #include <sys/mount.h>
 #include <sys/ioctl.h>
@@ -218,7 +219,7 @@ bool WritePackageFile(const fs::path& path,const uint8_t* data,size_t size,mode_
     }
     return true;
 }
-std::string KernelRelease(){std::ifstream f("/proc/sys/kernel/osrelease");std::string s;std::getline(f,s);return Trim(s);}
+std::string KernelRelease(){struct utsname u{};return uname(&u)==0?Trim(u.release):std::string();}
 bool IsSlotMounted(){
     std::ifstream f("/proc/self/mountinfo");std::string row;const std::string needle=std::string(" ")+kSlot+" ";
     while(std::getline(f,row))if(row.find(needle)!=std::string::npos)return true;

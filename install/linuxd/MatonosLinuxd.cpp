@@ -13,6 +13,7 @@
 #include <utils/String8.h>
 
 #include "FlatpakManager.h"
+#include "DnsForwarderSockets.h"
 #include <dirent.h>
 #include <android-base/unique_fd.h>
 
@@ -207,6 +208,23 @@ std::string ToUtf8(const android::String16& value) {
 
 class LinuxdService final : public BnLinuxd {
   public:
+    android::binder::Status createDnsForwarderSockets(const android::String16& address16,
+            int32_t stubUid,
+            std::vector<android::os::ParcelFileDescriptor>* sockets) override {
+        if (!IsTrustedCaller() || stubUid < 10000 || sockets == nullptr)
+            return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
+        int udp = -1, tcp = -1;
+        int result = matonos_dns_create_sockets(ToUtf8(address16).c_str(),
+                static_cast<uint32_t>(stubUid), &udp, &tcp);
+        if (result != 0)
+            return android::binder::Status::fromServiceSpecificError(-result,
+                    "Cannot bind per-app DNS sockets");
+        sockets->clear();
+        sockets->emplace_back(android::base::unique_fd(udp));
+        sockets->emplace_back(android::base::unique_fd(tcp));
+        return android::binder::Status::ok();
+    }
+
     android::binder::Status launchGraphical(const android::String16& ref,
             const android::os::ParcelFileDescriptor& runtimeDirectory,
             const android::String16& dnsServers,
@@ -260,13 +278,29 @@ class LinuxdService final : public BnLinuxd {
         const char* ref = nullptr;
         const char* app_id = nullptr;
         int delete_data = 0;
+        std::string app_commit_storage, runtime_ref_storage, runtime_commit_storage, remote_storage;
+        const char* app_commit = nullptr;
+        const char* runtime_ref = nullptr;
+        const char* runtime_commit = nullptr;
+        const char* remote = nullptr;
+        int app_uid = -1, runtime_uid = -1;
         std::string operation_id_storage;
         const char* operation_id = nullptr;
         std::vector<std::string> run_arg_storage;
         std::vector<const char*> run_args;
         if (command == "install" || command == "uninstall" || (command == "metadata" || command == "desktop_entry" || command == "icon" || command == "launch_status")) {
             const bool uninstall = command == "uninstall";
-            if (!(uninstall ? OnlyKeys(request, {"ref", "deleteData", "operationId"}) : OnlyKeys(request, {"ref", "operationId"})) || !request["ref"].isString() ||
+            const bool install = command == "install";
+            if (!(uninstall ? OnlyKeys(request, {"ref", "deleteData", "operationId"}) :
+                    install ? OnlyKeys(request, {"ref", "operationId", "appCommit", "runtimeRef", "runtimeCommit", "remote", "uid", "runtimeUid"}) :
+                    OnlyKeys(request, {"ref", "operationId"})) || !request["ref"].isString() ||
+                    (install && (!request["appCommit"].isString() || !request["runtimeRef"].isString() ||
+                        !request["runtimeCommit"].isString() || !request["remote"].isString() ||
+                        !request["uid"].isInt() || !request["runtimeUid"].isInt())) ||
+                    (install && (HasEmbeddedNul(request["appCommit"].asString()) ||
+                        HasEmbeddedNul(request["runtimeRef"].asString()) ||
+                        HasEmbeddedNul(request["runtimeCommit"].asString()) ||
+                        HasEmbeddedNul(request["remote"].asString()))) ||
                     (request.isMember("deleteData") && !request["deleteData"].isBool()) ||
                     (request.isMember("operationId") && (!request["operationId"].isString() || request["operationId"].asString().size() > 128 || HasEmbeddedNul(request["operationId"].asString()))) ||
                     HasEmbeddedNul(request["ref"].asString())) {
@@ -275,6 +309,18 @@ class LinuxdService final : public BnLinuxd {
             }
             ref_storage = request["ref"].asString();
             ref = ref_storage.c_str();
+            if (install) {
+                app_commit_storage = request["appCommit"].asString(); app_commit = app_commit_storage.c_str();
+                runtime_ref_storage = request["runtimeRef"].asString(); runtime_ref = runtime_ref_storage.c_str();
+                runtime_commit_storage = request["runtimeCommit"].asString(); runtime_commit = runtime_commit_storage.c_str();
+                remote_storage = request["remote"].asString(); remote = remote_storage.c_str();
+                app_uid = request["uid"].asInt(); runtime_uid = request["runtimeUid"].asInt();
+                if (app_uid < 10000 || runtime_uid < 10000 || app_uid == runtime_uid ||
+                        app_uid / 100000 != runtime_uid / 100000) {
+                    reply(Encode(Error("valid same-user app and runtime package UIDs are required")));
+                    return android::binder::Status::ok();
+                }
+            }
             delete_data = request.get("deleteData", false).asBool() ? 1 : 0;
             if (request.isMember("operationId")) { operation_id_storage = request["operationId"].asString(); operation_id = operation_id_storage.c_str(); }
         } else if (command == "run") {
@@ -320,7 +366,8 @@ class LinuxdService final : public BnLinuxd {
 
         if (command == "install" || command == "uninstall") PublishProgress(command + " started");
         FlatpakResult result{};
-        flatpak_manager_call(command.c_str(), ref, app_id, run_args.data(), run_args.size(), delete_data, operation_id, &result);
+        flatpak_manager_call(command.c_str(), ref, app_id, run_args.data(), run_args.size(), delete_data,
+                operation_id, app_commit, runtime_ref, runtime_commit, remote, app_uid, runtime_uid, &result);
         reply(Encode(EncodeResult(result)));
         flatpak_manager_result_clear(&result);
         return android::binder::Status::ok();

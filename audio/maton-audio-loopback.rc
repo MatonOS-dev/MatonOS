@@ -7,8 +7,8 @@ on post-fs
 on property:vendor.maton.audio.loopback_ready=0
     # Select AOSP's paced fallback drivers if the fixed PCM could not load.
     # These properties are consulted when primary streams are created.
-    setprop ro.boot.audio.tinyalsa.ignore_output true
-    setprop ro.boot.audio.tinyalsa.simulate_input true
+    setprop vendor.maton.audio.tinyalsa.ignore_output true
+    setprop vendor.maton.audio.tinyalsa.simulate_input true
 
 service vendor.maton-audio-loopback /system/bin/sh /odm/bin/maton-audio-loopback.sh
     class core

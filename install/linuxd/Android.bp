@@ -12,8 +12,10 @@ cc_binary {
     srcs: [
         "MatonosLinuxd.cpp",
         "FlatpakManager.c",
+        "FlatpakPublish.c",
         "UdevDatabase.c",
         "SessionPads.c",
+        "DnsForwarderSockets.c",
         ":matonos-linuxd-aidl",
     ],
     shared_libs: [
@@ -27,28 +29,6 @@ cc_binary {
     },
     init_rc: ["MatonosLinuxd.rc"],
     system_ext_specific: true,
-    compile_multilib: "64",
-    cflags: [
-        "-Wall",
-        "-Wextra",
-        "-Werror",
-    ],
-}
-
-// r24 installer helper: the only domain allowed to create, grow, loop-mount
-// and fs-verity the Flatpak code store images. linuxd execs it; the SELinux
-// transition and file_contexts label are in systembridge/sepolicy.
-cc_binary {
-    name: "matonos-flatpak-store",
-    srcs: [
-        "FlatpakStore.c",
-    ],
-    init_rc: [],
-    system_ext_specific: true,
-    // Ships inside com.matonos.flatpak, not system_ext (see flatpak.mk).
-    apex_available: ["com.matonos.flatpak"],
-    // APEX payload module; must support the APEX's min_sdk_version (37).
-    min_sdk_version: "37",
     compile_multilib: "64",
     cflags: [
         "-Wall",

@@ -15,15 +15,15 @@ import org.matonos.systembridge.ISystemBridge;
 /** The bridge gets only directory capabilities for compositor sockets. */
 final class FlatpakLauncher {
     private interface Request<T> { T run(ISystemBridge bridge) throws Exception; }
-    static String launch(Context context,String ref,java.io.File runtime,String x11Display,int uid,int pid,ParcelFileDescriptor lifeline) throws Exception {
+    static String launch(Context context,String ref,java.io.File runtime,String x11Display,String dnsForwarder,int uid,int pid,ParcelFileDescriptor lifeline) throws Exception {
         final String display=x11Display;
         return request(context,bridge->{
             java.io.FileDescriptor directory=Os.open(runtime.getAbsolutePath(),OsConstants.O_RDONLY|OsConstants.O_CLOEXEC,0);
             try(ParcelFileDescriptor capability=ParcelFileDescriptor.dup(directory)){
-                if (display == null || display.isEmpty()) return bridge.launchOwnedFlatpak(ref,capability,null,display,uid,pid,lifeline);
+                if (display == null || display.isEmpty()) return bridge.launchOwnedFlatpak(ref,capability,null,display,dnsForwarder,uid,pid,lifeline);
                 java.io.FileDescriptor x11=Os.open(new java.io.File(context.getFilesDir(),"x11").getAbsolutePath(),OsConstants.O_RDONLY|OsConstants.O_CLOEXEC,0);
                 try(ParcelFileDescriptor x11Capability=ParcelFileDescriptor.dup(x11)){
-                    return bridge.launchOwnedFlatpak(ref,capability,x11Capability,display,uid,pid,lifeline);
+                    return bridge.launchOwnedFlatpak(ref,capability,x11Capability,display,dnsForwarder,uid,pid,lifeline);
                 }finally{Os.close(x11);}
             }finally{Os.close(directory);}
         });
@@ -31,6 +31,11 @@ final class FlatpakLauncher {
     static String status(Context context,String ref) throws Exception {return request(context,bridge->bridge.getFlatpakLaunchStatus(ref));}
     static boolean verifyStub(Context context,int uid,String ref) throws Exception {
         return request(context,bridge->bridge.isFlatpakStub(uid,ref));
+    }
+    static android.os.ParcelFileDescriptor[] createDnsSockets(Context context,int uid,String ref,String endpoint) throws Exception {
+        if(endpoint==null||!endpoint.matches("127\\.(1[0-9]|[2-6][0-9]|7[0-3])\\.[0-9]{1,3}\\.[0-9]{1,3}:53"))
+            throw new SecurityException("Invalid per-app DNS address");
+        return request(context,bridge->bridge.createDnsForwarderSockets(endpoint.substring(0,endpoint.length()-3),uid,ref));
     }
     private static <T> T request(Context context, Request<T> request) throws Exception {
         CountDownLatch connected = new CountDownLatch(1);

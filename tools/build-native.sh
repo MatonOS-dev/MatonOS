@@ -44,17 +44,6 @@ IPC_SRC=$DEVICE_DIR/native/libmatonos-ipc
 [[ -f $IPC_SRC/CMakeLists.txt ]] || die "shared native/libmatonos-ipc source is missing"
 mkdir -p "$OUT" "$DEVICE_DIR/prebuilt/native" "$DEVICE_DIR/buildinfra/native-built"
 
-# Keep the stable Flatpak launcher synchronized with its source. Its environment
-# overrides must survive every CLI exec; stale launchers used host build paths.
-flatpak_launcher_dir=$DEVICE_DIR/linux/flatpak/prebuilt/system_ext/bin
-if [[ -d $flatpak_launcher_dir ]]; then
-  info "Building the Flatpak environment launcher"
-  "$TOOLCHAIN/bin/x86_64-linux-android$API-clang" -O2 -Wall -Wextra -Werror \
-    -march=x86-64-v2 "$DEVICE_DIR/linux/flatpak/flatpak-env-wrapper.c" \
-    -o "$OUT/flatpak-env-wrapper"
-  install -m 0755 "$OUT/flatpak-env-wrapper" "$flatpak_launcher_dir/flatpak"
-fi
-
 # Generate the fixed stable VINTF channel interface before the shared NDK helper.
 IPC_STABLE_CONFIG=$IPC_SRC/stable-aidl.list
 IPC_STABLE_GEN=$OUT/libmatonos-ipc/aidl-generated/stable

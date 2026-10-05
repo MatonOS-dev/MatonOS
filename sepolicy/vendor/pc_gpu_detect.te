@@ -13,9 +13,15 @@ allow pc_gpu_detect vendor_toolbox_exec:file rx_file_perms;
 allow pc_gpu_detect vendor_file:dir r_dir_perms;
 allow pc_gpu_detect vendor_file:file { getattr execute execute_no_trans map open read };
 r_dir_file(pc_gpu_detect, sysfs)
+# The detector reads PCI class metadata to identify the active GPU.
+allow pc_gpu_detect sysfs_pc_wakeup_info:file { getattr open read };
 # /vendor/etc/intel_vulkan_pci_ids.txt
 r_dir_file(pc_gpu_detect, vendor_configs_file)
 # The detector publishes boot-time GPU/Vulkan selection; init copies the
 # Vulkan choice to ro.hardware.vulkan because only init may set that property.
 set_prop(pc_gpu_detect, vendor_maton_prop)
 set_prop(pc_gpu_detect, vendor_maton_mesa_prop)
+
+# PCI GPU device directories are labelled sysfs_gpu; the detector must
+# traverse them to read class/vendor/uevent (it crashed without this).
+r_dir_file(pc_gpu_detect, sysfs_gpu)

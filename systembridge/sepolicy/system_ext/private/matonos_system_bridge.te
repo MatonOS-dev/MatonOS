@@ -13,6 +13,7 @@ type matonos_linuxd_service, protected_service, service_manager_type;
 allow matonos_linuxd matonos_linuxd_service:service_manager add;
 allow matonos_system_bridge matonos_linuxd_service:service_manager find;
 neverallow { domain -matonos_linuxd } matonos_linuxd_service:service_manager add;
+binder_use(matonos_linuxd)
 binder_call(matonos_system_bridge, matonos_linuxd)
 # Flatpak apps render on the GPU (--device=dri): linuxd launches them, and
 # bubblewrap opens /dev/dri for the sandbox.
@@ -29,7 +30,11 @@ allow matonos_linuxd matonos_flatpak_data_file:dir create_dir_perms;
 allow matonos_linuxd matonos_flatpak_data_file:file create_file_perms;
 allow matonos_linuxd matonos_flatpak_data_file:lnk_file create_file_perms;
 allow matonos_linuxd matonos_flatpak_data_file:sock_file create_file_perms;
-allow matonos_linuxd self:capability { setuid setgid chown kill };
+allow matonos_linuxd matonos_flatpak_store_file:dir r_dir_perms;
+allow matonos_linuxd matonos_flatpak_store_file:file r_file_perms;
+allow matonos_linuxd self:capability { setuid setgid chown kill net_bind_service };
+# Port 53 has no dedicated label in Android policy (generic `port` type).
+allow matonos_linuxd port:{ udp_socket tcp_socket } name_bind;
 allow matonos_linuxd self:process { fork sigchld signal };
 net_domain(matonos_linuxd)
 
@@ -53,6 +58,8 @@ allow matonos_linuxd sysfs_matonos_discovery:lnk_file { getattr read };
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.
 allow matonos_system_bridge input_service:service_manager find;
+# Framework service lookups used by the bridge's system-state queries.
+allow matonos_system_bridge { activity_service audio_service content_capture_service gpu_service netstats_service }:service_manager find;
 # sleep: inspect the stock PowerManager dump for active wake locks.
 allow matonos_system_bridge power_service:service_manager find;
 binder_call(matonos_system_bridge, system_server)
@@ -110,12 +117,21 @@ allow matonos_linux_app matonos_flatpak_deployment_file:dir r_dir_perms;
 # cannot create bwrap user namespaces with capabilities. Do not weaken the
 # assertions or misclassify /data code as system_file_type to hide this.
 allow matonos_linux_app matonos_flatpak_deployment_file:file { read open getattr map execute execute_no_trans };
+allow matonos_linux_app matonos_linux_code_file:dir r_dir_perms;
+allow matonos_linux_app matonos_linux_code_file:file { read open getattr map execute execute_no_trans };
 # helper-trim: /app now comes straight from the read-only deployment (no code
 # image mount); executing it relies on data_exec_exempt_domain (patch 0001).
 # Replaced by matonos_linux_code_file when the per-uid installations land.
 allow matonos_linux_app matonos_flatpak_deployment_file:lnk_file r_file_perms;
 allow matonos_linuxd matonos_flatpak_deployment_file:dir create_dir_perms;
 allow matonos_linuxd matonos_flatpak_deployment_file:{ file lnk_file } create_file_perms;
+allow matonos_linuxd matonos_flatpak_data_file:file relabelfrom;
+allow matonos_linuxd matonos_flatpak_data_file:dir relabelfrom;
+allow matonos_linuxd matonos_linux_code_file:dir { create_dir_perms relabelto relabelfrom setattr };
+allow matonos_linuxd matonos_linux_code_file:file { create_file_perms relabelto relabelfrom setattr };
+# OSTree materializes deployments by hard-linking objects within the private
+# deployment tree. The target type is confined to linuxd-managed Flatpak data.
+allow matonos_linuxd matonos_flatpak_deployment_file:file link;
 allow matonos_linuxd matonos_linux_data_file:dir { create_dir_perms relabelfrom relabelto };
 allow matonos_linux_app matonos_linux_data_file:dir create_dir_perms;
 allow matonos_linux_app matonos_linux_data_file:{ file lnk_file sock_file } create_file_perms;
@@ -160,39 +176,24 @@ allow matonos_linux_app matonos_flatpak_data_file:dir { getattr search };
 type matonos_flatpak_log_file, file_type, data_file_type, core_data_file_type, mlstrustedobject;
 allow matonos_linuxd matonos_flatpak_log_file:file create_file_perms;
 allow matonos_linux_app matonos_flatpak_log_file:file { getattr write append };
+# Flatpak's wait/status path issues FIONREAD on its inherited anonymous pipe.
+# Keep the ioctl exception to that one command on linuxd-owned pipes.
+allow matonos_linuxd self:fifo_file ioctl;
+allowxperm matonos_linuxd self:fifo_file ioctl { 0x5413 };
 
 ##############################################################################
-# r24: Flatpak code storage and verified execution
-#
-# Stock domain.te neverallows (a) forbid executing data_file_type from /data
-# for a non-appdomain and (b) forbid writing any exec_type. Flatpak code
-# therefore lives in loop-mounted images whose *superblock* is labelled
-# matonos_code_fs with fscontext= and whose inodes are labelled with context=
-# at mount time:
-#     fscontext=u:object_r:matonos_code_fs:s0
-#     context=u:object_r:matonos_app_code_exec:s0:<stub MLS categories>
-# The superblock carries contextmount_type (context mounts are restricted to
-# it) and fusefs_type: stock policy only permits a non-allowlisted domain to
-# mount sdcard_type/fusefs_type filesystems, exactly as FUSE-backed mounts
-# do. Explicit mount/relabelto grants still gate the installer. Because the
-# inodes are an exec_type, not a data_file_type, a non-appdomain sandbox may
-# execute them; because the image is mounted read-only and every domain is
-# forbidden from writing exec_type, the code cannot change under a running
-# app. The installer domain is the only writer and mounter of the images.
-type matonos_code_fs, fs_type, fusefs_type, contextmount_type;
+# Flatpak deployment code uses dedicated exec labels; mutable per-app
+# downloads use the separate data label below. Flatpak itself stages signed
+# refs in the shared repository before linuxd verifies and publishes them.
 type matonos_app_code_exec, exec_type, file_type;
 type matonos_runtime_exec, exec_type, file_type;
-# Optional per-app persistent volume. It is a data_file_type and never
-# executable: writable+executable is impossible under stock neverallows
-# (writing exec_type is neverallowed), so the installer must seal downloaded
-# code into the read-only image before it can run.
+# Flatpak app data remains a non-executable data_file_type.
 type matonos_app_volume_file, file_type, data_file_type, core_data_file_type;
-# Image files, mount points and owner records below /data/matonos/linux/store.
+# Shared staging repository, populated only by the installer helper.
 type matonos_flatpak_store_file, file_type, data_file_type, core_data_file_type;
+type matonos_linux_code_file, file_type, data_file_type, core_data_file_type;
 
-# Installer helper, exec'd by linuxd (it inherits linuxd's SYS_ADMIN): the
-# only writer/mounter of the images and the only domain that runs Flatpak's
-# management CLI.
+# Staging helper, exec'd by linuxd. It runs only the Flatpak no-deploy pull.
 type matonos_flatpak_installer, domain;
 typeattribute matonos_flatpak_installer coredomain, mlstrustedsubject;
 type matonos_flatpak_installer_exec, exec_type, system_file_type, file_type;
@@ -201,34 +202,11 @@ type_transition matonos_linuxd matonos_flatpak_installer_exec:process matonos_fl
 allow matonos_linuxd matonos_flatpak_installer:process transition;
 allow matonos_flatpak_installer matonos_flatpak_installer_exec:file entrypoint;
 allow matonos_flatpak_installer self:process { fork sigchld signal };
-allow matonos_flatpak_installer self:global_capability_class_set sys_admin;
-allow matonos_flatpak_installer self:capability { chown fowner fsetid };
-allow matonos_flatpak_installer loop_control_device:chr_file rw_file_perms;
-allow matonos_flatpak_installer loop_device:blk_file rw_file_perms;
-allowxperm matonos_flatpak_installer loop_device:blk_file ioctl {
-  LOOP_GET_STATUS64 LOOP_SET_STATUS64 LOOP_SET_FD LOOP_SET_BLOCK_SIZE
-  LOOP_SET_DIRECT_IO LOOP_CLR_FD LOOP_CONFIGURE BLKFLSBUF
-};
-allow matonos_flatpak_installer matonos_code_fs:filesystem { mount remount unmount relabelfrom relabelto };
-allow matonos_flatpak_installer dev_type:dir r_dir_perms;
-allow matonos_flatpak_installer dev_type:blk_file getattr;
-allow matonos_flatpak_installer system_file:dir r_dir_perms;
-allow matonos_flatpak_installer system_file:file { execute execute_no_trans getattr open read map };
-allow matonos_flatpak_installer matonos_flatpak_store_file:dir create_dir_perms;
-allow matonos_flatpak_installer matonos_flatpak_store_file:dir mounton;
+allow matonos_flatpak_installer self:capability { setuid setgid };
+net_domain(matonos_flatpak_installer)
+allow matonos_flatpak_installer matonos_flatpak_store_file:dir { create_dir_perms r_dir_perms };
 allow matonos_flatpak_installer matonos_flatpak_store_file:file create_file_perms;
-allow matonos_flatpak_installer matonos_flatpak_store_file:lnk_file create_file_perms;
-allow matonos_flatpak_installer matonos_flatpak_store_file:sock_file create_file_perms;
-allow matonos_flatpak_installer matonos_flatpak_deployment_file:dir r_dir_perms;
-allow matonos_flatpak_installer matonos_flatpak_deployment_file:file r_file_perms;
-allow matonos_flatpak_installer matonos_flatpak_deployment_file:lnk_file r_file_perms;
 allow matonos_flatpak_installer matonos_flatpak_cli_exec:file rx_file_perms;
-allow matonos_flatpak_installer matonos_app_code_exec:dir r_dir_perms;
-allow matonos_flatpak_installer matonos_app_code_exec:file r_file_perms;
-allow matonos_flatpak_installer matonos_runtime_exec:dir r_dir_perms;
-allow matonos_flatpak_installer matonos_runtime_exec:file r_file_perms;
-allow matonos_flatpak_installer matonos_app_volume_file:dir { getattr search open };
-allow matonos_flatpak_installer matonos_app_volume_file:file { getattr open read };
 allow matonos_flatpak_installer matonos_linuxd:fd use;
 
 # bwrap setup domain: entered when the sandbox execs bwrap. It alone owns the
@@ -239,9 +217,6 @@ typeattribute matonos_bwrap coredomain;
 type matonos_bwrap_exec, exec_type, system_file_type, file_type;
 # Tiny launcher that dyntransitions to the app domain and execs the payload.
 type matonos_app_exec_exec, exec_type, system_file_type, file_type;
-# r24 privileged mount helper: the only holder of CAP_SYS_ADMIN on the app
-# launch path, and the only domain that mounts verified app code/volumes.
-type matonos_mount_helper_exec, exec_type, system_file_type, file_type;
 
 # flatpak-run domain: the Flatpak CLI while it prepares one sandbox. It is
 # entered by dyntransition after linuxd has verified the stub identity.
@@ -329,10 +304,8 @@ allow matonos_bwrap matonos_app_exec_exec:file { execute getattr open read map }
 allow matonos_app_launch matonos_app_exec_exec:file entrypoint;
 allow matonos_app_launch self:process { setcurrent fork sigchld signal };
 allow matonos_app_launch matonos_linux_app:process dyntransition;
-# r24: the launcher mounts nothing. The verified images are now mounted by
-# stock flatpak run directly (which binds /app and /usr from its own read-only
-# installations). The matonos_mount_helper remains for sandbox identity
-# verification only.
+# The launcher mounts nothing. Stock flatpak run binds /app and /usr from its
+# read-only installations.
 allow matonos_app_launch matonos_app_code_exec:dir r_dir_perms;
 allow matonos_app_launch matonos_app_code_exec:file { execute execute_no_trans getattr open read map };
 allow matonos_app_launch matonos_runtime_exec:dir r_dir_perms;
@@ -345,32 +318,6 @@ allow matonos_linux_app matonos_app_volume_file:dir create_dir_perms;
 allow matonos_linux_app matonos_app_volume_file:{ file lnk_file sock_file fifo_file } create_file_perms;
 # JITs (Wine/Proton, Chromium) need executable anonymous mappings.
 allow matonos_linux_app self:process execmem;
-
-# Vestigial mount helper: verifies sandbox identity outside the sandbox, but
-# no longer mounts code images or volumes (proven on the host: stock flatpak
-# run binds /app and /usr by itself). Still present so that matonos-bwrap's
-# send_mount_request() gets a reply; removing this domain, the binary and its
-# Android.bp module is tracked as a follow-up (no remaining useful work).
-#
-# The helper receives a single mount_request (app id + pidfd via SCM_RIGHTS),
-# independently verifies the sandbox process identity (matonos_bwrap domain,
-# expected stub uid, MLS level, parent chain), and replies SUCCESS. Any
-# verification failure is fail-closed (the shim kills the sandbox).
-#
-# Removed: all APK parsing (openat2, zip reader), LOOP_CONFIGURE, erofs mount,
-# legacy attach-record reading, volume mounting, and CAP_SYS_ADMIN.
-type matonos_mount_helper, domain;
-typeattribute matonos_mount_helper coredomain;
-allow matonos_linuxd matonos_mount_helper_exec:file { execute execute_no_trans getattr open read map };
-type_transition matonos_linuxd matonos_mount_helper_exec:process matonos_mount_helper;
-allow matonos_linuxd matonos_mount_helper:process transition;
-allow matonos_mount_helper matonos_mount_helper_exec:file entrypoint;
-# Rendezvous with the matonos-bwrap shim is an unnamed socketpair created by
-# the matonos_linuxd launcher, so its label is matonos_linuxd. The shim also
-# passes a pidfd for the sandbox process (matonos_bwrap); both arrive as
-# inherited/SENT fds. No CAP_SYS_ADMIN or loop/mount grants are needed.
-allow matonos_mount_helper matonos_linuxd:unix_stream_socket { read write };
-allow matonos_mount_helper matonos_bwrap:fd use;
 
 # Binder must be completely absent from every sandbox domain. The stock
 # platform policy unconditionally grants every domain `system_server:binder

@@ -6,7 +6,7 @@ service matonos-linuxd /system_ext/bin/matonos-linuxd
     # Only the child launcher changes supplementary groups. SYS_ADMIN is
     # inherited only by the exec'd matonos-flatpak-store helper, whose SELinux
     # installer domain is the sole holder of the code-store mount/loop grants.
-    capabilities SETGID SETUID CHOWN KILL SYS_ADMIN
+    capabilities SETGID SETUID CHOWN KILL SYS_ADMIN NET_BIND_SERVICE
     disabled
     restart_period 5
     seclabel u:r:matonos_linuxd:s0
@@ -20,12 +20,13 @@ on property:sys.boot_completed=1
     mkdir /data/matonos/linux/flatpak-data 0770 system system
     mkdir /data/matonos/linux/apps 0711 system system
     mkdir /data/matonos/linux/runtime 0711 system system
+    mkdir /data/matonos/linux/staging 0700 2902 2902
     # r24 code store: image files and their mount points (installer-owned).
     mkdir /data/matonos/linux/store 0700 system system
     mkdir /data/matonos/linux/store/apps 0700 system system
     mkdir /data/matonos/linux/store/runtime 0700 system system
     # Preserve dynamic MLS ranges on app-owned homes across daemon restarts.
     restorecon /data/matonos/linux /data/matonos/linux/apps
-    restorecon_recursive /data/matonos/linux/flatpak /data/matonos/linux/cache /data/matonos/linux/runtime /data/matonos/linux/udev /data/matonos/linux/store
+    restorecon_recursive /data/matonos/linux/flatpak /data/matonos/linux/cache /data/matonos/linux/runtime /data/matonos/linux/udev /data/matonos/linux/store /data/matonos/linux/staging
     restorecon /data/matonos/linux/machine-id
     start matonos-linuxd
