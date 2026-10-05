@@ -57,6 +57,8 @@ allow matonos_linuxd sysfs_matonos_discovery:lnk_file { getattr read };
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.
 allow matonos_system_bridge input_service:service_manager find;
+# Framework service lookups used by the bridge's system-state queries.
+allow matonos_system_bridge { activity_service audio_service content_capture_service gpu_service netstats_service }:service_manager find;
 # sleep: inspect the stock PowerManager dump for active wake locks.
 allow matonos_system_bridge power_service:service_manager find;
 binder_call(matonos_system_bridge, system_server)

@@ -14,11 +14,6 @@ binder_use(matonos_setup)
 binder_call(matonos_setup, system_server)
 allow matonos_setup { appops_service settings_service }:service_manager find;
 
-# Test audio clips: read them from /product and hand them to MediaProvider
-# with the `content` tool (app_process: needs the ART runtime and AM).
-allow matonos_setup system_file:file r_file_perms;
-allow matonos_setup { activity_service content_capture_service }:service_manager find;
-binder_call(matonos_setup, mediaprovider_app)
 
 # SurfaceFlinger opens /dev/udmabuf (Mesa/virtio-gpu). udmabuf_device is a
 # platform-private type, so the rule lives in system_ext private policy.

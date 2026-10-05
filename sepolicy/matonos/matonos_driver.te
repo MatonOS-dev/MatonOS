@@ -10,6 +10,7 @@ type matonos_channel_service, protected_service, hal_service_type, service_manag
 type matonos_install_block_device, dev_type;
 # addons: GPT entries 6/7 hold service-written raw ext4 slot images, mounted RO.
 type matonos_addons_block_device, dev_type;
+type matonos_addon_mount_file, file_type, vendor_file_type;
 type vendor_addon_module_file, file_type, vendor_file_type, contextmount_type;
 type matonos_addon_data_file, file_type, data_file_type;
 type matonos_addon_manager, domain;
@@ -61,6 +62,7 @@ allow matonos_addon_manager matonos_addon_data_file:file create_file_perms;
 allow matonos_addon_manager vendor_addon_module_file:file { getattr map open read };
 # Traverse /mnt/vendor to reach the already-labeled add-on subtree.
 allow matonos_addon_manager mnt_vendor_file:dir search;
+allow matonos_addon_manager matonos_addon_mount_file:dir r_dir_perms;
 get_prop(matonos_addon_manager, exported_default_prop)
 # The standard loader reads image-labeled module files through vendor_file_type.
 allow vendor_modprobe vendor_addon_module_file:system module_load;
