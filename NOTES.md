@@ -456,10 +456,10 @@ Feature work continues, but in this shape from now on.
     tied to the stub package's lifecycle, mounted only into that app's
     sandbox with a context= label carrying the stub's MLS categories — only
     that app can read/execute its code; atomic image swap on update.
-  - Apps that run downloaded code (Steam, Lutris, Heroic, Bottles…): an
-    optional app-owned writable+executable volume (sparse ext4 image on
-    /data, grown/trimmed on demand, same per-app label), gated by a runtime
-    permission prompt; never writable access to the app's code image.
+  - Flatpaks may download and execute code in their own app home under
+    `/data/matonos/linux/apps/<uid>/` by default. The existing
+    `data_exec_exempt_domain` policy patch covers this; the sandbox remains
+    isolated by UID, MLS level, and its private home.
   - Runtimes and extensions: one shared runtime store owned by the base app —
     the Wayland compositor host (MatonWaylandHost, org.matonos.compositor),
     which every stub inherits from (uses-library) — a sparse, growable image (OSTree dedup kept), executable by
@@ -469,17 +469,9 @@ Feature work continues, but in this shape from now on.
     bwrap setup domain → exec of the payload transitions to the app domain.
     No domain has binder; app domain gets execmem for JITs (Wine/Proton,
     Chromium).
-  - Per-app image mounts happen from outside (user, 2026-10-04): bwrap
-    waits (--info-fd/--block-fd) while a privileged linuxd-side helper
-    setns()es into the sandbox's mount namespace and mounts the image with
-    the app's MLS context; then bwrap execs the payload. No capability ever
-    enters the sandbox. The mount helper is limited by design (user): a
-    single-purpose one-shot binary taking only a sandbox pidfd, the attached
-    loop fd and the app id; it computes level, targets, fs type and flags
-    itself (no caller-supplied paths/options, no shell), verifies the pid
-    belongs to this launch and the namespace is not its own, mounts, exits;
-    own SELinux domain limited to setns into that sandbox + mount on the
-    target label + that loop device, neverallow-guarded. Identity/lifetime/permissions come from the stub (app-owns).
+  - Flatpak itself binds its read-only deployment and runtime into the
+    sandbox. The launch chain has no mount helper; downloaded code runs from
+    the app's own data under the `data_exec_exempt_domain` policy exception.
   Rejected: plain /data store (neverallow), app code inside stub APKs
   (runtime size, no namespaces in app domains), fixed partition (limits app
   count), proot (slow, weaker).
