@@ -1741,4 +1741,12 @@ keep offline (dev key in repo until then).
 - **Provenance.** The static helper sources were synced to MatonOS_apexs
   `e7fe3de`; the next full `build-static.sh` refresh updates the device
   `linux/flatpak/prebuilt/static/SOURCE` commit pin.
+- **Install is two-phase because the app UID is late-bound (2026-10-05).**
+  The stub APK is what gets the Android UID, so a first install has none:
+  Flatpak installs into a temp directory under the software store's UID, the
+  bridge generates and installs the stub from that deployment, PackageManager
+  assigns the stub UID, and linuxd re-homes the install to
+  `/data/matonos/linux/apps/<stub_uid>`. The shared runtime `--system`
+  installation is owned by the preinstalled Runtimes app and is known up
+  front. This supersedes any assumption that install receives the app UID.
 

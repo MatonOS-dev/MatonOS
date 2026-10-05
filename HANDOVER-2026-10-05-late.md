@@ -71,11 +71,18 @@ APEX landed. MatonOS was never deployed — reset userdata, no migration.
    and its policy.
 
 ## Known open items
-- **Software Centre install flow.** The store's `installApp` still sends only
-  `{ref}`; linuxd's publish needs the signed stub pins (`appCommit`,
-  `runtimeRef`, `runtimeCommit`, `remote`) and the app/runtime UIDs. Wire the
-  bridge to derive them from the stub (or the Flathub metadata) before install
-  works from the UI. `add_flathub`/`list_remotes` are done.
+- **First-install is two-phase (app UID is late-bound).** The app's `--user`
+  install UID is only known after its stub APK is installed (PackageManager
+  allocates it), so it is unavailable when the store first requests an
+  install. Intended flow: linuxd stages and installs into a temp directory
+  under the software store's UID (no stub exists yet); the bridge reads the
+  desktop entry/icon from that deployment, creates and installs the stub, and
+  PackageManager returns the stub UID; linuxd then re-homes/relabels the
+  deployment to `/data/matonos/linux/apps/<stub_uid>` and records the shared
+  runtime install. `flatpak_publish` currently takes `app_uid`/`runtime_uid`
+  up front, so it must be reworked to this flow. The shared `--system`
+  runtime install is owned by the Runtimes app and *is* known up front.
+  `add_flathub`/`list_remotes` are done.
 - **dbus-java** 6.x is the eventual target (5.2.2 until it ships).
 - **Local-only, unpushed branches:** `codex/zones`, `codex/gpu-props`,
   `claude/musl-static-116`, `ds/glibc-integrate`.
