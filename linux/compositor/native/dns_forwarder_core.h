@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <netinet/in.h>
+#include <linux/inet_diag.h>
+#include <linux/netlink.h>
+#include <linux/sock_diag.h>
 
 #define DNS_FORWARDER_MAX_PACKET 65535
 #define DNS_FORWARDER_TCP_PREFIX 2
@@ -38,5 +41,9 @@ int dns_forwarder_udp_uid(const struct dns_udp_diag_socket *sockets, size_t coun
                           struct in_addr source_address, uint16_t source_port,
                           struct in_addr destination_address, uint16_t destination_port,
                           uint32_t *uid);
+int dns_forwarder_parse_udp_dump_reply(const void *reply, size_t reply_length,
+                                       uint32_t sequence, uint16_t source_port,
+                                       struct dns_udp_diag_socket *sockets,
+                                       size_t capacity, size_t *count, int *done);
 
 #endif
