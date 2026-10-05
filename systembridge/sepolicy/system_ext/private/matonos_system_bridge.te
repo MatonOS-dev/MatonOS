@@ -13,6 +13,7 @@ type matonos_linuxd_service, protected_service, service_manager_type;
 allow matonos_linuxd matonos_linuxd_service:service_manager add;
 allow matonos_system_bridge matonos_linuxd_service:service_manager find;
 neverallow { domain -matonos_linuxd } matonos_linuxd_service:service_manager add;
+binder_use(matonos_linuxd)
 binder_call(matonos_system_bridge, matonos_linuxd)
 # Flatpak apps render on the GPU (--device=dri): linuxd launches them, and
 # bubblewrap opens /dev/dri for the sandbox.
@@ -128,6 +129,9 @@ allow matonos_linuxd matonos_flatpak_data_file:file relabelfrom;
 allow matonos_linuxd matonos_flatpak_data_file:dir relabelfrom;
 allow matonos_linuxd matonos_linux_code_file:dir { create_dir_perms relabelto relabelfrom setattr };
 allow matonos_linuxd matonos_linux_code_file:file { create_file_perms relabelto relabelfrom setattr };
+# OSTree materializes deployments by hard-linking objects within the private
+# deployment tree. The target type is confined to linuxd-managed Flatpak data.
+allow matonos_linuxd matonos_flatpak_deployment_file:file link;
 allow matonos_linuxd matonos_linux_data_file:dir { create_dir_perms relabelfrom relabelto };
 allow matonos_linux_app matonos_linux_data_file:dir create_dir_perms;
 allow matonos_linux_app matonos_linux_data_file:{ file lnk_file sock_file } create_file_perms;
@@ -172,6 +176,10 @@ allow matonos_linux_app matonos_flatpak_data_file:dir { getattr search };
 type matonos_flatpak_log_file, file_type, data_file_type, core_data_file_type, mlstrustedobject;
 allow matonos_linuxd matonos_flatpak_log_file:file create_file_perms;
 allow matonos_linux_app matonos_flatpak_log_file:file { getattr write append };
+# Flatpak's wait/status path issues FIONREAD on its inherited anonymous pipe.
+# Keep the ioctl exception to that one command on linuxd-owned pipes.
+allow matonos_linuxd self:fifo_file ioctl;
+allowxperm matonos_linuxd self:fifo_file ioctl { 0x5413 };
 
 ##############################################################################
 # r24: Flatpak code storage and verified execution
