@@ -79,11 +79,12 @@ app_id=${REF#*/}
 app_id=${app_id%%/*}
 bridge_call uninstall "$payload"
 wait_for_ref "$REF" no
-data_dir="/data/matonos/linux/flatpak-data/.var/app/$app_id"
-if adb_cmd shell test -e "$data_dir"; then
-  echo "Flatpak app data still exists: $data_dir" >&2
+# App data lives in the stub's per-app home, not a global Flatpak tree.
+data_glob="/data/matonos/linux/apps/*/home/.var/app/$app_id"
+if adb_cmd shell sh -c "ls -d $data_glob >/dev/null 2>&1"; then
+  echo "Flatpak app data still exists: $data_glob" >&2
   exit 1
 fi
 echo "Installed after uninstall:"
 list_installed
-echo "App data removed: $data_dir"
+echo "App data removed: $data_glob"

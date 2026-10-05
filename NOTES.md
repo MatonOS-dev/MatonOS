@@ -1713,3 +1713,32 @@ PackageInstaller staged sessions). Same APEX key + higher version,
 activates on reboot, apexd rolls back on failed boot. Live images (RAM /data)
 cannot keep staged updates: they get new images. Release key: generate once,
 keep offline (dev key in repo until then).
+
+### Flatpak consolidation: static APEX, per-app installs, in-app D-Bus (2026-10-05)
+- **Bionic stack deleted.** `retired/flatpak-bionic/` is gone and nothing
+  references it. The only Flatpak is the static musl `com.matonos.flatpak`
+  APEX: one multicall ELF for flatpak/ostree/bwrap, applets dispatch on
+  `argv[0]` (Soong drops prebuilt-binary symlinks). linuxd calls the
+  multicall directly for OSTree and the APEX wrapper for Flatpak.
+- **Per-app installs, reuse stock Flatpak.** The preinstalled runtime app
+  `org.matonos.linuxruntimes` owns the shared `--system` installation; each
+  stub owns a `--user` installation at `/data/matonos/linux/apps/<uid>`.
+  There is no global `/data/matonos/linux/flatpak*` installation. linuxd
+  resolves an app's roots (`--user info` probe) and runs `uninstall`,
+  `metadata`, `desktop_entry`, `icon` and `list_installed` through stock
+  Flatpak against those roots. The bridge supplies the runtime app's UID for
+  `add_flathub`/`list_remotes` so those target the same per-user install.
+- **Launch is stub-driven.** The generic `run` command and caller-supplied run
+  arguments were removed; the signed stub's ref + pinned commits drive
+  `flatpak run`.
+- **Appstream is stripped** from the Flatpak build; icons come only from the
+  app's exported `export/share/icons/hicolor/...` tree.
+- **Session bus/portals move into the app via dbus-java** (dbus-java-core
+  5.2.2 + an Android `LocalSocket` transport, merged into the compositor
+  host). `linux/dbus-broker` is transitional until that path is validated on
+  device, at which point the native broker and its policy can be retired.
+  There is no `xdg-dbus-proxy` in this setup.
+- **Provenance.** The static helper sources were synced to MatonOS_apexs
+  `e7fe3de`; the next full `build-static.sh` refresh updates the device
+  `linux/flatpak/prebuilt/static/SOURCE` commit pin.
+
