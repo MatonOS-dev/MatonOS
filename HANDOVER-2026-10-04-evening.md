@@ -83,8 +83,10 @@ build validates them.
 5. Launch through the new stack (static glue, xdg-dbus-proxy stand-in on the
    broker / dbus-java), retire bionic Flatpak into a revivable `retired/`
    folder only after apps run, then Steam.
-- Open: remove the now no-op mount helper with the launch-chain rework;
-  `RUN_DOWNLOADED_CODE` permission logic in StubGenerator is obsolete.
+- Resolved 2026-10-05: removed the retired mount-helper source and policy,
+  and removed `RUN_DOWNLOADED_CODE` declaration and stub permission logic.
+  Flatpaks may execute downloaded code in their own data by default, covered
+  by the existing `data_exec_exempt_domain` patch.
 
 ## Agent notes / lessons
 - Codex hit its usage limit at 17:08; DeepSeek took over but is **low on

@@ -259,9 +259,10 @@ creates the UID tree and home using component-wise openat/O_NOFOLLOW walking,
 0700 mode and stub UID/GID ownership. The existing system-owned `<uid>.owner`
 record is retained to reject reuse by a different Flatpak. The wrapper checks
 ownership and uses home for HOME, user data and cache; bwrap binds that home.
-The mount helper no longer attaches vol.img. Shared repo/cache/store paths stay
-in place. Dev images need no migration: reset userdata for an older layout;
-existing wrongly labelled directories fail closed rather than being relabelled.
+The former mount helper and per-app vol.img handoff are absent from the current
+launch chain. Shared repo/cache/store paths stay in place. Dev images need no
+migration: reset userdata for an older layout; existing wrongly labelled
+directories fail closed rather than being relabelled.
 
 Display/socket ownership, Wayland relays, Xwayland handling and the launch AIDL
 arguments are restored to the baseline. No per-UID run directory is created.

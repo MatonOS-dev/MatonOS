@@ -203,7 +203,7 @@ bridge's install flow. Goal: as much unmodified Flatpak plumbing as possible.
   files, setuid, device nodes, hardlinks outside the repo. Later option:
   fs-verity on objects.
 
-## Planned: per-app Linux data in `/data/matonos/linux/apps/<uid>/`; Flatpaks may run downloaded code (decided 2026-10-04)
+## Per-app Linux data and downloaded code (decided 2026-10-04)
 
 **All per-app Linux state lives in `/data/matonos/linux/apps/<stub uid>/`** (user decision;
 the stub's own app data dir was rejected: our domains may not touch
@@ -233,25 +233,18 @@ binder that may execute (execute, execute_no_trans, map) its own
 `matonos_linux_data_file` tree (`/data/matonos/linux/apps/<uid>`, at the stub's MLS level). No
 WRITABLE_CODE permission, no second domain, no prompt. Never `execmod`; never
 write to any exec type. Containment stays: own uid, own MLS level, no binder,
-only its own directory. Verified code images (APK-carried) are still how
-Flatpak-installed code arrives; sealing is no longer needed for code an app
-downloads itself (`RUN_DOWNLOADED_CODE` and `vol.img` retire).
+only its own directory. Flatpak-installed code arrives from the app's Flatpak
+deployment. Downloaded code in the app's own home is always allowed; there is
+no runtime permission or separate writable volume. The
+`data_exec_exempt_domain` patch covers code execution from app data.
 
 This needs `patches/system/sepolicy/0001-data-exec-exempt-domain.patch` (user
 decision 2026-10-04, second patch-budget entry): a private attribute
-`data_exec_exempt_domain`, given only to `matonos_flatpak_app`, exempted from
+`data_exec_exempt_domain`, given only to `matonos_linux_app`, exempted from
 the neverallows at `private/domain.te` ~1960 (non-appdomains execute only
 exec/system/vendor files) and ~2040 (no execute of data_file_type). The
 appdomain route was rejected: appdomains may only be entered from zygote
 (`domain.te` ~1484) and may hold no capabilities (`app.te` ~600).
-
-## Runtime permission
-
-`org.matonos.permission.RUN_DOWNLOADED_CODE` (`dangerous`, declared by
-`org.matonos.systembridge`) is requested by a generated stub only when the
-Flatpak manifest declares a broad writable or persistent filesystem pattern
-(`filesystems=host|home|~|~/...`, or any `persistent=`); default deny. Narrow
-`ro` grants do not request it. See `StubGenerator.permissionsForMetadata`.
 
 ## Sandbox user
 
@@ -260,24 +253,10 @@ stub UID (>= 10000) with supplementary groups reduced to inet plus (only when
 granted) the controller GID, so the sandbox sees one ordinary unprivileged
 user with no wheel/sudo/admin/adm membership and no sudo/su/pkexec path.
 
-## Still to wire (r24 image / r25)
+## Remaining integration notes
 
-* Thread the RUN_DOWNLOADED_CODE grant through Bridge → linuxd → installer so
-  `vol-ensure`/`vol-attach` run on first launch of an entitled app.
-* Replace the single writable `runtime.img` with per-commit runtime images
-  carried in APKs (see "Planned: images carried in APKs" below); today
-  the installer seals the existing `/data/matonos/linux/flatpak` deployment.
-* Wire the loop hand-off end to end: linuxd calls `app-attach`/`vol-attach`
-  (which write the per-app attach records the helper reads), then launches the
-  app; the launcher exports the unnamed socketpair fd that connects the
-  `matonos-bwrap` shim to `matonos-mount-helper`, and calls `loop-detach` when
-  the sandbox exits. No loop path or target is ever passed to the helper.
-* The privileged mounter is `matonos-mount-helper`, exec'd by the launcher
-  wrapper while it still holds `CAP_SYS_ADMIN`. It needs no capability grant to
-  `matonos-app-exec` or any sandbox domain: it performs `setns(CLONE_NEWNS)`,
-  `fsopen`/`fsconfig`/`fsmount` and `move_mount` itself. `matonos-flatpak-store`
-  still holds `SYS_ADMIN` for loop attach and fs-verity. A file-caps/root
-  service variant is the alternative if linuxd should not hold the capability.
+* The current APEX launch chain contains no mount helper. Stock `flatpak run`
+  binds its read-only app and runtime deployments into the sandbox.
 * Device matrix in `APP-OWNERSHIP-r24.md` still applies (this change adds the
   mount/verity and domain-entry steps; the identity/cgroup work is unchanged).
 

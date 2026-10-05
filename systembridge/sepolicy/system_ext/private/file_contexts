@@ -33,9 +33,8 @@
 /data/matonos/linux/runtime(/.*)? u:object_r:matonos_flatpak_socket_file:s0
 /data/matonos/linux/(machine-id|udev)(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
 
-# r24: the Flatpak CLI, installer helper, bwrap layers, app launcher and mount
-# helper moved into the com.matonos.flatpak APEX. Their same exec types are now
-# applied by linux/flatpak/apex_file_contexts at /apex/com.matonos.flatpak/bin;
-# the domains and transitions in matonos_system_bridge.te are unchanged.
+# r24: the Flatpak CLI, installer helper, bwrap layers and app launcher moved
+# into the com.matonos.flatpak APEX. Their exec types are applied by
+# linux/flatpak/apex_file_contexts at /apex/com.matonos.flatpak/bin.
 
 /data/matonos/linux/cache/launch-[^/]+\.log u:object_r:matonos_flatpak_log_file:s0
