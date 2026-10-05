@@ -10,7 +10,7 @@ public final class PortalBackendTest {
     static Message call(String owner,String iface,String method,String sig,Object... args) {
         Message m=new Message();m.type=1;m.serial=++serial;m.sender=owner;m.destination="org.freedesktop.portal.Desktop";
         m.path=PortalBackend.DESKTOP;m.iface="org.freedesktop.portal."+iface;m.member=method;m.signature=sig;m.body=Arrays.asList(args);
-        return decode(encode(m));
+        byte[] wire=encode(m);return decode(wire,m.dbusMessage.getFiledescriptors());
     }
     static List<Object> opts(String token) {return dictionary(Collections.singletonMap("handle_token",new Variant("s",token)));}
     public static void main(String[] args) throws Exception {
@@ -43,10 +43,18 @@ public final class PortalBackendTest {
         check(b.dispatch(call(":1.1","OpenURI","OpenDirectory","sha{sv}","",0,opts("dir"))).size()==2);
         Message sample=call(":1.1","Settings","ReadAll","as",Collections.emptyList());byte[] bytes=encode(sample);
         bytes[4]=(byte)255;try{decode(bytes);throw new AssertionError();}catch(IllegalArgumentException e){}
+        Message fdCall=call(":1.1","OpenURI","OpenFile","sha{sv}","",0,opts("fd-check"));
+        try {decode(encode(fdCall),Arrays.asList(new org.freedesktop.dbus.FileDescriptor(0),new org.freedesktop.dbus.FileDescriptor(1)));throw new AssertionError();}
+        catch(IllegalArgumentException expected){}
+        byte[] frameHeader=java.nio.ByteBuffer.allocate(8).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(16).putInt(1).array();
+        check(Arrays.equals(PortalWire.validateFrameHeader(frameHeader),new int[]{16,1}));
+        frameHeader[0]=(byte)15;try{PortalWire.validateFrameHeader(frameHeader);throw new AssertionError();}catch(IllegalArgumentException expected){}
+        frameHeader=java.nio.ByteBuffer.allocate(8).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(16).putInt(-1).array();
+        try{PortalWire.validateFrameHeader(frameHeader);throw new AssertionError();}catch(IllegalArgumentException expected){}
         b.close();check(!platform.held);
         for(int i=0;i<255;i++)check(b.dispatch(call(":1.3","Inhibit","Inhibit","sua{sv}","",8,opts("limit_"+i))).get(0).type==2);
         check(b.dispatch(call(":1.3","Inhibit","CreateMonitor","sa{sv}","",opts("limit_monitor"))).get(0).error.endsWith("LimitsExceeded"));
         b.close();check(!platform.held);
-        System.out.println("PASS: Java settings, variants/arrays, caller ownership, inhibition lifetime, monitors, OpenURI responses and malformed wire lengths");
+        System.out.println("PASS: Java settings, variants/arrays, caller ownership, inhibition lifetime, monitors, OpenURI responses, SCM_RIGHTS count mismatch and malformed frame/message lengths");
     }
 }

@@ -1,5 +1,33 @@
 plugins { id 'com.android.application' }
 
+dependencies {
+    // 5.2.2 is the newest stable release available for this port. Move to
+    // 6.x when it is released; upstream's 6.x line is not released yet.
+    implementation files('libs/dbus-java-core-5.2.2.jar', 'libs/slf4j-api-2.0.17.jar', 'libs/slf4j-nop-2.0.17.jar')
+    androidTestImplementation 'androidx.test:runner:1.7.0'
+    androidTestImplementation 'androidx.test.ext:junit:1.3.0'
+}
+
+tasks.register('verifyDbusVendoredJars') {
+    inputs.file('libs/SHA256SUMS')
+    inputs.files(fileTree('libs') { include '*.jar' })
+    doLast {
+        def expected = [:]
+        file('libs/SHA256SUMS').eachLine { line ->
+            def (hash, name) = line.trim().split(/\s+/, 2)
+            expected[name] = hash
+        }
+        expected.each { name, hash ->
+            def jar = file("libs/${name}")
+            if (!jar.isFile() || java.security.MessageDigest.getInstance('SHA-256')
+                    .digest(jar.bytes).encodeHex().toString() != hash) {
+                throw new GradleException("Vendored D-Bus dependency checksum mismatch: ${name}")
+            }
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn 'verifyDbusVendoredJars' }
+
 // A PIE executable named as a JNI library so updates extract it with executable
 // permissions. The image extracts its copy from this same APK (buildinfra).
 def brokerRoot = file('../../../dbus-broker')
@@ -29,6 +57,7 @@ android {
     compileSdk 36
     defaultConfig {
         applicationId 'org.matonos.compositor'; minSdk 36; targetSdk 36; versionCode 1; versionName '1.0'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk { abiFilters 'x86_64' }
         externalNativeBuild { cmake { arguments '-DMATON_COMPOSITOR_ROOT=' + projectDir.absolutePath + '/../..', '-DMATON_AOSP_ROOT=' + aospRoot, '-DMATON_COMPOSITOR_BUILD=' + (System.getenv('MATON_COMPOSITOR_BUILD') ?: "$aospRoot/out/matonos/compositor") } }
     }

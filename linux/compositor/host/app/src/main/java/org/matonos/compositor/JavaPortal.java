@@ -19,6 +19,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Consumer;
 import static org.matonos.compositor.PortalWire.*;
+import org.freedesktop.dbus.connections.impl.DirectConnection;
+import org.freedesktop.dbus.connections.impl.DirectConnectionBuilder;
+import org.freedesktop.dbus.connections.transports.TransportBuilder.SaslAuthMode;
 
 /** One private backend channel per SessionBus, with no native Android logic. */
 final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
@@ -34,8 +37,7 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
     private final Set<Object> fileOwners=Collections.newSetFromMap(new IdentityHashMap<>());
     private volatile LocalSocket client;
     private volatile boolean stopped, held;
-    private ParcelFileDescriptor[] descriptors;
-    private String owner;
+    private volatile DirectConnection dbus;
     JavaPortal(Context context,File directory,Consumer<Boolean> changed,Launcher launcher) throws Exception {
         this.context=context;this.changed=changed;this.launcher=launcher;
         new java.security.SecureRandom().nextBytes(secret);
@@ -74,41 +76,20 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
         }
     }
     private void run(LocalSocket socket) throws Exception {
-        InputStream in=socket.getInputStream();OutputStream out=socket.getOutputStream();
-        while(!stopped) {
-            List<FileDescriptor> received=new ArrayList<>();
-            try {
-                byte[] header=new byte[8];int offset=0;
-                // Read the header separately: rights belong to its first byte,
-                // never consume bytes from the following frame before collecting them.
-                while(offset<8) {int n=in.read(header,offset,8-offset);if(n<=0)throw new EOFException();offset+=n;collect(socket,received);}
-                ByteBuffer h=ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);int size=h.getInt(),fds=h.getInt();
-                if(size<16||size>MAX_MESSAGE||fds<0||fds>MAX_FDS||fds!=received.size())throw new IOException("Invalid portal frame");
-                byte[] bytes=new byte[size];readFully(in,bytes);collect(socket,received);
-                if(received.size()!=fds)throw new IOException("Unexpected portal descriptors");
-                Message call=decode(bytes);if(call.fdCount!=fds)throw new IOException("D-Bus descriptor count mismatch");
-                descriptors=new ParcelFileDescriptor[fds];
-                for(int i=0;i<fds;i++)descriptors[i]=ParcelFileDescriptor.dup(received.get(i));
-                if(call.type==4 && "org.matonos.PortalBackend".equals(call.iface)&&"ClientClosed".equals(call.member)&&"s".equals(call.signature)) {
-                    String closed=(String)call.body.get(0);backend.disconnected(closed);
-                    synchronized(fileOwners){Iterator<Object> it=fileOwners.iterator();while(it.hasNext()){Object o=it.next();if(o.toString().equals(closed)){PortalFiles.release(context,o);it.remove();}}}
-                    continue;
-                }
-                if(call.type!=1)throw new IOException("Expected portal call");
-                owner=call.sender;
-                for(Message reply:backend.dispatch(call)) {
-                    if(reply.type!=4 && (call.flags&1)!=0)continue;
-                    byte[] encoded=encode(reply);out.write(ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putInt(encoded.length).putInt(0).array());out.write(encoded);
-                }
-            } finally {
-                if(descriptors!=null)for(ParcelFileDescriptor fd:descriptors)if(fd!=null)fd.close();descriptors=null;
-                for(FileDescriptor fd:received)try{Os.close(fd);}catch(Exception ignored){}
-            }
-        }
+        String token=MatonLocalTransportProvider.handoff(socket);
+        DirectConnectionBuilder builder=DirectConnectionBuilder.forAddress("maton:token="+token);
+        builder.transportConfig().configureSasl().withSaslUid((long)android.os.Process.myUid()).withAuthMode(SaslAuthMode.AUTH_EXTERNAL)
+                .back().withAutoConnect(true);
+        DirectConnection connection=builder.build();dbus=connection;
+        PortalExportedObjects objects=new PortalExportedObjects(connection,backend);objects.export();
+        connection.addSigHandler(PortalExportedObjects.ClientClosed.class,signal->clientClosed(signal.owner));
+        while(!stopped&&connection.isConnected())Thread.sleep(100);
+        dbus=null;connection.disconnect();
     }
-    private static void collect(LocalSocket socket,List<FileDescriptor> received) throws IOException {
-        FileDescriptor[] rights=socket.getAncillaryFileDescriptors();if(rights!=null)Collections.addAll(received,rights);
-        if(received.size()>MAX_FDS)throw new IOException("Too many received FDs");
+
+    private void clientClosed(String closed){
+        try{backend.disconnected(closed);}catch(Exception e){Log.w("MatonPortal","Caller cleanup failed",e);}
+        synchronized(fileOwners){Iterator<Object> it=fileOwners.iterator();while(it.hasNext()){Object o=it.next();if(o.toString().equals(closed)){PortalFiles.release(context,o);it.remove();}}}
     }
     @Override public Map<String,Map<String,Variant>> settings() {
         Map<String,Variant> appearance=new LinkedHashMap<>();
@@ -132,7 +113,7 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
         held=active;
         try{changed.accept(active);}catch(RuntimeException e){Log.w("MatonPortal","Inhibit listener failed",e);}
     }
-    @Override public boolean open(String method,Object target,Map<String,Variant> options) throws Exception {
+    @Override public boolean open(String caller,String method,Object target,Map<String,Variant> options) throws Exception {
         if(stopped)return false;
         Variant ask=options.get("ask");
         if(ask!=null && !"b".equals(ask.signature))return false;
@@ -143,14 +124,17 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
             // forward arbitrary Android provider URIs with host authority.
             if(scheme==null||scheme.equalsIgnoreCase("file")||scheme.equalsIgnoreCase("content")||scheme.equalsIgnoreCase("intent"))return false;
         }else {
-            int index=(Integer)target;if(index<0||descriptors==null||index>=descriptors.length)return false;
-            android.system.StructStat stat=Os.fstat(descriptors[index].getFileDescriptor());boolean directory="OpenDirectory".equals(method);
-            if(directory?!OsConstants.S_ISDIR(stat.st_mode):!(OsConstants.S_ISREG(stat.st_mode)||OsConstants.S_ISDIR(stat.st_mode)))return false;
-            directory=OsConstants.S_ISDIR(stat.st_mode);
-            Variant write=options.get("writable");if(write!=null){if(!"b".equals(write.signature))return false;writable=(Boolean)write.value;}
-            int flags=Os.fcntlInt(descriptors[index].getFileDescriptor(),OsConstants.F_GETFL,0);
-            if((flags&OsConstants.O_ACCMODE)==OsConstants.O_WRONLY || (writable&&(flags&OsConstants.O_ACCMODE)==OsConstants.O_RDONLY))return false;
-            fileOwner=new String(owner);uri=PortalFiles.publish(descriptors[index],directory,writable,fileOwner);
+            int index=(Integer)target;FileDescriptor raw=MatonLocalTransportProvider.descriptorFor(index);if(raw==null)return false;
+            ParcelFileDescriptor source=ParcelFileDescriptor.dup(raw);
+            try {
+                android.system.StructStat stat=Os.fstat(source.getFileDescriptor());boolean directory="OpenDirectory".equals(method);
+                if(directory?!OsConstants.S_ISDIR(stat.st_mode):!(OsConstants.S_ISREG(stat.st_mode)||OsConstants.S_ISDIR(stat.st_mode)))return false;
+                directory=OsConstants.S_ISDIR(stat.st_mode);
+                Variant write=options.get("writable");if(write!=null){if(!"b".equals(write.signature))return false;writable=(Boolean)write.value;}
+                int flags=Os.fcntlInt(source.getFileDescriptor(),OsConstants.F_GETFL,0);
+                if((flags&OsConstants.O_ACCMODE)==OsConstants.O_WRONLY || (writable&&(flags&OsConstants.O_ACCMODE)==OsConstants.O_RDONLY))return false;
+                fileOwner=new String(caller);uri=PortalFiles.publish(source,directory,writable,fileOwner);
+            } finally {source.close();}
             synchronized(fileOwners){if(stopped){PortalFiles.revoke(context,uri);return false;}fileOwners.add(fileOwner);}
         }
         Intent intent=new Intent(Intent.ACTION_VIEW).addCategory(Intent.CATEGORY_DEFAULT);
@@ -168,6 +152,7 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
     }
     @Override public void close() {
         stopped=true;
+        if(dbus!=null)dbus.disconnect();
         try{server.close();}catch(Exception ignored){}
         try{bound.close();}catch(Exception ignored){}
         try{if(client!=null)client.close();}catch(Exception ignored){}

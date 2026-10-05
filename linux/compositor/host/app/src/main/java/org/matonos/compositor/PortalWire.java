@@ -1,169 +1,216 @@
 package org.matonos.compositor;
 
+import org.freedesktop.dbus.DBusPath;
+import org.freedesktop.dbus.Struct;
+import org.freedesktop.dbus.annotations.Position;
+import org.freedesktop.dbus.exceptions.DBusException;
+import org.freedesktop.dbus.messages.DBusSignal;
+import org.freedesktop.dbus.messages.Error;
+import org.freedesktop.dbus.messages.MessageFactory;
+import org.freedesktop.dbus.messages.MethodCall;
+import org.freedesktop.dbus.types.UInt16;
+import org.freedesktop.dbus.types.UInt32;
+import org.freedesktop.dbus.types.UInt64;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Bounded D-Bus wire codec, independent of Android for host unit tests. */
+/** Compatibility view over dbus-java messages; D-Bus value framing is owned by dbus-java. */
 final class PortalWire {
     static final int MAX_MESSAGE = 1024 * 1024, MAX_FDS = 16;
+
+    static int[] validateFrameHeader(byte[] header) {
+        if (header.length != 8) throw new IllegalArgumentException("Invalid portal frame header");
+        ByteBuffer b = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
+        int size = b.getInt(), fds = b.getInt();
+        if (size < 16 || size > MAX_MESSAGE || fds < 0 || fds > MAX_FDS)
+            throw new IllegalArgumentException("Malformed portal frame header");
+        return new int[] { size, fds };
+    }
+
     static final class Variant {
         final String signature;
         final Object value;
         Variant(String signature, Object value) { this.signature=signature; this.value=value; }
     }
+
     static final class Message {
         int type, flags, serial, replySerial, fdCount;
         String path, iface, member, error, destination, sender, signature="";
         List<Object> body = new ArrayList<>();
+        org.freedesktop.dbus.messages.Message dbusMessage;
+        org.freedesktop.dbus.messages.Message replyTo;
     }
-    private static int alignment(char c) {
-        switch(c) {
-            case 'y': case 'g': case 'v': return 1;
-            case 'n': case 'q': return 2;
-            case 'x': case 't': case 'd': case '(': case '{': return 8;
-            default: return 4;
-        }
+
+    public static final class AccentColor extends Struct {
+        @Position(0) public double red;
+        @Position(1) public double green;
+        @Position(2) public double blue;
+        public AccentColor(double red,double green,double blue){this.red=red;this.green=green;this.blue=blue;}
     }
-    private static int end(String s,int start) {
-        if(start>=s.length())throw new IllegalArgumentException("Incomplete signature");
-        char c=s.charAt(start++);
-        if(c=='a')return end(s,start);
-        if(c=='('||c=='{') {
-            char close=c=='('?')':'}';
-            while(start<s.length() && s.charAt(start)!=close)start=end(s,start);
-            if(start==s.length())throw new IllegalArgumentException("Unclosed signature");
-            return start+1;
-        }
-        if("ybnqiuxtdsoghv".indexOf(c)<0)throw new IllegalArgumentException("Invalid type");
-        return start;
-    }
-    private static final class Reader {
-        final ByteBuffer b;
-        int depth;
-        Reader(byte[] bytes) {
-            b=ByteBuffer.wrap(bytes);
-            if(bytes.length<16 || (bytes[0]!='l' && bytes[0]!='B'))throw new IllegalArgumentException("Invalid header");
-            b.order(bytes[0]=='l'?ByteOrder.LITTLE_ENDIAN:ByteOrder.BIG_ENDIAN);
-        }
-        void align(int n) { b.position((b.position()+n-1)&-n); }
-        Object value(String s) {
-            if(++depth>32)throw new IllegalArgumentException("Too deeply nested");
-            try {
-                char c=s.charAt(0);align(alignment(c));
-                switch(c) {
-                    case 'y': return b.get()&255;
-                    case 'n': return b.getShort();
-                    case 'q': return b.getShort()&65535;
-                    case 'b': {int v=b.getInt();if(v!=0&&v!=1)throw new IllegalArgumentException("Invalid boolean");return v!=0;}
-                    case 'u': case 'i': case 'h': return b.getInt();
-                    case 'x': case 't': return b.getLong();
-                    case 'd': return b.getDouble();
-                    case 's': case 'o': case 'g': {
-                        int n=c=='g'?(b.get()&255):b.getInt();
-                        if(n<0 || n>=b.remaining())throw new IllegalArgumentException("Invalid string length");
-                        byte[] data=new byte[n];b.get(data);
-                        if(b.get()!=0)throw new IllegalArgumentException("Missing string terminator");
-                        return new String(data,StandardCharsets.UTF_8);
-                    }
-                    case 'v': {String sig=(String)value("g");if(end(sig,0)!=sig.length())throw new IllegalArgumentException("Variant signature");return new Variant(sig,value(sig));}
-                    case 'a': {
-                        int size=b.getInt();String element=s.substring(1);align(alignment(element.charAt(0)));
-                        if(size<0||size>b.remaining())throw new IllegalArgumentException("Invalid array length");
-                        int limit=b.position()+size;List<Object> values=new ArrayList<>();
-                        while(b.position()<limit) {if(values.size()>=65536)throw new IllegalArgumentException("Array too large");values.add(value(element));}
-                        if(b.position()!=limit)throw new IllegalArgumentException("Array boundary");
-                        return values;
-                    }
-                    case '(': case '{': {
-                        List<Object> values=new ArrayList<>();
-                        for(int i=1;i<s.length()-1;) {int next=end(s,i);values.add(value(s.substring(i,next)));i=next;}
-                        return values;
-                    }
-                    default: throw new IllegalArgumentException("Unsupported type");
-                }
-            } finally {depth--;}
-        }
-    }
-    private static final class Writer {
-        final ByteBuffer b=ByteBuffer.allocate(MAX_MESSAGE).order(ByteOrder.LITTLE_ENDIAN);
-        void align(int n) {while((b.position()&(n-1))!=0)b.put((byte)0);}
-        void value(String s,Object obj) {
-            char c=s.charAt(0);align(alignment(c));
-            switch(c) {
-                case 'y': b.put(((Number)obj).byteValue());break;
-                case 'n': case 'q': b.putShort(((Number)obj).shortValue());break;
-                case 'b': b.putInt((Boolean)obj?1:0);break;
-                case 'u': case 'i': case 'h': b.putInt(((Number)obj).intValue());break;
-                case 'x': case 't': b.putLong(((Number)obj).longValue());break;
-                case 'd': b.putDouble(((Number)obj).doubleValue());break;
-                case 's': case 'o': case 'g': {
-                    byte[] bytes=((String)obj).getBytes(StandardCharsets.UTF_8);
-                    if(c=='g') {if(bytes.length>255)throw new IllegalArgumentException("Signature length");b.put((byte)bytes.length);}else b.putInt(bytes.length);
-                    b.put(bytes).put((byte)0);break;
-                }
-                case 'v': {Variant v=(Variant)obj;value("g",v.signature);value(v.signature,v.value);break;}
-                case 'a': {
-                    int lengthAt=b.position();b.putInt(0);String element=s.substring(1);align(alignment(element.charAt(0)));int start=b.position();
-                    for(Object v:(List<?>)obj)value(element,v);
-                    b.putInt(lengthAt,b.position()-start);break;
-                }
-                case '(': case '{': {
-                    List<?> values=(List<?>)obj;int index=0;
-                    for(int i=1;i<s.length()-1;) {int next=end(s,i);value(s.substring(i,next),values.get(index++));i=next;}break;
-                }
-                default: throw new IllegalArgumentException("Unsupported output type");
-            }
-        }
-        void field(int id,String sig,Object obj) {if(obj!=null)value("(yv)",java.util.Arrays.asList(id,new Variant(sig,obj)));}
-    }
+
+    private static final MessageFactory FACTORY = new MessageFactory((byte) 'l');
+
     static Message decode(byte[] bytes) {
-        if(bytes.length>MAX_MESSAGE)throw new IllegalArgumentException("Message too large");
-        Reader r=new Reader(bytes);ByteBuffer b=r.b;Message m=new Message();
-        b.position(1);m.type=b.get()&255;m.flags=b.get()&255;
-        if(b.get()!=1 || m.type<1 || m.type>4)throw new IllegalArgumentException("Protocol version/type");
-        int bodyLength=b.getInt();m.serial=b.getInt();int headerLength=b.getInt();
-        if(m.serial==0||headerLength<0||headerLength>bytes.length-16)throw new IllegalArgumentException("Invalid header length/serial");
-        int headerEnd=16+headerLength;
-        while(b.position()<headerEnd) {
-            List<?> f=(List<?>)r.value("(yv)");int id=(Integer)f.get(0);Variant v=(Variant)f.get(1);
-            switch(id) {
-                case 1: m.path=(String)v.value;break;case 2:m.iface=(String)v.value;break;
-                case 3:m.member=(String)v.value;break;case 4:m.error=(String)v.value;break;
-                case 5:m.replySerial=(Integer)v.value;break;case 6:m.destination=(String)v.value;break;
-                case 7:m.sender=(String)v.value;break;case 8:m.signature=(String)v.value;break;
-                case 9:m.fdCount=(Integer)v.value;break;default:break;
-            }
-        }
-        if(b.position()!=headerEnd)throw new IllegalArgumentException("Header boundary");
-        r.align(8);
-        if(bodyLength<0 || bodyLength!=b.remaining())throw new IllegalArgumentException("Body length");
-        for(int i=0;i<m.signature.length();) {int next=end(m.signature,i);m.body.add(r.value(m.signature.substring(i,next)));i=next;}
-        if(b.hasRemaining())throw new IllegalArgumentException("Trailing body data");
+        return decode(bytes,null);
+    }
+
+    static Message decode(byte[] bytes,List<org.freedesktop.dbus.FileDescriptor> descriptors) {
+        if (bytes.length < 16 || bytes.length > MAX_MESSAGE) throw new IllegalArgumentException("Invalid message size");
+        ByteOrder order = bytes[0] == 'l' ? ByteOrder.LITTLE_ENDIAN : bytes[0] == 'B' ? ByteOrder.BIG_ENDIAN : null;
+        if (order == null || bytes[3] != 1) throw new IllegalArgumentException("Invalid D-Bus header");
+        ByteBuffer b = ByteBuffer.wrap(bytes).order(order);
+        int type = bytes[1] & 255, bodySize = b.getInt(4), serial = b.getInt(8), headerSize = b.getInt(12);
+        if (type < 1 || type > 4 || serial == 0 || headerSize < 0 || bodySize < 0) throw new IllegalArgumentException("Invalid D-Bus header fields");
+        int paddedHeader = (headerSize + 7) & ~7;
+        if (paddedHeader < headerSize || 16L + paddedHeader + bodySize != bytes.length) throw new IllegalArgumentException("Invalid D-Bus message length");
+        byte[] fixed = Arrays.copyOfRange(bytes, 0, 12);
+        byte[] header = new byte[paddedHeader + 8];
+        System.arraycopy(bytes, 12, header, 0, 4);
+        System.arraycopy(bytes, 16, header, 8, headerSize);
+        byte[] body = Arrays.copyOfRange(bytes, 16 + paddedHeader, bytes.length);
+        int declaredFds=fdCount(bytes,headerSize,order);
+        final org.freedesktop.dbus.messages.Message dm;
+        try { dm = MessageFactory.createMessage((byte) type, fixed, header, body, descriptors); }
+        catch (Exception e) { throw new IllegalArgumentException("Malformed D-Bus message", e); }
+        Message decoded=fromDbus(dm);if(decoded.fdCount!=declaredFds)throw new IllegalArgumentException("D-Bus descriptor count mismatch");return decoded;
+    }
+
+    static Message fromDbus(org.freedesktop.dbus.messages.Message dm) {
+        Message m = new Message(); m.dbusMessage=dm; m.type=dm.getType(); m.flags=dm.getFlags(); m.serial=(int)dm.getSerial();
+        m.replySerial=(int)dm.getReplySerial(); m.path=dm.getPath(); m.iface=dm.getInterface(); m.member=dm.getName();
+        m.error=dm instanceof Error ? dm.getName() : null; m.destination=dm.getDestination(); m.sender=dm.getSource();
+        m.signature=dm.getSig()==null?"":dm.getSig(); m.fdCount=dm.getFiledescriptors().size();
+        try {
+            Object[] args=dm.getParameters();
+            for(int i=0;i<args.length;i++)m.body.add(fromDbus(signaturePart(m.signature,i),args[i]));
+        } catch (DBusException | RuntimeException e) { throw new IllegalArgumentException("Malformed D-Bus body", e); }
         return m;
     }
+
     static byte[] encode(Message m) {
-        Writer w=new Writer();ByteBuffer b=w.b;
-        b.put((byte)'l').put((byte)m.type).put((byte)m.flags).put((byte)1).putInt(0).putInt(m.serial).putInt(0);
-        w.field(1,"o",m.path);w.field(2,"s",m.iface);w.field(3,"s",m.member);w.field(4,"s",m.error);
-        if(m.replySerial!=0)w.field(5,"u",m.replySerial);
-        w.field(6,"s",m.destination);w.field(7,"s",m.sender);
-        if(!m.signature.isEmpty())w.field(8,"g",m.signature);
-        if(m.fdCount!=0)w.field(9,"u",m.fdCount);
-        b.putInt(12,b.position()-16);w.align(8);int bodyStart=b.position(),index=0;
-        for(int i=0;i<m.signature.length();) {int next=end(m.signature,i);w.value(m.signature.substring(i,next),m.body.get(index++));i=next;}
-        b.putInt(4,b.position()-bodyStart);return java.util.Arrays.copyOf(b.array(),b.position());
+        org.freedesktop.dbus.messages.Message dm=toDbusMessage(m);
+        byte[][] wire=dm.getWireData(); int n=0; for(byte[] part:wire){if(part==null)break;n=Math.addExact(n,part.length);}
+        if(n>MAX_MESSAGE)throw new IllegalArgumentException("D-Bus message too large");
+        byte[] out=new byte[n];int at=0;for(byte[] part:wire){if(part==null)break;System.arraycopy(part,0,out,at,part.length);at+=part.length;}
+        return out;
     }
+
+    static org.freedesktop.dbus.messages.Message toDbusMessage(Message m) {
+        try {
+            String sig=m.signature==null||m.signature.isEmpty()?null:m.signature;
+            Object[] args=toDbusArgs(m.signature,m.body);
+            org.freedesktop.dbus.messages.Message dm;
+            if(m.type==1) {
+                dm=FACTORY.createMethodCall(m.sender,m.destination,m.path,m.iface,m.member,(byte)m.flags,sig,args);
+            } else if(m.type==2) {
+                if(!(m.replyTo instanceof MethodCall))throw new IllegalArgumentException("Reply lacks dbus-java call context");
+                dm=FACTORY.createMethodReturn(m.sender,(MethodCall)m.replyTo,sig,args);
+            } else if(m.type==3) {
+                dm=FACTORY.createError(m.sender,m.destination,m.error,m.replySerial,sig,args);
+            } else if(m.type==4) {
+                dm=FACTORY.createSignal(m.sender,m.path,m.iface,m.member,sig,args);
+            } else throw new IllegalArgumentException("Unsupported D-Bus message type");
+            m.dbusMessage=dm;return dm;
+        } catch (DBusException e) { throw new IllegalArgumentException("dbus-java could not encode message", e); }
+    }
+
+    private static Object[] toDbusArgs(String sig,List<Object> values) {
+        if(sig==null||sig.isEmpty())return new Object[0];
+        List<Object> out=new ArrayList<>();int at=0;
+        for(int p=0;p<sig.length();) {int end=signatureEnd(sig,p);out.add(toDbus(sig.substring(p,end),values.get(at++)));p=end;}
+        if(at!=values.size())throw new IllegalArgumentException("Signature/body arity mismatch");
+        return out.toArray();
+    }
+
+    private static Object toDbus(String sig,Object value) {
+        char c=sig.charAt(0);
+        if(c=='v') { Variant v=(Variant)value; return new org.freedesktop.dbus.types.Variant<>(toDbus(v.signature,v.value),v.signature); }
+        if(c=='u')return new UInt32(((Number)value).longValue());
+        if(c=='q')return new UInt16(((Number)value).intValue());
+        if(c=='t')return new UInt64(((Number)value).longValue());
+        if(c=='o')return new DBusPath((String)value);
+        if(c=='h'&&value instanceof Number)return new org.freedesktop.dbus.FileDescriptor(((Number)value).intValue());
+        if(c=='a') {
+            String element=sig.substring(1);
+            if(element.startsWith("{")) {Map<Object,Object> map=new LinkedHashMap<>();for(Object entry:(List<?>)value){List<?> pair=(List<?>)entry;map.put(toDbus(element.substring(1,2),pair.get(0)),toDbus(element.substring(2,element.length()-1),pair.get(1)));}return map;}
+            List<Object> out=new ArrayList<>();for(Object item:(List<?>)value)out.add(toDbus(element,item));return out;
+        }
+        if("(ddd)".equals(sig)) {List<?> rgb=(List<?>)value;return new AccentColor(((Number)rgb.get(0)).doubleValue(),((Number)rgb.get(1)).doubleValue(),((Number)rgb.get(2)).doubleValue());}
+        return value;
+    }
+
+    static Object toDbusValue(String signature,Object value){return toDbus(signature,value);}
+    static Object fromDbusValue(String signature,Object value){return fromDbus(signature,value);}
+
+    private static Object fromDbus(String sig,Object value) {
+        if(sig.isEmpty())return value;
+        char c=sig.charAt(0);
+        if(c=='v') {org.freedesktop.dbus.types.Variant<?> v=(org.freedesktop.dbus.types.Variant<?>)value;return new Variant(v.getSig(),fromDbus(v.getSig(),v.getValue()));}
+        if(value instanceof UInt32)return ((UInt32)value).intValue();
+        if(value instanceof UInt16)return ((UInt16)value).intValue();
+        if(value instanceof UInt64)return ((UInt64)value).longValue();
+        if(c=='h'&&value instanceof org.freedesktop.dbus.FileDescriptor)return ((org.freedesktop.dbus.FileDescriptor)value).getIntFileDescriptor();
+        if(c=='o'&&value instanceof DBusPath)return ((DBusPath)value).getPath();
+        if("(ddd)".equals(sig)&&value instanceof AccentColor){AccentColor rgb=(AccentColor)value;return Arrays.asList(rgb.red,rgb.green,rgb.blue);}
+        if(c=='a') {
+            String element=sig.substring(1);
+            if(element.startsWith("{")) {List<Object> out=new ArrayList<>();for(Map.Entry<?,?> e:((Map<?,?>)value).entrySet())out.add(Arrays.asList(fromDbus(element.substring(1,2),e.getKey()),fromDbus(element.substring(2,element.length()-1),e.getValue())));return out;}
+            List<Object> out=new ArrayList<>();for(Object item:(List<?>)value)out.add(fromDbus(element,item));return out;
+        }
+        return value;
+    }
+
+    private static String signaturePart(String signature,int index) {
+        int p=0;while(index-->0)p=signatureEnd(signature,p);int e=signatureEnd(signature,p);return signature.substring(p,e);
+    }
+
+    private static int signatureEnd(String s,int p) {
+        if(p>=s.length())throw new IllegalArgumentException("Incomplete D-Bus signature");char c=s.charAt(p++);
+        if(c=='a')return signatureEnd(s,p);
+        if(c=='('||c=='{'){char close=c=='('?')':'}';while(p<s.length()&&s.charAt(p)!=close)p=signatureEnd(s,p);if(p>=s.length())throw new IllegalArgumentException("Unclosed D-Bus signature");return p+1;}
+        return p;
+    }
+
+    /** Reads only the standard UNIX_FDS header field; dbus-java parses all message fields and values. */
+    static int declaredFdCount(byte[] bytes) {
+        if(bytes.length<16)throw new IllegalArgumentException("Truncated D-Bus message");
+        ByteOrder order=bytes[0]=='l'?ByteOrder.LITTLE_ENDIAN:bytes[0]=='B'?ByteOrder.BIG_ENDIAN:null;
+        if(order==null)throw new IllegalArgumentException("Invalid D-Bus endianness");
+        return fdCount(bytes,ByteBuffer.wrap(bytes).order(order).getInt(12),order);
+    }
+
+    private static int fdCount(byte[] bytes,int headerSize,ByteOrder order) {
+        ByteBuffer b=ByteBuffer.wrap(bytes).order(order);b.position(16);int end=16+headerSize,count=0;boolean seen=false;
+        while(b.position()<end) {
+            int aligned=(b.position()+7)&~7;if(aligned>end)throw new IllegalArgumentException("Malformed header padding");b.position(aligned);
+            if(b.position()==end)break;
+            int id=b.get()&255;if(!b.hasRemaining())throw new IllegalArgumentException("Truncated header field");
+            int sigLength=b.get()&255;if(sigLength==0||sigLength>b.remaining()-1)throw new IllegalArgumentException("Malformed header variant");
+            byte[] sigBytes=new byte[sigLength];b.get(sigBytes);if(b.get()!=0)throw new IllegalArgumentException("Malformed header signature");
+            String sig=new String(sigBytes,java.nio.charset.StandardCharsets.US_ASCII);if(sig.length()!=1)throw new IllegalArgumentException("Invalid header field type");
+            char type=sig.charAt(0);int a=type=='y'||type=='g'?1:type=='n'||type=='q'?2:type=='x'||type=='t'||type=='d'?8:4;
+            b.position((b.position()+a-1)&-a);
+            if(id==9) {if(seen||type!='u'||b.position()+4>end)throw new IllegalArgumentException("Invalid UNIX_FDS header");count=b.getInt();if(count<0)throw new IllegalArgumentException("Invalid UNIX_FDS count");seen=true;}
+            else if(type=='s'||type=='o') {if(b.position()+4>end)throw new IllegalArgumentException("Truncated header string");int n=b.getInt();if(n<0||b.position()+(long)n+1>end)throw new IllegalArgumentException("Invalid header string length");b.position(b.position()+n+1);}
+            else if(type=='g') {if(b.position()>=end)throw new IllegalArgumentException("Truncated header signature");int n=b.get()&255;if(b.position()+(long)n+1>end)throw new IllegalArgumentException("Invalid header signature length");b.position(b.position()+n+1);}
+            else if(type=='u'||type=='i') {if(b.position()+4>end)throw new IllegalArgumentException("Truncated header integer");if(id!=9)b.getInt();}
+            else throw new IllegalArgumentException("Unsupported header field type");
+        }
+        if(b.position()!=end)throw new IllegalArgumentException("Header boundary mismatch");return count;
+    }
+
     static Map<String,Variant> dictionary(Object array) {
         Map<String,Variant> result=new LinkedHashMap<>();
-        for(Object entry:(List<?>)array) {List<?> e=(List<?>)entry;result.put((String)e.get(0),(Variant)e.get(1));}
+        for(Object entry:(List<?>)array){List<?> e=(List<?>)entry;result.put((String)e.get(0),(Variant)e.get(1));}
         return result;
     }
     static List<Object> dictionary(Map<String,Variant> values) {
-        List<Object> result=new ArrayList<>();values.forEach((k,v)->result.add(java.util.Arrays.asList(k,v)));return result;
+        List<Object> result=new ArrayList<>();values.forEach((k,v)->result.add(Arrays.asList(k,v)));return result;
     }
 }
