@@ -9,7 +9,7 @@ final class PortalBackend {
     interface Platform {
         Map<String,Map<String,Variant>> settings();
         void hold(boolean active) throws Exception;
-        boolean open(String method, Object target, Map<String,Variant> options) throws Exception;
+        boolean open(String owner,String method, Object target, Map<String,Variant> options) throws Exception;
     }
     private static final class Handle {
         final String owner;
@@ -50,9 +50,9 @@ final class PortalBackend {
         return path;
     }
     private void updateHold() throws Exception {platform.hold(handles.values().stream().anyMatch(h->h.hold));}
-    void disconnected(String owner) throws Exception {handles.values().removeIf(h->h.owner.equals(owner));updateHold();}
-    void close() throws Exception {handles.clear();platform.hold(false);}
-    List<Message> dispatch(Message call) {
+    synchronized void disconnected(String owner) throws Exception {handles.values().removeIf(h->h.owner.equals(owner));updateHold();}
+    synchronized void close() throws Exception {handles.clear();platform.hold(false);}
+    synchronized List<Message> dispatch(Message call) {
         try {return invoke(call);}
         catch(Failure e) {Message m=response(call,3,"s",e.getMessage());m.error=e.name;return Collections.singletonList(m);}
         catch(Exception e) {Message m=response(call,3,"s","Portal operation failed");m.error="org.freedesktop.portal.Error.Failed";return Collections.singletonList(m);}
@@ -129,7 +129,7 @@ final class PortalBackend {
         if(desktop && (PREFIX+"OpenURI").equals(c.iface) && Arrays.asList("OpenURI","OpenFile","OpenDirectory").contains(c.member)) {
             signature(c,"OpenURI".equals(c.member)?"ssa{sv}":"sha{sv}");
             Map<String,Variant> opts=dictionary(c.body.get(2));String request=handle(c,"request",opts,"handle_token");
-            boolean success=platform.open(c.member,c.body.get(1),opts);
+            boolean success=platform.open(c.sender,c.member,c.body.get(1),opts);
             out.add(response(c,2,"o",request));out.add(signal(c,request,PREFIX+"Request","Response","ua{sv}",success?0:2,Collections.emptyList()));return out;
         }
         throw new Failure("org.freedesktop.DBus.Error.UnknownMethod","Unsupported portal operation");

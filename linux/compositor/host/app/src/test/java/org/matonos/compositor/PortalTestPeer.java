@@ -17,7 +17,7 @@ public final class PortalTestPeer {
             s.put("org.gnome.desktop.wm.preferences",Collections.singletonMap("button-layout",new Variant("s",":")));return s;
         }
         public void hold(boolean next){if(held!=next)transitions++;held=next;}
-        public boolean open(String method,Object target,Map<String,Variant> options){return !"fail:".equals(target);}
+        public boolean open(String owner,String method,Object target,Map<String,Variant> options){return !"fail:".equals(target);}
     }
     public static void main(String[] args) throws Exception {
         PortalBackend backend=new PortalBackend(new Platform());DataInputStream in=new DataInputStream(System.in);
