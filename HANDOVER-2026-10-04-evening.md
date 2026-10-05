@@ -39,7 +39,7 @@ Nothing below is device-tested yet; all waits for the next image build.
   data, a Linux VM for Steam (GPU), the `matonos_linux` stub group (gid
   mappings need a preinstalled declarer; stubs use per-device keys) — linuxd
   relies on the bridge's `ownsStub`.
-- Installer identity: **AID 2902 `AID_VENDOR_MATONOS_FLATPAK_INSTALLER`**
+- Installer identity: **AID 2902 `AID_VENDOR_MATONOS_FPINSTALL` (renamed: AID names must be < 32 chars)**
   (OEM system uid: exempt from netd's per-uid firewall that blocked uid
   29000). Network rights only in its own domain `matonos_flatpak_installer`.
 - Glue that runs inside the non-bionic namespace (matonos-bwrap,
