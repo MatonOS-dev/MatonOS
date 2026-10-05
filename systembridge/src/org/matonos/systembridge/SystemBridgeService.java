@@ -118,7 +118,7 @@ public final class SystemBridgeService extends Service {
                     // resolv.conf supports only port 53; prefer the app-local
                     // endpoint only when the privileged bind succeeded.
                     String localDns = null;
-                    if (dnsForwarder != null && dnsForwarder.matches("127\\.10\\.[0-9]{1,3}\\.[0-9]{1,3}:53"))
+                    if (dnsForwarder != null && dnsForwarder.matches("127\\.10\\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})\\.(25[0-5]|2[0-4][0-9]|1?[0-9]{1,2}):53"))
                         localDns = dnsForwarder.substring(0, dnsForwarder.length() - 3);
                     if (localDns != null) dns.append(localDns);
                     else if (link != null) for (java.net.InetAddress server : link.getDnsServers()) {
