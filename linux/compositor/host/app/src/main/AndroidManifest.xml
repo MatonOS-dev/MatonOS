@@ -23,6 +23,7 @@
         <activity android:name=".WindowActivity" android:exported="false" android:resizeableActivity="true"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
         <activity android:name=".stub.StubActivity" android:exported="true" />
+        <activity android:name=".stub.InstallActivity" android:exported="true" />
         <service android:name=".stub.StubService" android:exported="false" />
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>

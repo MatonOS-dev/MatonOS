@@ -252,6 +252,24 @@ static int app_uid_for_ref(const char* ref, int* uid_out) {
     return 0;
 }
 
+/* Whether the app ref is deployed in this stub UID's own installation. */
+int flatpak_manager_installed_for_uid(const char* ref, int uid) {
+    if (!ref || strncmp(ref, "app/", 4) || !flatpak_manager_valid_ref(ref) ||
+            !valid_install_uid(uid)) return 0;
+    char user_dir[256], system_dir[256];
+    int runtime_uid = -1;
+    if (snprintf(user_dir, sizeof(user_dir), "/data/matonos/linux/apps/%d", uid) >= (int)sizeof(user_dir)) return 0;
+    if (remembered_runtime_install(uid, &runtime_uid) == 0)
+        snprintf(system_dir, sizeof(system_dir), "/data/matonos/linux/apps/%d", runtime_uid);
+    else
+        snprintf(system_dir, sizeof(system_dir), "%s", user_dir);
+    const char* args[] = {"--user", "info", ref};
+    ChildResult child = run_cli_in(args, 3, 0, system_dir, user_dir);
+    int installed = child.status == 0 && !child.truncated;
+    free(child.output);
+    return installed;
+}
+
 static int app_install_roots(const char* ref, char* system_dir, size_t system_size,
         char* user_dir, size_t user_size) {
     int app_uid = -1, runtime_uid = -1;
@@ -1218,6 +1236,15 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
     result->exit_code = 127;
     if (!command) { set_error(result, "unsupported Flatpak command"); return; }
     if (strcmp(command, "list_installed") == 0) { list_installed_refs(result); return; }
+    if (strcmp(command, "installed_for_uid") == 0) {
+        if (!flatpak_manager_valid_ref(ref) || !valid_install_uid(app_uid)) {
+            set_error(result, "valid app ref and stub UID are required"); return;
+        }
+        result->ok = 1; result->exit_code = 0;
+        result->output = strdup(flatpak_manager_installed_for_uid(ref, app_uid) ? "true" : "false");
+        if (!result->output) set_error(result, "cannot allocate install status");
+        return;
+    }
     /* Remote management targets the runtime app's --system installation for
      * the calling Android user (the bridge supplies its UID). */
     if (strcmp(command, "list_remotes") == 0 || strcmp(command, "add_flathub") == 0) {

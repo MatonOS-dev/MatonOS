@@ -29,7 +29,15 @@ export async function installApp(ref: string, operationId: string, iconBase64?: 
   await callFlatpak("add_flathub");
   const args: Record<string, string> = { ref, operationId };
   if (iconBase64) args.icon = iconBase64;
-  return callFlatpak("install", args);
+  const response = await callFlatpak("install", args);
+  // The bridge only creates the hidden stub; the stub's "install me" starts the Flatpak install.
+  if (!await MatonOS.startStubInstall(ref)) throw new Error("The app could not be prepared for installation.");
+  return response;
+}
+
+/** Resume an install a crash or power cut interrupted; does nothing when installed. */
+export async function resumeInstall(ref: string) {
+  return MatonOS.startStubInstall(ref);
 }
 
 /** Fetch a Flathub appstream icon as base64 for the stub generator. */

@@ -83,27 +83,22 @@ tags each request with an operation ID and ignores completion events for any
 other request. Access is checked with the bridge's
 `org.matonos.permission.SYSTEM_BRIDGE` permission.
 
-## First install: stub first (flow B)
+## First install
 
-The app's `--user` installation is owned by the stub UID, which PackageManager
-only assigns after the stub APK is installed. The bridge therefore drives a
-two-step install:
+The store drives the whole install. It first installs a minimal signed stub
+whose manifest contains the complete Flatpak ref (app ID, architecture, and
+branch) and configured remote. The stub's launcher activity ships disabled,
+so the app stays hidden. After PackageManager assigns its UID, linuxd stages
+and publishes the app and runtime into that UID's Flatpak installation once
+the store starts the stub's "install me" activity; on
+the successful completion event the bridge enables the launcher activity.
+The stub never installs on launch. "Install me" (also used to resume an
+install a crash or power cut interrupted) is unprivileged: the bridge checks `installed_for_uid` (`{"ref","uid"}` → `"true"`/`"false"`)
+and does nothing if the app is already in that UID's installation.
 
-1. `stage` `{ref, remote}`: linuxd stages the signature-verified app and its
-   declared runtime and returns the resolved `appCommit`, `runtimeRef`,
-   `runtimeCommit`, plus the app's `/metadata` and exported desktop entry read
-   from the staged commit. Nothing is deployed.
-2. The bridge maps `/metadata` to permissions, takes the icon from the store's
-   Flathub appstream, builds the stub and installs it through PackageInstaller;
-   PackageManager assigns the stub UID.
-3. `install` `{ref, appCommit, runtimeRef, runtimeCommit, remote, uid,
-   runtimeUid, operationId}`: linuxd publishes the runtime `--system` install
-   under `/data/matonos/linux/apps/<runtimeUid>` and the app `--user` install
-   under `/data/matonos/linux/apps/<uid>`, where `uid` is the stub UID.
-
-Updates to an already-installed app skip step 1/2 and deploy straight to the
-existing stub UID. `install/linuxd/CODE-STORAGE-r24.md` records the alternative
-install-then-rename flow.
+After every successful Flatpak install or update, linuxd's completion event
+causes the bridge to compare the stub's requested Android permissions with
+the installed metadata and replace the stub when they differ.
 
 ## Static Flatpak publish request
 

@@ -274,8 +274,8 @@ class LinuxdService final : public BnLinuxd {
             closedir(dir);reply(Encode(out));return android::binder::Status::ok();
         }
         if (command == "stage") {
-            /* Flow B: stage a signed app and return its pins plus the metadata
-             * and exported desktop entry, so the stub can be built first. */
+            /* Stage only after the stub exists, so the published --user app
+             * can be owned by the UID recorded in its manifest package. */
             if (!OnlyKeys(request, {"ref", "remote"}) || !request["ref"].isString() ||
                     HasEmbeddedNul(request["ref"].asString()) ||
                     (request.isMember("remote") && (!request["remote"].isString() ||
@@ -316,15 +316,18 @@ class LinuxdService final : public BnLinuxd {
         int app_uid = -1, runtime_uid = -1;
         std::string operation_id_storage;
         const char* operation_id = nullptr;
-        if (command == "install" || command == "uninstall" || (command == "metadata" || command == "desktop_entry" || command == "icon" || command == "launch_status")) {
+        if (command == "install" || command == "uninstall" || command == "installed_for_uid" || (command == "metadata" || command == "desktop_entry" || command == "icon" || command == "launch_status")) {
             const bool uninstall = command == "uninstall";
             const bool install = command == "install";
+            const bool installed_for_uid = command == "installed_for_uid";
             if (!(uninstall ? OnlyKeys(request, {"ref", "deleteData", "operationId"}) :
                     install ? OnlyKeys(request, {"ref", "operationId", "appCommit", "runtimeRef", "runtimeCommit", "remote", "uid", "runtimeUid"}) :
+                    installed_for_uid ? OnlyKeys(request, {"ref", "uid"}) :
                     OnlyKeys(request, {"ref", "operationId"})) || !request["ref"].isString() ||
                     (install && (!request["appCommit"].isString() || !request["runtimeRef"].isString() ||
                         !request["runtimeCommit"].isString() || !request["remote"].isString() ||
                         !request["uid"].isInt() || !request["runtimeUid"].isInt())) ||
+                    (installed_for_uid && (!request["uid"].isInt() || request["uid"].asInt() < 10000)) ||
                     (install && (HasEmbeddedNul(request["appCommit"].asString()) ||
                         HasEmbeddedNul(request["runtimeRef"].asString()) ||
                         HasEmbeddedNul(request["runtimeCommit"].asString()) ||
@@ -337,6 +340,7 @@ class LinuxdService final : public BnLinuxd {
             }
             ref_storage = request["ref"].asString();
             ref = ref_storage.c_str();
+            if (installed_for_uid) app_uid = request["uid"].asInt();
             if (install) {
                 app_commit_storage = request["appCommit"].asString(); app_commit = app_commit_storage.c_str();
                 runtime_ref_storage = request["runtimeRef"].asString(); runtime_ref = runtime_ref_storage.c_str();

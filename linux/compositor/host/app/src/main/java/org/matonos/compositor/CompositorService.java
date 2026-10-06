@@ -130,6 +130,16 @@ public final class CompositorService extends Service {
     };
 
     private final IEmbeddedHost.Stub embedded = new IEmbeddedHost.Stub() {
+        public boolean installSelf(String ref) {
+            int uid = android.os.Binder.getCallingUid();
+            if (ref == null || !ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"))
+                throw new SecurityException("Invalid stub reference");
+            long identity = android.os.Binder.clearCallingIdentity();
+            try { return FlatpakLauncher.installStub(CompositorService.this, uid, ref); }
+            catch (SecurityException error) { throw error; }
+            catch (Exception error) { throw new IllegalStateException("Cannot start the Flatpak install", error); }
+            finally { android.os.Binder.restoreCallingIdentity(identity); }
+        }
         public IEmbeddedSession openSession(String ref, IEmbeddedWindowListener listener, android.os.ParcelFileDescriptor lifeline, String dnsForwarder, android.os.ParcelFileDescriptor[] dnsSockets) {
             int pid = android.os.Binder.getCallingPid();
             int uid = android.os.Binder.getCallingUid();

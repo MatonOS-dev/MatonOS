@@ -128,7 +128,7 @@ def check_product_makefiles() -> None:
 
 
 def check_android_bp() -> None:
-    for path in files(DEVICE, ("Android.bp",), prune=("build", "out", "prebuilt")):
+    for path in files(DEVICE, ("Android.bp",), prune=("build", "out", "prebuilt", "node_modules", ".gradle", ".cxx")):
         source = path.read_text(errors="replace")
         for module_type, block in module_blocks(source):
             name = string_property(block, "name") or "<unnamed>"
@@ -233,7 +233,7 @@ def check_patches() -> None:
 
 
 def check_bpfmt() -> None:
-    bp_files = files(DEVICE, ("Android.bp",), prune=("build", "out", "prebuilt"))
+    bp_files = files(DEVICE, ("Android.bp",), prune=("build", "out", "prebuilt", "node_modules", ".gradle", ".cxx"))
     if not bp_files:
         return
     tool = AOSP / "out/host/linux-x86/bin/bpfmt"

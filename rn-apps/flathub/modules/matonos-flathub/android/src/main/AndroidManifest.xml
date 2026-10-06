@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Lets the store find generated Flatpak stubs' "install me" activities. -->
+  <queries>
+    <intent>
+      <action android:name="org.matonos.linuxhost.INSTALL" />
+    </intent>
+  </queries>
+</manifest>

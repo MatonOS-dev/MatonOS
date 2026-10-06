@@ -13,14 +13,21 @@ The v1 package contains:
 - A binary `AndroidManifest.xml` with the Flatpak display label, the required
   `<uses-library android:name="org.matonos.linuxhost"/>`, approved Android
   permission declarations, a launcher activity whose class is
-  `org.matonos.compositor.stub.StubActivity`, and a placeholder service class
+  `org.matonos.compositor.stub.StubActivity` (shipped `android:enabled="false"`;
+  the bridge enables it once the Flatpak install completes, so the app stays
+  hidden until then), an always-enabled, unprivileged
+  `org.matonos.compositor.stub.InstallActivity` ("install me": the store uses
+  it to resume an interrupted install; no-op when installed), and a placeholder service class
   `org.matonos.compositor.stub.StubService`.
 - An `ACTION_MAIN` / `CATEGORY_LAUNCHER` filter. Each valid MIME type from the
   `.desktop` file's `MimeType=` entry is represented by its own `ACTION_VIEW`
   filter with `CATEGORY_DEFAULT` and `CATEGORY_BROWSABLE`.
 - Activity metadata `org.matonos.linuxhost.FLATPAK_REF` containing the exact
-  installed ref and `org.matonos.linuxhost.MIN_INTERFACE_VERSION` containing
-  the minimum host interface version (currently `1`).
+  installed ref, `org.matonos.linuxhost.FLATPAK_REMOTE` containing the
+  configured install remote, and `org.matonos.linuxhost.MIN_INTERFACE_VERSION`
+  containing the minimum host interface version (currently `1`). The ref
+  supplies app ID, architecture, and branch; Flatpak resolves the runtime and
+  dependencies from app metadata.
 - A minimal empty `resources.arsc` table required by Android PackageManager
   even though the stub declares no compiled resources.
 - The caller-provided PNG at `assets/matonos-stub/icon.png` and an empty,
@@ -79,7 +86,9 @@ After the provider/engine split, repeat on a freshly built and booted image:
 2. Generate a stub for `app/org.example.Test/x86_64/stable` with a minimal
    Desktop Entry, PNG, and no permissions.
 3. Install it with `pm install -r /data/local/tmp/test.apk`, verify `pm path`
-   and dynamic-library resolution, then launch its launcher activity.
+   and dynamic-library resolution, enable it with `pm enable
+   <package>/org.matonos.compositor.stub.StubActivity`, then launch its
+   launcher activity.
 4. Confirm the host shows the explicit “Flatpak runtime launcher is not
    wired” message until the runtime hook is connected.
 

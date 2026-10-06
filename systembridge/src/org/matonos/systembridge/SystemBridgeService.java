@@ -145,6 +145,15 @@ public final class SystemBridgeService extends Service {
             finally{Binder.restoreCallingIdentity(identity);}
         }
 
+        @Override public boolean installFlatpakStub(int uid, String ref) {
+            String caller = enforceAuthorizedCaller("flatpak_launch", "installFlatpakStub");
+            if (!"org.matonos.compositor".equals(caller) || uid < 10000)
+                throw new SecurityException("Only the compositor may install for a verified stub");
+            long identity = Binder.clearCallingIdentity();
+            try { return flatpakStubManager.installSelf(uid, ref); }
+            finally { Binder.restoreCallingIdentity(identity); }
+        }
+
         @Override public ParcelFileDescriptor[] createDnsForwarderSockets(String address, int stubUid, String ref) {
             String caller = enforceAuthorizedCaller("flatpak_launch", "createDnsForwarderSockets");
             if (!"org.matonos.compositor".equals(caller) || stubUid < 10000 ||
@@ -435,8 +444,8 @@ public final class SystemBridgeService extends Service {
                         try { result = flatpakStubManager.launch(args.getString("appId")); }
                         finally { Binder.restoreCallingIdentity(identity); }
                     } else if ("install".equals(command)) {
-                        /* Flow B: stage, create the stub, then deploy to the
-                         * stub UID once PackageManager assigns it. */
+                        /* Create the identity stub first; linuxd stages and
+                         * deploys only after PackageManager assigns its UID. */
                         if (!args.has("ref") || !(args.get("ref") instanceof String))
                             throw new IllegalArgumentException("An application reference is required");
                         result = flatpakStubManager.installAsync(args.getString("ref"), args);
