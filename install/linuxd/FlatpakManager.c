@@ -541,9 +541,15 @@ static void* package_operation_thread(void* data) {
         snprintf(system_dir, sizeof(system_dir), "/data/matonos/linux/apps/%d", operation->runtime_uid);
         snprintf(user_dir, sizeof(user_dir), "/data/matonos/linux/apps/%d", operation->app_uid);
         publish_progress_line("Verifying pinned Flatpak commits and publishing runtime/app");
-        int rc = flatpak_publish(operation->ref, operation->app_commit,
+        /* The stub staged this operation into its own staging directory. */
+        char staging_dir[160];
+        int rc = flatpak_staging_dir(operation->app_uid, operation->operation_id,
+                staging_dir, sizeof(staging_dir));
+        if (rc) snprintf(error, sizeof(error), "invalid staging operation");
+        else rc = flatpak_publish(operation->ref, operation->app_commit,
                 operation->runtime_ref, operation->runtime_commit, operation->remote,
-                "/data/matonos/linux/staging", system_dir, user_dir, error, sizeof(error));
+                staging_dir, system_dir, user_dir, error, sizeof(error));
+        if (operation->operation_id) flatpak_remove_staging(operation->app_uid, operation->operation_id);
         if (rc == 0 && remember_runtime_install(operation->runtime_uid)) {
             snprintf(error, sizeof(error), "published app but cannot record its shared runtime installation");
             rc = -1;
@@ -1209,7 +1215,8 @@ static void list_installed_refs(FlatpakResult* result) {
     result->output = list; result->ok = 1; result->exit_code = 0;
 }
 
-int flatpak_manager_prepare(const char* ref, const char* remote,
+int flatpak_manager_prepare(const char* ref, const char* remote, int installer_uid,
+        const char* operation_id,
         char* app_commit, unsigned long app_commit_size,
         char* runtime_ref, unsigned long runtime_ref_size,
         char* runtime_commit, unsigned long runtime_commit_size,
@@ -1217,12 +1224,15 @@ int flatpak_manager_prepare(const char* ref, const char* remote,
         char* desktop, unsigned long desktop_size,
         char* error, unsigned long error_size) {
     if (error && error_size) error[0] = '\0';
-    if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4)) {
+    int runtime_uid = -1;
+    if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) ||
+            !valid_install_uid(installer_uid) || remembered_runtime_install(installer_uid, &runtime_uid) ||
+            !operation_id || !*operation_id || strlen(operation_id) > 64) {
         if (error && error_size) snprintf(error, error_size, "valid application ref required");
         return -1;
     }
     return flatpak_prepare(ref, (remote && *remote) ? remote : "flathub",
-            "/data/matonos/linux/staging", app_commit, app_commit_size,
+            installer_uid, runtime_uid, operation_id, app_commit, app_commit_size,
             runtime_ref, runtime_ref_size, runtime_commit, runtime_commit_size,
             metadata, metadata_size, desktop, desktop_size, error, error_size);
 }

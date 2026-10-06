@@ -27,7 +27,7 @@ if [[ -x "$STORE" ]]; then
   "$STORE" selftest
   echo "PASS static-musl installer store helper selftest"
 fi
-TMP=$(mktemp -d "$WORKTREE/.flatpak-publish-test.XXXXXX")
+TMP=$(mktemp -d "${TMPDIR:-$WORKTREE}/flatpak-publish-test.XXXXXX")
 cleanup() {
   if [[ ${MATONOS_PUBLISH_KEEP_TMP:-0} == 1 ]]; then
     echo "Kept Flatpak publish test directory: $TMP" >&2
@@ -65,10 +65,10 @@ setup_case() {
   if [[ $source_mode == link ]]; then
     source="$base/source"
     mkdir -p "$source"
-    cp -al "$CACHE/." "$source/"
+    cp -a "$CACHE/." "$source/"
   fi
   mkdir -p "$base/R/repo"
-  cp -al "$source/." "$base/R/repo/"
+  cp -a "$source/." "$base/R/repo/"
   "$TMP/bin/ostree" --repo="$base/R/repo" --group="remote \"$REMOTE\"" config set url "file://$source"
   for install in S U; do
     local repo="$base/$install/repo"

@@ -36,9 +36,11 @@ void flatpak_manager_call(const char* command, const char* ref, const char* app_
         const char* runtime_ref, const char* runtime_commit, const char* remote,
         int app_uid, int runtime_uid, FlatpakResult* result);
 
-/* Stage a signed app from its configured remote before publishing it into the
- * already-installed stub UID's Flatpak installation. */
-int flatpak_manager_prepare(const char* ref, const char* remote,
+/* Stage a signed app from its configured remote, as the installing UID (the
+ * stub), into /data/matonos/linux/apps/<uid>/staging/<operation>, before
+ * publishing it into that stub UID's Flatpak installation. */
+int flatpak_manager_prepare(const char* ref, const char* remote, int installer_uid,
+        const char* operation_id,
         char* app_commit, unsigned long app_commit_size,
         char* runtime_ref, unsigned long runtime_ref_size,
         char* runtime_commit, unsigned long runtime_commit_size,

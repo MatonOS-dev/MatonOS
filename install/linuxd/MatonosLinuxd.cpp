@@ -10,6 +10,7 @@
 #include <binder/Status.h>
 #include <binder/ParcelFileDescriptor.h>
 #include <json/json.h>
+#include <cstdio>
 #include <utils/String8.h>
 
 #include "FlatpakManager.h"
@@ -274,9 +275,10 @@ class LinuxdService final : public BnLinuxd {
             closedir(dir);reply(Encode(out));return android::binder::Status::ok();
         }
         if (command == "stage") {
-            /* Stage only after the stub exists, so the published --user app
-             * can be owned by the UID recorded in its manifest package. */
-            if (!OnlyKeys(request, {"ref", "remote"}) || !request["ref"].isString() ||
+            /* Stage only after the stub exists: the pull runs as the stub UID
+             * (installerUid), so its network use and DNS are the stub's. */
+            if (!OnlyKeys(request, {"ref", "remote", "installerUid", "operationId"}) || !request["ref"].isString() ||
+                    !request["installerUid"].isInt() || !request["operationId"].isString() ||
                     HasEmbeddedNul(request["ref"].asString()) ||
                     (request.isMember("remote") && (!request["remote"].isString() ||
                             HasEmbeddedNul(request["remote"].asString())))) {
@@ -286,7 +288,8 @@ class LinuxdService final : public BnLinuxd {
             const std::string ref = request["ref"].asString();
             const std::string remote = request.isMember("remote") ? request["remote"].asString() : std::string("flathub");
             std::vector<char> app_commit(65), runtime_ref(512), runtime_commit(65), metadata(16384), desktop(131072), error(512);
-            if (flatpak_manager_prepare(ref.c_str(), remote.c_str(),
+            if (flatpak_manager_prepare(ref.c_str(), remote.c_str(), request["installerUid"].asInt(),
+                    request["operationId"].asCString(),
                     app_commit.data(), app_commit.size(), runtime_ref.data(), runtime_ref.size(),
                     runtime_commit.data(), runtime_commit.size(), metadata.data(), metadata.size(),
                     desktop.data(), desktop.size(), error.data(), error.size())) {
@@ -428,6 +431,8 @@ class LinuxdService final : public BnLinuxd {
 }  // namespace
 
 int main() {
+    /* Leftovers from a killed install; never block startup on them. */
+    if (flatpak_cleanup_stale_staging()) fprintf(stderr, "matonos-linuxd: stale staging cleanup incomplete\n");
     flatpak_manager_init();
     flatpak_manager_set_callbacks(OnProgress, OnComplete, nullptr);
     if (!StartEventDispatcher()) return 1;

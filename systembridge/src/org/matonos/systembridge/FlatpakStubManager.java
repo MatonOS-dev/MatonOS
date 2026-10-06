@@ -231,7 +231,7 @@ final class FlatpakStubManager {
         String remote = remoteFor(pkg);
         worker.execute(() -> {
             String operationId = storeOperations.remove(ref);
-            try { deployStub(ref, pkg, remote, operationId == null || operationId.isEmpty() ? "stub-install-" + uid : operationId); }
+            try { deployStub(ref, pkg, remote, operationId == null || operationId.isEmpty() ? "stub-" + uid + "-" + System.currentTimeMillis() : operationId); }
             catch (Exception error) { Log.e(TAG, "Resumed Flatpak install failed for " + ref, error); }
         });
         return false;
@@ -460,8 +460,11 @@ final class FlatpakStubManager {
         return new JSONObject().put("ok", true).put("accepted", true).toString();
     }
 
-    private JSONObject stage(String ref, String remote) throws Exception {
-        JSONObject request = new JSONObject().put("ref", ref).put("remote", remote);
+    /* The pull runs as the stub UID (installerUid) into
+     * /data/matonos/linux/apps/<uid>/staging/<operationId>. */
+    private JSONObject stage(String ref, String remote, int stubUid, String operationId) throws Exception {
+        JSONObject request = new JSONObject().put("ref", ref).put("remote", remote)
+                .put("installerUid", stubUid).put("operationId", operationId);
         JSONObject staged = new JSONObject(daemon().call("stage", request.toString()));
         if (!staged.optBoolean("ok"))
             throw new java.io.IOException(staged.optString("error", "Flatpak staging failed"));
@@ -514,9 +517,12 @@ final class FlatpakStubManager {
 
     private void deployStub(String ref, String pkg, String remote, String operationId) {
         try {
-            JSONObject staged = stage(ref, remote);
             PackageInfo info = context.getPackageManager().getPackageInfo(pkg, 0);
             int stubUid = info.applicationInfo.uid;
+            // One directory per operation: IDs must be unique and path-safe.
+            if (operationId == null || !operationId.matches("[A-Za-z0-9_-]{1,64}"))
+                operationId = "stub-" + stubUid + "-" + System.currentTimeMillis();
+            JSONObject staged = stage(ref, remote, stubUid, operationId);
             int runtimeUid = runtimeAppUid(android.os.UserHandle.getUserId(stubUid));
             if (stubUid < 10000 || runtimeUid < 10000) throw new java.io.IOException("Missing stub or runtime UID");
             JSONObject request = new JSONObject()
