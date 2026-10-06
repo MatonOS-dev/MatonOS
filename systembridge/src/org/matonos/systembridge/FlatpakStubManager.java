@@ -146,7 +146,8 @@ final class FlatpakStubManager {
         try {
             android.content.pm.ActivityInfo activity = context.getPackageManager().getActivityInfo(
                     new android.content.ComponentName(pkg, StubGenerator.HOST_ACTIVITY),
-                    PackageManager.GET_META_DATA);
+                    PackageManager.GET_META_DATA
+                    | PackageManager.MATCH_DISABLED_COMPONENTS);
             if (activity != null && activity.metaData != null) {
                 String appCommit = activity.metaData.getString(StubGenerator.APP_COMMIT_META);
                 String runtimeRef = activity.metaData.getString(StubGenerator.RUNTIME_REF_META);
@@ -239,7 +240,8 @@ final class FlatpakStubManager {
     private String remoteFor(String pkg) {
         try {
             android.content.pm.ActivityInfo activity = context.getPackageManager().getActivityInfo(
-                    new android.content.ComponentName(pkg, StubGenerator.HOST_ACTIVITY), PackageManager.GET_META_DATA);
+                    new android.content.ComponentName(pkg, StubGenerator.HOST_ACTIVITY), PackageManager.GET_META_DATA
+                    | PackageManager.MATCH_DISABLED_COMPONENTS);
             String remote = activity.metaData == null ? null : activity.metaData.getString(StubGenerator.REMOTE_META);
             if (remote == null || !remote.matches("[A-Za-z0-9._-]{1,128}"))
                 throw new IllegalStateException("Stub manifest does not declare a valid Flatpak remote");
@@ -297,7 +299,8 @@ final class FlatpakStubManager {
         try {
             android.content.pm.ActivityInfo activity=context.getPackageManager().getActivityInfo(
                 new android.content.ComponentName(pkg,StubGenerator.HOST_ACTIVITY),
-                PackageManager.GET_META_DATA);
+                PackageManager.GET_META_DATA
+                    | PackageManager.MATCH_DISABLED_COMPONENTS);
             if(activity.metaData==null)return null;
             return activity.metaData.getString(StubGenerator.REF_META);
         }catch(Exception error){return null;}
