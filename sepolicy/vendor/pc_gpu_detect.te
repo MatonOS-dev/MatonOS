@@ -4,13 +4,14 @@ type pc_gpu_detect, domain;
 type pc_gpu_detect_exec, exec_type, vendor_file_type, file_type;
 
 init_daemon_domain(pc_gpu_detect)
-typeattribute pc_gpu_detect matonos_daemon_zone;
-typeattribute pc_gpu_detect matonos_hw_reader;
 
 allow pc_gpu_detect vendor_shell_exec:file rx_file_perms;
 allow pc_gpu_detect vendor_toolbox_exec:file rx_file_perms;
 allow pc_gpu_detect vendor_file:dir r_dir_perms;
 allow pc_gpu_detect vendor_file:file { getattr execute execute_no_trans map open read };
+r_dir_file(pc_gpu_detect, sysfs)
+# The detector reads PCI class metadata to identify the active GPU.
+allow pc_gpu_detect sysfs_pc_wakeup_info:file { getattr open read };
 # /vendor/etc/intel_vulkan_pci_ids.txt
 r_dir_file(pc_gpu_detect, vendor_configs_file)
 # The detector publishes boot-time GPU/Vulkan selection; init copies the

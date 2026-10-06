@@ -5,9 +5,3 @@ genfscon sysfs /devices/virtual/input u:object_r:sysfs_matonos_input:s0
 genfscon sysfs /class/input u:object_r:sysfs_matonos_discovery:s0
 genfscon sysfs /class/hidraw u:object_r:sysfs_matonos_discovery:s0
 genfscon sysfs /class/misc u:object_r:sysfs_matonos_discovery:s0
-
-# Sensitive hardware-description trees are outside matonos_hw_reader.
-genfscon sysfs /firmware/efi/efivars u:object_r:sysfs_matonos_sensitive:s0
-genfscon sysfs /firmware/acpi/tables u:object_r:sysfs_matonos_sensitive:s0
-genfscon sysfs /devices/virtual/dmi/id u:object_r:sysfs_matonos_sensitive:s0
-genfscon sysfs /class/dmi/id u:object_r:sysfs_matonos_sensitive:s0

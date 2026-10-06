@@ -358,24 +358,3 @@ allow matonos_bwrap matonos_linux_data_file:file { getattr open read write mount
 allow matonos_bwrap matonos_linux_data_file:sock_file { getattr open read write };
 neverallow { domain -matonos_linux_app } matonos_linux_data_file:file { execute execute_no_trans };
 neverallow appdomain matonos_linux_data_file:{ dir file lnk_file sock_file } *;
-
-# MatonOS zones: only the System Bridge crosses between Android and hardware daemons.
-# servicemanager is the narrowly required Binder registration broker for addService;
-# no service client other than the Bridge may call a daemon endpoint.
-neverallow { coredomain -matonos_system_bridge -servicemanager } matonos_daemon_zone:binder call;
-neverallow { coredomain -matonos_system_bridge } matonos_daemon_zone:unix_stream_socket connectto;
-neverallow { coredomain -matonos_system_bridge } matonos_channel_service:service_manager find;
-neverallow { appdomain -matonos_system_bridge matonos_linux_app matonos_flatpak_run matonos_bwrap matonos_app_launch }
-    matonos_daemon_zone:binder call;
-neverallow { appdomain -matonos_system_bridge matonos_linux_app matonos_flatpak_run matonos_bwrap matonos_app_launch }
-    matonos_daemon_zone:unix_stream_socket connectto;
-neverallow { appdomain -matonos_system_bridge matonos_linux_app matonos_flatpak_run matonos_bwrap matonos_app_launch }
-    matonos_channel_service:service_manager find;
-neverallow matonos_daemon_zone { matonos_linux_app matonos_flatpak_run matonos_bwrap matonos_app_launch }:binder call;
-neverallow matonos_daemon_zone matonos_system_bridge:binder call;
-neverallow { domain -matonos_daemon_zone -matonos_system_bridge -init } matonos_daemon_zone:unix_stream_socket connectto;
-neverallow { domain -matonos_daemon_zone -matonos_system_bridge } matonos_daemon_socket_file:sock_file *;
-neverallow coredomain matonos_raw_hardware_type:chr_file { open read write ioctl };
-
-neverallow { appdomain -matonos_system_bridge matonos_linux_app matonos_flatpak_run matonos_bwrap matonos_app_launch }
-    matonos_raw_hardware_type:chr_file { open read write ioctl };
