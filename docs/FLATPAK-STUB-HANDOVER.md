@@ -1,125 +1,104 @@
 # Flatpak stub install handover
 
-Date: 2026-10-06
+Updated: 2026-10-06 (evening). Read this before touching Flatpak installs.
 
-## Agreed flow
+## Flow (decided)
 
-- A store install creates a small signed Android stub first. The stub manifest
-  carries the full Flatpak ref and remote; the ref provides the app ID,
-  architecture, and branch. Flatpak resolves the runtime and dependencies.
-- PackageManager assigns the stub UID. linuxd then stages and installs the
-  Flatpak into the per-UID installation. Installed Flatpak data is keyed by
-  that UID, with the existing runtime app UID used for the shared runtime
-  installation.
-- The store drives the install: it asks the bridge to create the stub
-  (`install`), then starts the stub's unprivileged "install me" activity,
-  which makes the bridge stage and install into the stub UID. The same
-  activity resumes interrupted installs and is a no-op once installed. The
-  stub never installs on launch. The stub's launcher activity ships disabled, so the app is
-  hidden until linuxd reports a successful install, when the bridge enables
-  it (the enabled override survives later stub replacements).
-- Stub permission declarations are refreshed by the system after a successful
-  install or update event. The stub does not request `regen` itself. The bridge
-  compares the installed Flatpak metadata with the stub's requested Android
-  permissions and replaces the stub when they differ.
-- Stubs are new; backwards compatibility with earlier generated stubs is not
-  required.
+1. **Store** (`rn-apps/flathub`) calls the bridge: `add_flathub`, then
+   `install {ref, operationId, icon}`.
+2. **Bridge** generates a signed stub (`flatpak.<app-id>`) and installs it via
+   PackageInstaller. The stub's launcher activity ships **disabled**, so the
+   app stays hidden until its Flatpak is installed. The stub carries the full
+   ref (app ID, arch, branch) and remote; Flatpak resolves runtime and deps.
+3. **Store** waits for the stub (`MatonOS.startStubInstall(ref)`, up to 60 s),
+   finds `org.matonos.compositor.stub.InstallActivity` by the
+   `org.matonos.linuxhost.INSTALL` action + `FLATPAK_REF` metadata, and starts
+   it ("install me": unprivileged, no permission, idempotent).
+4. **InstallActivity** → compositor `IEmbeddedHost.installSelf(ref)` → bridge
+   `installFlatpakStub(uid, ref)`: verifies the stub, returns at once if the
+   Flatpak is already installed (linuxd `installed_for_uid`), otherwise stages
+   and installs. The same activity resumes installs interrupted by a crash or
+   power cut. The stub never installs on launch and chooses nothing.
+5. **linuxd stage**: `matonos-flatpak-store` drops to the **stub UID** and pulls
+   into `/data/matonos/linux/apps/<stub>/staging/<operationId>` (remote config
+   + keyring seeded from the runtime installation). Network use and DNS are the
+   stub's. `apps/<uid>` stays linuxd's (system 0711); staging dirs are
+   `<uid>:system 0750` so linuxd (no DAC override) can read them; staging
+   trees are removed by a child running as the owning UID (after publish, on
+   failure, at boot). Operation IDs: `[A-Za-z0-9_-]{1,64}`, unique.
+6. **linuxd install** publishes from that staging dir into the stub's `--user`
+   installation (runtime into the runtime app's `--system` one).
+7. On the successful completion event the bridge **enables the launcher** (and
+   replaces the stub if the Flatpak's permissions changed). Reconcile also
+   enables launchers of installed stubs, covering lost events.
 
-## Current implementation
+## Flatpak stack (switched 2026-10-06)
 
-The worktree changes implement the flow across:
+`com.matonos.flatpak` ships the **bionic (NDK)** build from
+MatonOS-dev/MatonOS_apexs `flatpak/` (`fetch.sh` + `build.sh`, all inputs
+pinned): one multicall `matonos-flatpak` (flatpak + ostree + bwrap, 11.2 MB,
+needs only libc/libm/libdl), helpers linking the system bionic,
+`matonos-app-exec` fully static (runs inside the sandbox). Flatpak =
+MatonOS-dev/flatpak `matonos/v26.10` (AppStream, FUSE/revokefs, gdk-pixbuf
+removed; sends `User-Agent: flatpak/<version>` because Flathub 403s
+`libostree/…`). glib/ostree/bwrap are unpatched upstream; bionic gaps come from
+MatonOS-dev/bionic-fill. The musl recipe is retired. The APEX manifest
+declares `requireNativeLibs` libc/libdl/libm. Helper sources live in the device
+tree; copy changes to `MatonOS_apexs/flatpak/helpers/`, run
+`flatpak/build-helpers.sh`, then copy outputs to
+`linux/flatpak/prebuilt/static/x86_64/` and update `prebuilt/static/SOURCE`.
 
-- `systembridge/src/org/matonos/systembridge/FlatpakStubManager.java` — creates
-  the initial (hidden) stub, deploys on "install me", and on the successful completion event enables the launcher activity and
-  regenerates permissions.
-- `systembridge/src/org/matonos/systembridge/SystemBridgeService.java` — comment
-  update for the store `install` command.
-- `linux/stubgen/src/org/matonos/linuxhost/stubgen/StubGenerator.java` — writes
-  the Flatpak remote into generated stub metadata and emits the launcher
-  activity with `android:enabled="false"` (attr `0x0101000e`).
-- `StubGenerator` also emits the exported `InstallActivity`;
-  `linux/compositor/.../stub/InstallActivity.java`, `IEmbeddedHost.installSelf`,
-  `CompositorService`/`FlatpakLauncher`, `ISystemBridge.installFlatpakStub`,
-  `SystemBridgeService` and `FlatpakStubManager.installSelf` implement
-  "install me". Store: `rn-apps/flathub` module `startStubInstall` (Kotlin
-  + `<queries>` in the module manifest), `FlatpakBridge.installApp` calls it,
-  `resumeInstall(ref)` is exported for a future "resume" UI.
-- `install/linuxd/FlatpakManager.c`, `.h` and `MatonosLinuxd.cpp` — the
-  per-UID `installed_for_uid` check. (An earlier launch-time install path was
-  removed after the store-driven decision.)
-- `install/linuxd/README.md` and `linux/compositor/STUBS.md` — describe the
-  updated contract.
+DNS: bionic resolves through netd as the calling UID (Private DNS, VPN,
+firewall apply), so installs need no resolv.conf or forwarder. App sandboxes
+(glibc runtimes) still use the per-app forwarder.
 
-The stub has no direct authority to call linuxd operations; "install me" is
-idempotent and fully derived from the verified stub identity. The bridge uses
-linuxd operations internally to check, stage, and install. Review the exposed
-command allowlist separately if tightening the daemon API to only `install`,
-`regen`, and `run` is still desired; the current internal API includes other
-operations used by the store and lifecycle manager.
+## Fixed 2026-10-06 (each found on the VM)
 
-## Build and verification
+- Wrapper `TMPDIR`: host-side CLI work uses `apps/<uid>/tmp` of the
+  installation it operates on, else linuxd's `/data/matonos/linux/cache`
+  (Android's `/tmp` is shell-owned → GPG "Unable to configure context").
+- StubGenerator: string-pool length prefixes were written outside the pool
+  (every stub's resources.arsc/manifest was corrupt); entries are now aligned
+  by apksig (`setAlignmentPreserved(false)`; PackageManager error -124).
+- Bridge reads stub metadata with `MATCH_DISABLED_COMPONENTS` (the launcher is
+  disabled until installed → "Unverified stub").
+- Per-UID staging merged from codex/installer-staging (worktree removed), with
+  the ownership fixes above.
 
-The full coordinated build was started with:
+## State at handover
 
-```sh
-out/pc-logs/agents/coord-build.sh --full -K -M -j 16
-```
+Last VM test (image before c6bad78): store → add_flathub ✅ → stub created
+hidden ✅ → store started "install me" ✅ → bridge rejected ("Unverified stub",
+fixed in c6bad78). The image with c6bad78 + per-UID staging (9cda540) was
+building at handover and is **not yet tested**.
 
-At handover it was still in the `build.sh` preflight check. The log stopped at
-`######## Preflight`, and `preflight/checks.py` had spent several minutes
-blocked on storage reads while walking the device tree. Check
-`out/pc-logs/agents/build-status.txt` and `out/pc-logs/test-build.log` for its
-latest state before starting another build. No successful build or runtime
-verification of these changes has been recorded yet. Earlier `git diff
---check` passed before this build.
+Test recipe: copy the image to `~/matonos/vm/bionic-test/`, set the ESP
+`loader/loader.conf` default to `matonos-debug-permissive.conf` (SELinux issues
+are next week's work), boot with `tools/run-qemu-live.sh -g std -a 5571`,
+`setprop persist.vendor.maton.sleep_idle_s 0`, capture logcat **without**
+clearing it once the user starts, press Install in the store. The Bluetooth
+abort in the VM log (`hci_backend_aidl.cc:43`) is unrelated.
 
-Builds must use `out/pc-logs/agents/coord-build.sh`; see `CLAUDE.md` for the
-coordinator's Soong analysis and agent-freeze rules. Do not invoke `m` or
-`lunch` directly.
+Builds: only via `out/pc-logs/agents/coord-build.sh` (see `CLAUDE.md`); ccache
+is on by default now. A change without Android.bp edits rebuilds in ~15 min.
 
 ## Next steps
 
-1. Confirm whether the running preflight/build completed. If it is still
-   blocked, identify which tree traversal is waiting on storage before
-   restarting; do not run a competing build.
-2. Review the complete diff, then run the coordinated build to completion and
-   fix any compiler or Soong failures.
-3. Exercise in a VM: first install (stub hidden until completion, then
-   visible), successful Flatpak update, and permission-manifest replacement
-   (launcher stays enabled after the stub is replaced), and "install me"
-   after killing linuxd / the VM mid-install (plus a no-op call when
-   installed).
-4. Check failure/retry behavior for staging, PackageInstaller rejection, and
-   lost or delayed linuxd completion events. Lost completion events are
-   covered: the bridge's reconcile enables the launcher of every stub whose
-   Flatpak is listed as installed.
-
-## Interrupted installs (user, 2026-10-06)
-
-A power cut or crash mid-install leaves a hidden stub with no (or a partial)
-Flatpak. Recovery:
-
-- "Install me": every stub has an always-enabled, unprivileged
-  `org.matonos.compositor.stub.InstallActivity` (action
-  `org.matonos.linuxhost.INSTALL`, `FLATPAK_REF` metadata, no launcher
-  category, no permission). The store finds it by ref
-  (`MatonOS.startStubInstall`, waiting up to 60 s for the new stub) and
-  starts it after creating the stub, and again to resume. The bridge keeps the
-  store's operationId from `install` so completion events still match. It reads the ref from the
-  stub's own (disabled) launcher metadata and calls the compositor's
-  `IEmbeddedHost.installSelf(ref)`; the compositor forwards the caller UID to
-  the bridge's compositor-only `installFlatpakStub(uid, ref)`. The bridge
-  verifies the stub, then asks linuxd `installed_for_uid`: already installed
-  → just enables the launcher (nothing else); install running → nothing;
-  otherwise it stages and installs from the stub manifest's ref and remote.
-  The stub chooses nothing, so starting the activity needs no privilege.
-- DNS (user, 2026-10-06; not wired yet): because the install starts in the
-  stub's own process, "install me" can use the per-app DNS plumbing like a
-  launch does: `InstallActivity` acquires the forwarder sockets
-  (`createDnsForwarderSockets` → `DnsForwarder.acquire`) and passes its
-  uid-derived 127.x endpoint, and staging/pulls resolve through it while the
-  activity stays alive until the install completes.
-- Cleanup (future linuxd): on boot, linuxd removes all dead stubs (hidden
-  stubs whose install never completed).
-5. Once verified, commit the Flatpak implementation together with this
-   handover note.
+1. Test the new image end to end: staging as the stub UID, publish, launcher
+   enabled, app launches; then update, permission-manifest replacement, and
+   "install me" after killing linuxd / the VM mid-install.
+2. **Keep the stub in the foreground during "install me"** (foreground service
+   + progress notification): Android's background firewall blocks network and
+   DNS for app UIDs that are not in the foreground (verified on the VM).
+3. Store: progress/result per operation; UI for resume and failed installs
+   (a hidden stub is left behind).
+4. Future linuxd: remove dead stubs (hidden, never installed) at boot.
+5. SELinux (next week): denials seen for linuxd (link/ioctl in the Flatpak
+   repo), compositor/priv_app, crash_dump; the `zones` request is still queued.
+6. The C D-Bus broker (`linux/dbus-broker/`) is dead (D-Bus = Java) but is
+   still started by the compositor as the session bus; replacing it is an open
+   decision.
+7. Device tree: replace `linux/flatpak/stage-static-musl.sh`, update
+   `linux/flatpak/APEX.md` and `FORKS.md` for the bionic stack.
+8. The linuxd command allowlist could be tightened (only `install`, `regen`,
+   `run` exposed) — review separately.
