@@ -48,9 +48,10 @@ BOARD_DO_NOT_STRIP_VENDOR_MODULES := true
 # Some linux-firmware blobs (e.g. NVIDIA GSP) are ELF files; they are copied
 # to /vendor/firmware via PRODUCT_COPY_FILES in device.mk.
 BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
-# ccache lives at $AOSP/ccache (outside out/, survives wipes); keep it writable
+# ccache lives at $AOSP/ccache (outside out/, survives wipes; may be a symlink
+# to another disk, hence realpath); keep it writable
 # inside the build sandbox. See tools/build.sh.
-BUILD_BROKEN_SRC_DIR_RW_ALLOWLIST := $(abspath ccache)
+BUILD_BROKEN_SRC_DIR_RW_ALLOWLIST := $(realpath ccache)
 
 # ---------------------------------------------------------------- AVB
 # Disabled: no vbmeta partition, systemd-boot does no verification.
