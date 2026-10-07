@@ -14,6 +14,7 @@
 #include <utils/String8.h>
 
 #include "FlatpakManager.h"
+#include "FlatpakPublish.h"
 #include "DnsForwarderSockets.h"
 #include <dirent.h>
 #include <android-base/unique_fd.h>

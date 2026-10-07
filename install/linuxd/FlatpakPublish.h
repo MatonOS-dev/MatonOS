@@ -1,6 +1,10 @@
 #ifndef MATONOS_FLATPAK_PUBLISH_H
 #define MATONOS_FLATPAK_PUBLISH_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Publish one signed app stub and its pinned runtime. */
 int flatpak_publish(const char* app_ref, const char* app_commit,
         const char* runtime_ref, const char* runtime_commit, const char* remote,
@@ -26,5 +30,9 @@ int flatpak_cleanup_stale_staging(void);
 int flatpak_staging_dir(int uid, const char* operation, char* path, unsigned long size);
 /* Remove one staging operation, as its owning UID. */
 int flatpak_remove_staging(int uid, const char* operation);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
