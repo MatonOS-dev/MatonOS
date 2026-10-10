@@ -172,6 +172,9 @@ if [[ $DO_AOSP == 1 ]]; then
   info "MatonOS Gradle apps"
   "$TOOLS/build-apps.sh"
 
+  info "Flatpak APEX helpers"
+  "$TOOLS/build-flatpak-helpers.sh"
+
   info "MatonOS native daemons"
   "$TOOLS/build-native.sh"
 
