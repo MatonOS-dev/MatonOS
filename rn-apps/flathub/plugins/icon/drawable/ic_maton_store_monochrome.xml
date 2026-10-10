@@ -1,0 +1,16 @@
+<!-- Based on Papirus Icon Pack (apps_miui_market.svg, logo removed),
+     Copyright Papirus Development Team, Apache-2.0:
+     https://github.com/PapirusDevelopmentTeam/papirus_icons
+     Converted to a VectorDrawable; the bag (192 viewport) is scaled into
+     the adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.29" android:scaleY="0.29"
+        android:translateX="27.3" android:translateY="27.3">
+        <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+            android:pathData="m68,14 -8,8v16H12V158c0,4.432 3.568,8 8,8h144c4.432,0 8,-3.568 8,-8V38h-48v-16l-8,-8zm0,8h48v16H68Z" />
+    </group>
+</vector>

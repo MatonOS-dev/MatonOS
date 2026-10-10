@@ -1,0 +1,22 @@
+<!-- Based on Papirus Icon Pack (apps_miui_market.svg, logo removed),
+     Copyright Papirus Development Team, Apache-2.0:
+     https://github.com/PapirusDevelopmentTeam/papirus_icons
+     Converted to a VectorDrawable; the bag (192 viewport) is scaled into
+     the adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:scaleX="0.29" android:scaleY="0.29"
+        android:translateX="27.3" android:translateY="27.3">
+        <!-- drop shadow (the original's blur filter is not supported) -->
+        <path android:fillColor="#33000000" android:fillType="evenOdd"
+            android:pathData="m68,18 -8,8v16H12V162c0,4.432 3.568,8 8,8h144c4.432,0 8,-3.568 8,-8V42h-48v-16l-8,-8zm0,8h48v16H68Z" />
+        <path android:fillColor="#FFE4E4E4" android:fillType="evenOdd"
+            android:pathData="m68,14 -8,8v16H12V158c0,4.432 3.568,8 8,8h144c4.432,0 8,-3.568 8,-8V38h-48v-16l-8,-8zm0,8h48v16H68Z" />
+        <!-- top highlight -->
+        <path android:fillColor="#33FFFFFF"
+            android:pathData="m68,14 -8,8v1l8,-8h48l8,8v-1l-8,-8zm-56,24v1h48v-1zm56,0v1h48v-1zm56,0v1h48v-1z" />
+    </group>
+</vector>

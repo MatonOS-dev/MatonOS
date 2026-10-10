@@ -83,15 +83,3 @@ android_app_import {
     product_specific: true,
     preprocessed: true,
 }
-
-// BlackyHawky's AOSP-based Clock, the exact com.best.deskclock package.
-android_app_import {
-    name: "MatonClock",
-    optional_uses_libs: [
-        "androidx.window.extensions",
-        "androidx.window.sidecar",
-    ],
-    apk: "apks/MatonClock.apk",
-    product_specific: true,
-    preprocessed: true,
-}

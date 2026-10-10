@@ -1,0 +1,5 @@
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/ic_maton_store_background" />
+    <foreground android:drawable="@drawable/ic_maton_store_foreground" />
+    <monochrome android:drawable="@drawable/ic_maton_store_monochrome" />
+</adaptive-icon>

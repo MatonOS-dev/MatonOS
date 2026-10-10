@@ -1,4 +1,6 @@
-const { withAppBuildGradle, withGradleProperties, withSettingsGradle } = require("@expo/config-plugins");
+const fs = require("fs");
+const path = require("path");
+const { withAndroidManifest, withAppBuildGradle, withDangerousMod, withGradleProperties, withSettingsGradle } = require("@expo/config-plugins");
 
 module.exports = function withMatonFlathub(config) {
   config = withSettingsGradle(config, (mod) => {
@@ -14,6 +16,23 @@ module.exports = function withMatonFlathub(config) {
     else mod.modResults.push({ type: "property", key: "reactNativeArchitectures", value: "x86_64" });
     return mod;
   });
+  // Launcher icon: adaptive vector icon from plugins/icon (no Expo PNG icon).
+  config = withAndroidManifest(config, (mod) => {
+    const app = mod.modResults.manifest.application?.[0];
+    if (!app) throw new Error("Software Center Android manifest has no application");
+    app.$["android:icon"] = "@mipmap/ic_maton_store";
+    app.$["android:roundIcon"] = "@mipmap/ic_maton_store";
+    return mod;
+  });
+  config = withDangerousMod(config, ["android", async (mod) => {
+    const source = path.join(mod.modRequest.projectRoot, "plugins/icon");
+    for (const folder of fs.readdirSync(source)) {
+      const destination = path.join(mod.modRequest.platformProjectRoot, "app/src/main/res", folder);
+      fs.mkdirSync(destination, { recursive: true });
+      for (const file of fs.readdirSync(path.join(source, folder))) fs.copyFileSync(path.join(source, folder, file), path.join(destination, file));
+    }
+    return mod;
+  }]);
   return withAppBuildGradle(config, (mod) => {
     const marker = "// MatonOS Flathub signing and x86_64-only native payload";
     if (!mod.modResults.contents.includes(marker)) {

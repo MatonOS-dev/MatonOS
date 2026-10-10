@@ -49,7 +49,7 @@ module.exports = function withMatonSettings(config) {
     put(main['meta-data'], 'com.android.settings.category', {'android:value':'com.android.settings.category.ia.homepage'});
     put(main['meta-data'], 'com.android.settings.title', {'android:resource':'@string/settings_tile_title'});
     put(main['meta-data'], 'com.android.settings.summary', {'android:resource':'@string/settings_tile_summary'});
-    put(main['meta-data'], 'com.android.settings.icon', {'android:resource':'@mipmap/ic_maton_settings'});
+    put(main['meta-data'], 'com.android.settings.icon', {'android:resource':'@drawable/ic_maton_settings_tile'});
     // The account category is first on the Settings homepage; dynamic tiles use this group key.
     put(main['meta-data'], 'com.android.settings.group_key', {'android:value':'top_level_account_category'});
     put(main['meta-data'], 'com.android.settings.order', {'android:value':'-100'});
@@ -94,7 +94,7 @@ module.exports = function withMatonSettings(config) {
     const values = path.join(android, 'app/src/main/res/values'); fs.mkdirSync(values, {recursive:true});
     fs.copyFileSync(path.join(project, 'modules/matonos-settings/android/src/main/res/values/settings_strings.xml'), path.join(values, 'matonos_settings.xml'));
     const resources = path.join(project, 'modules/matonos-settings/android/src/main/res');
-    for (const [folder, files] of [['drawable', ['ic_maton_settings_foreground.xml', 'ic_maton_settings_background.xml', 'ic_maton_install.xml']], ['mipmap-anydpi-v26', ['ic_maton_settings.xml']]]) {
+    for (const [folder, files] of [['drawable', ['ic_maton_settings_foreground.xml', 'ic_maton_settings_background.xml', 'ic_maton_settings_tile.xml', 'ic_maton_install.xml']], ['mipmap-anydpi-v26', ['ic_maton_settings.xml']]]) {
       const destination = path.join(android, 'app/src/main/res', folder); fs.mkdirSync(destination, {recursive:true});
       for (const file of files) fs.copyFileSync(path.join(resources, folder, file), path.join(destination, file));
     }

@@ -27,6 +27,7 @@ android_app {
         "DeskClock",
         "Dialer",
         "messaging",
+        "Music",
     ],
     required: ["privapp-permissions-org.matonos.systembridge"],
 }
