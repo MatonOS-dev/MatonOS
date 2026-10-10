@@ -122,12 +122,12 @@ int main(void) {
     on_new_client(NULL, &owner); on_new_client(NULL, &foreign);
     assert(!owner.destroyed && foreign.destroyed);
     char directory[]="/tmp/maton-runtime-test-XXXXXX";
-    assert(mkdtemp(directory)); assert(!chmod(directory, 0711));
+    assert(mkdtemp(directory)); assert(!chmod(directory, 0700));
     alarm(5); /* Regression would hang in pthread_join. */
     assert(!maton_core_start("wayland-0", directory));
     alarm(0);
     struct stat info; assert(!stat(directory, &info));
-    assert((info.st_mode & 0777) == 0700);
+    assert((info.st_mode & 0777) == 0711);
     assert(!atomic_load(&server.started) && atomic_load(&server.stopping));
     rmdir(directory);
     puts("late startup shutdown, runtime mode, client UID gate: PASS");
