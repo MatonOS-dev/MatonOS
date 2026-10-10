@@ -105,6 +105,7 @@ struct maton_sysvipc {
     int *incoming;
     size_t nincoming;
     bool stopping;
+    int trace;
     uint32_t nextid[3];
     struct object *objects;
     struct process *processes;
@@ -881,6 +882,7 @@ struct maton_sysvipc *maton_sysvipc_new(void) {
     s->wake = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     if (s->wake < 0) { free(s); return NULL; }
     if (pthread_mutex_init(&s->lock, NULL)) { close(s->wake); free(s); return NULL; }
+    s->trace = -1;
     return s;
 }
 static void wake(struct maton_sysvipc *s) {
@@ -892,6 +894,7 @@ void maton_sysvipc_stop(struct maton_sysvipc *s) {
     pthread_mutex_lock(&s->lock); s->stopping = true; pthread_mutex_unlock(&s->lock);
     wake(s);
 }
+void maton_sysvipc_set_trace(struct maton_sysvipc *s, int fd) { if (s) s->trace = fd; }
 int maton_sysvipc_add_listener(struct maton_sysvipc *s, int listener_fd) {
     if (!s || listener_fd < 0) { errno = EINVAL; return -1; }
     pthread_mutex_lock(&s->lock);
@@ -917,6 +920,7 @@ static bool take_incoming(struct maton_sysvipc *s) {
     pthread_mutex_lock(&s->lock);
     for (size_t i = 0; i < s->nincoming; i++)
         if (!add_serving(s, s->incoming[i], true)) close(s->incoming[i]);
+        else if (s->trace >= 0) dprintf(s->trace, "supervisor: serving listener %d\n", s->incoming[i]);
     s->nincoming = 0;
     bool stopping = s->stopping;
     pthread_mutex_unlock(&s->lock);
@@ -925,6 +929,7 @@ static bool take_incoming(struct maton_sysvipc *s) {
 /* A listener hung up: its tracees are gone, so its pending requests are dead. */
 static void drop_listener(struct maton_sysvipc *s, size_t index) {
     struct listener l = s->listeners[index];
+    if (s->trace >= 0) dprintf(s->trace, "supervisor: listener %d dropped\n", l.fd);
     for (struct request **r = &s->pending; *r;) {
         if ((*r)->listener == l.fd) { struct request *dead = *r; *r = dead->next; request_free(dead); }
         else r = &(*r)->next;
@@ -957,14 +962,17 @@ int maton_sysvipc_serve(struct maton_sysvipc *s, int listener_fd) {
     int result = 0;
     for (;;) {
         (void)reap_processes(s); reevaluate(s);
-        size_t n = 1 + s->nlisteners;
+        /* Only these listeners are polled this round; take_incoming may append
+         * more, which are polled on the next one. */
+        size_t polled = s->nlisteners;
+        size_t n = 1 + polled;
         for (struct process *p = s->processes; p; p = p->next) n++;
         if (n > SIZE_MAX / sizeof(struct pollfd)) { errno = ENOMEM; result = -1; break; }
         struct pollfd *fds = calloc(n, sizeof(*fds));
         if (!fds) { result = -1; break; }
         fds[0] = (struct pollfd){ .fd = s->wake, .events = POLLIN };
         size_t i = 1;
-        for (size_t l = 0; l < s->nlisteners; l++) fds[i++] = (struct pollfd){ .fd = s->listeners[l].fd, .events = POLLIN };
+        for (size_t l = 0; l < polled; l++) fds[i++] = (struct pollfd){ .fd = s->listeners[l].fd, .events = POLLIN };
         for (struct process *p = s->processes; p; p = p->next) fds[i++] = (struct pollfd){ .fd = p->pidfd, .events = POLLIN };
         /* Periodically discard interrupted notification IDs. */
         int timeout = s->pending ? 50 : -1;
@@ -976,12 +984,16 @@ int maton_sysvipc_serve(struct maton_sysvipc *s, int listener_fd) {
         int rc = poll(fds, (nfds_t)n, timeout);
         if (rc < 0) { free(fds); if (errno == EINTR) continue; result = -1; break; }
         if ((fds[0].revents & POLLIN) && take_incoming(s)) { free(fds); break; }
-        /* Walk backwards: drop_listener moves the last entry into the hole. */
-        size_t count = s->nlisteners;
+        /* Walk backwards: drop_listener moves the last entry into the hole,
+         * and appended (unpolled) listeners sit beyond index polled. */
         bool failed = false;
-        for (size_t l = count; l-- > 0;) {
+        for (size_t l = polled; l-- > 0;) {
             short revents = fds[1 + l].revents;
-            if (revents & (POLLHUP | POLLNVAL | POLLERR)) { drop_listener(s, l); continue; }
+            if (revents & (POLLHUP | POLLNVAL | POLLERR)) {
+                if (s->trace >= 0) dprintf(s->trace, "supervisor: listener %d revents=%#x%s\n", s->listeners[l].fd,
+                    (unsigned)revents, fcntl(s->listeners[l].fd, F_GETFD) < 0 ? " (fd closed)" : "");
+                drop_listener(s, l); continue;
+            }
             if (!(revents & POLLIN)) continue;
             int fd = s->listeners[l].fd;
             memset(notif, 0, sizes.seccomp_notif);
@@ -999,6 +1011,13 @@ int maton_sysvipc_serve(struct maton_sysvipc *s, int listener_fd) {
             int64_t value;
             if (!credentials(&r->caller, (pid_t)notif->pid)) value = -ESRCH;
             else { int e = decode(s, r); value = e ? e : dispatch(s, r, false); }
+            if (s->trace >= 0)
+                dprintf(s->trace, "pid=%u arch=%s nr=%d args=%llx,%llx,%llx,%llx,%llx,%llx -> %s%lld\n",
+                    notif->pid, notif->data.arch == AUDIT_ARCH_I386 ? "i386" : "x86_64", notif->data.nr,
+                    (unsigned long long)notif->data.args[0], (unsigned long long)notif->data.args[1],
+                    (unsigned long long)notif->data.args[2], (unsigned long long)notif->data.args[3],
+                    (unsigned long long)notif->data.args[4], (unsigned long long)notif->data.args[5],
+                    value == WAIT_RESULT ? "wait " : "", value == WAIT_RESULT ? 0LL : (long long)value);
             if (value == WAIT_RESULT) {
                 struct request **tail = &s->pending;
                 while (*tail) tail = &(*tail)->next;

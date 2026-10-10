@@ -14,6 +14,9 @@ int maton_sysvipc_serve(struct maton_sysvipc *, int listener_fd);
  * takes ownership (closes it when its tracees are gone or on free). */
 int maton_sysvipc_add_listener(struct maton_sysvipc *, int listener_fd);
 void maton_sysvipc_stop(struct maton_sysvipc *);
+/* Debug aid: log each request and its result to fd (-1 disables). Call
+ * before serve starts. */
+void maton_sysvipc_set_trace(struct maton_sysvipc *, int fd);
 /* Call only after the serving thread has joined. */
 void maton_sysvipc_free(struct maton_sysvipc *);
 /* Helper handshake in otherwise unused shmat arguments. Initial shmat returns
