@@ -309,6 +309,12 @@ running stubs keep the old code next to a new compositor/linuxd. Pre-alpha:
 no interface compatibility guarantee; relaunch the app. Stub/host interface
 versioning is due once MatonOS leaves pre-alpha.
 
+SysV IPC (user, 2026-10-10): the kernel keeps Android's `# CONFIG_SYSVIPC is
+not set` (android-base compliance). Linux apps get SysV semaphores, shared
+memory and message queues from a per-app supervisor in the stub via seccomp
+user notification, plus a tiny LD_PRELOAD shmat helper; see
+`linux/sysvipc/README.md`. Do not enable CONFIG_SYSVIPC.
+
 Deliberate exception (user, 2026-10-04): Flatpaks may download and run code
 in their own `/data/matonos/linux/apps/<uid>` directory by default (no permission), as on a
 Linux desktop; see install/linuxd/CODE-STORAGE-r24.md.

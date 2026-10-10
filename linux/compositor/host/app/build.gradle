@@ -13,6 +13,7 @@ def aospRoot = System.getenv('MATON_AOSP_ROOT') ?: file('../../../../../../..').
 def brokerJni = new File(layout.buildDirectory.get().asFile, 'generated/brokerJni')
 def buildSessionBroker = tasks.register('buildSessionBroker', Exec) {
     inputs.dir brokerRoot
+    inputs.dir file('../../../sysvipc')
     outputs.dir brokerOutput
     // build-android.sh also tracks the external static dependency builds.
     outputs.upToDateWhen { false }

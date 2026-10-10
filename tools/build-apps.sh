@@ -142,7 +142,7 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   stamp=$DEVICE_DIR/prebuilt/apps-built/.$key_id.inputs
   extra_inputs=()
   if [[ $key_id == matonos-wayland-host ]]; then
-    extra_inputs+=("$DEVICE_DIR/linux/compositor/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker" "$DEVICE_DIR/linux/pipewire")
+    extra_inputs+=("$DEVICE_DIR/linux/compositor/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker" "$DEVICE_DIR/linux/sysvipc" "$DEVICE_DIR/linux/pipewire")
   fi
   # The broker records the image Flatpak build version. Rebuild the APK when
   # that generated input changes, even when app sources are unchanged.

@@ -240,6 +240,9 @@ EOF
 # Keep indirect GLX disabled (the default):
 # the EGL provider supports direct clients and needs no *_dri.so modules.
 # SHA1 comes from the bionic libgcrypt the Flatpak stack already ships.
+# MIT-SHM off: the kernel has no SysV IPC and each app's SysV segments live in
+# its own supervisor (linux/sysvipc), which Xwayland cannot see. Without the
+# extension X11 clients always use plain image transfers.
 [[ -d $SRC/xwayland-24.1.13 ]] || tar -xf "$DOWN/xwayland-24.1.13.tar.xz" -C "$SRC"
 GLX_PATCH=$ROOT/xwayland-egl-glx.patch
 if patch --dry-run --batch --forward -p1 -d "$SRC/xwayland-24.1.13" < "$GLX_PATCH" >/dev/null 2>&1; then
@@ -248,7 +251,7 @@ elif ! patch --dry-run --batch --reverse -p1 -d "$SRC/xwayland-24.1.13" < "$GLX_
   die 'Xwayland EGL GLX patch neither applies nor is already applied'
 fi
 configure_meson xwayland "$SRC/xwayland-24.1.13" \
-  -Dglx=true -Dglamor=true -Dxv=false -Ddri3=true -Dmitshm=auto \
+  -Dglx=true -Dglamor=true -Dxv=false -Ddri3=true -Dmitshm=false \
   -Dsecure-rpc=false \
   -Dxwayland_ei=false -Dxdmcp=false -Dsystemd_notify=false \
   -Dlibdecor=false -Dxvfb=false -Dsha1=libgcrypt \

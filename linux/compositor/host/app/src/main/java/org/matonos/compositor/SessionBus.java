@@ -20,7 +20,7 @@ import java.util.function.Consumer;
  */
 final class SessionBus implements AutoCloseable {
     final JavaPortal portals;
-    private final File socket, control, policy;
+    private final File socket, control, policy, sysvipc;
     private volatile boolean running;
 
     SessionBus(Context context, File directory, String ref, int appUid,
@@ -31,8 +31,10 @@ final class SessionBus implements AutoCloseable {
         socket = new File(directory, "bus");
         control = new File(directory, "bus-control");
         policy = new File(directory, "bus.policy");
+        // SysV IPC supervisor socket (linux/dbus-broker/sysvipc-host.c).
+        sysvipc = new File(directory, "bus-sysvipc");
         // A stale bus must have died with its host before these are removed.
-        for (File file : new File[]{socket, control, policy})
+        for (File file : new File[]{socket, control, policy, sysvipc})
             if (file.exists() && !file.delete()) throw new IOException("Cannot remove stale bus file");
         try (FileOutputStream out = new FileOutputStream(policy)) {
             out.write(("own " + app + "\ntalk org.freedesktop.portal.Flatpak\ntalk org.freedesktop.portal.Desktop\ntalk org.freedesktop.Flatpak\n").getBytes(StandardCharsets.UTF_8));
@@ -62,7 +64,7 @@ final class SessionBus implements AutoCloseable {
         running = false;
         try { portals.close(); } finally {
             try { NativeBroker.nativeStop(); } finally {
-                socket.delete(); control.delete(); policy.delete();
+                socket.delete(); control.delete(); policy.delete(); sysvipc.delete();
             }
         }
     }
