@@ -37,7 +37,9 @@ final class SessionBus implements AutoCloseable {
         for (File file : new File[]{socket, control, policy, sysvipc})
             if (file.exists() && !file.delete()) throw new IOException("Cannot remove stale bus file");
         try (FileOutputStream out = new FileOutputStream(policy)) {
-            out.write(("own " + app + "\ntalk org.freedesktop.portal.Flatpak\ntalk org.freedesktop.portal.Desktop\ntalk org.freedesktop.Flatpak\n").getBytes(StandardCharsets.UTF_8));
+            // The bus is private to this app: it may register and call any
+            // name except the reserved portal/bus services (broker.c).
+            out.write(("own " + app + "\nown *\ntalk *\ntalk org.freedesktop.portal.Flatpak\ntalk org.freedesktop.portal.Desktop\ntalk org.freedesktop.Flatpak\n").getBytes(StandardCharsets.UTF_8));
         }
         Os.chmod(policy.getAbsolutePath(), 0600);
         portals = new JavaPortal(context, directory, changed, launcher);
