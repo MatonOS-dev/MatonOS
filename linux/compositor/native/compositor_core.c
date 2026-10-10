@@ -128,7 +128,7 @@ struct Server {
   struct wlr_surface* pointer_focus;
   uint32_t pointer_buttons;
   int pointer_window;
-  struct wl_listener new_toplevel, new_popup, new_decoration;
+  struct wl_listener new_toplevel, new_popup, new_decoration, new_client;
   char xwayland_path[512], xwayland_dir[512];
   struct XwaylandSession* xwayland_sessions;
   struct wlr_output* monitor;
@@ -568,7 +568,8 @@ static void xwayland_apply_socket_mode(struct XwaylandSession* xw) {
   char path[256];snprintf(path,sizeof(path),"%s/X%s",dir,xw->xwayland->display_name+1);
   struct stat info;
   if(stat(path,&info)==0){
-    (void)chmod(path,0666);
+    /* Per-app Xwayland and its clients share a UID. */
+    (void)chmod(path,info.st_uid==xw->uid?0600:0666);
   }
 }
 static void on_xwayland_ready(struct wl_listener* l,void* data) {
@@ -699,6 +700,13 @@ static int on_event_fd(int fd,uint32_t mask,void* data){(void)fd;(void)mask;(voi
  * (presenter.c, dmabuf_import.c). Only what gralloc can fully describe is offered:
  * single-plane RGB formats, linear or the driver's implicit layout, on the
  * render node SurfaceFlinger's GPU uses. */
+/* Wayland caches SO_PEERCRED when constructing the client. Check every
+ * connection, including session sockets and Xwayland's socketpair. */
+static void on_new_client(struct wl_listener* listener,void* data) {
+  (void)listener;struct wl_client* client=data;uid_t uid;
+  wl_client_get_credentials(client,NULL,&uid,NULL);
+  if(uid!=getuid())wl_client_destroy(client);
+}
 /* Every session has its own Xwayland and so its own xwayland_shell_v1 global,
  * which admits only that Xwayland. Advertising all of them lets one Xwayland
  * bind another's and fail ("Permission denied to bind to xwayland_shell_v1"),
@@ -765,6 +773,7 @@ static void* server_main(void* unused) {
   wlr_log_init(WLR_ERROR,maton_wlr_log);
   server.display=wl_display_create();
   if(!server.display)goto done;server.loop=wl_display_get_event_loop(server.display);
+  server.new_client.notify=on_new_client;wl_display_add_client_created_listener(server.display,&server.new_client);
   maton_surface_output_set_release_dispatch(release_buffer);
   stage="event loop";server.event_fd=eventfd(0,EFD_NONBLOCK|EFD_CLOEXEC);
   if(server.event_fd<0||!wl_event_loop_add_fd(server.loop,server.event_fd,WL_EVENT_READABLE,on_event_fd,NULL))goto done;
@@ -787,8 +796,13 @@ static void* server_main(void* unused) {
   wlr_server_decoration_manager_set_default_mode(legacy_decoration,WLR_SERVER_DECORATION_MANAGER_MODE_SERVER);
   server.new_decoration.notify=on_new_decoration;wl_signal_add(&decorations->events.new_toplevel_decoration,&server.new_decoration);
   wlr_keyboard_init(&server.keyboard,NULL,"maton-keyboard");server.keyboard_initialized=1;
-  struct xkb_context* xc=xkb_context_new(XKB_CONTEXT_NO_FLAGS);struct xkb_keymap* km=xc?xkb_keymap_new_from_string(xc,kMatonUsKeymap,XKB_KEYMAP_FORMAT_TEXT_V1,XKB_KEYMAP_COMPILE_NO_FLAGS):NULL;
-  if(km){(void)wlr_keyboard_set_keymap(&server.keyboard,km);xkb_keymap_unref(km);}if(xc)xkb_context_unref(xc);
+  /* The keymap is self-contained. Android has no host XKB include tree,
+   * so default include lookup would make context creation fail. */
+  stage="keyboard keymap";
+  struct xkb_context* xc=xkb_context_new(XKB_CONTEXT_NO_DEFAULT_INCLUDES);struct xkb_keymap* km=xc?xkb_keymap_new_from_string(xc,kMatonUsKeymap,XKB_KEYMAP_FORMAT_TEXT_V1,XKB_KEYMAP_COMPILE_NO_FLAGS):NULL;
+  bool keymap_ready=km&&wlr_keyboard_set_keymap(&server.keyboard,km);
+  if(km)xkb_keymap_unref(km);if(xc)xkb_context_unref(xc);
+  if(!keymap_ready)goto done;
   wlr_seat_set_keyboard(server.seat,&server.keyboard);wlr_seat_set_capabilities(server.seat,WL_SEAT_CAPABILITY_KEYBOARD|WL_SEAT_CAPABILITY_POINTER);
   server.new_toplevel.notify=on_new_toplevel;wl_signal_add(&server.xdg_shell->events.new_toplevel,&server.new_toplevel);
   stage="virtual monitor";struct wlr_output* monitor=wlr_headless_add_output(server.backend,1280,720);
@@ -810,7 +824,7 @@ static void* server_main(void* unused) {
   stage="Wayland socket";if(wl_display_add_socket(server.display,server.socket_name)<0)goto done;
   stage="backend start";if(!wlr_backend_start(server.backend))goto done;
   char socket_path[640];snprintf(socket_path,sizeof(socket_path),"%s/%s",server.runtime_dir,server.socket_name);
-  stage="socket permissions";if(chmod(socket_path,0666))goto done;
+  stage="socket permissions";if(chmod(socket_path,0600))goto done;
   initialized=true;
 done:
   if(!initialized)__android_log_print(ANDROID_LOG_ERROR,"MatonCompositor","Startup failed at %s (errno=%d)",stage,errno);
@@ -836,12 +850,18 @@ bool maton_core_start(const char* socket_name,const char* runtime_dir){
   bool expected=false;if(!atomic_compare_exchange_strong(&server.started,&expected,true)){pthread_mutex_lock(&server.mutex);bool ok=server.ok;pthread_mutex_unlock(&server.mutex);return ok;}
   if(!socket_name||!runtime_dir||strlen(socket_name)>=sizeof(server.socket_name)||strlen(runtime_dir)>=sizeof(server.runtime_dir))goto fail;
   strcpy(server.socket_name,socket_name);strcpy(server.runtime_dir,runtime_dir);
-  if(mkdir(runtime_dir,0700)&&errno!=EEXIST)goto fail;if(chmod(runtime_dir,0711)||setenv("XDG_RUNTIME_DIR",runtime_dir,1))goto fail;
+  if(mkdir(runtime_dir,0700)&&errno!=EEXIST)goto fail;if(chmod(runtime_dir,0700)||setenv("XDG_RUNTIME_DIR",runtime_dir,1))goto fail;
   char path[640];snprintf(path,sizeof(path),"%s/%s",runtime_dir,socket_name);unlink(path);
   pthread_mutex_lock(&server.mutex);server.ready=server.ok=0;pthread_mutex_unlock(&server.mutex);
   atomic_store(&server.stopping,false);
   if(pthread_create(&server.thread,NULL,server_main,NULL))goto fail;
-  pthread_mutex_lock(&server.mutex);struct timespec limit;clock_gettime(CLOCK_REALTIME,&limit);limit.tv_sec+=2;while(!server.ready&&pthread_cond_timedwait(&server.ready_cond,&server.mutex,&limit)==0){}int ok=server.ready&&server.ok;pthread_mutex_unlock(&server.mutex);if(!ok){pthread_join(server.thread,NULL);pthread_mutex_lock(&server.mutex);server.started=false;server.ready=server.ok=0;pthread_mutex_unlock(&server.mutex);}return ok;
+  pthread_mutex_lock(&server.mutex);struct timespec limit;clock_gettime(CLOCK_REALTIME,&limit);limit.tv_sec+=2;while(!server.ready&&pthread_cond_timedwait(&server.ready_cond,&server.mutex,&limit)==0){}int ok=server.ready&&server.ok;if(!ok){
+    /* A late successful startup must skip its loop, or wake if it already
+     * entered dispatch. ready publishes event_fd while holding this mutex. */
+    atomic_store(&server.stopping,true);
+    if(server.ready&&server.ok&&server.event_fd>=0){uint64_t one=1;(void)write(server.event_fd,&one,sizeof(one));}
+  }
+  pthread_mutex_unlock(&server.mutex);if(!ok){pthread_join(server.thread,NULL);pthread_mutex_lock(&server.mutex);server.started=false;server.ready=server.ok=0;pthread_mutex_unlock(&server.mutex);}return ok;
 fail:atomic_store(&server.started,false);return false;
 }
 void maton_core_stop(void){if(!atomic_load(&server.started))return;atomic_store(&server.stopping,true);if(server.event_fd>=0){uint64_t one=1;(void)write(server.event_fd,&one,sizeof(one));}pthread_join(server.thread,NULL);pthread_mutex_lock(&server.mutex);server.ready=server.ok=0;atomic_store(&server.started,false);pthread_mutex_unlock(&server.mutex);atomic_store(&server.stopping,false);atomic_store(&server.demo_started,false);}
@@ -868,9 +888,7 @@ bool maton_core_xwayland_init(const char* socket_dir,const char* xwayland_path) 
   char binary[512];
   int written=snprintf(binary,sizeof(binary),"%s/Xwayland",xwayland_path);
   if(written<0||written>=(int)sizeof(binary))return false;
-  /* Xwayland admits only its own UID, but X clients arrive through linuxd's
-   * relay as another user. The socket lives in this app's private directory
-   * and reaches linuxd only as a delegated fd, so that is the access gate. */
+  /* Per-app clients share Xwayland's UID and use a mode-0600 socket. */
   /* Xwayland's glamor uses the EGL/GLES/GBM forwarders in <prefix>/lib64/xwayland
    * (linux/compositor/xwayland-egl); only Xwayland, which inherits this
    * environment, loads them. */
@@ -916,7 +934,7 @@ bool maton_core_add_session(int id,const char* path) {
   s->fd=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC|SOCK_NONBLOCK,0);
   struct sockaddr_un address={.sun_family=AF_UNIX};strcpy(address.sun_path,path);
   unlink(path);
-  if(s->fd<0||bind(s->fd,(struct sockaddr*)&address,sizeof(address))||chmod(path,0666)||listen(s->fd,128)){
+  if(s->fd<0||bind(s->fd,(struct sockaddr*)&address,sizeof(address))||chmod(path,0600)||listen(s->fd,128)){
     if(s->fd>=0)close(s->fd);unlink(path);free(s);free(c);return false;
   }
   /* Accept registration runs on the Wayland thread. Connections arriving

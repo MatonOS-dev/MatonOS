@@ -9,13 +9,15 @@ type NativeApi = {
   call(target: string, command: string, jsonArgs: string): Promise<CallResult>;
   subscribe(target: string, topic: string, subscriptionId: string): Promise<boolean>;
   unsubscribe(subscriptionId: string): Promise<boolean>;
-  startStubInstall(ref: string): Promise<boolean>;
+  startStubInstall(ref: string, operationId: string | null): Promise<boolean>;
+  startStubUpdate(ref: string, operationId: string | null): Promise<boolean>;
 };
 const Native = requireNativeModule<NativeApi>("MatonOSClient");
 let subscriptionIndex = 1;
 export const MatonOS = {
   checkStartup: (targets: string[], channels: string[] = []) => Native.checkStartup(targets, channels),
-  startStubInstall: (ref: string) => Native.startStubInstall(ref),
+  startStubInstall: (ref: string, operationId?: string) => Native.startStubInstall(ref, operationId ?? null),
+  startStubUpdate: (ref: string, operationId?: string) => Native.startStubUpdate(ref, operationId ?? null),
   call: (target: string, command: string, args: unknown = {}) => Native.call(target, command, JSON.stringify(args)),
   subscribe: (target: string, topic: string, listener: (event: MatonAreaEvent) => void) => {
     const id = `${target}:${topic}:${subscriptionIndex++}`;

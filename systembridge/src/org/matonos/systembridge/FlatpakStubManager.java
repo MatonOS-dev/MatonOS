@@ -40,14 +40,14 @@ final class FlatpakStubManager {
                 if ("complete".equals(event.optString("phase"))) {
                     JSONObject result = event.optJSONObject("result");
                     if (result != null) {
-                        String operationId = result.optString("operationId", "");
-                        String ref = operationRefs.remove(operationId);
-                        if (ref != null) {
-                            installRefs.remove(ref);
+                        // linuxd names the ref of installs a stub started itself.
+                        String ref = result.optString("ref", "");
+                        if (!ref.isEmpty()) {
                             if (result.optBoolean("ok")) worker.execute(() -> {
                                 showLauncher(ref);
                                 reconcileCompletedInstall(ref);
                             });
+                            else worker.execute(() -> removeFailedStub(ref));
                         }
                     }
                     refresh();
@@ -60,10 +60,7 @@ final class FlatpakStubManager {
     private final java.util.Map<Integer, Runnable> installCleanup = new java.util.concurrent.ConcurrentHashMap<>();
     private final Set<String> pending = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<String> permissionWork = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final Set<String> installRefs = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** Store operation IDs waiting for the stub's "install me", by ref. */
-    private final java.util.concurrent.ConcurrentMap<String, String> storeOperations = new java.util.concurrent.ConcurrentHashMap<>();
-    private final java.util.concurrent.ConcurrentMap<String, String> operationRefs = new java.util.concurrent.ConcurrentHashMap<>();
     private final IntentSender resultSender = new IntentSender((android.content.IIntentSender) new android.content.IIntentSender.Stub() {
         @Override public void send(int code, Intent intent, String resolvedType,
                 android.os.IBinder whitelistToken, android.content.IIntentReceiver finishedReceiver,
@@ -205,38 +202,6 @@ final class FlatpakStubManager {
         }catch(Exception error){Log.w(TAG,"Cannot verify generated launcher",error);return false;}
     }
 
-    /* "Install me" from the stub's unprivileged install activity, which the
-     * store starts after creating the stub (or to resume an install a crash
-     * or power cut interrupted). Does nothing when the Flatpak
-     * is already installed for that UID (except making sure it is visible). */
-    boolean installSelf(int uid, String ref) {
-        if (!ownsStub(uid, ref)) throw new SecurityException("Unverified stub");
-        String pkg;
-        try { pkg = packageFor(ref); }
-        catch (Exception error) { throw new IllegalArgumentException("Invalid Flatpak ref", error); }
-        // A stub replacement in flight keeps the UID, so only a running deploy blocks.
-        if (installRefs.contains(ref)) return false;
-        try {
-            JSONObject installed = new JSONObject(daemon().call("installed_for_uid",
-                    new JSONObject().put("ref", ref).put("uid", uid).toString()));
-            if (!installed.optBoolean("ok"))
-                throw new IllegalStateException(installed.optString("error", "Cannot inspect Flatpak files"));
-            if (Boolean.parseBoolean(installed.optString("output", "false"))) {
-                showLauncher(ref);
-                return true;
-            }
-        } catch (RuntimeException error) { throw error; }
-        catch (Exception error) { throw new IllegalStateException("Cannot inspect Flatpak files", error); }
-        if (!installRefs.add(ref)) return false;
-        String remote = remoteFor(pkg);
-        worker.execute(() -> {
-            String operationId = storeOperations.remove(ref);
-            try { deployStub(ref, pkg, remote, operationId == null || operationId.isEmpty() ? "stub-" + uid + "-" + System.currentTimeMillis() : operationId); }
-            catch (Exception error) { Log.e(TAG, "Resumed Flatpak install failed for " + ref, error); }
-        });
-        return false;
-    }
-
     private String remoteFor(String pkg) {
         try {
             android.content.pm.ActivityInfo activity = context.getPackageManager().getActivityInfo(
@@ -281,7 +246,13 @@ final class FlatpakStubManager {
             if (info.requestedPermissions != null) Collections.addAll(declared, info.requestedPermissions);
             Set<String> current = new HashSet<>();
             if (declared.contains(StubGenerator.GAME_CONTROLLERS)) current.add(StubGenerator.GAME_CONTROLLERS);
-            if (expected.equals(current) || pending.contains(pkg)) return;
+            if (pending.contains(pkg)) return;
+            JSONObject entry = new JSONObject(daemon().call("desktop_entry", new JSONObject().put("ref", ref).toString()));
+            if (!entry.optBoolean("ok") || entry.optBoolean("outputTruncated"))
+                throw new IllegalStateException("Cannot read installed Flatpak display name");
+            String name = StubGenerator.desktopDisplayName(entry.optString("output"));
+            String currentName = info.applicationInfo.loadLabel(context.getPackageManager()).toString();
+            if (expected.equals(current) && name.equals(currentName)) return;
             String key = uid + ":" + ref;
             if (!permissionWork.add(key)) return;
             try { create(daemon(), ref, pkg, remoteFor(pkg), key); }
@@ -338,6 +309,7 @@ final class FlatpakStubManager {
             if (subscribedDaemon == null || !subscribedDaemon.asBinder().equals(daemon.asBinder())) {
                 daemon.subscribe("progress", listener);
                 subscribedDaemon = daemon;
+                publishStubSigner(daemon);
             }
             sweepLinuxData(daemon);
             JSONObject list = new JSONObject(daemon.call("list_installed", "{}"));
@@ -352,8 +324,12 @@ final class FlatpakStubManager {
                 wanted.add(pkg);
                 if (pending.contains(pkg)) continue;
                 try {
-                    if (context.getPackageManager().getPackageInfo(pkg, 0).getLongVersionCode() >= 10) {
+                    PackageInfo installed = context.getPackageManager().getPackageInfo(pkg, 0);
+                    if (installed.getLongVersionCode() >= StubGenerator.STUB_VERSION_CODE) {
                         showLauncher(ref); // covers a lost completion event
+                        if (installed.applicationInfo != null && ref.split("/")[1].equals(
+                                installed.applicationInfo.loadLabel(context.getPackageManager()).toString()))
+                            reconcileCompletedInstall(ref); // finish a placeholder after a lost event
                         continue;
                     }
                 }
@@ -362,10 +338,33 @@ final class FlatpakStubManager {
                 catch (Exception e) { Log.e(TAG, "Cannot create launcher for " + ref, e); }
             }
             for (PackageInfo pkg : context.getPackageManager().getInstalledPackages(0)) {
-                if (FlatpakStubIdentity.isGeneratedStub(pkg.packageName) && !wanted.contains(pkg.packageName) && pending.add(pkg.packageName))
+                // A hidden stub (launcher never enabled) is waiting for "install me";
+                // only stubs whose Flatpak was installed and is now gone are removed.
+                if (FlatpakStubIdentity.isGeneratedStub(pkg.packageName) && !wanted.contains(pkg.packageName) &&
+                        launcherEnabled(pkg.packageName) && pending.add(pkg.packageName))
                     context.getPackageManager().getPackageInstaller().uninstall(pkg.packageName, resultSender);
             }
         } catch (Exception e) { Log.w(TAG, "Flatpak launcher reconciliation failed", e); }
+    }
+
+    /** A failed first install leaves a hidden stub with no Flatpak behind;
+     * remove it. Failed updates keep theirs (the launcher is enabled). */
+    private void removeFailedStub(String ref) {
+        try {
+            String pkg = packageFor(ref);
+            ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
+            if (daemon == null || launcherEnabled(pkg)) return;
+            JSONObject list = new JSONObject(daemon.call("list_installed", "{}"));
+            if (!list.optBoolean("ok") || list.optBoolean("outputTruncated")) return;
+            String bare = ref.substring("app/".length());
+            for (String item : list.optString("output").split("\\r?\\n")) {
+                String installed = item.trim();
+                if (installed.equals(ref) || installed.equals(bare)) return;
+            }
+            context.getPackageManager().getPackageInfo(pkg, 0);
+            if (pending.add(pkg)) context.getPackageManager().getPackageInstaller().uninstall(pkg, resultSender);
+        } catch (PackageManager.NameNotFoundException gone) {
+        } catch (Exception e) { Log.w(TAG, "Cannot remove stub after failed install of " + ref, e); }
     }
 
     private static byte[] normalizeIcon(byte[] bytes) throws java.io.IOException {
@@ -403,13 +402,10 @@ final class FlatpakStubManager {
         File apk = new File(work, pkg + ".apk");
         try {
             try (FileOutputStream out = new FileOutputStream(desktop)) { out.write(entry.optString("output").getBytes(StandardCharsets.UTF_8)); }
-            // Use a local fallback icon when the export contains only SVG assets.
-            Bitmap bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(bitmap); canvas.drawColor(Color.rgb(55, 95, 45));
-            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG); paint.setColor(Color.WHITE); paint.setTextSize(52); paint.setTextAlign(Paint.Align.CENTER);
-            canvas.drawText("L", 48, 67, paint);
-            ByteArrayOutputStream icon = new ByteArrayOutputStream(); bitmap.compress(Bitmap.CompressFormat.PNG, 100, icon); bitmap.recycle();
-            byte[] iconBytes = icon.toByteArray();
+            // Keep the store-provided artwork when an app has no bundled PNG.
+            // Regenerating metadata/permissions must not erase a valid icon.
+            byte[] iconBytes = installedIcon(pkg);
+            if (iconBytes == null) iconBytes = fallbackIcon();
             JSONObject exported = new JSONObject(daemon.call("icon", new JSONObject().put("ref",ref).toString()));
             if (exported.optBoolean("ok")) {
                 byte[] candidate = android.util.Base64.decode(exported.optString("output"),android.util.Base64.DEFAULT);
@@ -460,17 +456,6 @@ final class FlatpakStubManager {
         return new JSONObject().put("ok", true).put("accepted", true).toString();
     }
 
-    /* The pull runs as the stub UID (installerUid) into
-     * /data/matonos/linux/apps/<uid>/staging/<operationId>. */
-    private JSONObject stage(String ref, String remote, int stubUid, String operationId) throws Exception {
-        JSONObject request = new JSONObject().put("ref", ref).put("remote", remote)
-                .put("installerUid", stubUid).put("operationId", operationId);
-        JSONObject staged = new JSONObject(daemon().call("stage", request.toString()));
-        if (!staged.optBoolean("ok"))
-            throw new java.io.IOException(staged.optString("error", "Flatpak staging failed"));
-        return staged;
-    }
-
     private void installStub(String ref, String icon, String remote, String operationId) throws Exception {
         String pkg = packageFor(ref);
         File work = new File(context.getCacheDir(), "flatpak-stubs");
@@ -495,6 +480,7 @@ final class FlatpakStubManager {
             StubGenerator.generate(work, ref, remote, desktop, iconBytes,
                     declaredPermissions, pkg, apk,
                     null, null);
+            publishStubSigner(daemon());
             PackageInstaller installer = context.getPackageManager().getPackageInstaller();
             PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
             params.setAppPackageName(pkg);
@@ -508,54 +494,37 @@ final class FlatpakStubManager {
                 }
                 /* The store then starts the stub's "install me" activity;
                  * the deploy runs under the UID PackageManager assigned. */
-                storeOperations.put(ref, operationId == null ? "" : operationId);
                 pending.add(pkg);
                 session.commit(resultSender);
-            } catch (Exception e) { pending.remove(pkg); storeOperations.remove(ref); installer.abandonSession(id); throw e; }
+            } catch (Exception e) { pending.remove(pkg); installer.abandonSession(id); throw e; }
         } finally { desktop.delete(); apk.delete(); }
     }
 
-    private void deployStub(String ref, String pkg, String remote, String operationId) {
+    private boolean launcherEnabled(String pkg) {
         try {
-            PackageInfo info = context.getPackageManager().getPackageInfo(pkg, 0);
-            int stubUid = info.applicationInfo.uid;
-            // One directory per operation: IDs must be unique and path-safe.
-            if (operationId == null || !operationId.matches("[A-Za-z0-9_-]{1,64}"))
-                operationId = "stub-" + stubUid + "-" + System.currentTimeMillis();
-            JSONObject staged = stage(ref, remote, stubUid, operationId);
-            int runtimeUid = runtimeAppUid(android.os.UserHandle.getUserId(stubUid));
-            if (stubUid < 10000 || runtimeUid < 10000) throw new java.io.IOException("Missing stub or runtime UID");
-            JSONObject request = new JSONObject()
-                    .put("ref", ref)
-                    .put("operationId", operationId == null ? "" : operationId)
-                    .put("appCommit", staged.getString("appCommit"))
-                    .put("runtimeRef", staged.getString("runtimeRef"))
-                    .put("runtimeCommit", staged.getString("runtimeCommit"))
-                    .put("remote", remote)
-                    .put("uid", stubUid)
-                    .put("runtimeUid", runtimeUid);
-            operationRefs.put(operationId, ref);
-            JSONObject published = new JSONObject(daemon().call("install", request.toString()));
-            if (!published.optBoolean("ok") || !published.optBoolean("accepted"))
-                throw new java.io.IOException(published.optString("error", "Flatpak install was rejected"));
-        } catch (Exception error) {
-            operationRefs.remove(operationId);
-            installRefs.remove(ref);
-            Log.e(TAG, "Flatpak deploy failed for " + ref, error);
-            throw new IllegalStateException("Flatpak deploy failed for " + ref, error);
-        }
+            return context.getPackageManager().getComponentEnabledSetting(
+                    new android.content.ComponentName(pkg, StubGenerator.HOST_ACTIVITY))
+                    == PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
+        } catch (IllegalArgumentException gone) { return false; }
+    }
+
+    /** linuxd checks a stub calling it directly against this certificate. */
+    private void publishStubSigner(ILinuxd daemon) {
+        try {
+            byte[] certificate = StubGenerator.getExistingSigningCertificate();
+            if (certificate == null) return;
+            StringBuilder hex = new StringBuilder(certificate.length * 2);
+            for (byte b : certificate) hex.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
+            JSONObject stored = new JSONObject(daemon.call("set_stub_signer",
+                    new JSONObject().put("certificate", hex.toString()).toString()));
+            if (!stored.optBoolean("ok")) Log.w(TAG, "linuxd refused the stub certificate: " + stored.optString("error"));
+        } catch (Exception error) { Log.w(TAG, "Cannot hand the stub certificate to linuxd", error); }
     }
 
     private ILinuxd daemon() throws Exception {
         ILinuxd service = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
         if (service == null) throw new IllegalStateException("Flatpak service is unavailable");
         return service;
-    }
-
-    private int runtimeAppUid(int userId) {
-        try {
-            return context.getPackageManager().getApplicationInfoAsUser("org.matonos.linuxruntimes", 0, userId).uid;
-        } catch (Exception error) { return -1; }
     }
 
     private static byte[] fallbackIcon() {
@@ -565,6 +534,27 @@ final class FlatpakStubManager {
         canvas.drawText("L", 48, 67, paint);
         ByteArrayOutputStream icon = new ByteArrayOutputStream(); bitmap.compress(Bitmap.CompressFormat.PNG, 100, icon); bitmap.recycle();
         return icon.toByteArray();
+    }
+
+    private byte[] installedIcon(String pkg) {
+        try {
+            PackageInfo info = context.getPackageManager().getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES);
+            if (!signedByDevice(info) || info.applicationInfo == null) return null;
+            try (java.util.zip.ZipFile apk = new java.util.zip.ZipFile(info.applicationInfo.sourceDir)) {
+                java.util.zip.ZipEntry entry = apk.getEntry("res/drawable/foreground.png");
+                if (entry == null || entry.getSize() <= 0 || entry.getSize() > 256 * 1024) return null;
+                byte[] bytes;
+                try (java.io.InputStream input = apk.getInputStream(entry)) {
+                    bytes = input.readNBytes(256 * 1024 + 1);
+                }
+                if (bytes.length != entry.getSize()) return null;
+                android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+                bounds.inJustDecodeBounds = true;
+                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || bounds.outWidth > 1024 || bounds.outHeight > 1024) return null;
+                return bytes;
+            }
+        } catch (Exception error) { return null; }
     }
 
     private static byte[] iconFromBase64(String base64) {

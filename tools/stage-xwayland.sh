@@ -34,6 +34,13 @@ mkdir -p "$DST/lib64/xwayland"
 for lib in libEGL.so libGLESv2.so libgbm.so; do
   install -m 0644 "$SRC/lib/xwayland-egl/$lib" "$DST/lib64/xwayland/$lib"
 done
+# Xwayland uses the Flatpak build's Bionic libgcrypt for SHA1. The Flatpak
+# multicall links its own stack; that does not install these DSOs for Xwayland.
+FSTAGE=$AOSP/out/matonos/flatpak-ndk/prefix
+for lib in "$FSTAGE/lib/libgcrypt.so" "$FSTAGE/lib64/libgpg-error.so"; do
+  [[ -f $lib ]] || { echo "ERROR: Xwayland dependency missing: $lib" >&2; exit 1; }
+  install -m 0644 "$lib" "$DST/lib64/$(basename "$lib")"
+done
 # Keymap compiler and XKB data (see build-xwayland.sh).
 install -m 0755 "$SRC/bin/xkbcomp" "$DST/bin/xkbcomp"
 XKB=$AOSP/out/matonos/compositor/xkb-data/system_ext/share/xkeyboard-config-2

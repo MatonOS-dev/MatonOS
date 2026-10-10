@@ -1,69 +1,69 @@
 package org.matonos.compositor;
 
-import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.util.concurrent.FutureTask;
-import java.util.concurrent.TimeUnit;
+import android.content.Context;
+import android.system.Os;
 
-/** One native broker, owned and reaped by the compositor Wayland session. */
+import org.matonos.compositor.runtime.NativeBroker;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.function.Consumer;
+
+/**
+ * One in-process session bus, owned and reaped by the app's own process.
+ *
+ * <p>The bus is a JNI library loaded into this process (see {@link NativeBroker}),
+ * so it runs at the app's UID and never in a privileged process. The portal
+ * ({@link JavaPortal}) also lives here. There is no exec'd helper.
+ */
 final class SessionBus implements AutoCloseable {
-    private final Process process;
     final JavaPortal portals;
     private final File socket, control, policy;
+    private volatile boolean running;
 
-    SessionBus(android.content.Context context, File directory, String ref, int appUid, java.util.function.Consumer<Boolean> changed, JavaPortal.Launcher launcher) throws Exception {
-        android.content.pm.ApplicationInfo appInfo = context.getApplicationInfo();
-        // PM never extracts the bundled system APK. The image build extracts
-        // its broker from that APK into an executable system_file path. Updates
-        // must use their own extracted broker; never mix in the image version.
-        boolean bundled = (appInfo.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
-                && (appInfo.flags & android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) == 0;
-        File executable = bundled ? new File("/system_ext/bin/matonos-apk-session-broker")
-                : new File(appInfo.nativeLibraryDir, "libmatonos-dbus-broker.so");
-        if (!executable.isFile() || !executable.canExecute())
-            throw new java.io.IOException("APK session broker is missing or not executable: " + executable);
+    SessionBus(Context context, File directory, String ref, int appUid,
+               Consumer<Boolean> changed, JavaPortal.Launcher launcher) throws Exception {
         if (!ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"))
             throw new IllegalArgumentException("Invalid application reference");
         String app = ref.split("/")[1];
         socket = new File(directory, "bus");
         control = new File(directory, "bus-control");
         policy = new File(directory, "bus.policy");
-        // A stale broker must have died with its host before these are removed.
+        // A stale bus must have died with its host before these are removed.
         for (File file : new File[]{socket, control, policy})
-            if (file.exists() && !file.delete()) throw new java.io.IOException("Cannot remove stale bus file");
-        try (java.io.FileOutputStream out = new java.io.FileOutputStream(policy)) {
+            if (file.exists() && !file.delete()) throw new IOException("Cannot remove stale bus file");
+        try (FileOutputStream out = new FileOutputStream(policy)) {
             out.write(("own " + app + "\ntalk org.freedesktop.portal.Flatpak\ntalk org.freedesktop.portal.Desktop\ntalk org.freedesktop.Flatpak\n").getBytes(StandardCharsets.UTF_8));
         }
-        android.system.Os.chmod(policy.getAbsolutePath(), 0600);
-        portals=new JavaPortal(context,directory,changed,launcher);
-        ProcessBuilder builder = new ProcessBuilder(executable.getAbsolutePath(),
-                socket.getAbsolutePath(), policy.getAbsolutePath(), "--host-session");
-        builder.environment().put("MATON_SESSION_APP_UID",Integer.toString(appUid));
-        builder.environment().put("MATON_PORTAL_SECRET",portals.secret());
-        builder.redirectError(ProcessBuilder.Redirect.appendTo(new File(directory, "bus.log")));
-        try { process = builder.start(); }
-        catch (Exception error) { portals.close(); policy.delete(); throw error; }
-        FutureTask<String> ready = new FutureTask<>(() -> {
-            try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                return reader.readLine();
-            }
-        });
-        new Thread(ready, "session-bus-ready").start();
+        Os.chmod(policy.getAbsolutePath(), 0600);
+        portals = new JavaPortal(context, directory, changed, launcher);
+        String portalSocket = new File(directory, "portal-backend").getAbsolutePath();
+        if (!NativeBroker.nativeStart(socket.getAbsolutePath(), policy.getAbsolutePath(), portalSocket, portals.secret())) {
+            portals.close();
+            throw new IOException("Session broker failed to start");
+        }
+        running = true;
+        // Portal registration uses the control socket. The bus socket appears
+        // before native initialization has created that endpoint.
         try {
-            String line = ready.get(5, TimeUnit.SECONDS);
-            if (!process.isAlive() || !("DBUS_SESSION_BUS_ADDRESS=unix:path=" + socket.getAbsolutePath()).equals(line))
-                throw new java.io.IOException("Session broker failed to become ready");
-        } catch (Exception error) { close(); throw error; }
-        finally { policy.delete(); }
+            for (int i = 0; i < 50 && (!socket.exists() || !control.exists()); i++) Thread.sleep(100);
+        } catch (InterruptedException error) {
+            try { close(); } finally { Thread.currentThread().interrupt(); }
+            throw error;
+        }
+        if (!socket.exists() || !control.exists()) { close(); throw new IOException("Session broker failed to become ready"); }
     }
-    boolean isAlive() { return process.isAlive(); }
+
+    boolean isAlive() { return running; }
+
     @Override public void close() {
-        portals.close();
-        process.destroy();
-        try {
-            if (!process.waitFor(2, TimeUnit.SECONDS)) { process.destroyForcibly(); process.waitFor(); }
-        } catch (InterruptedException error) { Thread.currentThread().interrupt(); process.destroyForcibly(); }
-        socket.delete(); control.delete(); policy.delete();
+        running = false;
+        try { portals.close(); } finally {
+            try { NativeBroker.nativeStop(); } finally {
+                socket.delete(); control.delete(); policy.delete();
+            }
+        }
     }
 }

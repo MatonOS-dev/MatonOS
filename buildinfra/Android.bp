@@ -115,36 +115,17 @@ android_app_import {
     privileged: true,
     required: [
         "privapp-permissions-org.matonos.compositor",
-        "matonos-apk-session-broker",
     ],
     apk: "apps-built/MatonWaylandHost.apk",
     system_ext_specific: true,
     preprocessed: true,
     // build-apps.sh stores and aligns JNI/dex before signing. System apps do
-    // not get PM extraction; JNI loads from the APK and the broker is below.
+    // not get PM extraction; JNI loads from the APK.
 }
 
-// Derive the image executable from the imported APK, never a separately built
-// broker. preprocessed keeps that APK byte-for-byte, including its signature.
-genrule {
-    name: "matonos-apk-session-broker-extract",
-    srcs: ["apps-built/MatonWaylandHost.apk"],
-    tools: ["matonos-extract-apk-broker"],
-    out: ["matonos-apk-session-broker"],
-    cmd: "$(location matonos-extract-apk-broker) $(in) $(out)",
-}
-
-python_binary_host {
-    name: "matonos-extract-apk-broker",
-    main: "extract-apk-broker.py",
-    srcs: ["extract-apk-broker.py"],
-}
-
-prebuilt_bin {
-    name: "matonos-apk-session-broker",
-    src: ":matonos-apk-session-broker-extract",
-    system_ext_specific: true,
-}
+// The session broker is a JNI library loaded inside each app's own process
+// (lib/x86_64/libmatonos-dbus-broker.so in the APK). There is no standalone
+// /system_ext/bin broker; the per-app runtime never runs it as a process.
 
 // MatonOS Linux Runtimes: owns a UID for Flatpak SYSTEM installations.
 // Not privileged, not platform-signed. Its only purpose is a stable UID

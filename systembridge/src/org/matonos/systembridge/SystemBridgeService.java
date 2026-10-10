@@ -93,14 +93,14 @@ public final class SystemBridgeService extends Service {
             finally { Binder.restoreCallingIdentity(identity); }
         }
 
-        @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, android.os.ParcelFileDescriptor x11Directory, String x11Display) {
+        @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor x11Directory, String x11Display) {
             throw new SecurityException("A signed stub process and lifeline are required");
         }
 
-        @Override public String launchOwnedFlatpak(String ref, android.os.ParcelFileDescriptor runtimeDirectory, android.os.ParcelFileDescriptor x11Directory, String x11Display, String dnsForwarder, int stubUid, int stubPid, android.os.ParcelFileDescriptor lifeline) {
+        @Override public String launchOwnedFlatpak(String ref, android.os.ParcelFileDescriptor x11Directory, String x11Display, String dnsForwarder, int stubUid, int stubPid, android.os.ParcelFileDescriptor lifeline) {
             try {
                 String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
-                if (!"org.matonos.compositor".equals(caller) || runtimeDirectory == null)
+                if (!"org.matonos.compositor".equals(caller))
                     throw new SecurityException("Only the compositor may launch graphical Flatpaks");
                 // Accept only a socket name inside the delegated X11 directory.
                 if (x11Display != null && x11Display.length() > 0 &&
@@ -117,7 +117,7 @@ public final class SystemBridgeService extends Service {
                             10 + ((stubUid >>> 16) & 0x3f), (stubUid >>> 8) & 0xff, stubUid & 0xff);
                     if (!expectedDns.equals(dnsForwarder))
                         throw new SecurityException("Per-app DNS endpoint is missing or does not match the stub UID");
-                    return daemon.launchGraphical(ref, runtimeDirectory, expectedDns.substring(0, expectedDns.length() - 3), x11Directory, x11Display,
+                    return daemon.launchGraphical(ref, expectedDns.substring(0, expectedDns.length() - 3), x11Directory, x11Display,
                             flatpakStubManager.hasGameControllers(ref), stubUid, stubPid, lifeline);
                 } finally {
                     Binder.restoreCallingIdentity(identity);
@@ -132,7 +132,6 @@ public final class SystemBridgeService extends Service {
                 throw error;
             } finally {
                 if (lifeline != null) try { lifeline.close(); } catch (java.io.IOException ignored) { }
-                if (runtimeDirectory != null) try { runtimeDirectory.close(); } catch (java.io.IOException ignored) { }
                 if (x11Directory != null) try { x11Directory.close(); } catch (java.io.IOException ignored) { }
             }
         }
@@ -143,15 +142,6 @@ public final class SystemBridgeService extends Service {
             long identity=Binder.clearCallingIdentity();
             try{return flatpakStubManager!=null&&flatpakStubManager.ownsStub(uid,ref);}
             finally{Binder.restoreCallingIdentity(identity);}
-        }
-
-        @Override public boolean installFlatpakStub(int uid, String ref) {
-            String caller = enforceAuthorizedCaller("flatpak_launch", "installFlatpakStub");
-            if (!"org.matonos.compositor".equals(caller) || uid < 10000)
-                throw new SecurityException("Only the compositor may install for a verified stub");
-            long identity = Binder.clearCallingIdentity();
-            try { return flatpakStubManager.installSelf(uid, ref); }
-            finally { Binder.restoreCallingIdentity(identity); }
         }
 
         @Override public ParcelFileDescriptor[] createDnsForwarderSockets(String address, int stubUid, String ref) {

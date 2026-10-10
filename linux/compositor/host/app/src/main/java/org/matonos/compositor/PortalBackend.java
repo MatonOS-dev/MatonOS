@@ -28,7 +28,7 @@ final class PortalBackend {
     private static void signature(Message call,String expected) {if(!expected.equals(call.signature))throw invalid("Expected signature "+expected);}
     private Message response(Message call,int type,String sig,Object... body) {
         Message m=new Message();m.type=type;m.serial=++sequence;if(m.serial==0)m.serial=++sequence;
-        m.destination=call.sender;m.sender=":1.0";m.replySerial=call.serial;m.signature=sig;m.body=Arrays.asList(body);m.replyTo=call.dbusMessage;return m;
+        m.destination=call.sender;m.sender=":1.0";m.replySerial=call.serial;m.signature=sig;m.body=Arrays.asList(body);return m;
     }
     private Message signal(Message call,String path,String iface,String member,String sig,Object... body) {
         Message m=response(call,4,sig,body);m.replySerial=0;m.path=path;m.iface=iface;m.member=member;return m;
@@ -135,8 +135,15 @@ final class PortalBackend {
         throw new Failure("org.freedesktop.DBus.Error.UnknownMethod","Unsupported portal operation");
     }
     static boolean glob(String pattern,String text) {
-        StringBuilder regex=new StringBuilder("^");
-        for(char c:pattern.toCharArray())regex.append(c=='*'?".*":c=='?'?".":java.util.regex.Pattern.quote(String.valueOf(c)));
-        return text.matches(regex.append('$').toString());
+        // Settings.ReadAll supports globbing only in trailing sections.
+        // Scan once: literals after a '*' are not a supported namespace pattern.
+        int at=0;
+        while(at<pattern.length() && pattern.charAt(at)!='*') {
+            if(at>=text.length() || pattern.charAt(at)!=text.charAt(at))return false;
+            at++;
+        }
+        if(at==pattern.length())return at==text.length();
+        while(at<pattern.length())if(pattern.charAt(at++)!='*')return false;
+        return true;
     }
 }

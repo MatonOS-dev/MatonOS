@@ -14,6 +14,7 @@ from pathlib import Path
 DEVICE = Path(__file__).resolve().parents[1]
 AOSP = DEVICE.parents[2]
 ERRORS: list[str] = []
+GENERATED_DIRS = ("build", "out", "prebuilt", "node_modules", ".gradle", ".cxx")
 
 
 def error(path: Path | str, message: str) -> None:
@@ -74,7 +75,7 @@ def string_property(block: str, name: str) -> str | None:
 
 
 def check_product_makefiles() -> None:
-    for path in files(DEVICE, ("*.mk",)):
+    for path in files(DEVICE, ("*.mk",), prune=GENERATED_DIRS):
         lines = path.read_text(errors="replace").splitlines()
         logical_lines: list[tuple[int, str]] = []
         pending = ""
@@ -128,7 +129,7 @@ def check_product_makefiles() -> None:
 
 
 def check_android_bp() -> None:
-    for path in files(DEVICE, ("Android.bp",), prune=("build", "out", "prebuilt", "node_modules", ".gradle", ".cxx")):
+    for path in files(DEVICE, ("Android.bp",), prune=GENERATED_DIRS):
         source = path.read_text(errors="replace")
         for module_type, block in module_blocks(source):
             name = string_property(block, "name") or "<unnamed>"
@@ -158,7 +159,7 @@ def check_android_bp() -> None:
 def check_local_modules() -> None:
     global LOCAL_MODULES
     LOCAL_MODULES = set()
-    for path in files(DEVICE, ("Android.bp",)):
+    for path in files(DEVICE, ("Android.bp",), prune=GENERATED_DIRS):
         for _, block in module_blocks(path.read_text(errors="replace")):
             name = string_property(block, "name")
             if name:
@@ -233,7 +234,7 @@ def check_patches() -> None:
 
 
 def check_bpfmt() -> None:
-    bp_files = files(DEVICE, ("Android.bp",), prune=("build", "out", "prebuilt", "node_modules", ".gradle", ".cxx"))
+    bp_files = files(DEVICE, ("Android.bp",), prune=GENERATED_DIRS)
     if not bp_files:
         return
     tool = AOSP / "out/host/linux-x86/bin/bpfmt"
@@ -253,13 +254,19 @@ def check_bpfmt() -> None:
 def main() -> int:
     global LOCAL_MODULES
     LOCAL_MODULES = set()
-    check_local_modules()
-    check_product_makefiles()
-    check_android_bp()
-    check_bundle_registry()
-    check_fixed_sepolicy_files()
-    check_patches()
-    check_bpfmt()
+    checks = (
+        ("local module inventory", check_local_modules),
+        ("product makefiles", check_product_makefiles),
+        ("Android.bp declarations", check_android_bp),
+        ("ODM bundle registry", check_bundle_registry),
+        ("SELinux file inventory", check_fixed_sepolicy_files),
+        ("AOSP patch allowlist", check_patches),
+        ("Android.bp formatting", check_bpfmt),
+    )
+    print(f"Preflight: {len(checks)} checks", flush=True)
+    for index, (label, check) in enumerate(checks, 1):
+        print(f"Preflight [{index}/{len(checks)}]: {label}...", flush=True)
+        check()
     if ERRORS:
         print(f"Preflight failed with {len(ERRORS)} issue(s):", file=sys.stderr)
         for item in ERRORS:

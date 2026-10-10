@@ -137,10 +137,9 @@ MatonOS is mostly an assembly of other people's excellent open-source work:
   spoofing patch follows [LineageOS](https://lineageos.org/)'s approach
 - [F-Droid](https://f-droid.org/) (repo and app sources; its client is not
   preinstalled, and software-centre support is planned)
-- Preinstalled apps: [Fossify](https://github.com/FossifyOrg) (Calculator,
-  Calendar, Clock, Contacts, Gallery, Music Player, Notes),
-  [Fennec F-Droid](https://f-droid.org/packages/org.mozilla.fennec_fdroid/),
-  [Open Camera](https://opencamera.org.uk/)
+- Preinstalled third-party app: [Fennec F-Droid](https://f-droid.org/packages/org.mozilla.fennec_fdroid/).
+  Stock AOSP apps are retained. Fossify and Open Camera are
+  not bundled so users can build and install their own GPLv3 versions.
 - [Expo](https://expo.dev/) / [React Native](https://reactnative.dev/)
   (MatonOS Settings and our other apps)
 - Linux apps (in development): [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots),

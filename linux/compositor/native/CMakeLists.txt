@@ -72,3 +72,15 @@ add_library(maton_dns_forwarder SHARED dns_forwarder_core.c dns_forwarder_androi
 target_compile_features(maton_dns_forwarder PRIVATE c_std_11)
 target_include_directories(maton_dns_forwarder PRIVATE "${MATON_COMPOSITOR_ROOT}/native")
 target_link_libraries(maton_dns_forwarder PRIVATE android log)
+
+if(NOT MATON_PIPEWIRE_BUILD)
+  set(MATON_PIPEWIRE_BUILD "${MATON_AOSP_ROOT}/out/matonos/pipewire")
+endif()
+add_library(maton_pipewire SHARED pipewire_android.c)
+target_compile_features(maton_pipewire PRIVATE c_std_11)
+target_compile_definitions(maton_pipewire PRIVATE _GNU_SOURCE)
+target_include_directories(maton_pipewire PRIVATE
+  "${MATON_PIPEWIRE_BUILD}/install/pipewire/include/pipewire-0.3"
+  "${MATON_PIPEWIRE_BUILD}/install/pipewire/include/spa-0.2")
+target_link_libraries(maton_pipewire PRIVATE
+  "${MATON_PIPEWIRE_BUILD}/jniLibs/x86_64/libpipewire-0.3.so" aaudio log dl)

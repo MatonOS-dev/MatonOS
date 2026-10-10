@@ -41,25 +41,14 @@ class MatonOSExpoModule : Module() {
       val result = requireClient().call(target, command, args)
       mapOf("available" to result.available, "value" to (result.value ?: ""), "reason" to (result.reason ?: ""))
     }
-    // "Install me": wait for the new stub, then start its install activity
-    // (found by its Flatpak ref metadata). The bridge does nothing if the
-    // Flatpak is already installed, so this is also how installs resume.
-    AsyncFunction("startStubInstall") { ref: String ->
-      val context = requireNotNull(appContext.reactContext)
-      val deadline = android.os.SystemClock.elapsedRealtime() + 60_000
-      fun find() = context.packageManager.queryIntentActivities(
-        android.content.Intent(STUB_INSTALL_ACTION), android.content.pm.PackageManager.GET_META_DATA)
-        .firstOrNull { it.activityInfo.metaData?.getString(STUB_REF_META) == ref }
-      var match = find()
-      while (match == null && android.os.SystemClock.elapsedRealtime() < deadline) {
-        Thread.sleep(500)
-        match = find()
-      }
-      if (match == null) return@AsyncFunction false
-      context.startActivity(android.content.Intent(STUB_INSTALL_ACTION)
-        .setClassName(match.activityInfo.packageName, match.activityInfo.name)
-        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-      true
+    // "Install me" / "update me": wait for the stub, then start its activity
+    // (found by its Flatpak ref metadata). The stub calls linuxd itself;
+    // "install me" does nothing if the Flatpak is installed, so it also resumes.
+    AsyncFunction("startStubInstall") { ref: String, operationId: String? ->
+      startStubActivity(STUB_INSTALL_ACTION, ref, operationId)
+    }
+    AsyncFunction("startStubUpdate") { ref: String, operationId: String? ->
+      startStubActivity(STUB_UPDATE_ACTION, ref, operationId)
     }
     AsyncFunction("subscribe") { target: String, topic: String, id: String ->
       if (listeners.containsKey(id)) return@AsyncFunction true
@@ -78,8 +67,30 @@ class MatonOSExpoModule : Module() {
     }
   }
 
+  private fun startStubActivity(action: String, ref: String, operationId: String?): Boolean {
+    val context = requireNotNull(appContext.reactContext)
+    val deadline = android.os.SystemClock.elapsedRealtime() + 60_000
+    fun find() = context.packageManager.queryIntentActivities(
+      android.content.Intent(action), android.content.pm.PackageManager.GET_META_DATA)
+      .firstOrNull { it.activityInfo.metaData?.getString(STUB_REF_META) == ref }
+    var match = find()
+    while (match == null && android.os.SystemClock.elapsedRealtime() < deadline) {
+      Thread.sleep(500)
+      match = find()
+    }
+    if (match == null) return false
+    val intent = android.content.Intent(action)
+      .setClassName(match.activityInfo.packageName, match.activityInfo.name)
+      .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+    if (!operationId.isNullOrEmpty()) intent.putExtra(STUB_OPERATION_EXTRA, operationId)
+    context.startActivity(intent)
+    return true
+  }
+
   private companion object {
     const val STUB_INSTALL_ACTION = "org.matonos.linuxhost.INSTALL"
+    const val STUB_UPDATE_ACTION = "org.matonos.linuxhost.UPDATE"
+    const val STUB_OPERATION_EXTRA = "org.matonos.linuxhost.OPERATION_ID"
     const val STUB_REF_META = "org.matonos.linuxhost.FLATPAK_REF"
   }
 

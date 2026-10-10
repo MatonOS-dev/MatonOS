@@ -73,72 +73,25 @@ android_app_import {
 }
 
 android_app_import {
-    name: "MatonFossifyGallery",
-    apk: "apks/MatonFossifyGallery.apk",
-    product_specific: true,
-    preprocessed: true,
-    overrides: ["Gallery2"],
-}
-
-android_app_import {
-    name: "MatonFossifyCalendar",
-    apk: "apks/MatonFossifyCalendar.apk",
-    product_specific: true,
-    preprocessed: true,
-    overrides: ["Calendar"],
-}
-
-// Also drops the phone apps: PCs have no modem (Dialer, Messaging).
-android_app_import {
-    name: "MatonFossifyContacts",
-    apk: "apks/MatonFossifyContacts.apk",
-    product_specific: true,
-    preprocessed: true,
-    overrides: [
-        "Contacts",
-        "Dialer",
-        "messaging",
+    name: "MatonThunderbird",
+    optional_uses_libs: [
+        "com.sec.android.app.multiwindow",
+        "androidx.window.extensions",
+        "androidx.window.sidecar",
     ],
+    apk: "apks/MatonThunderbird.apk",
+    product_specific: true,
+    preprocessed: true,
 }
 
+// BlackyHawky's AOSP-based Clock, the exact com.best.deskclock package.
 android_app_import {
-    name: "MatonFossifyClock",
+    name: "MatonClock",
     optional_uses_libs: [
         "androidx.window.extensions",
         "androidx.window.sidecar",
     ],
-    apk: "apks/MatonFossifyClock.apk",
+    apk: "apks/MatonClock.apk",
     product_specific: true,
     preprocessed: true,
-    overrides: ["DeskClock"],
-}
-
-android_app_import {
-    name: "MatonFossifyNotes",
-    apk: "apks/MatonFossifyNotes.apk",
-    product_specific: true,
-    preprocessed: true,
-}
-
-android_app_import {
-    name: "MatonFossifyCalculator",
-    apk: "apks/MatonFossifyCalculator.apk",
-    product_specific: true,
-    preprocessed: true,
-}
-
-android_app_import {
-    name: "MatonFossifyMusicPlayer",
-    apk: "apks/MatonFossifyMusicPlayer.apk",
-    product_specific: true,
-    preprocessed: true,
-    overrides: ["Music"],
-}
-
-android_app_import {
-    name: "MatonOpenCamera",
-    apk: "apks/MatonOpenCamera.apk",
-    product_specific: true,
-    preprocessed: true,
-    overrides: ["Camera2"],
 }

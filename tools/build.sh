@@ -84,6 +84,19 @@ done
 PRODUCT_OUT=$AOSP/out/target/product/$PRODUCT
 start=$SECONDS
 
+info "Build plan"
+printf '  Product: %s-%s-%s\n' "$PRODUCT" "$RELEASE" "$VARIANT"
+printf '  Jobs: %s\n' "$JOBS"
+printf '  Kernel: %s\n' "$([[ $DO_KERNEL == 1 ]] && echo build || echo skip)"
+printf '  Mesa: %s\n' "$([[ $DO_MESA == 1 ]] && echo build || echo skip)"
+if [[ $DO_AOSP == 1 ]]; then
+  printf '  AOSP: build%s\n' "${MODULES:+ (modules: $MODULES)}"
+else
+  printf '  AOSP: skip\n'
+fi
+printf '  Live image: %s\n' "$([[ $DO_LIVE == 1 ]] && echo build || echo skip)"
+printf '  Installer payload: %s\n' "$([[ $DO_PAYLOAD == 1 ]] && echo build || echo skip)"
+
 # Host requirement (user, 2026-09-25): zram swap. Soong analysis needs far
 # more memory than typical hosts have; zram compresses its heap ~6x and keeps
 # swapping at RAM speed (analysis ~11 min instead of 35–60 on SSD swap).
@@ -142,12 +155,16 @@ done
 if [[ $DO_KERNEL == 1 ]]; then
   info "Kernel"
   "$TOOLS/build-kernel.sh"
+else
+  info "Skipping kernel (-K or -m)"
 fi
 [[ -f $DEVICE_DIR/prebuilt/bzImage ]] || die "no staged kernel; run without -K"
 
 if [[ $DO_MESA == 1 ]]; then
   info "Mesa"
   "$TOOLS/build-mesa.sh"
+else
+  info "Skipping Mesa (-M or -m)"
 fi
 [[ -d $DEVICE_DIR/prebuilt/mesa ]] || die "no staged Mesa; run without -M"
 
@@ -171,14 +188,59 @@ if [[ $DO_AOSP == 1 ]]; then
   "$TOOLS/fetch-apps.sh"
   "$TOOLS/../gms/fetch-gms.sh"
 
-  info "AOSP build ($PRODUCT-$RELEASE-$VARIANT, -j$JOBS${MODULES:+, modules: $MODULES})"
+  info "AOSP build setup ($PRODUCT-$RELEASE-$VARIANT)"
+  printf '  AOSP root: %s\n' "$AOSP"
+  if [[ -n $MODULES ]]; then
+    printf '  Soong target(s): %s\n' "${MODULES//,/ }"
+  else
+    printf '  Soong target(s): full product\n'
+  fi
+  printf '  Jobs: %s\n  Output: %s\n' "$JOBS" "$PRODUCT_OUT"
+
+  # Show action counts as Soong receives Ninja/Siso status updates.
+  export NINJA_STATUS='[%p %f/%t done, %r running, %l remaining, %e sec] '
+
   # envsetup/lunch aren't set -u clean; run them in a subshell without it.
   (
     set +u
     cd "$AOSP"
+    info "Loading AOSP build environment"
     # shellcheck source=/dev/null
     source build/envsetup.sh >/dev/null
-    lunch "$PRODUCT-$RELEASE-$VARIANT"
+    info "Selecting lunch target $PRODUCT-$RELEASE-$VARIANT"
+    echo "  Resolving product variables with Soong dumpvars; this can take a minute on a cold build tree."
+    dumpvars_watch_dir=$(mktemp -d "${TMPDIR:-/tmp}/maton-dumpvars.XXXXXX")
+    dumpvars_done=$dumpvars_watch_dir/done
+    dumpvars_parent=$BASHPID
+    (
+      elapsed=0
+      while [[ ! -e $dumpvars_done ]]; do
+        for _ in {1..10}; do
+          [[ -e $dumpvars_done ]] && exit 0
+          sleep 1
+        done
+        [[ -e $dumpvars_done ]] && exit 0
+        elapsed=$((elapsed + 10))
+        dumpvars_pid=$(pgrep -P "$dumpvars_parent" -f 'soong_ui --dumpvars-mode' | head -n 1 || true)
+        if [[ -n $dumpvars_pid ]]; then
+          details=$(ps -p "$dumpvars_pid" -o etime=,%cpu=,%mem= 2>/dev/null | xargs || true)
+          printf '  Soong dumpvars still running: pid=%s elapsed=%ss' "$dumpvars_pid" "$elapsed"
+          [[ -n $details ]] && printf ' (process elapsed/cpu%%/mem%%: %s)' "$details"
+          printf '\n'
+        else
+          printf '  Still resolving product variables (elapsed=%ss; dumpvars process not visible yet)\n' "$elapsed"
+        fi
+      done
+    ) &
+    dumpvars_watcher=$!
+    lunch_status=0
+    lunch "$PRODUCT-$RELEASE-$VARIANT" || lunch_status=$?
+    : > "$dumpvars_done"
+    wait "$dumpvars_watcher" || true
+    rm -f "$dumpvars_done"
+    rmdir "$dumpvars_watch_dir"
+    (( lunch_status == 0 )) || exit "$lunch_status"
+    info "Lunch target selected"
     # Overridable: incremental analysis can panic after heavy graph churn
     # ("growslice: len out of range" in writeIncrementalModules); one run with
     # SOONG_INCREMENTAL_ANALYSIS=false rebuilds its state.
@@ -193,6 +255,8 @@ if [[ $DO_AOSP == 1 ]]; then
     # The cache lives at $AOSP/ccache so out/ wipes keep it; the build sandbox
     # keeps it writable via BUILD_BROKEN_SRC_DIR_RW_ALLOWLIST (BoardConfig.mk).
     ccache_dir=${CCACHE_DIR:-$AOSP/ccache}
+    ccache_enabled=0
+    info "Configuring ccache"
     if [[ ${MATON_CCACHE:-1} != 0 ]] && command -v ccache >/dev/null &&
        mkdir -p "$ccache_dir"; then
       [[ -f $ccache_dir/ccache.conf ]] || CCACHE_DIR=$ccache_dir ccache -M 40G >/dev/null
@@ -201,14 +265,79 @@ if [[ $DO_AOSP == 1 ]]; then
       export CC_WRAPPER=$CCACHE_EXEC
       export CCACHE_COMPILERCHECK=content CCACHE_BASEDIR=$AOSP
       export CCACHE_SLOPPINESS=time_macros,include_file_mtime,file_macro
+      ccache_enabled=1
     fi
+    info "AOSP build configuration"
+    printf '  Product: %s-%s-%s\n' "$PRODUCT" "$RELEASE" "$VARIANT"
+    if [[ -n $MODULES ]]; then
+      printf '  Soong target(s): %s\n' "${MODULES//,/ }"
+      if [[ -n ${MATON_PARTIAL_ANALYSIS:-} ]]; then
+        printf '  Graph analysis: partial (%s)\n' "$MODULES"
+      else
+        printf '  Graph analysis: full product graph\n'
+      fi
+    else
+      printf '  Soong target(s): full product\n'
+      printf '  Graph analysis: full product graph\n'
+    fi
+    printf '  Jobs: %s\n' "$JOBS"
+    printf '  Incremental analysis: %s\n' "$SOONG_INCREMENTAL_ANALYSIS"
+    printf '  Ccache: %s' "$([[ $ccache_enabled == 1 ]] && echo enabled || echo disabled)"
+    [[ $ccache_enabled == 1 ]] && printf ' (%s)' "$ccache_dir"
+    printf '\n  Output: %s\n' "$PRODUCT_OUT"
+    info "Starting Soong build"
+    build_progress_dir=$(mktemp -d "${TMPDIR:-/tmp}/maton-build-progress.XXXXXX")
+    build_progress_done=$build_progress_dir/done
+    build_progress_parent=$BASHPID
+    (
+      elapsed=0
+      while [[ ! -e $build_progress_done ]]; do
+        for _ in {1..30}; do
+          [[ -e $build_progress_done ]] && exit 0
+          sleep 1
+        done
+        [[ -e $build_progress_done ]] && exit 0
+        elapsed=$((elapsed + 30))
+        soong_pid=$(pgrep -P "$build_progress_parent" -f 'soong_ui --build-mode' | head -n 1 || true)
+        siso_pid=$(pgrep -f '[s]iso --log_dir .* ninja' | head -n 1 || true)
+        ninja_log=$AOSP/out/.ninja_log
+        edges=0
+        last_edge=""
+        if [[ -s $ninja_log ]]; then
+          edges=$(($(wc -l < "$ninja_log") - 1))
+          (( edges < 0 )) && edges=0
+          last_edge=$(tail -n 1 "$ninja_log" | cut -f 4)
+        fi
+        if [[ -n $siso_pid ]]; then
+          stats=$(ps -p "$siso_pid" -o %cpu=,rss=,etime= 2>/dev/null | xargs || true)
+          printf '  Build active: Siso/Ninja pid=%s, elapsed=%ss, completed edges=%s' "$siso_pid" "$elapsed" "$edges"
+          [[ -n $stats ]] && printf ', process cpu%%/rss-KB/elapsed: %s' "$stats"
+          [[ -n $last_edge ]] && printf ', last completed: %s' "$last_edge"
+          printf '\n'
+        elif [[ -n $soong_pid ]]; then
+          stats=$(ps -p "$soong_pid" -o %cpu=,rss=,etime= 2>/dev/null | xargs || true)
+          printf '  Build active: Soong setup pid=%s, elapsed=%ss, completed edges=%s' "$soong_pid" "$elapsed" "$edges"
+          [[ -n $stats ]] && printf ', process cpu%%/rss-KB/elapsed: %s' "$stats"
+          printf '\n'
+        else
+          printf '  Build command still running (elapsed=%ss, completed edges=%s)\n' "$elapsed" "$edges"
+        fi
+      done
+    ) &
+    build_progress_watcher=$!
+    build_status=0
     if [[ -n $MODULES ]]; then
       [[ -n ${MATON_PARTIAL_ANALYSIS:-} ]] && export SOONG_PARTIAL_ANALYSIS=$MODULES
       # shellcheck disable=SC2046
-      m -j"$JOBS" $(tr ',' ' ' <<<"$MODULES")
+      m -j"$JOBS" $(tr ',' ' ' <<<"$MODULES") || build_status=$?
     else
-      m -j"$JOBS"
+      m -j"$JOBS" || build_status=$?
     fi
+    : > "$build_progress_done"
+    wait "$build_progress_watcher" || true
+    rm -f "$build_progress_done"
+    rmdir "$build_progress_dir"
+    (( build_status == 0 )) || exit "$build_status"
   ) 9>&-  # the lock stays with this script, not with lingering build daemons
 
   [[ -n $MODULES ]] && { info "Modules built"; exit 0; }
@@ -217,11 +346,15 @@ if [[ $DO_AOSP == 1 ]]; then
   # init refuses to start vendor programs without an exec label, even in
   # permissive mode; catch that here instead of at boot.
   "$TOOLS/check-selinux-labels.sh" -o "$PRODUCT_OUT"
+else
+  info "Skipping AOSP build (-A)"
 fi
 
 if [[ $DO_LIVE == 1 ]]; then
   info "Live image"
   "$TOOLS/make-live.sh" -o "$PRODUCT_OUT"
+else
+  info "Skipping live image (-L or -m)"
 fi
 
 if [[ $DO_PAYLOAD == 1 ]]; then
@@ -229,6 +362,8 @@ if [[ $DO_PAYLOAD == 1 ]]; then
   PATH=$AOSP/out/host/linux-x86/bin:$PATH \
     "$TOOLS/make-payload.sh" -o "$PRODUCT_OUT" -k "$DEVICE_DIR/prebuilt/bzImage" \
     -d "$PRODUCT_OUT/payload" -S
+else
+  info "Skipping installer payload (not requested)"
 fi
 
 info "Done in $(( (SECONDS - start) / 60 )) min"

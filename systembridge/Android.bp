@@ -19,6 +19,15 @@ android_app {
     certificate: "platform",
     privileged: true,
     system_ext_specific: true,
+    // Desktop app selection: suppress these inherited AOSP UI apps.
+    // Providers, ContactsPicker and the framework's telephony services remain.
+    overrides: [
+        "Calendar",
+        "Contacts",
+        "DeskClock",
+        "Dialer",
+        "messaging",
+    ],
     required: ["privapp-permissions-org.matonos.systembridge"],
 }
 

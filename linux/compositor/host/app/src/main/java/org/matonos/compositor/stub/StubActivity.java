@@ -20,8 +20,9 @@ import org.matonos.compositor.IEmbeddedSession;
 import org.matonos.compositor.IEmbeddedWindowListener;
 
 /** Shared activity code runs in the generated app's own package and task. */
-public final class StubActivity extends Activity implements SurfaceHolder.Callback {
+public final class StubActivity extends Activity implements SurfaceHolder.Callback, org.matonos.compositor.PerAppRuntime.WindowHost {
     private static final String WINDOW = "org.matonos.linuxhost.WINDOW_ID";
+    private static final WindowLifetime WINDOWS = new WindowLifetime();
     // Kept for the process lifetime, including activity recreation and all
     // windows. Only process death closes the writer; no compositor-held copy.
     private static android.os.ParcelFileDescriptor[] processLife;
@@ -39,6 +40,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     private SurfaceView view;
     private Surface surface;
     private IEmbeddedSession session;
+    private volatile org.matonos.compositor.PerAppRuntime runtime;
     private final IEmbeddedWindowListener listener = new IEmbeddedWindowListener.Stub() {
         public boolean openUri(Intent intent) {
             java.util.concurrent.FutureTask<Boolean> task=new java.util.concurrent.FutureTask<>(() -> {
@@ -68,12 +70,30 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             runOnUiThread(() -> { if (!destroyed && window == id) finish(); });
         }
     };
+    // Per-app compositor callbacks (in-process).
+    @Override public void windowOpened(int id, int width, int height) {
+        runOnUiThread(() -> {
+            if (destroyed || window == id) return;
+            if (window == 0) showWindow(id);
+            else if (getIntent().getIntExtra(WINDOW,0)==0) startActivity(new Intent().setComponent(getComponentName())
+                    .putExtra(WINDOW,id)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK));
+        });
+    }
+    @Override public void windowClosed(int id) {
+        runOnUiThread(() -> { if (!destroyed && window == id) finish(); });
+    }
     private final ServiceConnection connection = new ServiceConnection() {
         public void onServiceConnected(ComponentName name, IBinder binder) {
             // Bridge verification may take time; never wait on the activity thread.
             new Thread(() -> {
                 IEmbeddedSession opened=null;
                 try {
+                    runtime=StubService.runtime();
+                    for(int i=0;i<50&&runtime==null;i++){Thread.sleep(100);runtime=StubService.runtime();}
+                    if(destroyed)return;
+                    if(runtime==null)throw new IllegalStateException("The app runtime did not become ready");
+                    runtime.setWindowHost(StubActivity.this, window);
                     android.os.ParcelFileDescriptor[] dnsSockets = new android.os.ParcelFileDescriptor[2];
                     opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener,lifeline(),DnsForwarder.endpoint(),dnsSockets);
                     if (DnsForwarder.acquire(dnsSockets) == null)
@@ -121,6 +141,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     };
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        WINDOWS.opened(this);
         status=new TextView(this);status.setPadding(32,32,32,32);
         status.setText("Starting application…");setContentView(status);
         window=state!=null?state.getInt(WINDOW,0):getIntent().getIntExtra(WINDOW,0);
@@ -150,11 +171,18 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
                 }
             }
         } catch (PackageManager.NameNotFoundException error) { failure("Cannot read permissions", error); return; }
-        connectHost();
+        // Start the per-app runtime (session bus + portal) in THIS process/UID.
+        startRuntimeAndConnect();
     }
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grants) {
         super.onRequestPermissionsResult(requestCode, permissions, grants);
-        if ((requestCode == 2900 || requestCode == 2901) && !destroyed) connectHost();
+        if ((requestCode == 2900 || requestCode == 2901) && !destroyed) startRuntimeAndConnect();
+    }
+    private void startRuntimeAndConnect() {
+        try {
+            startForegroundService(new Intent(this, StubService.class).putExtra(HostContract.EXTRA_FLATPAK_REF, ref));
+            connectHost();
+        } catch(Exception error) { failure("Cannot start the app runtime",error); }
     }
     private void connectHost() {
         Intent host=new Intent("org.matonos.compositor.EMBEDDED")
@@ -210,45 +238,54 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         stopped=true; reportStopped(); super.onStop();
     }
     private void reportStopped() {
-        if(session!=null && window!=0)try{session.setWindowStopped(window,stopped);}catch(Exception ignored){}
+        if(runtime!=null && window!=0)try{runtime.stopped(window,stopped);}catch(Exception ignored){}
     }
     private void attachIfReady() {
         if(attached||session==null||surface==null||!surface.isValid()||window==0)return;
-        try{session.attachWindow(window,surface,view.getWidth(),view.getHeight());attached=true;reportStopped();}
+        try{runtime.attach(window,surface,view.getWidth(),view.getHeight());attached=true;reportStopped();}
         catch(Exception e){failure("Cannot display application window",e);}
     }
     public void surfaceCreated(SurfaceHolder holder){surface=holder.getSurface();attachIfReady();}
     public void surfaceChanged(SurfaceHolder holder,int format,int width,int height){
         surface=holder.getSurface();attachIfReady();
-        try{if(attached&&session!=null)session.resizeWindow(window,width,height);}
+        try{if(attached&&runtime!=null)runtime.resize(window,width,height);}
         catch(Exception e){failure("Cannot resize application window",e);}
     }
     public void surfaceDestroyed(SurfaceHolder holder){
-        try{if(attached&&session!=null)session.detachWindow(window);}catch(Exception ignored){}
+        try{if(attached&&runtime!=null)runtime.detach(window);}catch(Exception ignored){}
         attached=false;surface=null;
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event){
         if(session==null||window==0)return super.dispatchKeyEvent(event);
-        try{session.keyEvent(window,event.getKeyCode(),event.getScanCode(),event.getAction(),event.getMetaState(),event.getEventTime()*1000000L);}
+        try{runtime.key(window,event.getKeyCode(),event.getScanCode(),event.getAction(),event.getMetaState(),event.getEventTime()*1000000L);}
         catch(Exception e){failure("Cannot send keyboard input",e);}
         return true;
     }
     private boolean motion(MotionEvent event){
         if(session==null||window==0)return false;
-        try{session.motionEvent(window,event.getX(),event.getY(),event.getAxisValue(MotionEvent.AXIS_VSCROLL),event.getAxisValue(MotionEvent.AXIS_HSCROLL),event.getActionMasked(),org.matonos.compositor.PointerInput.buttons(event.getActionMasked(),event.getButtonState(),event.isFromSource(android.view.InputDevice.SOURCE_TOUCHSCREEN)),event.getEventTime()*1000000L);}
+        try{runtime.motion(window,event.getX(),event.getY(),event.getAxisValue(MotionEvent.AXIS_VSCROLL),event.getAxisValue(MotionEvent.AXIS_HSCROLL),event.getActionMasked(),org.matonos.compositor.PointerInput.buttons(event.getActionMasked(),event.getButtonState(),event.isFromSource(android.view.InputDevice.SOURCE_TOUCHSCREEN)),event.getEventTime()*1000000L);}
         catch(Exception e){failure("Cannot send pointer input",e);}
         return true;
     }
     @Override protected void onSaveInstanceState(Bundle state){state.putInt(WINDOW,window);super.onSaveInstanceState(state);}
     @Override protected void onDestroy(){
         destroyed=true;
+        if(runtime!=null)runtime.clearWindowHost(this);
         setInhibited(false);
         if(session!=null){
-            try{if(attached)session.detachWindow(window);}catch(Exception ignored){}
-            try{if(isFinishing()&&window!=0)session.closeWindow(window);}catch(Exception ignored){}
+            try{if(attached&&runtime!=null)runtime.detach(window);}catch(Exception ignored){}
+            if(runtime!=null&&isFinishing()&&window!=0)runtime.closeWindow(window);
             try{session.unregisterListener(listener);}catch(Exception ignored){}
         }
         if(bound)unbindService(connection);
         super.onDestroy();
+        if(WINDOWS.destroyed(this,isFinishing(),isChangingConfigurations())) {
+            // The runtime and native callbacks are owned by this process.
+            // Ending the last Android window must end that whole session:
+            // process exit closes the lifeline, and the verified supervisor
+            // kills/reaps its pinned Linux process group. Reopening therefore
+            // gets a fresh host PID/cgroup instead of a windowless old app.
+            android.os.Process.killProcess(android.os.Process.myPid());
+        }
     }
 }

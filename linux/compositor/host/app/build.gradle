@@ -1,32 +1,9 @@
 plugins { id 'com.android.application' }
 
 dependencies {
-    // 5.2.2 is the newest stable release available for this port. Move to
-    // 6.x when it is released; upstream's 6.x line is not released yet.
-    implementation files('libs/dbus-java-core-5.2.2.jar', 'libs/slf4j-api-2.0.17.jar', 'libs/slf4j-nop-2.0.17.jar')
     androidTestImplementation 'androidx.test:runner:1.7.0'
     androidTestImplementation 'androidx.test.ext:junit:1.3.0'
 }
-
-tasks.register('verifyDbusVendoredJars') {
-    inputs.file('libs/SHA256SUMS')
-    inputs.files(fileTree('libs') { include '*.jar' })
-    doLast {
-        def expected = [:]
-        file('libs/SHA256SUMS').eachLine { line ->
-            def (hash, name) = line.trim().split(/\s+/, 2)
-            expected[name] = hash
-        }
-        expected.each { name, hash ->
-            def jar = file("libs/${name}")
-            if (!jar.isFile() || java.security.MessageDigest.getInstance('SHA-256')
-                    .digest(jar.bytes).encodeHex().toString() != hash) {
-                throw new GradleException("Vendored D-Bus dependency checksum mismatch: ${name}")
-            }
-        }
-    }
-}
-tasks.named('preBuild').configure { dependsOn 'verifyDbusVendoredJars' }
 
 // A PIE executable named as a JNI library so updates extract it with executable
 // permissions. The image extracts its copy from this same APK (buildinfra).
@@ -46,11 +23,27 @@ def buildSessionBroker = tasks.register('buildSessionBroker', Exec) {
 }
 def packageSessionBroker = tasks.register('packageSessionBroker', Copy) {
     dependsOn buildSessionBroker
-    from(new File(brokerOutput, 'matonos-dbus-broker'))
+    from(new File(brokerOutput, 'libmatonos-dbus-broker.so'))
     into new File(brokerJni, 'x86_64')
-    rename { 'libmatonos-dbus-broker.so' }
 }
 tasks.named('preBuild').configure { dependsOn packageSessionBroker }
+
+def pipewireRoot = file('../../../pipewire')
+def pipewireOutput = System.getenv('MATON_PIPEWIRE_BUILD') ?: "$aospRoot/out/matonos/pipewire"
+def buildPipeWire = tasks.register('buildPipeWire', Exec) {
+    inputs.dir pipewireRoot
+    outputs.dir new File(pipewireOutput, 'jniLibs')
+    environment 'MATON_AOSP_ROOT', aospRoot
+    environment 'MATON_PIPEWIRE_BUILD', pipewireOutput
+    commandLine 'bash', new File(pipewireRoot, 'build-android.sh').absolutePath
+}
+def pipewireAssets = layout.buildDirectory.dir('generated/pipewireAssets').get().asFile
+def packagePipeWireNotices = tasks.register('packagePipeWireNotices', Copy) {
+    dependsOn buildPipeWire
+    from new File(pipewireOutput, 'COPYING'), new File(pipewireOutput, 'SOURCE')
+    into new File(pipewireAssets, 'pipewire')
+}
+tasks.named('preBuild').configure { dependsOn packagePipeWireNotices }
 
 android {
     namespace 'org.matonos.compositor'
@@ -59,7 +52,7 @@ android {
         applicationId 'org.matonos.compositor'; minSdk 36; targetSdk 36; versionCode 1; versionName '1.0'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         ndk { abiFilters 'x86_64' }
-        externalNativeBuild { cmake { arguments '-DMATON_COMPOSITOR_ROOT=' + projectDir.absolutePath + '/../..', '-DMATON_AOSP_ROOT=' + aospRoot, '-DMATON_COMPOSITOR_BUILD=' + (System.getenv('MATON_COMPOSITOR_BUILD') ?: "$aospRoot/out/matonos/compositor") } }
+        externalNativeBuild { cmake { arguments '-DMATON_COMPOSITOR_ROOT=' + projectDir.absolutePath + '/../..', '-DMATON_AOSP_ROOT=' + aospRoot, '-DMATON_COMPOSITOR_BUILD=' + (System.getenv('MATON_COMPOSITOR_BUILD') ?: "$aospRoot/out/matonos/compositor"), '-DMATON_PIPEWIRE_BUILD=' + pipewireOutput } }
     }
     buildFeatures { aidl true }
     packaging {
@@ -89,6 +82,8 @@ android {
             aidl.srcDirs += file("$rootDir/../../../systembridge/aidl")
             jniLibs.srcDirs += file(System.getenv('MATON_COMPOSITOR_JNI_LIBS') ?: "$aospRoot/out/matonos/compositor/jniLibs")
             jniLibs.srcDir brokerJni
+            jniLibs.srcDir new File(pipewireOutput, 'jniLibs')
+            assets.srcDir pipewireAssets
         }
     }
 }

@@ -23,7 +23,7 @@ if [[ -x $JAVA_HOME/bin/java ]]; then export JAVA_HOME PATH="$JAVA_HOME/bin:$PAT
 for tool in java keytool curl unzip openssl sha256sum python3; do
   command -v "$tool" >/dev/null || die "$tool is required"
 done
-[[ $APP_JOBS =~ ^[1-4]$ ]] || die "MATON_BUILD_JOBS must be between 1 and 4"
+[[ $APP_JOBS =~ ^[0-9]+$ && $APP_JOBS -ge 1 && $APP_JOBS -le 16 ]] || die "MATON_BUILD_JOBS must be between 1 and 16"
 for api in 35 36; do
   [[ -f $AOSP/prebuilts/sdk/$api/public/android.jar ]] || die "AOSP API $api public SDK stubs are missing"
 done
@@ -142,7 +142,7 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   stamp=$DEVICE_DIR/prebuilt/apps-built/.$key_id.inputs
   extra_inputs=()
   if [[ $key_id == matonos-wayland-host ]]; then
-    extra_inputs+=("$DEVICE_DIR/linux/compositor/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker")
+    extra_inputs+=("$DEVICE_DIR/linux/compositor/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker" "$DEVICE_DIR/linux/pipewire")
   fi
   # The broker records the image Flatpak build version. Rebuild the APK when
   # that generated input changes, even when app sources are unchanged.

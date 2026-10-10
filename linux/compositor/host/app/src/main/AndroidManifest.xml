@@ -25,8 +25,7 @@
         <activity android:name=".stub.StubActivity" android:exported="true" />
         <activity android:name=".stub.InstallActivity" android:exported="true" />
         <service android:name=".stub.StubService" android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="true">
-            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
-        </activity>
+        <!-- Internal support UI; Linux apps have their own launcher entries. -->
+        <activity android:name=".MainActivity" android:exported="false" />
     </application>
 </manifest>

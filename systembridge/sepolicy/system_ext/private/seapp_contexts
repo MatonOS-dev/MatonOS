@@ -1,2 +1,5 @@
 user=_app seinfo=platform name=org.matonos.systembridge domain=matonos_system_bridge type=app_data_file levelFrom=all
 user=_app isPrivApp=true name=org.matonos.compositor domain=matonos_compositor type=matonos_compositor_data_file levelFrom=user
+# Generated Flatpak stubs host their per-app runtime (Wayland compositor,
+# session bus, portal) in their own process/UID.
+user=_app name=flatpak.* domain=matonos_linux_stub type=app_data_file levelFrom=all

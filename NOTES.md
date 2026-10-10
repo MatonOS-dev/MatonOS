@@ -379,7 +379,7 @@ Feature work continues, but in this shape from now on.
   app (INSTALL_PACKAGES/DELETE_PACKAGES). It also UPDATES apps (user): with
   exactly two hard-coded repos (f-droid.org and MatonOS, fingerprints
   pinned; no repo management, no browsing) it keeps the preinstalled apps
-  (Fennec, Fossify, Open Camera, ...), our apps and the stores current, next
+  (Fennec), our apps and the stores current, next
   to MatonOS's own OS and add-on updates. F-Droid Basic is dropped from the
   image once Settings can do this.
 - **App stores (user, 2026-09-28, final)**: F-Droid Basic, built from
@@ -804,6 +804,14 @@ Feature work continues, but in this shape from now on.
     in-process portal objects. The broker IS the policy point (default-deny;
     replaces xdg-dbus-proxy). New code: test against GTK/Qt/Electron apps;
     add bus features as real apps need them. Superseded below: dbus-daemon.
+     IMPLEMENTATION CORRECTION (user, 2026-10-07): the runtime must be a PER-APP
+     service, never the shared system `CompositorService`. Each stub's own
+     service (`org.matonos.compositor.stub.StubService`, currently a no-op)
+     hosts the Wayland compositor core, the mini-broker and the portal IN the
+     app's process/UID; the compositor app remains only the shared runtime
+     library plus a thin privileged bridge for launch/DNS/Surface. A privileged
+     multi-tenant parser of untrusted Wayland/D-Bus is the defect: it makes any
+     compositor/broker/portal flaw cross-app and privilege-escalating.
     Bus socket in the owning user's runtime dir; "only the
     bus owner's UID may connect" does the isolation; the config uses NUMERIC
     UIDs only (bionic getpwnam() knows Android IDs, not Linux users — no fake
@@ -1346,7 +1354,7 @@ commercial (monthly security updates would then be expected).
   WebView don't get Play updates here: they update only with our OS.
 - Kernel: follow mainline stable (7.2.y) closely; move to the 2026 LTS.
 - Mesa/minigbm/drm_hwcomposer: bump with OS releases.
-- Apps (Fennec, Fossify, …): APK updates move to the
+- Apps (Fennec, …): APK updates move to the
   [MatonOS Software Centre](docs/SOFTWARE-CENTRE.md) APK Source.
 - **System WebView (decided): ships with the OS** (AOSP's built-in
   Chromium WebView), updated with OS releases. Chromium has frequent
@@ -1394,7 +1402,7 @@ commercial (monthly security updates would then be expected).
   names (`matonos-26.12.0-live-x86_64.img`), updater feed comparisons.
 - **Release schedule: twice a year**, each release tracking one AOSP source
   drop (+ kernel/Mesa bumps and accumulated AOSP security merges). Apps
-  (browser, Fossify, …) update continuously via
+  (browser, …) update continuously via
   F-Droid. OS-level fixes can lag up to ~6 months: state this in the README.
   Unscheduled point releases (kernel stable bump + specific fix) only for
   critical issues.
@@ -1454,8 +1462,7 @@ selector failure. Assess SOF firmware/topology separately if needed.
   (V4L2 + libyuv; needs config xml, SELinux for /dev/video*, feature
   android.hardware.camera.external) → v1.x/v2. (2) MIPI + ISP cameras
   (Surface Pro 4+, most ~2021+ laptops, Intel IPU3/IPU6) need libcamera's
-  Android HAL built out-of-tree like Mesa, per-sensor tuning → **v4**. App:
-  Open Camera handles external cameras. Check gbm_mesa YUV (NV12) buffers.
+  Android HAL built out-of-tree like Mesa, per-sensor tuning → **v4**. A user-installed camera app handles external cameras. Check gbm_mesa YUV (NV12) buffers.
 - **Later**: sensor HAL (rotation), suspend tuning per device.
 
 ## After v1 boots (planned)
@@ -1500,14 +1507,20 @@ selector failure. Assess SOF firmware/topology separately if needed.
   exposed by sleepd, guarded by a signature/privileged permission (same
   pattern as the v2 installer service). Also later: real display blanking
   before suspend (backlight / DPMS).
-- **Preinstalled apps (historical v1.1 plan; store superseded)**: the earlier
-  plan listed F-Droid + Privileged Extension; see the
+- **Preinstalled apps (revised 2026-10-09)**: Fennec F-Droid,
+  Thunderbird (`net.thunderbird.android`) and BlackyHawky's AOSP-based Clock
+  (`com.best.deskclock`) from F-Droid are bundled. Stock AOSP Camera2, Gallery2,
+  and Music are included. Camera2's stock boot receiver hides its launcher
+  when Android reports no camera hardware (accepted by user, 2026-10-09).
+  Calendar, Clock, Contacts, Messaging and Dialer UI apps are excluded
+  (user, 2026-10-09); their providers and required telephony services remain.
+  Maton Wayland is hidden from the launcher but remains the Linux runtime.
+  GPLv3 Fossify and Open Camera APKs are
+  excluded so users can build and install their own versions. This AOSP
+  checkout has no stock Calculator or Notes module. See the
   [MatonOS Software Centre](docs/SOFTWARE-CENTRE.md) design for the target
-  app catalogue and updater. Remaining listed apps are Fennec F-Droid
-  (browser), Fossify Gallery/Calendar/Contacts/Clock/Notes/
-  Calculator/Music Player (replacing the AOSP ones), Open Camera.
-  Not preinstalled: Fossify File Manager, QuickSearchBox, Dialer, Messaging,
-  HeliBoard, Taskbar. Keyboard stays LatinIME. The earlier F-Droid
+  app catalogue and updater. QuickSearchBox, Dialer, Messaging, HeliBoard,
+  and Taskbar are not preinstalled. Keyboard stays LatinIME. The earlier F-Droid
   "Install unknown apps" setup grant is historical; installer privileges and
   user confirmation follow the Software Centre design.
 - **No-GPU fallback = vgem virtual GPU (decided 2026-09-27, user)**: Android always sees a GPU. Without a supported GPU, early boot loads the upstream `vgem` module (render node, shmem dma-bufs); Mesa renders with llvmpipe/lavapipe; minigbm treats vgem as a software GPU; drm_hwcomposer imports the buffers into the real KMS driver (simpledrm on real no-GPU PCs) or copies into dumb buffers where import isn't possible (bochs-drm). vkms not used (keeps real modes/EDID/hotplug). Replaces the gralloc "no render node" crash (SF "output buffer not gpu writeable").
@@ -1731,13 +1744,27 @@ keep offline (dev key in repo until then).
 - **Launch is stub-driven.** The generic `run` command and caller-supplied run
   arguments were removed; the signed stub's ref + pinned commits drive
   `flatpak run`.
-- **Appstream is stripped** from the Flatpak build; icons come only from the
-  app's exported `export/share/icons/hicolor/...` tree.
-- **Session bus/portals move into the app via dbus-java** (dbus-java-core
-  5.2.2 + an Android `LocalSocket` transport, merged into the compositor
-  host). `linux/dbus-broker` is transitional until that path is validated on
-  device, at which point the native broker and its policy can be retired.
-  There is no `xdg-dbus-proxy` in this setup.
+- **Close/reopen lifetime (user, 2026-10-09).** Closing the last Android app
+  window may terminate the Linux app. The stub now ends its own runtime host
+  process on that final explicit close; lifeline EOF makes the existing
+  supervisor kill/reap the pinned per-process Linux cgroup. The runtime
+  service is non-sticky, so reopening starts a fresh session. Minimize,
+  configuration recreation and closing one of several windows keep it alive.
+  Java compilation and lifecycle checks pass; VM validation is pending
+  because the user's QEMU exited before the change could be tested.
+- **Appstream is stripped** from the Flatpak build. Icons come from the app's
+  exported hicolor PNGs or bundled `files/share/app-info` PNGs (restored
+  2026-10-09 for Brave). Reading those installed images needs no AppStream
+  parser or shared metadata installation.
+- **Session bus/portals are our own D-Bus in the compositor host** (2026-10-07).
+  The compositor reads and writes D-Bus with a small pure-Java codec
+  (`DBusReader`/`DBusWriter`/`PortalWire`) over a peer connection
+  (`PeerConnection`); `PortalBackend` keeps the portal state, policy and caller
+  checks, and the MBP1 frame format over the Android `LocalSocket` (with
+  `SCM_RIGHTS`) is unchanged. The vendored `dbus-java`/SLF4J jars were removed,
+  which also drops the `SASL.<clinit>` ICU crash and the fake SASL adapter.
+  Design and validation: `docs/OWN-DBUS.md`. `linux/dbus-broker` remains the
+  session bus; retiring it is a separate decision. No `xdg-dbus-proxy`.
 - **Provenance.** The static helper sources were synced to MatonOS_apexs
   `e7fe3de`; the next full `build-static.sh` refresh updates the device
   `linux/flatpak/prebuilt/static/SOURCE` commit pin.
@@ -1750,4 +1777,3 @@ keep offline (dev key in repo until then).
   the staged commit) and install straight to the stub UID. B is preferred;
   A is the fallback. The shared runtime `--system` installation is owned by
   the preinstalled Runtimes app and is known up front.
-

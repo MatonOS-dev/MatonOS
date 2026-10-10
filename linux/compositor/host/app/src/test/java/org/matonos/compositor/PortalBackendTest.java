@@ -1,6 +1,7 @@
 package org.matonos.compositor;
 
 import java.util.*;
+import java.io.FileDescriptor;
 import static org.matonos.compositor.PortalWire.*;
 
 /** Standalone JVM tests: no Android runtime or Gradle dependency required. */
@@ -10,10 +11,34 @@ public final class PortalBackendTest {
     static Message call(String owner,String iface,String method,String sig,Object... args) {
         Message m=new Message();m.type=1;m.serial=++serial;m.sender=owner;m.destination="org.freedesktop.portal.Desktop";
         m.path=PortalBackend.DESKTOP;m.iface="org.freedesktop.portal."+iface;m.member=method;m.signature=sig;m.body=Arrays.asList(args);
-        byte[] wire=encode(m);return decode(wire,m.dbusMessage.getFiledescriptors());
+        byte[] wire=encode(m);return decode(wire);
     }
     static List<Object> opts(String token) {return dictionary(Collections.singletonMap("handle_token",new Variant("s",token)));}
+    static byte[] hex(String text) {
+        byte[] out=new byte[text.length()/2];
+        for(int i=0;i<out.length;i++)out[i]=(byte)Integer.parseInt(text.substring(2*i,2*i+2),16);
+        return out;
+    }
+    /** Decode bytes produced by an independent D-Bus implementation (dbus-java 5.2.2):
+     * a method call Settings.Read("org.freedesktop.appearance","color-scheme"). */
+    static void crossImplementationFixture() {
+        Message m=decode(hex("6c0100013100000001000000a000000001016f001f0000002f6f72672f667265656465736b746f70"
+            +"2f706f7274616c2f6465736b746f700007017300040000003a312e3500000000060173001e0000006f72672e66726565"
+            +"6465736b746f702e706f7274616c2e4465736b746f700000020173001f0000006f72672e667265656465736b746f702e"
+            +"706f7274616c2e53657474696e6773000301730004000000526561640000000008016700027373001a0000006f72672e66"
+            +"7265656465736b746f702e617070656172616e636500000c000000636f6c6f722d736368656d6500"));
+        check(m.type==1&&m.serial==1);
+        check("/org/freedesktop/portal/desktop".equals(m.path));
+        check(":1.5".equals(m.sender));
+        check("org.freedesktop.portal.Desktop".equals(m.destination));
+        check("org.freedesktop.portal.Settings".equals(m.iface));
+        check("Read".equals(m.member));
+        check("ss".equals(m.signature));
+        check(m.body.equals(Arrays.asList("org.freedesktop.appearance","color-scheme")));
+        check(Arrays.equals(encode(m),encode(decode(encode(m)))));
+    }
     public static void main(String[] args) throws Exception {
+        crossImplementationFixture();
         PortalTestPeer.Platform platform=new PortalTestPeer.Platform();PortalBackend b=new PortalBackend(platform);
         Message read=b.dispatch(call(":1.1","Settings","Read","ss","org.freedesktop.appearance","color-scheme")).get(0);
         Variant v=(Variant)decode(encode(read)).body.get(0);check(v.signature.equals("v")&&((Variant)v.value).value.equals(1));
@@ -44,7 +69,7 @@ public final class PortalBackendTest {
         Message sample=call(":1.1","Settings","ReadAll","as",Collections.emptyList());byte[] bytes=encode(sample);
         bytes[4]=(byte)255;try{decode(bytes);throw new AssertionError();}catch(IllegalArgumentException e){}
         Message fdCall=call(":1.1","OpenURI","OpenFile","sha{sv}","",0,opts("fd-check"));
-        try {decode(encode(fdCall),Arrays.asList(new org.freedesktop.dbus.FileDescriptor(0),new org.freedesktop.dbus.FileDescriptor(1)));throw new AssertionError();}
+        try {decode(encode(fdCall),Arrays.asList(FileDescriptor.in,FileDescriptor.out));throw new AssertionError();}
         catch(IllegalArgumentException expected){}
         byte[] frameHeader=java.nio.ByteBuffer.allocate(8).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(16).putInt(1).array();
         check(Arrays.equals(PortalWire.validateFrameHeader(frameHeader),new int[]{16,1}));

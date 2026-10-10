@@ -12,6 +12,13 @@ public final class BridgeBootReceiver extends BroadcastReceiver {
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)
                 || Intent.ACTION_USER_SWITCHED.equals(action)) {
             context.startService(new Intent(context, SystemBridgeService.class));
+            if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
+                PendingResult pending = goAsync();
+                new Thread(() -> {
+                    try { PreinstalledMusic.install(context); }
+                    finally { pending.finish(); }
+                }, "MatonPreinstalledMusic").start();
+            }
         }
     }
 }

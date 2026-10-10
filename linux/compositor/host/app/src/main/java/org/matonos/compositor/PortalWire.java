@@ -1,29 +1,39 @@
 package org.matonos.compositor;
 
-import org.freedesktop.dbus.DBusPath;
-import org.freedesktop.dbus.Struct;
-import org.freedesktop.dbus.annotations.Position;
-import org.freedesktop.dbus.exceptions.DBusException;
-import org.freedesktop.dbus.messages.DBusSignal;
-import org.freedesktop.dbus.messages.Error;
-import org.freedesktop.dbus.messages.MessageFactory;
-import org.freedesktop.dbus.messages.MethodCall;
-import org.freedesktop.dbus.types.UInt16;
-import org.freedesktop.dbus.types.UInt32;
-import org.freedesktop.dbus.types.UInt64;
-
+import java.io.FileDescriptor;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Compatibility view over dbus-java messages; D-Bus value framing is owned by dbus-java. */
+/**
+ * The portal's D-Bus wire codec and message model. Pure Java: it has no
+ * dbus-java types, no annotations and no reflection. The MBP1 frame header
+ * (eight bytes: little-endian payload length and descriptor count) is validated
+ * here; framing and descriptor passing live in the transport.
+ */
 final class PortalWire {
     static final int MAX_MESSAGE = 1024 * 1024, MAX_FDS = 16;
 
+    /** One (signature, value) pair; the value model is documented on DBusWriter. */
+    static final class Variant {
+        final String signature;
+        final Object value;
+        Variant(String signature, Object value) { this.signature = signature; this.value = value; }
+    }
+
+    /** A decoded or to-be-encoded D-Bus message. */
+    static final class Message {
+        int type, flags, serial, replySerial, fdCount;
+        String path, iface, member, error, destination, sender, signature = "";
+        List<Object> body = new ArrayList<>();
+        List<FileDescriptor> fds = Collections.emptyList();
+    }
+
+    /** Validate the MBP1 frame header; returns {payloadLength, descriptorCount}. */
     static int[] validateFrameHeader(byte[] header) {
         if (header.length != 8) throw new IllegalArgumentException("Invalid portal frame header");
         ByteBuffer b = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
@@ -33,184 +43,145 @@ final class PortalWire {
         return new int[] { size, fds };
     }
 
-    static final class Variant {
-        final String signature;
-        final Object value;
-        Variant(String signature, Object value) { this.signature=signature; this.value=value; }
-    }
-
-    static final class Message {
-        int type, flags, serial, replySerial, fdCount;
-        String path, iface, member, error, destination, sender, signature="";
-        List<Object> body = new ArrayList<>();
-        org.freedesktop.dbus.messages.Message dbusMessage;
-        org.freedesktop.dbus.messages.Message replyTo;
-    }
-
-    public static final class AccentColor extends Struct {
-        @Position(0) public double red;
-        @Position(1) public double green;
-        @Position(2) public double blue;
-        public AccentColor(double red,double green,double blue){this.red=red;this.green=green;this.blue=blue;}
-    }
-
-    private static final MessageFactory FACTORY = new MessageFactory((byte) 'l');
-
     static Message decode(byte[] bytes) {
-        return decode(bytes,null);
+        return decode(bytes, Collections.emptyList());
     }
 
-    static Message decode(byte[] bytes,List<org.freedesktop.dbus.FileDescriptor> descriptors) {
-        if (bytes.length < 16 || bytes.length > MAX_MESSAGE) throw new IllegalArgumentException("Invalid message size");
-        ByteOrder order = bytes[0] == 'l' ? ByteOrder.LITTLE_ENDIAN : bytes[0] == 'B' ? ByteOrder.BIG_ENDIAN : null;
-        if (order == null || bytes[3] != 1) throw new IllegalArgumentException("Invalid D-Bus header");
-        ByteBuffer b = ByteBuffer.wrap(bytes).order(order);
-        int type = bytes[1] & 255, bodySize = b.getInt(4), serial = b.getInt(8), headerSize = b.getInt(12);
-        if (type < 1 || type > 4 || serial == 0 || headerSize < 0 || bodySize < 0) throw new IllegalArgumentException("Invalid D-Bus header fields");
-        int paddedHeader = (headerSize + 7) & ~7;
-        if (paddedHeader < headerSize || 16L + paddedHeader + bodySize != bytes.length) throw new IllegalArgumentException("Invalid D-Bus message length");
-        byte[] fixed = Arrays.copyOfRange(bytes, 0, 12);
-        byte[] header = new byte[paddedHeader + 8];
-        System.arraycopy(bytes, 12, header, 0, 4);
-        System.arraycopy(bytes, 16, header, 8, headerSize);
-        byte[] body = Arrays.copyOfRange(bytes, 16 + paddedHeader, bytes.length);
-        int declaredFds=fdCount(bytes,headerSize,order);
-        final org.freedesktop.dbus.messages.Message dm;
-        try { dm = MessageFactory.createMessage((byte) type, fixed, header, body, descriptors); }
-        catch (Exception e) { throw new IllegalArgumentException("Malformed D-Bus message", e); }
-        Message decoded=fromDbus(dm);if(decoded.fdCount!=declaredFds)throw new IllegalArgumentException("D-Bus descriptor count mismatch");return decoded;
+    static Message decode(byte[] bytes, List<FileDescriptor> descriptors) {
+        if (bytes.length < 16 || bytes.length > MAX_MESSAGE)
+            throw new IllegalArgumentException("Invalid message size");
+        DBusReader reader = new DBusReader(bytes);
+        int endianness = reader.u8();
+        if (endianness != 'l' && endianness != 'B')
+            throw new IllegalArgumentException("Invalid D-Bus endianness");
+        reader.littleEndian = endianness == 'l';
+        int type = reader.u8(), flags = reader.u8(), version = reader.u8();
+        long bodyLength = reader.u32();
+        int serial = reader.i32();
+        if (version != 1 || type < 1 || type > 4 || serial == 0)
+            throw new IllegalArgumentException("Invalid D-Bus header fields");
+        long headerLength = reader.u32();
+        if (bodyLength > MAX_MESSAGE || headerLength > MAX_MESSAGE)
+            throw new IllegalArgumentException("Invalid D-Bus message length");
+        long paddedHeader = (headerLength + 7) & ~7L;
+        if (16L + paddedHeader + bodyLength != bytes.length)
+            throw new IllegalArgumentException("Invalid D-Bus message length");
+
+        Message message = new Message();
+        message.type = type;
+        message.flags = flags;
+        message.serial = serial;
+        int fieldsEnd = 16 + (int) headerLength;
+        reader.limit(fieldsEnd);
+        boolean[] seen = new boolean[256];
+        String[] fieldTypes = { "", "o", "s", "s", "s", "u", "s", "s", "g", "u" };
+        while (reader.position() < fieldsEnd) {
+            reader.align(8);
+            if (reader.position() == fieldsEnd) break;
+            if (reader.position() > fieldsEnd)
+                throw new IllegalArgumentException("Malformed D-Bus header");
+            int id = reader.u8();
+            if (id == 0 || seen[id]) throw new IllegalArgumentException("Invalid or duplicate D-Bus header field");
+            seen[id] = true;
+            String fieldSignature = reader.signature();
+            DBusSignature.single(fieldSignature);
+            if (id < fieldTypes.length && !fieldTypes[id].equals(fieldSignature))
+                throw new IllegalArgumentException("Invalid D-Bus header field type");
+            Object value = reader.value(fieldSignature, 0);
+            switch (id) {
+                case 1: message.path = (String) value; break;
+                case 2: message.iface = (String) value; break;
+                case 3: message.member = (String) value; break;
+                case 4: message.error = (String) value; break;
+                case 5: message.replySerial = (Integer) value; break;
+                case 6: message.destination = (String) value; break;
+                case 7: message.sender = (String) value; break;
+                case 8: message.signature = (String) value; break;
+                case 9: {
+                    long count = Integer.toUnsignedLong((Integer) value);
+                    if (count > MAX_FDS) throw new IllegalArgumentException("Invalid UNIX_FDS header");
+                    message.fdCount = (int) count;
+                    break;
+                }
+                default: break; // unknown header fields are read and ignored
+            }
+        }
+        if ((type == 1 && (message.path == null || message.member == null))
+                || (type == 2 && message.replySerial == 0)
+                || (type == 3 && (message.error == null || message.replySerial == 0))
+                || (type == 4 && (message.path == null || message.iface == null || message.member == null)))
+            throw new IllegalArgumentException("Missing required D-Bus header");
+        reader.limit(bytes.length);
+        reader.align(8);
+        for (String part : DBusSignature.split(message.signature))
+            message.body.add(reader.value(part, 0));
+
+        if (reader.position() != bytes.length) throw new IllegalArgumentException("Unconsumed D-Bus body");
+
+        if (descriptors == null) descriptors = Collections.emptyList();
+        if (descriptors.size() != message.fdCount)
+            throw new IllegalArgumentException("D-Bus descriptor count mismatch");
+        message.fds = descriptors;
+        return message;
     }
 
-    static Message fromDbus(org.freedesktop.dbus.messages.Message dm) {
-        Message m = new Message(); m.dbusMessage=dm; m.type=dm.getType(); m.flags=dm.getFlags(); m.serial=(int)dm.getSerial();
-        m.replySerial=(int)dm.getReplySerial(); m.path=dm.getPath(); m.iface=dm.getInterface(); m.member=dm.getName();
-        m.error=dm instanceof Error ? dm.getName() : null; m.destination=dm.getDestination(); m.sender=dm.getSource();
-        m.signature=dm.getSig()==null?"":dm.getSig(); m.fdCount=dm.getFiledescriptors().size();
-        try {
-            Object[] args=dm.getParameters();
-            for(int i=0;i<args.length;i++)m.body.add(fromDbus(signaturePart(m.signature,i),args[i]));
-        } catch (DBusException | RuntimeException e) { throw new IllegalArgumentException("Malformed D-Bus body", e); }
-        return m;
-    }
+    static byte[] encode(Message message) {
+        List<String> parts = (message.signature == null || message.signature.isEmpty())
+                ? Collections.emptyList() : DBusSignature.split(message.signature);
+        if (parts.size() != message.body.size())
+            throw new IllegalArgumentException("Signature/body arity mismatch");
+        DBusWriter body = new DBusWriter();
+        for (int i = 0; i < parts.size(); i++) body.value(parts.get(i), message.body.get(i));
+        byte[] bodyBytes = body.toBytes();
 
-    static byte[] encode(Message m) {
-        org.freedesktop.dbus.messages.Message dm=toDbusMessage(m);
-        byte[][] wire=dm.getWireData(); int n=0; for(byte[] part:wire){if(part==null)break;n=Math.addExact(n,part.length);}
-        if(n>MAX_MESSAGE)throw new IllegalArgumentException("D-Bus message too large");
-        byte[] out=new byte[n];int at=0;for(byte[] part:wire){if(part==null)break;System.arraycopy(part,0,out,at,part.length);at+=part.length;}
+        DBusWriter header = new DBusWriter();
+        header.u8('l');
+        header.u8(message.type);
+        header.u8(message.flags);
+        header.u8(1);
+        header.i32(bodyBytes.length);
+        header.i32(message.serial);
+        header.i32(0);
+        int fieldsAt = header.size();
+        if (message.path != null) field(header, 1, "o", message.path);
+        if (message.iface != null) field(header, 2, "s", message.iface);
+        if (message.member != null) field(header, 3, "s", message.member);
+        if (message.error != null) field(header, 4, "s", message.error);
+        if (message.replySerial != 0) field(header, 5, "u", message.replySerial);
+        if (message.destination != null) field(header, 6, "s", message.destination);
+        if (message.sender != null) field(header, 7, "s", message.sender);
+        if (message.signature != null && !message.signature.isEmpty()) field(header, 8, "g", message.signature);
+        if (message.fdCount != 0) field(header, 9, "u", message.fdCount);
+        header.patchU32(12, header.size() - fieldsAt);
+        header.align(8);
+
+        byte[] headerBytes = header.toBytes();
+        if (headerBytes.length + bodyBytes.length > MAX_MESSAGE)
+            throw new IllegalArgumentException("D-Bus message too large");
+        byte[] out = new byte[headerBytes.length + bodyBytes.length];
+        System.arraycopy(headerBytes, 0, out, 0, headerBytes.length);
+        System.arraycopy(bodyBytes, 0, out, headerBytes.length, bodyBytes.length);
         return out;
     }
 
-    static org.freedesktop.dbus.messages.Message toDbusMessage(Message m) {
-        try {
-            String sig=m.signature==null||m.signature.isEmpty()?null:m.signature;
-            Object[] args=toDbusArgs(m.signature,m.body);
-            org.freedesktop.dbus.messages.Message dm;
-            if(m.type==1) {
-                dm=FACTORY.createMethodCall(m.sender,m.destination,m.path,m.iface,m.member,(byte)m.flags,sig,args);
-            } else if(m.type==2) {
-                if(!(m.replyTo instanceof MethodCall))throw new IllegalArgumentException("Reply lacks dbus-java call context");
-                dm=FACTORY.createMethodReturn(m.sender,(MethodCall)m.replyTo,sig,args);
-            } else if(m.type==3) {
-                dm=FACTORY.createError(m.sender,m.destination,m.error,m.replySerial,sig,args);
-            } else if(m.type==4) {
-                dm=FACTORY.createSignal(m.sender,m.path,m.iface,m.member,sig,args);
-            } else throw new IllegalArgumentException("Unsupported D-Bus message type");
-            m.dbusMessage=dm;return dm;
-        } catch (DBusException e) { throw new IllegalArgumentException("dbus-java could not encode message", e); }
+    private static void field(DBusWriter writer, int id, String signature, Object value) {
+        writer.align(8);
+        writer.u8(id);
+        writer.variant(signature, value);
     }
 
-    private static Object[] toDbusArgs(String sig,List<Object> values) {
-        if(sig==null||sig.isEmpty())return new Object[0];
-        List<Object> out=new ArrayList<>();int at=0;
-        for(int p=0;p<sig.length();) {int end=signatureEnd(sig,p);out.add(toDbus(sig.substring(p,end),values.get(at++)));p=end;}
-        if(at!=values.size())throw new IllegalArgumentException("Signature/body arity mismatch");
-        return out.toArray();
-    }
-
-    private static Object toDbus(String sig,Object value) {
-        char c=sig.charAt(0);
-        if(c=='v') { Variant v=(Variant)value; return new org.freedesktop.dbus.types.Variant<>(toDbus(v.signature,v.value),v.signature); }
-        if(c=='u')return new UInt32(((Number)value).longValue());
-        if(c=='q')return new UInt16(((Number)value).intValue());
-        if(c=='t')return new UInt64(((Number)value).longValue());
-        if(c=='o')return new DBusPath((String)value);
-        if(c=='h'&&value instanceof Number)return new org.freedesktop.dbus.FileDescriptor(((Number)value).intValue());
-        if(c=='a') {
-            String element=sig.substring(1);
-            if(element.startsWith("{")) {Map<Object,Object> map=new LinkedHashMap<>();for(Object entry:(List<?>)value){List<?> pair=(List<?>)entry;map.put(toDbus(element.substring(1,2),pair.get(0)),toDbus(element.substring(2,element.length()-1),pair.get(1)));}return map;}
-            List<Object> out=new ArrayList<>();for(Object item:(List<?>)value)out.add(toDbus(element,item));return out;
+    static Map<String, Variant> dictionary(Object array) {
+        Map<String, Variant> result = new LinkedHashMap<>();
+        for (Object entry : (List<?>) array) {
+            List<?> pair = (List<?>) entry;
+            result.put((String) pair.get(0), (Variant) pair.get(1));
         }
-        if("(ddd)".equals(sig)) {List<?> rgb=(List<?>)value;return new AccentColor(((Number)rgb.get(0)).doubleValue(),((Number)rgb.get(1)).doubleValue(),((Number)rgb.get(2)).doubleValue());}
-        return value;
-    }
-
-    static Object toDbusValue(String signature,Object value){return toDbus(signature,value);}
-    static Object fromDbusValue(String signature,Object value){return fromDbus(signature,value);}
-
-    private static Object fromDbus(String sig,Object value) {
-        if(sig.isEmpty())return value;
-        char c=sig.charAt(0);
-        if(c=='v') {org.freedesktop.dbus.types.Variant<?> v=(org.freedesktop.dbus.types.Variant<?>)value;return new Variant(v.getSig(),fromDbus(v.getSig(),v.getValue()));}
-        if(value instanceof UInt32)return ((UInt32)value).intValue();
-        if(value instanceof UInt16)return ((UInt16)value).intValue();
-        if(value instanceof UInt64)return ((UInt64)value).longValue();
-        if(c=='h'&&value instanceof org.freedesktop.dbus.FileDescriptor)return ((org.freedesktop.dbus.FileDescriptor)value).getIntFileDescriptor();
-        if(c=='o'&&value instanceof DBusPath)return ((DBusPath)value).getPath();
-        if("(ddd)".equals(sig)&&value instanceof AccentColor){AccentColor rgb=(AccentColor)value;return Arrays.asList(rgb.red,rgb.green,rgb.blue);}
-        if(c=='a') {
-            String element=sig.substring(1);
-            if(element.startsWith("{")) {List<Object> out=new ArrayList<>();for(Map.Entry<?,?> e:((Map<?,?>)value).entrySet())out.add(Arrays.asList(fromDbus(element.substring(1,2),e.getKey()),fromDbus(element.substring(2,element.length()-1),e.getValue())));return out;}
-            List<Object> out=new ArrayList<>();for(Object item:(List<?>)value)out.add(fromDbus(element,item));return out;
-        }
-        return value;
-    }
-
-    private static String signaturePart(String signature,int index) {
-        int p=0;while(index-->0)p=signatureEnd(signature,p);int e=signatureEnd(signature,p);return signature.substring(p,e);
-    }
-
-    private static int signatureEnd(String s,int p) {
-        if(p>=s.length())throw new IllegalArgumentException("Incomplete D-Bus signature");char c=s.charAt(p++);
-        if(c=='a')return signatureEnd(s,p);
-        if(c=='('||c=='{'){char close=c=='('?')':'}';while(p<s.length()&&s.charAt(p)!=close)p=signatureEnd(s,p);if(p>=s.length())throw new IllegalArgumentException("Unclosed D-Bus signature");return p+1;}
-        return p;
-    }
-
-    /** Reads only the standard UNIX_FDS header field; dbus-java parses all message fields and values. */
-    static int declaredFdCount(byte[] bytes) {
-        if(bytes.length<16)throw new IllegalArgumentException("Truncated D-Bus message");
-        ByteOrder order=bytes[0]=='l'?ByteOrder.LITTLE_ENDIAN:bytes[0]=='B'?ByteOrder.BIG_ENDIAN:null;
-        if(order==null)throw new IllegalArgumentException("Invalid D-Bus endianness");
-        return fdCount(bytes,ByteBuffer.wrap(bytes).order(order).getInt(12),order);
-    }
-
-    private static int fdCount(byte[] bytes,int headerSize,ByteOrder order) {
-        ByteBuffer b=ByteBuffer.wrap(bytes).order(order);b.position(16);int end=16+headerSize,count=0;boolean seen=false;
-        while(b.position()<end) {
-            int aligned=(b.position()+7)&~7;if(aligned>end)throw new IllegalArgumentException("Malformed header padding");b.position(aligned);
-            if(b.position()==end)break;
-            int id=b.get()&255;if(!b.hasRemaining())throw new IllegalArgumentException("Truncated header field");
-            int sigLength=b.get()&255;if(sigLength==0||sigLength>b.remaining()-1)throw new IllegalArgumentException("Malformed header variant");
-            byte[] sigBytes=new byte[sigLength];b.get(sigBytes);if(b.get()!=0)throw new IllegalArgumentException("Malformed header signature");
-            String sig=new String(sigBytes,java.nio.charset.StandardCharsets.US_ASCII);if(sig.length()!=1)throw new IllegalArgumentException("Invalid header field type");
-            char type=sig.charAt(0);int a=type=='y'||type=='g'?1:type=='n'||type=='q'?2:type=='x'||type=='t'||type=='d'?8:4;
-            b.position((b.position()+a-1)&-a);
-            if(id==9) {if(seen||type!='u'||b.position()+4>end)throw new IllegalArgumentException("Invalid UNIX_FDS header");count=b.getInt();if(count<0)throw new IllegalArgumentException("Invalid UNIX_FDS count");seen=true;}
-            else if(type=='s'||type=='o') {if(b.position()+4>end)throw new IllegalArgumentException("Truncated header string");int n=b.getInt();if(n<0||b.position()+(long)n+1>end)throw new IllegalArgumentException("Invalid header string length");b.position(b.position()+n+1);}
-            else if(type=='g') {if(b.position()>=end)throw new IllegalArgumentException("Truncated header signature");int n=b.get()&255;if(b.position()+(long)n+1>end)throw new IllegalArgumentException("Invalid header signature length");b.position(b.position()+n+1);}
-            else if(type=='u'||type=='i') {if(b.position()+4>end)throw new IllegalArgumentException("Truncated header integer");if(id!=9)b.getInt();}
-            else throw new IllegalArgumentException("Unsupported header field type");
-        }
-        if(b.position()!=end)throw new IllegalArgumentException("Header boundary mismatch");return count;
-    }
-
-    static Map<String,Variant> dictionary(Object array) {
-        Map<String,Variant> result=new LinkedHashMap<>();
-        for(Object entry:(List<?>)array){List<?> e=(List<?>)entry;result.put((String)e.get(0),(Variant)e.get(1));}
         return result;
     }
-    static List<Object> dictionary(Map<String,Variant> values) {
-        List<Object> result=new ArrayList<>();values.forEach((k,v)->result.add(Arrays.asList(k,v)));return result;
+
+    static List<Object> dictionary(Map<String, Variant> values) {
+        List<Object> result = new ArrayList<>();
+        values.forEach((key, value) -> result.add(java.util.Arrays.asList(key, value)));
+        return result;
     }
 }

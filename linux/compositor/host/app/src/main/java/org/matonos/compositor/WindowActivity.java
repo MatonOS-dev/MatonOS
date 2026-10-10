@@ -1,63 +1,57 @@
 package org.matonos.compositor;
 
 import android.app.Activity;
-import android.content.ComponentName;
-import android.content.BroadcastReceiver;
-import android.content.IntentFilter;
-import android.content.ServiceConnection;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
-import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.ViewGroup;
+import org.matonos.compositor.runtime.NativeCompositor;
 
+/** Standalone test window: its compositor belongs to this activity's app. */
 public final class WindowActivity extends Activity implements SurfaceHolder.Callback {
-    static final String EXTRA_WINDOW_ID = "window_id";
-    static final String EXTRA_WIDTH = "window_width";
-    static final String EXTRA_HEIGHT = "window_height";
     static final String EXTRA_START_DEMO = "start_demo";
-    static final String ACTION_CLOSE_WINDOW = "org.matonos.compositor.CLOSE_WINDOW";
-    private int id; private Surface surface; private ICompositor compositor; private SurfaceView view; private boolean attached, demoLaunched;
-    private final ServiceConnection connection = new ServiceConnection() {
-        public void onServiceConnected(ComponentName n, IBinder b) { compositor = ICompositor.Stub.asInterface(b);
-            try { keepScreenOn(compositor.isInhibited()); } catch(Exception ignored){}
-            attachIfReady(); }
-        public void onServiceDisconnected(ComponentName n) { compositor = null; keepScreenOn(false); }
-    };
-    private final BroadcastReceiver closeReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(android.content.Context context, android.content.Intent intent) {
-            if(CompositorService.ACTION_INHIBIT.equals(intent.getAction()))keepScreenOn(intent.getBooleanExtra("active",false));
-            else if (intent.getIntExtra(EXTRA_WINDOW_ID, -1) == id) finish();
-        }
-    };
+    private int id=1;
+    private SurfaceView view;
+    private boolean ready, attached, demoLaunched;
     @Override protected void onCreate(Bundle state) {
-        super.onCreate(state); id = getIntent().getIntExtra(EXTRA_WINDOW_ID, 1); view = new SurfaceView(this); view.getHolder().addCallback(this);
-        view.setFocusableInTouchMode(true); setContentView(view, new ViewGroup.LayoutParams(-1, -1));
-        bindService(new android.content.Intent(this, CompositorService.class), connection, BIND_AUTO_CREATE);
-        IntentFilter filter=new IntentFilter(ACTION_CLOSE_WINDOW);filter.addAction(CompositorService.ACTION_INHIBIT);
-        if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(closeReceiver, filter, RECEIVER_NOT_EXPORTED);
-        else registerReceiver(closeReceiver, filter);
+        super.onCreate(state);
+        view=new SurfaceView(this);view.setFocusableInTouchMode(true);
+        view.getHolder().addCallback(this);setContentView(view);
+        ready=NativeCompositor.nativeStart("wayland-0",new java.io.File(getFilesDir(),"demo-runtime").getAbsolutePath(),this);
+        if(!ready)finish();
     }
-    private void keepScreenOn(boolean active) {
-        if(active)getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    @SuppressWarnings("unused") private void onNativeToplevel(int session,int window,int width,int height) {
+        runOnUiThread(() -> {if(attached)NativeCompositor.nativeDetach(id);id=window;attached=false;attach();});
     }
-    private void attachIfReady() {
-        if (compositor == null || surface == null || !surface.isValid()) return;
-        if (attached) return;
-        try {
-            compositor.attachWindow(id, surface, view.getWidth(), view.getHeight()); attached = true; view.requestFocus();
-            if (!demoLaunched && getIntent().getBooleanExtra(EXTRA_START_DEMO, false)) { compositor.launchDemo(); demoLaunched = true; }
-        } catch (Exception ignored) { }
+    @SuppressWarnings("unused") private void onNativeToplevelClosed(int window) {
+        if(window==id)runOnUiThread(this::finish);
     }
-    @Override public void surfaceCreated(SurfaceHolder h) { surface = h.getSurface(); attachIfReady(); }
-    @Override public void surfaceChanged(SurfaceHolder h, int format, int w, int ht) { surface = h.getSurface(); attachIfReady(); try { if(compositor!=null && attached) compositor.resizeWindow(id,w,ht); } catch(Exception ignored){} }
-    @Override public void surfaceDestroyed(SurfaceHolder h) { try { if(compositor!=null && attached) compositor.detachWindow(id); } catch(Exception ignored){} attached = false; surface = null; }
-    @Override public boolean dispatchKeyEvent(KeyEvent e) { try { if(compositor!=null) compositor.keyEvent(id,e.getKeyCode(),e.getScanCode(),e.getAction(),e.getMetaState(),e.getEventTime()*1000000L); } catch(Exception ignored){} return true; }
-    @Override public boolean onTouchEvent(MotionEvent e) { try { if(compositor!=null) compositor.motionEvent(id,e.getX(),e.getY(),e.getAxisValue(MotionEvent.AXIS_VSCROLL),e.getAxisValue(MotionEvent.AXIS_HSCROLL),e.getActionMasked(),PointerInput.buttons(e.getActionMasked(),e.getButtonState(),e.isFromSource(android.view.InputDevice.SOURCE_TOUCHSCREEN)),e.getEventTime()*1000000L); } catch(Exception ignored){} return true; }
-    @Override public boolean onGenericMotionEvent(MotionEvent e) { return onTouchEvent(e); }
-    @Override protected void onDestroy() { if(isFinishing() && compositor!=null) try { compositor.closeWindow(id); } catch(Exception ignored){} unregisterReceiver(closeReceiver); unbindService(connection); super.onDestroy(); }
+    private void attach() {
+        if(!ready||attached||!view.getHolder().getSurface().isValid())return;
+        NativeCompositor.nativeAttach(id,view.getHolder().getSurface(),view.getWidth(),view.getHeight());
+        attached=true;view.requestFocus();
+        if(!demoLaunched&&getIntent().getBooleanExtra(EXTRA_START_DEMO,false)) {
+            demoLaunched=true;NativeCompositor.nativeLaunchDemo();
+        }
+    }
+    @Override public void surfaceCreated(SurfaceHolder holder) {attach();}
+    @Override public void surfaceChanged(SurfaceHolder holder,int format,int width,int height) {
+        attach();if(attached)NativeCompositor.nativeResize(id,width,height);
+    }
+    @Override public void surfaceDestroyed(SurfaceHolder holder) {
+        if(attached)NativeCompositor.nativeDetach(id);attached=false;
+    }
+    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+        if(ready)NativeCompositor.nativeKey(id,event.getKeyCode(),event.getScanCode(),event.getAction(),event.getMetaState(),event.getEventTime()*1000000L);
+        return true;
+    }
+    @Override public boolean onTouchEvent(MotionEvent event) {
+        if(ready)NativeCompositor.nativeMotion(id,event.getX(),event.getY(),event.getAxisValue(MotionEvent.AXIS_VSCROLL),event.getAxisValue(MotionEvent.AXIS_HSCROLL),event.getActionMasked(),PointerInput.buttons(event.getActionMasked(),event.getButtonState(),event.isFromSource(android.view.InputDevice.SOURCE_TOUCHSCREEN)),event.getEventTime()*1000000L);
+        return true;
+    }
+    @Override public boolean onGenericMotionEvent(MotionEvent event) {return onTouchEvent(event);}
+    @Override protected void onDestroy() {
+        if(ready)NativeCompositor.nativeStop();ready=false;super.onDestroy();
+    }
 }

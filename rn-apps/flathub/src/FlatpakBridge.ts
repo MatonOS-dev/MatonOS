@@ -31,7 +31,7 @@ export async function installApp(ref: string, operationId: string, iconBase64?: 
   if (iconBase64) args.icon = iconBase64;
   const response = await callFlatpak("install", args);
   // The bridge only creates the hidden stub; the stub's "install me" starts the Flatpak install.
-  if (!await MatonOS.startStubInstall(ref)) throw new Error("The app could not be prepared for installation.");
+  if (!await MatonOS.startStubInstall(ref, operationId)) throw new Error("The app could not be prepared for installation.");
   return response;
 }
 

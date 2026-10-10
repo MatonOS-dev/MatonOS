@@ -112,7 +112,7 @@ PRODUCT_PRODUCT_PROPERTIES += \
 # on Wi-Fi-only devices.
 PRODUCT_PACKAGES := $(filter-out Stk SimAppDialog CarrierDefaultApp ImsServiceEntitlement,$(PRODUCT_PACKAGES))
 
-# Preinstalled apps (Fennec, Fossify, ...) fetched from F-Droid.
+# Preinstalled apps fetched from F-Droid.
 $(call inherit-product, $(LOCAL_PATH)/apps/apps.mk)
 
 # (ro.matonos.always_taskbar / shelf_nav / maximize_fullscreen removed with
@@ -124,6 +124,7 @@ $(call inherit-product, $(LOCAL_PATH)/apps/apps.mk)
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/setup/matonos-setup.sh:$(TARGET_COPY_OUT_SYSTEM_EXT)/bin/matonos-setup.sh \
     $(LOCAL_PATH)/setup/matonos-setup.rc:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/init/matonos-setup.rc \
+    $(LOCAL_PATH)/media/music/ovmuz.mp3:$(TARGET_COPY_OUT_PRODUCT)/media/matonos/music/ovmuz.mp3 \
     $(LOCAL_PATH)/media/test-audio/ovmuz.mp3:$(TARGET_COPY_OUT_PRODUCT)/media/matonos/test-audio/ovmuz.mp3 \
     $(LOCAL_PATH)/media/test-audio/final.mp3:$(TARGET_COPY_OUT_PRODUCT)/media/matonos/test-audio/final.mp3
 

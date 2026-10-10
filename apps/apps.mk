@@ -11,6 +11,12 @@ endif
 
 PRODUCT_PACKAGES += $(MATON_APPS)
 
+# Stock camera/gallery/music remain bundled. Calendar, Clock, Contacts,
+# Messaging and Dialer are excluded by MatonSystemBridge's module overrides,
+# including copies inherited from the generic AOSP product.
+# This checkout has no stock Calculator or Notes module.
+PRODUCT_PACKAGES += Camera2 Gallery2 Music
+
 # Empty, MatonOS-signed placeholders reserve these package names for store updates.
 PRODUCT_PACKAGES += MatonAuroraPlaceholder MatonYoutubePlaceholder
 

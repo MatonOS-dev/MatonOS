@@ -12,9 +12,10 @@ recreation. The compositor captures Binder UID/PID before clearing identity.
 The bridge repeats `ownsStub(uid, ref)` and sends UID/PID plus the pipe to
 linuxd. Legacy launches without a verified stub are rejected.
 
-The exec'd wrapper pins the existing Android cgroup directory and checks the
-stub's proc UID, SELinux range, membership and live pipe. It never creates a
-substitute cgroup. This AOSP checkout uses
+Linuxd opens the existing Android cgroup directory during the authenticated
+Binder launch and passes the pinned descriptor to the exec'd wrapper. The
+wrapper uses that descriptor and the live pipe; it never looks up
+`/proc/<pid>` and never creates a substitute cgroup. This AOSP checkout uses
 `/sys/fs/cgroup/apps/uid_<uid>/pid_<pid>`, not a direct `uid_<uid>` child.
 A child enters that group before executing Flatpak, drops supplementary
 system groups, switches all UID/GID slots to the stub UID/GID, clears all

@@ -19,9 +19,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Consumer;
 import static org.matonos.compositor.PortalWire.*;
-import org.freedesktop.dbus.connections.impl.DirectConnection;
-import org.freedesktop.dbus.connections.impl.DirectConnectionBuilder;
-import org.freedesktop.dbus.connections.transports.TransportBuilder.SaslAuthMode;
 
 /** One private backend channel per SessionBus, with no native Android logic. */
 final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
@@ -37,7 +34,8 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
     private final Set<Object> fileOwners=Collections.newSetFromMap(new IdentityHashMap<>());
     private volatile LocalSocket client;
     private volatile boolean stopped, held;
-    private volatile DirectConnection dbus;
+    private volatile PeerConnection connection;
+    private volatile List<FileDescriptor> activeDescriptors=Collections.emptyList();
     JavaPortal(Context context,File directory,Consumer<Boolean> changed,Launcher launcher) throws Exception {
         this.context=context;this.changed=changed;this.launcher=launcher;
         new java.security.SecureRandom().nextBytes(secret);
@@ -76,17 +74,21 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
         }
     }
     private void run(LocalSocket socket) throws Exception {
-        String token=MatonLocalTransportProvider.handoff(socket);
-        DirectConnectionBuilder builder=DirectConnectionBuilder.forAddress("maton:token="+token);
-        builder.transportConfig().configureSasl().withSaslUid((long)android.os.Process.myUid()).withAuthMode(SaslAuthMode.AUTH_EXTERNAL)
-                .back().withAutoConnect(true);
-        DirectConnection connection=builder.build();dbus=connection;
-        PortalExportedObjects objects=new PortalExportedObjects(connection,backend);objects.export();
-        connection.addSigHandler(PortalExportedObjects.ClientClosed.class,signal->clientClosed(signal.owner));
-        while(!stopped&&connection.isConnected())Thread.sleep(100);
-        dbus=null;connection.disconnect();
+        PeerConnection peer=new PeerConnection(new LocalSocketChannel(socket),new Handler());
+        connection=peer;
+        try {peer.serve();} finally {connection=null;}
     }
-
+    private final class Handler implements PeerConnection.Handler {
+        @Override public List<Message> methodCall(Message call) {
+            activeDescriptors=call.fds;
+            try {return backend.dispatch(call);}
+            finally {activeDescriptors=Collections.emptyList();}
+        }
+        @Override public void signal(Message message) {
+            if("org.matonos.PortalBackend".equals(message.iface)&&"ClientClosed".equals(message.member))
+                clientClosed(String.valueOf(message.body.get(0)));
+        }
+    }
     private void clientClosed(String closed){
         try{backend.disconnected(closed);}catch(Exception e){Log.w("MatonPortal","Caller cleanup failed",e);}
         synchronized(fileOwners){Iterator<Object> it=fileOwners.iterator();while(it.hasNext()){Object o=it.next();if(o.toString().equals(closed)){PortalFiles.release(context,o);it.remove();}}}
@@ -124,7 +126,10 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
             // forward arbitrary Android provider URIs with host authority.
             if(scheme==null||scheme.equalsIgnoreCase("file")||scheme.equalsIgnoreCase("content")||scheme.equalsIgnoreCase("intent"))return false;
         }else {
-            int index=(Integer)target;FileDescriptor raw=MatonLocalTransportProvider.descriptorFor(index);if(raw==null)return false;
+            int index=(Integer)target;
+            List<FileDescriptor> descriptors=activeDescriptors;
+            FileDescriptor raw=index>=0&&index<descriptors.size()?descriptors.get(index):null;
+            if(raw==null)return false;
             ParcelFileDescriptor source=ParcelFileDescriptor.dup(raw);
             try {
                 android.system.StructStat stat=Os.fstat(source.getFileDescriptor());boolean directory="OpenDirectory".equals(method);
@@ -152,7 +157,7 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
     }
     @Override public void close() {
         stopped=true;
-        if(dbus!=null)dbus.disconnect();
+        PeerConnection peer=connection;if(peer!=null)peer.close();
         try{server.close();}catch(Exception ignored){}
         try{bound.close();}catch(Exception ignored){}
         try{if(client!=null)client.close();}catch(Exception ignored){}

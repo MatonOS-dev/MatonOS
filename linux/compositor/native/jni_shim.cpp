@@ -5,6 +5,14 @@
 #include <cstdlib>
 #include <cstring>
 
+/*
+ * The core is process-global. It is bound twice:
+ *   - org.matonos.compositor.CompositorService  (transitional, shared host)
+ *   - org.matonos.compositor.runtime.NativeCompositor (per-app runtime)
+ * Each process uses one binding, so the shared statics are per-process. The
+ * per-app binding lets a stub host its own compositor in its own UID.
+ */
+
 static JavaVM* vm;
 static jobject service;
 static jmethodID request_method;
@@ -40,9 +48,7 @@ extern "C" void maton_java_close_window(int id) {
   if (attached) vm->DetachCurrentThread();
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_matonos_compositor_CompositorService_nativeStart(JNIEnv* env, jclass, jstring socket,
-                                                           jstring runtime, jobject owner) {
+static jboolean jni_start(JNIEnv* env, jstring socket, jstring runtime, jobject owner) {
   env->GetJavaVM(&vm);
   jobject global = env->NewGlobalRef(owner);
   jclass cls = env->GetObjectClass(owner);
@@ -66,15 +72,13 @@ Java_org_matonos_compositor_CompositorService_nativeStart(JNIEnv* env, jclass, j
   return ok ? JNI_TRUE : JNI_FALSE;
 }
 
-extern "C" JNIEXPORT void JNICALL
-Java_org_matonos_compositor_CompositorService_nativeStop(JNIEnv* env, jclass) {
+static void jni_stop(JNIEnv* env) {
   maton_core_stop();
   if (service) env->DeleteGlobalRef(service);
   service = nullptr; request_method = close_method = nullptr;
 }
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_matonos_compositor_CompositorService_nativeAddSession(JNIEnv* env, jclass,
-                                                               jint id, jstring path) {
+
+static jboolean jni_add_session(JNIEnv* env, jint id, jstring path) {
   if (!path) return JNI_FALSE;
   const char* value = env->GetStringUTFChars(path, nullptr);
   if (!value) return JNI_FALSE;
@@ -83,9 +87,7 @@ Java_org_matonos_compositor_CompositorService_nativeAddSession(JNIEnv* env, jcla
   return ok ? JNI_TRUE : JNI_FALSE;
 }
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_matonos_compositor_CompositorService_nativeXwaylandInit(JNIEnv* env, jclass,
-                                                                 jstring dir, jstring path) {
+static jboolean jni_xwayland_init(JNIEnv* env, jstring dir, jstring path) {
   if (!dir || !path) return JNI_FALSE;
   const char* d = env->GetStringUTFChars(dir, nullptr);
   const char* p = env->GetStringUTFChars(path, nullptr);
@@ -95,42 +97,62 @@ Java_org_matonos_compositor_CompositorService_nativeXwaylandInit(JNIEnv* env, jc
   return ok ? JNI_TRUE : JNI_FALSE;
 }
 
-extern "C" JNIEXPORT jstring JNICALL
-Java_org_matonos_compositor_CompositorService_nativeAddXwayland(JNIEnv* env, jclass,
-                                                                jint session, jint uid) {
+static jstring jni_add_xwayland(JNIEnv* env, jint session, jint uid) {
   char display[128];
   if (!maton_core_add_xwayland(session, uid, display, sizeof(display))) return nullptr;
   return env->NewStringUTF(display);
 }
-extern "C" JNIEXPORT void JNICALL
-Java_org_matonos_compositor_CompositorService_nativeLaunchDemo(JNIEnv*, jclass) { maton_core_launch_demo(); }
-extern "C" JNIEXPORT void JNICALL
-Java_org_matonos_compositor_CompositorService_nativeAttach(JNIEnv* env, jclass, jint id,
-                                                            jobject surface, jint width, jint height) {
+
+static void jni_attach(JNIEnv* env, jint id, jobject surface, jint width, jint height) {
   MatonSurfaceOutput* output = static_cast<MatonSurfaceOutput*>(calloc(1, sizeof(*output)));
   if (!output || !maton_surface_output_init(output, env, surface, "maton-wayland-window")) {
     free(output); return;
   }
   maton_core_attach(id, output, width, height);
 }
+
+/* ---- org.matonos.compositor.CompositorService (transitional) ---- */
+
+/* ---- org.matonos.compositor.runtime.NativeCompositor (per-app) ---- */
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeStart(JNIEnv* env, jclass, jstring socket,
+                                                                 jstring runtime, jobject owner) {
+  return jni_start(env, socket, runtime, owner);
+}
 extern "C" JNIEXPORT void JNICALL
-Java_org_matonos_compositor_CompositorService_nativeDetach(JNIEnv*, jclass, jint id) { maton_core_detach(id); }
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeStop(JNIEnv* env, jclass) { jni_stop(env); }
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeAddSession(JNIEnv* env, jclass, jint id, jstring path) {
+  return jni_add_session(env, id, path);
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeXwaylandInit(JNIEnv* env, jclass, jstring dir, jstring path) {
+  return jni_xwayland_init(env, dir, path);
+}
+extern "C" JNIEXPORT jstring JNICALL
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeAddXwayland(JNIEnv* env, jclass, jint session, jint uid) {
+  return jni_add_xwayland(env, session, uid);
+}
 extern "C" JNIEXPORT void JNICALL
-Java_org_matonos_compositor_CompositorService_nativeResize(JNIEnv*, jclass, jint id, jint w, jint h) { maton_core_resize(id,w,h); }
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeLaunchDemo(JNIEnv*, jclass) { maton_core_launch_demo(); }
 extern "C" JNIEXPORT void JNICALL
-Java_org_matonos_compositor_CompositorService_nativeKey(JNIEnv*, jclass, jint id, jint key, jint scan,
-                                                         jint action, jint meta, jlong time) {
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeAttach(JNIEnv* env, jclass, jint id, jobject surface, jint w, jint h) {
+  jni_attach(env, id, surface, w, h);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeDetach(JNIEnv*, jclass, jint id) { maton_core_detach(id); }
+extern "C" JNIEXPORT void JNICALL
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeResize(JNIEnv*, jclass, jint id, jint w, jint h) { maton_core_resize(id,w,h); }
+extern "C" JNIEXPORT void JNICALL
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeKey(JNIEnv*, jclass, jint id, jint key, jint scan, jint action, jint meta, jlong time) {
   maton_core_key(id,key,scan,action,meta,time);
 }
 extern "C" JNIEXPORT void JNICALL
-Java_org_matonos_compositor_CompositorService_nativeMotion(JNIEnv*, jclass, jint id, jfloat x, jfloat y,
-                                                            jfloat vs, jfloat hs, jint action,
-                                                            jint buttons, jlong time) {
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeMotion(JNIEnv*, jclass, jint id, jfloat x, jfloat y, jfloat vs, jfloat hs, jint action, jint buttons, jlong time) {
   maton_core_motion(id,x,y,vs,hs,action,buttons,time);
 }
-
 extern "C" JNIEXPORT void JNICALL
-Java_org_matonos_compositor_CompositorService_nativeStopped(JNIEnv*, jclass, jint id, jboolean stopped) { maton_core_stopped(id,stopped); }
-
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeStopped(JNIEnv*, jclass, jint id, jboolean stopped) { maton_core_stopped(id,stopped); }
 extern "C" JNIEXPORT void JNICALL
-Java_org_matonos_compositor_CompositorService_nativeClose(JNIEnv*, jclass, jint id) { maton_core_close(id); }
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeClose(JNIEnv*, jclass, jint id) { maton_core_close(id); }

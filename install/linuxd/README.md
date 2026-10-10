@@ -204,12 +204,14 @@ Linuxd and the bridge use matching one-way progress listener definitions.
 The store shows numeric progress when Flatpak reports percentages and an
 indeterminate bar during other stages.
 
-The validated `icon` command returns base64 PNG data from the app's exported
-hicolor icon, `export/share/icons/hicolor/<size>/apps/<ref>.png`, inside the
-deployment root. Appstream is stripped from the Flatpak build, so there is no
-app-info or appstream-branch fallback. The icon must resolve inside its root,
-stay under 256 KiB, and carry the PNG signature; otherwise the stub keeps its
-fallback icon.
+The validated `icon` command returns base64 PNG data from the app's deployment.
+It prefers `export/share/icons/hicolor/<size>/apps/<id>.png`, then bundled
+`files/share/app-info/icons/flatpak/<size>/<id>.png` and app-info media thumbnails.
+Brave exports SVG but includes PNG artwork in the second location. These are
+installed app files: reading them needs no AppStream parser or shared metadata
+installation. Every candidate must resolve inside the deployment, stay under
+256 KiB, and carry the PNG signature. Invalid candidates are skipped. Stub
+version 12 makes the bridge regenerate older launchers with the restored lookup.
 
 ## Open issues
 
@@ -263,7 +265,7 @@ This is a local C hook, not a socket protocol or Android vibrator relay.
 ## linux-data task, 2026-10-04 (narrowed scope)
 
 The sandbox domain is `matonos_linux_app`. Persistent writable state uses the
-existing `/data/matonos/linux/apps/<stub uid>/home` path, labelled
+`/data/matonos/linux/home/<stub uid>` path (see `STORAGE-LAYOUT.md`), labelled
 `matonos_linux_data_file` with the verified stub's MLS categories. Linuxd
 creates the UID tree and home using component-wise openat/O_NOFOLLOW walking,
 0700 mode and stub UID/GID ownership. The existing system-owned `<uid>.owner`

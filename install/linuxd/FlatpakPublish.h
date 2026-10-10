@@ -1,6 +1,7 @@
 #ifndef MATONOS_FLATPAK_PUBLISH_H
 #define MATONOS_FLATPAK_PUBLISH_H
 
+#include <stddef.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -10,6 +11,13 @@ int flatpak_publish(const char* app_ref, const char* app_commit,
         const char* runtime_ref, const char* runtime_commit, const char* remote,
         const char* staging_dir, const char* system_dir, const char* user_dir,
         char* error, unsigned long error_size);
+
+/* Record every shared ref before deployment; complete the exact owner set
+ * only after all deployments succeed. Caller holds operation lock. */
+int flatpak_publish_tracked(const char*, const char*, const char*, const char*,
+        const char*, const char*, const char*, const char*, char*, unsigned long,
+        int (*record)(const char*, void*),
+        int (*complete)(const char* const*, size_t, void*), void* context);
 
 /* Stage a signed app and its declared runtime, and return the resolved commit
  * pins plus the app's /metadata and exported desktop entry from the staged
@@ -26,7 +34,7 @@ int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
 /* Remove abandoned installer staging operations during linuxd startup. */
 int flatpak_cleanup_stale_staging(void);
 
-/* /data/matonos/linux/apps/<uid>/staging/<operation> (validated). */
+/* /data/matonos/linux/install/<uid>/staging/<operation> (validated). */
 int flatpak_staging_dir(int uid, const char* operation, char* path, unsigned long size);
 /* Remove one staging operation, as its owning UID. */
 int flatpak_remove_staging(int uid, const char* operation);

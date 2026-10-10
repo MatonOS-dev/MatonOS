@@ -1,8 +1,9 @@
 # linuxd: system-side Flatpak service (Treble: platform files are labelled by
 # platform-side policy, never by vendor file_contexts).
 /system_ext/bin/matonos-linuxd u:object_r:matonos_linuxd_exec:s0
+/dev/shm(/.*)? u:object_r:matonos_linux_shm_file:s0
 /data/matonos/linux/staging(/.*)? u:object_r:matonos_flatpak_store_file:s0
-/data/matonos/linux/apps/[0-9]+/repo/objects(/.*)? u:object_r:matonos_linux_code_file:s0
+/data/matonos/linux/install/[0-9]+/repo/objects(/.*)? u:object_r:matonos_linux_code_file:s0
 /data/matonos/linux(/.*)? u:object_r:matonos_flatpak_data_file:s0
 # Per-app Xwayland display sockets live in their own directory so the
 # compositor can hand each socket to its application's uid.
@@ -24,9 +25,12 @@
 /sys/devices(/[^/]+)*/[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-Fa-f]+/uevent -- u:object_r:sysfs_matonos_input:s0
 /sys/devices/virtual/misc/uinput/dev -- u:object_r:sysfs_matonos_input:s0
 
-/data/matonos/linux/apps/[0-9]+(/.*)? u:object_r:matonos_linux_data_file:s0
+/data/matonos/linux/install/[0-9]+/staging(/.*)? u:object_r:matonos_linux_data_file:s0
+/data/matonos/linux/install/[0-9]+(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
+/data/matonos/linux/home/[0-9]+(/.*)? u:object_r:matonos_linux_data_file:s0
+/data/matonos/linux/runtime/[0-9]+(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
 /data/matonos/linux/flatpak(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
-/data/matonos/linux/runtime(/.*)? u:object_r:matonos_flatpak_socket_file:s0
+/data/matonos/linux/run(/.*)? u:object_r:matonos_flatpak_socket_file:s0
 /data/matonos/linux/(machine-id|udev)(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
 
 # r24: the Flatpak CLI, installer helper, bwrap layers and app launcher moved

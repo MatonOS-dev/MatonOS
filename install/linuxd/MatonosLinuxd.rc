@@ -12,20 +12,33 @@ service matonos-linuxd /system_ext/bin/matonos-linuxd
     seclabel u:r:matonos_linuxd:s0
 
 on property:sys.boot_completed=1
+    # Stock Flatpak allocates per-app shared-memory directories on the host
+    # before it invokes bwrap. Android does not otherwise provide /dev/shm.
+    mkdir /dev/shm 01777 root root
+    mount tmpfs tmpfs /dev/shm nosuid nodev noexec mode=1777,size=128m,context=u:object_r:matonos_linux_shm_file:s0
     mkdir /data/matonos 0771 system system
     mkdir /data/matonos/linux 0771 system system
     mkdir /data/matonos/linux/flatpak 0755 system system
     mkdir /data/matonos/linux/cache 0770 system system
     mkdir /data/matonos/linux/flatpak-user 0770 system system
     mkdir /data/matonos/linux/flatpak-data 0770 system system
-    mkdir /data/matonos/linux/apps 0711 system system
+    mkdir /data/matonos/linux/install 0711 system system
+    mkdir /data/matonos/linux/home 0711 system system
     mkdir /data/matonos/linux/runtime 0711 system system
+    # Shared, system-created socket namespace (relays + session bus); not a
+    # per-app XDG_RUNTIME_DIR: linuxd (system) binds the relay sockets here.
+    mkdir /data/matonos/linux/run 0711 system system
+    # Per-app XDG_RUNTIME_DIR. RAM-backed and cleared every boot; linuxd creates
+    # each <uid> subdir on the stub's request (0711 blocks other apps from
+    # squatting). The whole mount is one type, so path traversal just works.
+    mkdir /data/matonos/linux/tmp 0711 system system
+    mount tmpfs tmpfs /data/matonos/linux/tmp nosuid nodev mode=0711,uid=1000,gid=1000,size=64m,context=u:object_r:matonos_linux_runtime_file:s0
     # r24 code store: image files and their mount points (installer-owned).
     mkdir /data/matonos/linux/store 0700 system system
     mkdir /data/matonos/linux/store/apps 0700 system system
     mkdir /data/matonos/linux/store/runtime 0700 system system
     # Preserve dynamic MLS ranges on app-owned homes across daemon restarts.
-    restorecon /data/matonos/linux /data/matonos/linux/apps
-    restorecon_recursive /data/matonos/linux/flatpak /data/matonos/linux/cache /data/matonos/linux/runtime /data/matonos/linux/udev /data/matonos/linux/store
+    restorecon /data/matonos/linux /data/matonos/linux/install /data/matonos/linux/home
+    restorecon_recursive /data/matonos/linux/flatpak /data/matonos/linux/cache /data/matonos/linux/runtime /data/matonos/linux/run /data/matonos/linux/udev /data/matonos/linux/store
     restorecon /data/matonos/linux/machine-id
     start matonos-linuxd
