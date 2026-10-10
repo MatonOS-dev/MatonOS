@@ -292,6 +292,23 @@ mount options, devices, environment or flags); the privileged side derives
 everything from the verified stub identity (UID + per-device signature),
 its installed manifest and its granted Android permissions.
 
+Stub code loading (user, 2026-10-10): generated stubs keep `<uses-library
+org.matonos.linuxhost>` but name `org.matonos.compositor.stub.StubLoader` as
+their `appComponentFactory`. It swaps the platform's shared-library loader
+(always the image copy) for one over the installed host APK, so compositor
+updates reach stubs on their next launch; running apps are never killed on a
+host update. Trust comes from the platform: only the image path or an
+installed update of `org.matonos.compositor` (same signature, enforced by
+PackageManager) is accepted, so there is no extra certificate check.
+**Keep in sync:** `StubLoader.SYSTEM_APK` hard-codes the `MatonWaylandHost`
+install path (`buildinfra/Android.bp`), and the loader expects stored,
+uncompressed JNI libraries (`apk!/lib/<abi>`). Renaming or moving that module
+or compressing its JNI libraries silently disables StubLoader. StubLoader
+itself only updates with the image: keep it small. After a host update,
+running stubs keep the old code next to a new compositor/linuxd. Pre-alpha:
+no interface compatibility guarantee; relaunch the app. Stub/host interface
+versioning is due once MatonOS leaves pre-alpha.
+
 Deliberate exception (user, 2026-10-04): Flatpaks may download and run code
 in their own `/data/matonos/linux/apps/<uid>` directory by default (no permission), as on a
 Linux desktop; see install/linuxd/CODE-STORAGE-r24.md.

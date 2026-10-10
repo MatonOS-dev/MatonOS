@@ -121,6 +121,14 @@ android_app_import {
     preprocessed: true,
     // build-apps.sh stores and aligns JNI/dex before signing. System apps do
     // not get PM extraction; JNI loads from the APK.
+    //
+    // WARNING: generated Flatpak stubs load the host through
+    // org.matonos.compositor.stub.StubLoader, which hard-codes this module's
+    // install path (/system_ext/priv-app/MatonWaylandHost/MatonWaylandHost.apk)
+    // and the stored, uncompressed JNI layout (apk!/lib/<abi>). Renaming the
+    // module, changing its partition, dropping `privileged` or compressing the
+    // JNI libraries silently disables StubLoader; update StubLoader.SYSTEM_APK
+    // with any such change.
 }
 
 // The session broker is a JNI library loaded inside each app's own process
