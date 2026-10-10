@@ -17,6 +17,8 @@ static JavaVM* vm;
 static jobject service;
 static jmethodID request_method;
 static jmethodID close_method;
+/* Optional (the shared host has none): window-state requests. */
+static jmethodID state_method;
 
 static JNIEnv* callback_env(bool* attached) {
   *attached = false;
@@ -38,6 +40,16 @@ extern "C" void maton_java_request_window(int sessionId, int id, int width, int 
   if (attached) vm->DetachCurrentThread();
 }
 
+extern "C" void maton_java_window_state(int id, int state) {
+  bool attached;
+  JNIEnv* env = callback_env(&attached);
+  if (env && service && state_method) {
+    env->CallVoidMethod(service, state_method, id, state);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+  }
+  if (attached) vm->DetachCurrentThread();
+}
+
 extern "C" void maton_java_close_window(int id) {
   bool attached;
   JNIEnv* env = callback_env(&attached);
@@ -54,20 +66,22 @@ static jboolean jni_start(JNIEnv* env, jstring socket, jstring runtime, jobject 
   jclass cls = env->GetObjectClass(owner);
   jmethodID request = env->GetMethodID(cls, "onNativeToplevel", "(IIII)V");
   jmethodID close = env->GetMethodID(cls, "onNativeToplevelClosed", "(I)V");
+  jmethodID state = env->GetMethodID(cls, "onNativeWindowState", "(II)V");
+  if (!state && env->ExceptionCheck()) env->ExceptionClear();
   env->DeleteLocalRef(cls);
   if (!global || !request || !close) {
     if (env->ExceptionCheck()) env->ExceptionClear();
     if (global) env->DeleteGlobalRef(global);
     return JNI_FALSE;
   }
-  service = global; request_method = request; close_method = close;
+  service = global; request_method = request; close_method = close; state_method = state;
   const char* s = socket ? env->GetStringUTFChars(socket, nullptr) : nullptr;
   const char* r = runtime ? env->GetStringUTFChars(runtime, nullptr) : nullptr;
   bool ok = maton_core_start(s ? s : "wayland-0", r ? r : "/data/local/tmp/wayland");
   if (s) env->ReleaseStringUTFChars(socket, s);
   if (r) env->ReleaseStringUTFChars(runtime, r);
   if (!ok) {
-    env->DeleteGlobalRef(service); service = nullptr; request_method = close_method = nullptr;
+    env->DeleteGlobalRef(service); service = nullptr; request_method = close_method = state_method = nullptr;
   }
   return ok ? JNI_TRUE : JNI_FALSE;
 }
@@ -75,7 +89,7 @@ static jboolean jni_start(JNIEnv* env, jstring socket, jstring runtime, jobject 
 static void jni_stop(JNIEnv* env) {
   maton_core_stop();
   if (service) env->DeleteGlobalRef(service);
-  service = nullptr; request_method = close_method = nullptr;
+  service = nullptr; request_method = close_method = state_method = nullptr;
 }
 
 static jboolean jni_add_session(JNIEnv* env, jint id, jstring path) {
@@ -144,6 +158,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_org_matonos_compositor_runtime_NativeCompositor_nativeDetach(JNIEnv*, jclass, jint id) { maton_core_detach(id); }
 extern "C" JNIEXPORT void JNICALL
 Java_org_matonos_compositor_runtime_NativeCompositor_nativeResize(JNIEnv*, jclass, jint id, jint w, jint h) { maton_core_resize(id,w,h); }
+extern "C" JNIEXPORT void JNICALL
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeSetFullscreen(JNIEnv*, jclass, jint id, jboolean on) { maton_core_set_fullscreen(id,on?1:0); }
 extern "C" JNIEXPORT void JNICALL
 Java_org_matonos_compositor_runtime_NativeCompositor_nativeKey(JNIEnv*, jclass, jint id, jint key, jint scan, jint action, jint meta, jlong time) {
   maton_core_key(id,key,scan,action,meta,time);

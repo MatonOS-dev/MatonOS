@@ -25,6 +25,8 @@ public final class NativeCompositor {
     public static native void nativeAttach(int id, Surface surface, int width, int height);
     public static native void nativeDetach(int id);
     public static native void nativeResize(int id, int width, int height);
+    /** Confirm a window's fullscreen state to the app (after Android applied it). */
+    public static native void nativeSetFullscreen(int id, boolean on);
     public static native void nativeKey(int id, int key, int scan, int action, int meta, long timeNs);
     public static native void nativeMotion(int id, float x, float y, float verticalScroll,
                                           float horizontalScroll, int action, int buttons, long timeNs);

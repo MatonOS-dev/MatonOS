@@ -118,7 +118,19 @@ public final class PerAppRuntime implements AutoCloseable {
         windows.put(id, new int[]{width, height});
         WindowHost h = host;
         if (h != null) h.windowOpened(id, width, height);
+        else {
+            // No activity is hosting (the app closed its last window and is
+            // within its grace period): open a new Android window for it.
+            try { org.matonos.compositor.stub.StubActivity.openWindow(context, id, width, height); }
+            catch (RuntimeException e) { android.util.Log.w("MatonRuntime", "Cannot open window " + id, e); }
+        }
     }
+
+    /** Called from native when the app asks for a window state. */
+    @SuppressWarnings("unused") private void onNativeWindowState(int id, int state) {
+        org.matonos.compositor.stub.StubActivity.windowState(id, state);
+    }
+    public void setFullscreen(int id, boolean on) { NativeCompositor.nativeSetFullscreen(id, on); }
 
     /** Called from native when the app's window is destroyed. */
     @SuppressWarnings("unused") private synchronized void onNativeToplevelClosed(int id) {

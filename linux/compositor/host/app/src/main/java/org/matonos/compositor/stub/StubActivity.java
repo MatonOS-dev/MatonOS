@@ -22,6 +22,72 @@ import org.matonos.compositor.IEmbeddedWindowListener;
 /** Shared activity code runs in the generated app's own package and task. */
 public final class StubActivity extends Activity implements SurfaceHolder.Callback, org.matonos.compositor.PerAppRuntime.WindowHost {
     private static final String WINDOW = "org.matonos.linuxhost.WINDOW_ID";
+    /** After the last window closes, the session lives this long for a new
+     * one: an app answering a close with a save dialog, switching modes
+     * (Steam Big Picture) or going from splash to main window. Android lets
+     * an app start activities shortly after its own finished. */
+    private static final long LAST_WINDOW_GRACE_MS = 10_000;
+    private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
+    private static final Runnable END_SESSION = () -> android.os.Process.killProcess(android.os.Process.myPid());
+
+    /** Open an Android window for an app window that arrived while no
+     * activity was hosting (e.g. after the app closed its last window). */
+    public static void openWindow(android.content.Context context, int id, int width, int height) {
+        context.startActivity(windowIntent(context, id), launchBounds(context, width, height));
+    }
+    private static Intent windowIntent(android.content.Context context, int id) {
+        return new Intent().setClassName(context, StubActivity.class.getName())
+                .putExtra(WINDOW, id)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+    }
+    /** Freeform windows open at the size the app asked for, centred and
+     * clamped to the display. Later resizes stay with Android and the user. */
+    private static Bundle launchBounds(android.content.Context context, int width, int height) {
+        if (width <= 0 || height <= 0) return null;
+        android.graphics.Rect display = context.getSystemService(android.view.WindowManager.class)
+                .getMaximumWindowMetrics().getBounds();
+        int w = Math.min(width, display.width()), h = Math.min(height, display.height());
+        int left = display.left + (display.width() - w) / 2, top = display.top + (display.height() - h) / 2;
+        return android.app.ActivityOptions.makeBasic()
+                .setLaunchBounds(new android.graphics.Rect(left, top, left + w, top + h)).toBundle();
+    }
+
+    /* Window id -> the activity showing it, for window-state requests. */
+    private static final java.util.Map<Integer, StubActivity> SHOWING = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** The app asked for a window state (MATON_STATE_* in compositor_core.h). */
+    public static void windowState(int id, int state) {
+        StubActivity activity = SHOWING.get(id);
+        if (activity != null) activity.runOnUiThread(() -> activity.applyState(state));
+    }
+    private static final int STATE_FULLSCREEN_ON = 1, STATE_FULLSCREEN_OFF = 2, STATE_MINIMIZE = 3;
+    private void applyState(int state) {
+        if (destroyed) return;
+        if (state == STATE_MINIMIZE) { moveTaskToBack(true); return; }
+        boolean on = state == STATE_FULLSCREEN_ON;
+        android.view.WindowInsetsController bars = getWindow().getInsetsController();
+        if (bars != null) {
+            if (on) {
+                bars.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                bars.hide(android.view.WindowInsets.Type.systemBars());
+            } else bars.show(android.view.WindowInsets.Type.systemBars());
+        }
+        if (!isInMultiWindowMode()) { confirmFullscreen(on); return; }
+        // Desktop windowing: ask Android to make this freeform window fullscreen
+        // (or restore it); tell the app only what actually happened.
+        requestFullscreenMode(on ? FULLSCREEN_MODE_REQUEST_ENTER : FULLSCREEN_MODE_REQUEST_EXIT,
+                new android.os.OutcomeReceiver<Void, Throwable>() {
+                    @Override public void onResult(Void result) { confirmFullscreen(on); }
+                    @Override public void onError(Throwable error) {
+                        // The state did not change: a failed enter stays windowed.
+                        if (on && bars != null) bars.show(android.view.WindowInsets.Type.systemBars());
+                        confirmFullscreen(!on);
+                    }
+                });
+    }
+    private void confirmFullscreen(boolean on) {
+        if (runtime != null && window != 0) runtime.setFullscreen(window, on);
+    }
     private static final WindowLifetime WINDOWS = new WindowLifetime();
     // Kept for the process lifetime, including activity recreation and all
     // windows. Only process death closes the writer; no compositor-held copy.
@@ -75,9 +141,10 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         runOnUiThread(() -> {
             if (destroyed || window == id) return;
             if (window == 0) showWindow(id);
-            else if (getIntent().getIntExtra(WINDOW,0)==0) startActivity(new Intent().setComponent(getComponentName())
-                    .putExtra(WINDOW,id)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK));
+            // The runtime has exactly one window host at a time, so whichever
+            // activity holds it opens further windows. The root activity may
+            // already be gone (its window closed, e.g. an updater window).
+            else startActivity(windowIntent(this, id), launchBounds(this, width, height));
         });
     }
     @Override public void windowClosed(int id) {
@@ -142,6 +209,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         WINDOWS.opened(this);
+        MAIN.removeCallbacks(END_SESSION);
         status=new TextView(this);status.setPadding(32,32,32,32);
         status.setText("Starting application…");setContentView(status);
         window=state!=null?state.getInt(WINDOW,0):getIntent().getIntExtra(WINDOW,0);
@@ -212,7 +280,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         }
     }
     private void showWindow(int id) {
-        window=id;
+        window=id;SHOWING.put(id,this);
         view=new SurfaceView(this);view.getHolder().addCallback(this);
         view.setFocusableInTouchMode(true);
         view.setOnTouchListener((v,event)->motion(event));
@@ -270,6 +338,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     @Override protected void onSaveInstanceState(Bundle state){state.putInt(WINDOW,window);super.onSaveInstanceState(state);}
     @Override protected void onDestroy(){
         destroyed=true;
+        if(window!=0)SHOWING.remove(window,this);
         if(runtime!=null)runtime.clearWindowHost(this);
         setInhibited(false);
         if(session!=null){
@@ -285,7 +354,9 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
             // process exit closes the lifeline, and the verified supervisor
             // kills/reaps its pinned Linux process group. Reopening therefore
             // gets a fresh host PID/cgroup instead of a windowless old app.
-            android.os.Process.killProcess(android.os.Process.myPid());
+            // A grace period lets the app open a new window first (cancelled
+            // when one opens); the close request already went to the app.
+            MAIN.postDelayed(END_SESSION,LAST_WINDOW_GRACE_MS);
         }
     }
 }

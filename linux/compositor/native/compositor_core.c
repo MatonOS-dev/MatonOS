@@ -73,7 +73,7 @@ struct XwaylandSession {
   struct wl_listener ready, new_surface, destroy;
   struct XwaylandSession* next;
 };
-enum CommandKind { CMD_STOPPED, CMD_ATTACH, CMD_DETACH, CMD_RESIZE, CMD_KEY, CMD_MOTION, CMD_RELEASE, CMD_CLOSE, CMD_STOP, CMD_ADD_SESSION, CMD_ADD_XWAYLAND };
+enum CommandKind { CMD_STOPPED, CMD_ATTACH, CMD_DETACH, CMD_RESIZE, CMD_KEY, CMD_MOTION, CMD_RELEASE, CMD_CLOSE, CMD_STOP, CMD_ADD_SESSION, CMD_ADD_XWAYLAND, CMD_FULLSCREEN };
 struct Command {
   enum CommandKind kind;
   int id, a, b, c;
@@ -98,6 +98,8 @@ struct Window {
   struct wl_listener frame, commit, toplevel_destroy, surface_commit;
   struct wl_event_source* retry;
   struct wl_listener xsurface_destroy, xsurface_associate, xsurface_geometry, scene_tree_destroy;
+  /* Window-state requests (fullscreen, minimize) from X11 or xdg_toplevel. */
+  struct wl_listener request_fullscreen, request_minimize;
   struct Window* next;
 };
 struct Server {
@@ -249,9 +251,14 @@ static void destroy_window(struct Window* w) {
   struct Window** p=&server.windows;while(*p&&*p!=w)p=&(*p)->next;if(*p)*p=w->next;
   free(w);
 }
+static void window_state_unlisten(struct Window* w) {
+  if(w->request_fullscreen.link.prev){wl_list_remove(&w->request_fullscreen.link);wl_list_init(&w->request_fullscreen.link);}
+  if(w->request_minimize.link.prev){wl_list_remove(&w->request_minimize.link);wl_list_init(&w->request_minimize.link);}
+}
 static void on_toplevel_destroy(struct wl_listener* l,void* data) {
   (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,toplevel_destroy));
   wl_list_remove(&l->link);wl_list_init(&l->link);
+  window_state_unlisten(w);
   wl_list_remove(&w->surface_commit.link);wl_list_init(&w->surface_commit.link);
   destroy_output(w);w->toplevel=NULL;w->activity=0;maton_java_close_window(w->id);
 }
@@ -277,6 +284,15 @@ static void on_surface_commit(struct wl_listener* l,void* data) {
     wlr_xdg_toplevel_set_maximized(w->toplevel,true);
   }
 }
+/* The app asks; Android decides and maton_core_set_fullscreen confirms. */
+static void on_toplevel_request_fullscreen(struct wl_listener* l,void* data) {
+  (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,request_fullscreen));
+  if(w->toplevel)maton_java_window_state(w->id,w->toplevel->requested.fullscreen?MATON_STATE_FULLSCREEN_ON:MATON_STATE_FULLSCREEN_OFF);
+}
+static void on_toplevel_request_minimize(struct wl_listener* l,void* data) {
+  (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,request_minimize));
+  maton_java_window_state(w->id,MATON_STATE_MINIMIZE);
+}
 static void on_new_toplevel(struct wl_listener* l,void* data) {
   (void)l;struct wlr_xdg_toplevel* t=data;struct Window* w=NULL;
   int session=0;
@@ -298,6 +314,9 @@ static void on_new_toplevel(struct wl_listener* l,void* data) {
   }
   w->surface_commit.notify=on_surface_commit;
   wl_signal_add(&t->base->surface->events.commit,&w->surface_commit);
+  window_state_unlisten(w);
+  w->request_fullscreen.notify=on_toplevel_request_fullscreen;wl_signal_add(&t->events.request_fullscreen,&w->request_fullscreen);
+  w->request_minimize.notify=on_toplevel_request_minimize;wl_signal_add(&t->events.request_minimize,&w->request_minimize);
   if(request){w->activity=1;maton_java_request_window(session,w->id,w->width,w->height);}
 }
 struct Popup {
@@ -386,6 +405,7 @@ static void on_xsurface_destroy(struct wl_listener* l,void* data) {
   wl_list_remove(&w->surface_commit.link);wl_list_init(&w->surface_commit.link);
   if(w->xsurface_associate.link.prev){wl_list_remove(&w->xsurface_associate.link);wl_list_init(&w->xsurface_associate.link);}
   if(w->xsurface_geometry.link.prev){wl_list_remove(&w->xsurface_geometry.link);wl_list_init(&w->xsurface_geometry.link);}
+  window_state_unlisten(w);
   clear_window_pointer(w);destroy_output(w);w->xsurface=NULL;w->activity=0;
   maton_java_close_window(w->id);
 }
@@ -422,6 +442,16 @@ static void on_xsurface_geometry(struct wl_listener* l,void* data) {
   if(w->xsurface)
     wlr_xwayland_surface_configure(w->xsurface,0,0,w->width,w->height);
 }
+/* wlroots updates xs->fullscreen from _NET_WM_STATE before emitting. */
+static void on_xsurface_request_fullscreen(struct wl_listener* l,void* data) {
+  (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,request_fullscreen));
+  if(w->xsurface)maton_java_window_state(w->id,w->xsurface->fullscreen?MATON_STATE_FULLSCREEN_ON:MATON_STATE_FULLSCREEN_OFF);
+}
+static void on_xsurface_request_minimize(struct wl_listener* l,void* data) {
+  struct Window* w=window_from_listener(l,offsetof(struct Window,request_minimize));
+  struct wlr_xwayland_minimize_event* e=data;
+  if(e&&e->minimize)maton_java_window_state(w->id,MATON_STATE_MINIMIZE);
+}
 static struct Window* xwayland_window(struct wlr_xwayland_surface* xs,int session) {
   for(struct Window* w=server.windows;w;w=w->next)if(w->xsurface==xs)return w;
   struct Window* w=calloc(1,sizeof(*w));if(!w)return NULL;
@@ -437,7 +467,15 @@ static struct Window* xwayland_window(struct wlr_xwayland_surface* xs,int sessio
   wl_signal_add(&xs->events.set_geometry,&w->xsurface_geometry);
   w->surface_commit.notify=on_xsurface_commit;
   wl_signal_add(&xs->events.request_configure,&w->surface_commit);
+  w->request_fullscreen.notify=on_xsurface_request_fullscreen;wl_signal_add(&xs->events.request_fullscreen,&w->request_fullscreen);
+  w->request_minimize.notify=on_xsurface_request_minimize;wl_signal_add(&xs->events.request_minimize,&w->request_minimize);
+  __android_log_print(ANDROID_LOG_DEBUG,"MatonCompositor",
+      "X window %d: title=\"%s\" class=%s %ux%u%+d%+d parent=%s modal=%d min=%d withdrawn=%d skip_taskbar=%d skip_pager=%d",
+      w->id,xs->title?xs->title:"",xs->class?xs->class:"",xs->width,xs->height,xs->x,xs->y,
+      xs->parent?"yes":"no",xs->modal,xs->minimized,xs->withdrawn,xs->skip_taskbar,xs->skip_pager);
   w->activity=1;maton_java_request_window(session,w->id,w->width,w->height);
+  /* Windows mapped already fullscreen (e.g. Steam Big Picture) ask now. */
+  if(xs->fullscreen)maton_java_window_state(w->id,MATON_STATE_FULLSCREEN_ON);
   xwindow_show_surface(w);
   return w;
 }
@@ -663,6 +701,10 @@ static void process_commands(void) {
        * discrete argument is value120, 120 per notch. */
       if(c->vs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_VERTICAL_SCROLL,-c->vs*15.0,(int32_t)lroundf(-c->vs*120.0f),WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);if(c->hs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_HORIZONTAL_SCROLL,-c->hs*15.0,(int32_t)lroundf(-c->hs*120.0f),WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);wlr_seat_pointer_notify_frame(server.seat);}break;
     case CMD_RELEASE:if(c->buffer)wlr_buffer_unlock(c->buffer);break;
+    case CMD_FULLSCREEN:if(w){
+      if(w->xsurface)wlr_xwayland_surface_set_fullscreen(w->xsurface,c->a!=0);
+      else if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_fullscreen(w->toplevel,c->a!=0);
+    }break;
     case CMD_CLOSE:if(w&&w->toplevel){clear_window_pointer(w);wlr_xdg_toplevel_send_close(w->toplevel);}else if(w&&w->xsurface){clear_window_pointer(w);wlr_xwayland_surface_close(w->xsurface);}break;
     case CMD_STOP:atomic_store(&server.stopping,true);break;
     }free(c);
@@ -871,6 +913,7 @@ void maton_core_launch_demo(void){bool expected=false;if(atomic_compare_exchange
 void maton_core_attach(int id,struct MatonSurfaceOutput* output,int width,int height){command(CMD_ATTACH,id,width,height,0,0,0,0,0,0,output,NULL);}
 void maton_core_detach(int id){command(CMD_DETACH,id,0,0,0,0,0,0,0,0,NULL,NULL);}
 void maton_core_resize(int id,int width,int height){command(CMD_RESIZE,id,width,height,0,0,0,0,0,0,NULL,NULL);}
+void maton_core_set_fullscreen(int id,int on){command(CMD_FULLSCREEN,id,on,0,0,0,0,0,0,0,NULL,NULL);}
 void maton_core_key(int id,int keycode,int scan,int action,int meta,int64_t time){(void)meta;command(CMD_KEY,id,keycode,scan,action,time,0,0,0,0,NULL,NULL);}
 void maton_core_motion(int id,float x,float y,float vs,float hs,int action,int buttons,int64_t time){command(CMD_MOTION,id,action,buttons,0,time,x,y,vs,hs,NULL,NULL);}
 
