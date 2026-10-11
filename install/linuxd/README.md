@@ -106,7 +106,7 @@ the installed metadata and replace the stub when they differ.
 `runtimeCommit`, the configured `remote`, the stub `uid`, and the fixed
 `runtimeUid` for `org.matonos.linuxruntimes`. linuxd checks both 64-character
 commit pins against the staging refs before transferring anything. The
-installer stages both refs in `/data/matonos/linux/staging`; linuxd then
+installer stages both refs in `/data/misc_de/<u>/matonos-linux/install/<uid>/staging/<operation>`; linuxd then
 uses signature-verifying `ostree pull-local` into the runtime system install
 and the per-uid user install, seals the verified objects read-only with the
 code label, and runs `flatpak install --no-pull`.
@@ -140,7 +140,7 @@ At installation publication, linuxd writes global `session-bus` socket
 overrides to both the shared system runtime installation S and the app UID's
 user installation U. The override command has no app ID. The verified
 runtime-install UID is retained per Android user in
-`/data/matonos/linux/runtime/runtime-installation-<userId>`; launch resolves S
+`/data/misc_de/<u>/matonos-linux/runtime-installation`; launch resolves S
 from that record and U from the verified stub UID. `flatpak run --user` launches
 the app from U while sharing its runtime from S. The wrapper keeps U as the
 Flatpak install root and uses the separate UID-owned `home` directory for
@@ -265,7 +265,7 @@ This is a local C hook, not a socket protocol or Android vibrator relay.
 ## linux-data task, 2026-10-04 (narrowed scope)
 
 The sandbox domain is `matonos_linux_app`. Persistent writable state uses the
-`/data/matonos/linux/home/<stub uid>` path (see `STORAGE-LAYOUT.md`), labelled
+`/data/misc_ce/<u>/matonos-linux/home/<stub uid>` path (see `STORAGE-LAYOUT.md`), labelled
 `matonos_linux_data_file` with the verified stub's MLS categories. Linuxd
 creates the UID tree and home using component-wise openat/O_NOFOLLOW walking,
 0700 mode and stub UID/GID ownership. The existing system-owned `<uid>.owner`

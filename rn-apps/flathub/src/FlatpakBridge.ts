@@ -58,6 +58,7 @@ export async function fetchIconBase64(url: string): Promise<string | undefined> 
   } catch { return undefined; }
 }
 
+/** The bridge resolves this ref to a verified stub UID in our Android user. */
 export async function uninstallApp(ref: string, operationId: string, deleteData = false) {
   return callFlatpak("uninstall", { ref, operationId, deleteData });
 }
@@ -66,6 +67,7 @@ export async function runApp(appId: string) {
   return callFlatpak("launch_stub", { appId });
 }
 
+/** Inventory is scoped to the calling Android user by the bridge. */
 export async function getInstalledRefs(): Promise<string[]> {
   const response = await callFlatpak("list_installed");
   const output = response.output || "";

@@ -50,6 +50,10 @@
 #include <time.h>
 #include <unistd.h>
 #include "pointer_buttons.h"
+#include <wlr/types/wlr_pointer_constraints_v1.h>
+#include <wlr/types/wlr_relative_pointer_v1.h>
+#include <wlr/util/region.h>
+#include "window_fit.h"
 
 extern void* maton_wayland_test_client(void*);
 
@@ -69,11 +73,12 @@ struct SocketSession {
 struct XwaylandSession {
   int session;
   uid_t uid;
+  xcb_atom_t delete_window;
   struct wlr_xwayland* xwayland;
   struct wl_listener ready, new_surface, destroy;
   struct XwaylandSession* next;
 };
-enum CommandKind { CMD_STOPPED, CMD_ATTACH, CMD_DETACH, CMD_RESIZE, CMD_KEY, CMD_MOTION, CMD_RELEASE, CMD_CLOSE, CMD_STOP, CMD_ADD_SESSION, CMD_ADD_XWAYLAND, CMD_FULLSCREEN };
+enum CommandKind { CMD_STOPPED, CMD_ATTACH, CMD_DETACH, CMD_RESIZE, CMD_KEY, CMD_MOTION, CMD_RELEASE, CMD_CLOSE, CMD_STOP, CMD_ADD_SESSION, CMD_ADD_XWAYLAND, CMD_FULLSCREEN, CMD_RELATIVE, CMD_CAPTURE_LOST };
 struct Command {
   enum CommandKind kind;
   int id, a, b, c;
@@ -87,6 +92,9 @@ struct Command {
 struct Window {
   int id, width, height, activity, session;
   bool stopped;
+  struct MatonSizeHints hints;
+  struct wl_listener size_hints, decorations;
+  bool client_decorated;
   struct MatonSurfaceOutput surface;
   struct wlr_output* output;
   struct wlr_scene_output* scene_output;
@@ -99,7 +107,7 @@ struct Window {
   struct wl_event_source* retry;
   struct wl_listener xsurface_destroy, xsurface_associate, xsurface_geometry, scene_tree_destroy;
   /* Window-state requests (fullscreen, minimize) from X11 or xdg_toplevel. */
-  struct wl_listener request_fullscreen, request_minimize;
+  struct wl_listener request_fullscreen, request_minimize, request_move, request_resize;
   struct Window* next;
 };
 struct Server {
@@ -127,6 +135,11 @@ struct Server {
   struct wlr_seat* seat;
   struct wlr_keyboard keyboard;
   int keyboard_initialized;
+  struct wlr_pointer_constraints_v1* constraints;
+  struct wlr_relative_pointer_manager_v1* relative;
+  struct wlr_pointer_constraint_v1* constraint;
+  struct wl_listener new_constraint, pointer_focus_change;
+  double pointer_x, pointer_y;
   struct wlr_surface* pointer_focus;
   uint32_t pointer_buttons;
   int pointer_window;
@@ -144,6 +157,22 @@ struct Server {
 static atomic_int next_window_id = 2;
 static void handle_add_xwayland(int session,uid_t uid);
 static void on_xsurface_commit(struct wl_listener* l,void* data);
+static void window_state_unlisten(struct Window* w);
+static struct wlr_surface* window_root_surface(struct Window* w);
+static struct MatonFit window_fit(struct Window* w) {
+  struct wlr_surface* surface=window_root_surface(w);
+  int width=surface?surface->current.width:w->width,height=surface?surface->current.height:w->height;
+  if(w->toplevel&&w->toplevel->base->geometry.width>0){width=w->toplevel->base->geometry.width;height=w->toplevel->base->geometry.height;}
+  return maton_fit(w->width,w->height,width,height);
+}
+static void configure_window(struct Window* w) {
+  if(maton_size_fixed(w->hints))return;
+  int width=maton_size_clamp(w->width,w->hints.min_width,w->hints.max_width);
+  int height=maton_size_clamp(w->height,w->hints.min_height,w->hints.max_height);
+  if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_size(w->toplevel,width,height);
+  else if(w->xsurface&&(w->xsurface->width!=width||w->xsurface->height!=height||w->xsurface->x||w->xsurface->y))
+    wlr_xwayland_surface_configure(w->xsurface,0,0,width,height);
+}
 struct PointerButtonEvent { uint32_t time; int window; };
 static void notify_pointer_button(void* data, uint32_t code, bool pressed) {
   struct PointerButtonEvent* event = data;
@@ -152,8 +181,59 @@ static void notify_pointer_button(void* data, uint32_t code, bool pressed) {
   wlr_seat_pointer_notify_button(server.seat,event->time,code,
       pressed ? WL_POINTER_BUTTON_STATE_PRESSED : WL_POINTER_BUTTON_STATE_RELEASED);
 }
+/* All constraint state is owned by the Wayland thread. Deactivation can
+ * destroy a one-shot constraint, so clear our reference before sending. */
+static void deactivate_constraint(void) {
+  struct wlr_pointer_constraint_v1* c=server.constraint;
+  if(!c)return;
+  server.constraint=NULL;
+  maton_java_window_state(server.pointer_window,MATON_STATE_CAPTURE_OFF);
+  if(c->type==WLR_POINTER_CONSTRAINT_V1_LOCKED&&c->current.cursor_hint.enabled){
+    server.pointer_x=c->current.cursor_hint.x;server.pointer_y=c->current.cursor_hint.y;
+    if(server.seat->pointer_state.focused_surface==c->surface)wlr_seat_pointer_notify_motion(server.seat,0,server.pointer_x,server.pointer_y);
+  }
+  wlr_pointer_constraint_v1_send_deactivated(c);
+}
+static void activate_constraint(void) {
+  if(server.constraint||!server.constraints||!server.pointer_window)return;
+  struct wlr_pointer_constraint_v1* c=wlr_pointer_constraints_v1_constraint_for_surface(
+      server.constraints,server.seat->pointer_state.focused_surface,server.seat);
+  if(!c||!isfinite(server.pointer_x)||!isfinite(server.pointer_y)||!pixman_region32_contains_point(&c->region,(int)floor(server.pointer_x),(int)floor(server.pointer_y),NULL))return;
+  server.constraint=c;wlr_pointer_constraint_v1_send_activated(c);
+  maton_java_window_state(server.pointer_window,MATON_STATE_CAPTURE_ON);
+}
+struct Constraint { struct wlr_pointer_constraint_v1* constraint; struct wl_listener destroy, region; };
+static void on_constraint_destroy(struct wl_listener* l,void* data) {
+  (void)data;struct Constraint* c=(struct Constraint*)((char*)l-offsetof(struct Constraint,destroy));
+  if(server.constraint==c->constraint){
+    struct wlr_pointer_constraint_v1* constraint=c->constraint;server.constraint=NULL;
+    if(constraint->type==WLR_POINTER_CONSTRAINT_V1_LOCKED&&constraint->current.cursor_hint.enabled&&server.seat->pointer_state.focused_surface==constraint->surface){
+      server.pointer_x=constraint->current.cursor_hint.x;server.pointer_y=constraint->current.cursor_hint.y;
+      wlr_seat_pointer_notify_motion(server.seat,0,server.pointer_x,server.pointer_y);
+    }
+    maton_java_window_state(server.pointer_window,MATON_STATE_CAPTURE_OFF);
+  }
+  wl_list_remove(&c->destroy.link);wl_list_remove(&c->region.link);free(c);
+}
+static void on_constraint_region(struct wl_listener* l,void* data) {
+  (void)l;(void)data;
+  if(server.constraint&&!pixman_region32_contains_point(&server.constraint->region,(int)floor(server.pointer_x),(int)floor(server.pointer_y),NULL))deactivate_constraint();
+  activate_constraint();
+}
+static void on_new_constraint(struct wl_listener* l,void* data) {
+  (void)l;struct Constraint* c=calloc(1,sizeof(*c));if(!c)return;c->constraint=data;
+  c->destroy.notify=on_constraint_destroy;wl_signal_add(&c->constraint->events.destroy,&c->destroy);
+  c->region.notify=on_constraint_region;wl_signal_add(&c->constraint->events.set_region,&c->region);
+  activate_constraint();
+}
+static void on_pointer_focus_change(struct wl_listener* l,void* data) {
+  (void)l;(void)data;
+  if(server.constraint&&server.constraint->surface!=server.seat->pointer_state.focused_surface)deactivate_constraint();
+  activate_constraint();
+}
 static void clear_window_pointer(struct Window* w) {
   if(!w || !server.seat || server.pointer_window!=w->id)return;
+  deactivate_constraint();
   struct timespec now={0};clock_gettime(CLOCK_MONOTONIC,&now);
   struct PointerButtonEvent event={.time=(uint32_t)(now.tv_sec*1000+now.tv_nsec/1000000),.window=w->id};
   maton_pointer_buttons_update(&server.pointer_buttons,0,notify_pointer_button,&event);
@@ -223,7 +303,7 @@ static void on_frame(struct wl_listener* l,void* data) {
      * next frame: the headless output fires that at once, and a layer whose
      * Android window is not latching (hidden, stopped) would then spin the
      * Wayland thread and starve every other window. */
-    if(maton_presenter_present(w->presenter,w->scene)){
+    if(maton_presenter_present(w->presenter,w->scene,window_fit(w),w->width,w->height)){
       if(!w->retry)w->retry=wl_event_loop_add_timer(wl_display_get_event_loop(server.display),on_present_retry,w);
       if(w->retry)wl_event_source_timer_update(w->retry,50);
     }
@@ -241,17 +321,22 @@ static void destroy_output(struct Window* w) {
   maton_surface_output_finish(&w->surface);w->scene_output=NULL;w->output=NULL;
 }
 static void destroy_window(struct Window* w) {
+  window_state_unlisten(w);
   if(w->surface_commit.link.prev){wl_list_remove(&w->surface_commit.link);wl_list_init(&w->surface_commit.link);}
   if(w->toplevel_destroy.link.prev){wl_list_remove(&w->toplevel_destroy.link);wl_list_init(&w->toplevel_destroy.link);}
   if(w->xsurface_destroy.link.prev){wl_list_remove(&w->xsurface_destroy.link);wl_list_init(&w->xsurface_destroy.link);}
   if(w->xsurface_associate.link.prev){wl_list_remove(&w->xsurface_associate.link);wl_list_init(&w->xsurface_associate.link);}
   if(w->xsurface_geometry.link.prev){wl_list_remove(&w->xsurface_geometry.link);wl_list_init(&w->xsurface_geometry.link);}
+  if(w->size_hints.link.prev)wl_list_remove(&w->size_hints.link);
   destroy_output(w);
   if(w->scene)wlr_scene_node_destroy(&w->scene->tree.node);
   struct Window** p=&server.windows;while(*p&&*p!=w)p=&(*p)->next;if(*p)*p=w->next;
   free(w);
 }
 static void window_state_unlisten(struct Window* w) {
+  if(w->request_move.link.prev){wl_list_remove(&w->request_move.link);wl_list_init(&w->request_move.link);}
+  if(w->request_resize.link.prev){wl_list_remove(&w->request_resize.link);wl_list_init(&w->request_resize.link);}
+  if(w->decorations.link.prev){wl_list_remove(&w->decorations.link);wl_list_init(&w->decorations.link);}
   if(w->request_fullscreen.link.prev){wl_list_remove(&w->request_fullscreen.link);wl_list_init(&w->request_fullscreen.link);}
   if(w->request_minimize.link.prev){wl_list_remove(&w->request_minimize.link);wl_list_init(&w->request_minimize.link);}
 }
@@ -273,9 +358,18 @@ static struct wlr_surface* window_root_surface(struct Window* w) {
 static void on_surface_commit(struct wl_listener* l,void* data) {
   (void)data;
   struct Window* w=window_from_listener(l,offsetof(struct Window,surface_commit));
+  if(w->toplevel){
+    struct wlr_xdg_toplevel_state* t=&w->toplevel->current;
+    struct MatonSizeHints h={t->min_width,t->min_height,t->max_width,t->max_height};
+    if(w->toplevel->base->initial_commit||memcmp(&h,&w->hints,sizeof(h))){w->hints=h;
+      __android_log_print(ANDROID_LOG_DEBUG,"MatonCompositor","xdg window %d: min=%dx%d max=%dx%d",w->id,h.min_width,h.min_height,h.max_width,h.max_height);
+      configure_window(w);
+    }
+  }
+  if(w->output&&!w->stopped)wlr_output_schedule_frame(w->output);
   /* wlroots initializes xdg surfaces on their first surface commit. */
   if(w->toplevel&&w->toplevel->base->initial_commit){
-    wlr_xdg_toplevel_set_size(w->toplevel,w->width,w->height);
+    configure_window(w);
     /* Android frames and manages the window, so it is tiled on every edge:
      * toolkits then drop rounded corners, shadow margins and resize borders.
      * Firefox ignores tiled for its own frame, so maximized is sent as well;
@@ -292,6 +386,33 @@ static void on_toplevel_request_fullscreen(struct wl_listener* l,void* data) {
 static void on_toplevel_request_minimize(struct wl_listener* l,void* data) {
   (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,request_minimize));
   maton_java_window_state(w->id,MATON_STATE_MINIMIZE);
+}
+/* A client cannot initiate geometry without a live primary-button press in
+ * its own window. Wayland additionally requires the seat's grab serial.
+ * Java/bridge repeats ownership checks; this per-app parser is untrusted. */
+static void request_geometry(struct Window* w,uint32_t edges) {
+  if(!w||!server.seat||server.constraint||server.pointer_window!=w->id||
+      !(server.pointer_buttons&1)||edges>15||(edges&3)==3||(edges&12)==12)return;
+  maton_java_window_state(w->id,MATON_STATE_GEOMETRY_BASE+(int)edges);
+}
+static void on_toplevel_request_move(struct wl_listener* l,void* data) {
+  struct Window* w=window_from_listener(l,offsetof(struct Window,request_move));
+  struct wlr_xdg_toplevel_move_event* e=data;
+  if(e&&e->seat&&e->seat->seat==server.seat&&
+      wlr_seat_validate_pointer_grab_serial(server.seat,window_root_surface(w),e->serial))request_geometry(w,0);
+}
+static void on_toplevel_request_resize(struct wl_listener* l,void* data) {
+  struct Window* w=window_from_listener(l,offsetof(struct Window,request_resize));
+  struct wlr_xdg_toplevel_resize_event* e=data;
+  if(e&&e->edges&&e->seat&&e->seat->seat==server.seat&&
+      wlr_seat_validate_pointer_grab_serial(server.seat,window_root_surface(w),e->serial))request_geometry(w,e->edges);
+}
+static void on_xrequest_move(struct wl_listener* l,void* data) {
+  (void)data;request_geometry(window_from_listener(l,offsetof(struct Window,request_move)),0);
+}
+static void on_xrequest_resize(struct wl_listener* l,void* data) {
+  struct wlr_xwayland_resize_event* e=data;
+  if(e&&e->edges)request_geometry(window_from_listener(l,offsetof(struct Window,request_resize)),e->edges);
 }
 static void on_new_toplevel(struct wl_listener* l,void* data) {
   (void)l;struct wlr_xdg_toplevel* t=data;struct Window* w=NULL;
@@ -317,6 +438,11 @@ static void on_new_toplevel(struct wl_listener* l,void* data) {
   window_state_unlisten(w);
   w->request_fullscreen.notify=on_toplevel_request_fullscreen;wl_signal_add(&t->events.request_fullscreen,&w->request_fullscreen);
   w->request_minimize.notify=on_toplevel_request_minimize;wl_signal_add(&t->events.request_minimize,&w->request_minimize);
+  w->request_move.notify=on_toplevel_request_move;wl_signal_add(&t->events.request_move,&w->request_move);
+  w->request_resize.notify=on_toplevel_request_resize;wl_signal_add(&t->events.request_resize,&w->request_resize);
+  /* Wayland toolkits without xdg-decoration (GTK) follow the button layout we
+   * set (gtk-decoration-layout=:), so Android's caption supplies the buttons. */
+  w->client_decorated=false;
   if(request){w->activity=1;maton_java_request_window(session,w->id,w->width,w->height);}
 }
 struct Popup {
@@ -335,7 +461,8 @@ static void constrain_popup(struct wlr_xdg_popup* popup) {
   for(struct Window* w=server.windows;w;w=w->next){
     if(!xdg||!w->toplevel||w->toplevel->base!=xdg)continue;
     /* The scene places the window geometry, not the surface, at the output origin. */
-    struct wlr_box box={xdg->geometry.x,xdg->geometry.y,w->width,w->height};
+    struct MatonFit fit=window_fit(w);
+    struct wlr_box box={xdg->geometry.x,xdg->geometry.y,fit.width,fit.height};
     wlr_xdg_popup_unconstrain_from_box(popup,&box);return;
   }
   wlr_xdg_surface_schedule_configure(popup->base);
@@ -363,10 +490,9 @@ static void on_new_popup(struct wl_listener* listener,void* data) {
   p->reposition.notify=on_popup_reposition;wl_signal_add(&popup->events.reposition,&p->reposition);
   p->destroy.notify=on_popup_destroy;wl_signal_add(&popup->events.destroy,&p->destroy);
 }
-/* Android's caption bar is the only window decoration MatonOS provides, so
- * client-side decoration requests are refused: every toplevel is told that
- * the server decorates. Toolkits then drop their own title bars instead of
- * drawing a second one below Android's caption. */
+/* Apps that support server-side decorations always get them: Android's
+ * caption is the frame. Only X11 windows that turn off the WM title (Steam,
+ * games) keep their own header and hide Android's caption. */
 struct Decoration {
   struct wlr_xdg_toplevel_decoration_v1* deco;
   struct wl_listener request, commit, destroy;
@@ -383,9 +509,11 @@ static void on_decoration_request(struct wl_listener* l,void* data) {
 static void on_decoration_commit(struct wl_listener* l,void* data) {
   (void)data;struct Decoration* d=(struct Decoration*)((char*)l-offsetof(struct Decoration,commit));
   if(d->deco->toplevel->base->initial_commit)decoration_send(d);
+  for(struct Window* w=server.windows;w;w=w->next)if(w->toplevel==d->deco->toplevel){w->client_decorated=d->deco->current.mode!=WLR_XDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE;maton_java_window_state(w->id,w->client_decorated?MATON_STATE_CLIENT_DECORATED:MATON_STATE_SERVER_DECORATED);}
 }
 static void on_decoration_destroy(struct wl_listener* l,void* data) {
   (void)data;struct Decoration* d=(struct Decoration*)((char*)l-offsetof(struct Decoration,destroy));
+  for(struct Window* w=server.windows;w;w=w->next)if(w->toplevel==d->deco->toplevel){w->client_decorated=false;maton_java_window_state(w->id,MATON_STATE_SERVER_DECORATED);}
   wl_list_remove(&d->request.link);wl_list_remove(&d->commit.link);wl_list_remove(&d->destroy.link);free(d);
 }
 static void on_new_decoration(struct wl_listener* l,void* data) {
@@ -405,6 +533,7 @@ static void on_xsurface_destroy(struct wl_listener* l,void* data) {
   wl_list_remove(&w->surface_commit.link);wl_list_init(&w->surface_commit.link);
   if(w->xsurface_associate.link.prev){wl_list_remove(&w->xsurface_associate.link);wl_list_init(&w->xsurface_associate.link);}
   if(w->xsurface_geometry.link.prev){wl_list_remove(&w->xsurface_geometry.link);wl_list_init(&w->xsurface_geometry.link);}
+  if(w->size_hints.link.prev){wl_list_remove(&w->size_hints.link);wl_list_init(&w->size_hints.link);}
   window_state_unlisten(w);
   clear_window_pointer(w);destroy_output(w);w->xsurface=NULL;w->activity=0;
   maton_java_close_window(w->id);
@@ -431,16 +560,14 @@ static void xwindow_show_surface(struct Window* w) {
   /* X11 has no tiled state; maximized makes toolkits drop frame effects. */
   wlr_xwayland_surface_set_maximized(w->xsurface,true,true);
   xwindow_activate(w);
-  /* Overlay positions and pointer input assume every managed X window sits
-   * at the X origin; the client may have placed it elsewhere before map. */
-  wlr_xwayland_surface_configure(w->xsurface,0,0,w->width,w->height);
+  /* Resizable windows use the X origin; fixed windows retain their geometry. */
+  configure_window(w);
 }
 static void on_xsurface_geometry(struct wl_listener* l,void* data) {
   (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,xsurface_geometry));
-  /* Android's window size is authoritative: acknowledge X geometry requests
-   * with our configured size so the client redraws to fit the activity. */
+  /* Apply Android size within the current constraints. */
   if(w->xsurface)
-    wlr_xwayland_surface_configure(w->xsurface,0,0,w->width,w->height);
+    configure_window(w);
 }
 /* wlroots updates xs->fullscreen from _NET_WM_STATE before emitting. */
 static void on_xsurface_request_fullscreen(struct wl_listener* l,void* data) {
@@ -452,6 +579,30 @@ static void on_xsurface_request_minimize(struct wl_listener* l,void* data) {
   struct wlr_xwayland_minimize_event* e=data;
   if(e&&e->minimize)maton_java_window_state(w->id,MATON_STATE_MINIMIZE);
 }
+static void read_xsize_hints(struct Window* w) {
+  xcb_size_hints_t* h=w->xsurface->size_hints;
+  w->hints=(struct MatonSizeHints){0};
+  if(h){
+    if(h->flags&XCB_ICCCM_SIZE_HINT_P_MIN_SIZE){w->hints.min_width=h->min_width>0?h->min_width:0;w->hints.min_height=h->min_height>0?h->min_height:0;}
+    if(h->flags&XCB_ICCCM_SIZE_HINT_P_MAX_SIZE){w->hints.max_width=h->max_width>0?h->max_width:0;w->hints.max_height=h->max_height>0?h->max_height:0;}
+  }
+}
+static void on_xsize_hints(struct wl_listener* l,void* data) {
+  (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,size_hints));
+  read_xsize_hints(w);configure_window(w);
+  __android_log_print(ANDROID_LOG_DEBUG,"MatonCompositor","X window %d: min=%dx%d max=%dx%d",w->id,w->hints.min_width,w->hints.min_height,w->hints.max_width,w->hints.max_height);
+}
+static void on_xdecorations(struct wl_listener* l,void* data) {
+  (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,decorations));
+  w->client_decorated=(w->xsurface->decorations&WLR_XWAYLAND_SURFACE_DECORATIONS_NO_TITLE)!=0;
+  maton_java_window_state(w->id,w->client_decorated?MATON_STATE_CLIENT_DECORATED:MATON_STATE_SERVER_DECORATED);
+}
+static void close_xwindow(struct Window* w) {
+  xcb_atom_t atom=XCB_ATOM_NONE;
+  for(struct XwaylandSession* xw=server.xwayland_sessions;xw;xw=xw->next)if(xw->session==w->session)atom=xw->delete_window;
+  for(size_t i=0;atom&&i<w->xsurface->protocols_len;i++)if(w->xsurface->protocols[i]==atom){wlr_xwayland_surface_close(w->xsurface);return;}
+  __android_log_print(ANDROID_LOG_INFO,"MatonCompositor","X window %d class=%s: close without WM_DELETE_WINDOW; leaving client alive",w->id,w->xsurface->class?w->xsurface->class:"");
+}
 static struct Window* xwayland_window(struct wlr_xwayland_surface* xs,int session) {
   for(struct Window* w=server.windows;w;w=w->next)if(w->xsurface==xs)return w;
   struct Window* w=calloc(1,sizeof(*w));if(!w)return NULL;
@@ -461,6 +612,11 @@ static struct Window* xwayland_window(struct wlr_xwayland_surface* xs,int sessio
   if(!w->scene){free(w);return NULL;}
   w->next=server.windows;server.windows=w;
   w->session=session;w->xsurface=xs;
+  w->request_move.notify=on_xrequest_move;wl_signal_add(&xs->events.request_move,&w->request_move);
+  w->request_resize.notify=on_xrequest_resize;wl_signal_add(&xs->events.request_resize,&w->request_resize);
+  w->decorations.notify=on_xdecorations;wl_signal_add(&xs->events.set_decorations,&w->decorations);
+  w->client_decorated=(xs->decorations&WLR_XWAYLAND_SURFACE_DECORATIONS_NO_TITLE)!=0;
+  read_xsize_hints(w);w->size_hints.notify=on_xsize_hints;wl_signal_add(&xs->events.set_size_hints,&w->size_hints);
   w->xsurface_destroy.notify=on_xsurface_destroy;
   wl_signal_add(&xs->events.destroy,&w->xsurface_destroy);
   w->xsurface_geometry.notify=on_xsurface_geometry;
@@ -470,9 +626,11 @@ static struct Window* xwayland_window(struct wlr_xwayland_surface* xs,int sessio
   w->request_fullscreen.notify=on_xsurface_request_fullscreen;wl_signal_add(&xs->events.request_fullscreen,&w->request_fullscreen);
   w->request_minimize.notify=on_xsurface_request_minimize;wl_signal_add(&xs->events.request_minimize,&w->request_minimize);
   __android_log_print(ANDROID_LOG_DEBUG,"MatonCompositor",
-      "X window %d: title=\"%s\" class=%s %ux%u%+d%+d parent=%s modal=%d min=%d withdrawn=%d skip_taskbar=%d skip_pager=%d",
+      "X window %d: title=\"%s\" class=%s %ux%u%+d%+d parent=%s modal=%d min=%d withdrawn=%d skip_taskbar=%d skip_pager=%d min_size=%dx%d max_size=%dx%d",
       w->id,xs->title?xs->title:"",xs->class?xs->class:"",xs->width,xs->height,xs->x,xs->y,
-      xs->parent?"yes":"no",xs->modal,xs->minimized,xs->withdrawn,xs->skip_taskbar,xs->skip_pager);
+      xs->parent?"yes":"no",xs->modal,xs->minimized,xs->withdrawn,xs->skip_taskbar,xs->skip_pager,w->hints.min_width,w->hints.min_height,w->hints.max_width,w->hints.max_height);
+  __android_log_print(ANDROID_LOG_DEBUG,"MatonCompositor","X window %d: WM_PROTOCOLS count=%zu",w->id,xs->protocols_len);
+  for(size_t i=0;i<xs->protocols_len;i++)__android_log_print(ANDROID_LOG_DEBUG,"MatonCompositor","X window %d: WM_PROTOCOLS[%zu]=%u",w->id,i,xs->protocols[i]);
   w->activity=1;maton_java_request_window(session,w->id,w->width,w->height);
   /* Windows mapped already fullscreen (e.g. Steam Big Picture) ask now. */
   if(xs->fullscreen)maton_java_window_state(w->id,MATON_STATE_FULLSCREEN_ON);
@@ -481,11 +639,11 @@ static struct Window* xwayland_window(struct wlr_xwayland_surface* xs,int sessio
 }
 static void on_xsurface_commit(struct wl_listener* l,void* data) {
   (void)data;struct Window* w=window_from_listener(l,offsetof(struct Window,surface_commit));
-  if(w->xsurface)wlr_xwayland_surface_configure(w->xsurface,0,0,w->width,w->height);
+  if(w->xsurface)configure_window(w);
 }
 /* Override-redirect windows (menus, tooltips, drop-downs) get no Android
- * window of their own. Every managed X window is configured at the X origin,
- * so their root coordinates are offsets within the window they belong to:
+ * window of their own. Root coordinates are translated relative to the owner
+ * (fixed windows keep their requested X position):
  * the transient parent if set, else the window under the pointer, else the
  * session's newest X window. */
 struct XOverlay {
@@ -523,7 +681,7 @@ static void on_xoverlay_associate(struct wl_listener* l,void* data) {
   if(!o->tree)return;
   o->tree_destroy.notify=on_xoverlay_tree_destroy;wl_signal_add(&o->tree->node.events.destroy,&o->tree_destroy);
   wlr_scene_node_raise_to_top(&o->tree->node);
-  wlr_scene_node_set_position(&o->tree->node,o->xs->x,o->xs->y);
+  wlr_scene_node_set_position(&o->tree->node,o->xs->x-w->xsurface->x,o->xs->y-w->xsurface->y);
   __android_log_print(ANDROID_LOG_DEBUG,"MatonCompositor","X overlay %ux%u+%d+%d class=%s on window %d",
       o->xs->width,o->xs->height,o->xs->x,o->xs->y,o->xs->class?o->xs->class:"-",w->id);
   if(w->output && !w->stopped)wlr_output_schedule_frame(w->output);
@@ -534,7 +692,8 @@ static void on_xoverlay_dissociate(struct wl_listener* l,void* data) {
 }
 static void on_xoverlay_geometry(struct wl_listener* l,void* data) {
   (void)data;struct XOverlay* o=(struct XOverlay*)((char*)l-offsetof(struct XOverlay,geometry));
-  if(o->tree)wlr_scene_node_set_position(&o->tree->node,o->xs->x,o->xs->y);
+  struct Window* w=xoverlay_owner(o);
+  if(o->tree&&w)wlr_scene_node_set_position(&o->tree->node,o->xs->x-w->xsurface->x,o->xs->y-w->xsurface->y);
 }
 static void on_xoverlay_destroy(struct wl_listener* l,void* data) {
   (void)data;struct XOverlay* o=(struct XOverlay*)((char*)l-offsetof(struct XOverlay,destroy));
@@ -615,6 +774,22 @@ static void on_xwayland_ready(struct wl_listener* l,void* data) {
   __android_log_print(ANDROID_LOG_INFO,"MatonCompositor","Session %d: Xwayland ready on %s",
       xw->session,xw->xwayland?xw->xwayland->display_name:"?");
   xwayland_apply_socket_mode(xw);
+  /* Xwayland uses our private socket directory, not /tmp/.X11-unix. */
+  int fd=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0);
+  struct sockaddr_un address={.sun_family=AF_UNIX};
+  int length=snprintf(address.sun_path,sizeof(address.sun_path),"%s/X%s",server.xwayland_dir,xw->xwayland->display_name+1);
+  xcb_connection_t* connection=NULL;
+  if(fd>=0){
+    if(length>0&&length<(int)sizeof(address.sun_path)&&!connect(fd,(struct sockaddr*)&address,sizeof(address)))connection=xcb_connect_to_fd(fd,NULL);
+    else close(fd);
+  }
+  if(connection&&!xcb_connection_has_error(connection)){
+    const char name[]="WM_DELETE_WINDOW";
+    xcb_intern_atom_reply_t* reply=xcb_intern_atom_reply(connection,xcb_intern_atom(connection,0,sizeof(name)-1,name),NULL);
+    if(reply){xw->delete_window=reply->atom;free(reply);}
+  }
+  if(connection)xcb_disconnect(connection);
+  if(!xw->delete_window)__android_log_print(ANDROID_LOG_WARN,"MatonCompositor","Session %d: cannot intern WM_DELETE_WINDOW; X close requests leave clients alive",xw->session);
 }
 static void on_xwayland_destroy(struct wl_listener* l,void* data) {
   (void)data;struct XwaylandSession* xw=(struct XwaylandSession*)((char*)l-offsetof(struct XwaylandSession,destroy));
@@ -667,6 +842,7 @@ static void attach_output(struct Command* c) {
   w->scene_output=wlr_scene_output_create(w->scene,w->output);if(!w->scene_output){destroy_output(w);return;}
   w->presenter=maton_presenter_create(w->surface.control,server.allocator,&server.uploader);
   if(!w->presenter){destroy_output(w);return;}
+  configure_window(w);
   w->frame.notify=on_frame;wl_signal_add(&w->output->events.frame,&w->frame);
   w->commit.notify=on_commit;wl_signal_add(&w->output->events.commit,&w->commit);wlr_output_schedule_frame(w->output);
 }
@@ -686,26 +862,43 @@ static void process_commands(void) {
     case CMD_ADD_XWAYLAND:handle_add_xwayland(c->a,(uid_t)c->b);break;
     case CMD_STOPPED:
       if(w){w->stopped=c->a;
+        if(w->stopped)clear_window_pointer(w);
         if(w->toplevel && w->toplevel->base->initialized)wlr_xdg_toplevel_set_suspended(w->toplevel,w->stopped);
         if(w->stopped && w->retry){wl_event_source_remove(w->retry);w->retry=NULL;}
         if(!w->stopped && w->output)wlr_output_schedule_frame(w->output);
       }break;
-    case CMD_ATTACH:monitor_cover(c->a,c->b);attach_output(c);break;
+    case CMD_ATTACH:if(w)maton_java_window_state(w->id,w->client_decorated?MATON_STATE_CLIENT_DECORATED:MATON_STATE_SERVER_DECORATED);monitor_cover(c->a,c->b);attach_output(c);break;
     case CMD_DETACH:if(w){w->activity=0;destroy_output(w);}break;
-    case CMD_RESIZE:if(c->a>0&&c->b>0)monitor_cover(c->a,c->b);if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);bool committed=wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(committed){if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_size(w->toplevel,c->a,c->b);else if(w->xsurface)wlr_xwayland_surface_configure(w->xsurface,0,0,c->a,c->b);wlr_output_schedule_frame(w->output);}}}break;
+    case CMD_RESIZE:if(c->a>0&&c->b>0)monitor_cover(c->a,c->b);if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);bool committed=wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(committed){configure_window(w);wlr_output_schedule_frame(w->output);}}}break;
     case CMD_KEY:if(server.seat&&server.keyboard_initialized){struct wlr_surface* focus=NULL;if(w&&w->toplevel&&w->toplevel->base->surface)focus=w->toplevel->base->surface;else if(w&&w->xsurface&&w->xsurface->surface)focus=w->xsurface->surface;if(focus&&server.seat->keyboard_state.focused_surface!=focus){wlr_seat_keyboard_notify_enter(server.seat,focus,NULL,0,&server.keyboard.modifiers);xwindow_activate(w);}struct wlr_keyboard_key_event e={.time_msec=(uint32_t)(c->time/1000000),.keycode=(uint32_t)(c->b>0?c->b:c->a+8),.update_state=true,.state=c->c==0?WL_KEYBOARD_KEY_STATE_PRESSED:WL_KEYBOARD_KEY_STATE_RELEASED};wlr_keyboard_notify_key(&server.keyboard,&e);wlr_seat_keyboard_notify_key(server.seat,e.time_msec,e.keycode,e.state);wlr_seat_keyboard_notify_modifiers(server.seat,&server.keyboard.modifiers);}break;
-    case CMD_MOTION:if(server.seat&&w){if(c->a==10||c->a==3){clear_window_pointer(w);break;}uint32_t tm=(uint32_t)(c->time/1000000);double sx=0,sy=0;struct wlr_scene* scene=w?w->scene:NULL;struct wlr_scene_node* node=scene?wlr_scene_node_at(&scene->tree.node,c->x,c->y,&sx,&sy):NULL;struct wlr_scene_buffer* sb=node&&node->type==WLR_SCENE_NODE_BUFFER?wlr_scene_buffer_from_node(node):NULL;struct wlr_scene_surface* ss=sb?wlr_scene_surface_try_from_buffer(sb):NULL;if(ss){server.pointer_window=w->id;/* Compare with the seat's real focus, not a cache: a destroyed surface
+    case CMD_CAPTURE_LOST:if(w)clear_window_pointer(w);break;
+    case CMD_RELATIVE:if(w&&server.constraint&&server.pointer_window==w->id&&isfinite(c->x)&&isfinite(c->y)){
+      double dx=c->x/window_fit(w).scale,dy=c->y/window_fit(w).scale;
+      wlr_relative_pointer_manager_v1_send_relative_motion(server.relative,server.seat,c->time/1000,dx,dy,dx,dy);
+      if(server.constraint->type==WLR_POINTER_CONSTRAINT_V1_CONFINED){
+        double x,y;if(wlr_region_confine(&server.constraint->region,server.pointer_x,server.pointer_y,server.pointer_x+dx,server.pointer_y+dy,&x,&y)){
+          server.pointer_x=x;server.pointer_y=y;wlr_seat_pointer_notify_motion(server.seat,c->time/1000000,x,y);
+        }
+      }
+      struct PointerButtonEvent e={.time=c->time/1000000,.window=w->id};
+      maton_pointer_buttons_update(&server.pointer_buttons,c->b,notify_pointer_button,&e);
+      if(c->vs)wlr_seat_pointer_notify_axis(server.seat,e.time,WL_POINTER_AXIS_VERTICAL_SCROLL,-c->vs*15,(int32_t)lroundf(-c->vs*120),WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
+      if(c->hs)wlr_seat_pointer_notify_axis(server.seat,e.time,WL_POINTER_AXIS_HORIZONTAL_SCROLL,-c->hs*15,(int32_t)lroundf(-c->hs*120),WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);
+      wlr_seat_pointer_notify_frame(server.seat);
+    }break;
+    case CMD_MOTION:if(server.seat&&w){if(server.constraint)break;if(c->a==10||c->a==3){clear_window_pointer(w);break;}uint32_t tm=(uint32_t)(c->time/1000000);double sx=0,sy=0;struct wlr_scene* scene=w?w->scene:NULL;double x,y;bool inside=maton_fit_input(window_fit(w),c->x,c->y,&x,&y);struct wlr_scene_node* node=scene&&inside?wlr_scene_node_at(&scene->tree.node,x,y,&sx,&sy):NULL;struct wlr_scene_buffer* sb=node&&node->type==WLR_SCENE_NODE_BUFFER?wlr_scene_buffer_from_node(node):NULL;struct wlr_scene_surface* ss=sb?wlr_scene_surface_try_from_buffer(sb):NULL;if(ss){if(server.pointer_window!=w->id){struct Window* previous=find_window(server.pointer_window);clear_window_pointer(previous);}
+      server.pointer_x=sx;server.pointer_y=sy;server.pointer_window=w->id;/* Compare with the seat's real focus, not a cache: a destroyed surface
        * or a popup grab can clear or move it, and coordinates for the surface
        * under the pointer would then reach another one. */
-      if(server.seat->pointer_state.focused_surface!=ss->surface){server.pointer_focus=ss->surface;wlr_seat_pointer_notify_enter(server.seat,ss->surface,sx,sy);struct wlr_surface* root=window_root_surface(w);if(root&&server.seat->keyboard_state.focused_surface!=root){wlr_seat_keyboard_notify_enter(server.seat,root,NULL,0,&server.keyboard.modifiers);xwindow_activate(w);}}wlr_seat_pointer_notify_motion(server.seat,tm,sx,sy);}else{server.pointer_focus=NULL;wlr_seat_pointer_notify_clear_focus(server.seat);}struct PointerButtonEvent button_event={.time=tm,.window=w->id};maton_pointer_buttons_update(&server.pointer_buttons,ss ? (uint32_t)c->b : 0,notify_pointer_button,&button_event);/* Android reports wheel notches as +-1.0 (fractions on touchpads); the
+      if(server.seat->pointer_state.focused_surface!=ss->surface){server.pointer_focus=ss->surface;wlr_seat_pointer_notify_enter(server.seat,ss->surface,sx,sy);struct wlr_surface* root=window_root_surface(w);if(root&&server.seat->keyboard_state.focused_surface!=root){wlr_seat_keyboard_notify_enter(server.seat,root,NULL,0,&server.keyboard.modifiers);xwindow_activate(w);}}wlr_seat_pointer_notify_motion(server.seat,tm,sx,sy);activate_constraint();}else{clear_window_pointer(w);server.pointer_focus=NULL;wlr_seat_pointer_notify_clear_focus(server.seat);}struct PointerButtonEvent button_event={.time=tm,.window=w->id};maton_pointer_buttons_update(&server.pointer_buttons,ss ? (uint32_t)c->b : 0,notify_pointer_button,&button_event);/* Android reports wheel notches as +-1.0 (fractions on touchpads); the
        * discrete argument is value120, 120 per notch. */
-      if(c->vs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_VERTICAL_SCROLL,-c->vs*15.0,(int32_t)lroundf(-c->vs*120.0f),WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);if(c->hs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_HORIZONTAL_SCROLL,-c->hs*15.0,(int32_t)lroundf(-c->hs*120.0f),WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);wlr_seat_pointer_notify_frame(server.seat);}break;
+      if(ss&&c->vs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_VERTICAL_SCROLL,-c->vs*15.0,(int32_t)lroundf(-c->vs*120.0f),WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);if(ss&&c->hs)wlr_seat_pointer_notify_axis(server.seat,tm,WL_POINTER_AXIS_HORIZONTAL_SCROLL,-c->hs*15.0,(int32_t)lroundf(-c->hs*120.0f),WL_POINTER_AXIS_SOURCE_WHEEL,WL_POINTER_AXIS_RELATIVE_DIRECTION_IDENTICAL);wlr_seat_pointer_notify_frame(server.seat);}break;
     case CMD_RELEASE:if(c->buffer)wlr_buffer_unlock(c->buffer);break;
     case CMD_FULLSCREEN:if(w){
       if(w->xsurface)wlr_xwayland_surface_set_fullscreen(w->xsurface,c->a!=0);
       else if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_fullscreen(w->toplevel,c->a!=0);
     }break;
-    case CMD_CLOSE:if(w&&w->toplevel){clear_window_pointer(w);wlr_xdg_toplevel_send_close(w->toplevel);}else if(w&&w->xsurface){clear_window_pointer(w);wlr_xwayland_surface_close(w->xsurface);}break;
+    case CMD_CLOSE:if(w&&w->toplevel){clear_window_pointer(w);wlr_xdg_toplevel_send_close(w->toplevel);}else if(w&&w->xsurface){clear_window_pointer(w);close_xwindow(w);}break;
     case CMD_STOP:atomic_store(&server.stopping,true);break;
     }free(c);
   }
@@ -830,7 +1023,13 @@ static void* server_main(void* unused) {
   if(!wlr_data_device_manager_create(server.display))goto done;
   server.xdg_shell=wlr_xdg_shell_create(server.display,6);server.compositor=wlr_compositor_create(server.display,6,server.renderer);server.seat=wlr_seat_create(server.display,"seat0");
   stage="shell and seat";if(!server.xdg_shell||!server.compositor||!server.seat)goto done;
-  /* Server-side-only window decorations: Android's caption bar decorates. */
+  /* Default to server decoration only when the client requests no mode. */
+  stage="pointer constraints";
+  server.constraints=wlr_pointer_constraints_v1_create(server.display);
+  server.relative=wlr_relative_pointer_manager_v1_create(server.display);
+  if(!server.constraints||!server.relative)goto done;
+  server.new_constraint.notify=on_new_constraint;wl_signal_add(&server.constraints->events.new_constraint,&server.new_constraint);
+  server.pointer_focus_change.notify=on_pointer_focus_change;wl_signal_add(&server.seat->pointer_state.events.focus_change,&server.pointer_focus_change);
   stage="decorations";
   struct wlr_server_decoration_manager* legacy_decoration=wlr_server_decoration_manager_create(server.display);
   struct wlr_xdg_decoration_manager_v1* decorations=wlr_xdg_decoration_manager_v1_create(server.display);
@@ -877,6 +1076,9 @@ done:
   if(server.new_popup.link.prev){wl_list_remove(&server.new_popup.link);wl_list_init(&server.new_popup.link);}
   if(server.new_decoration.link.prev){wl_list_remove(&server.new_decoration.link);wl_list_init(&server.new_decoration.link);}
   if(server.new_toplevel.link.prev){wl_list_remove(&server.new_toplevel.link);wl_list_init(&server.new_toplevel.link);}
+  if(server.new_constraint.link.prev){wl_list_remove(&server.new_constraint.link);wl_list_init(&server.new_constraint.link);}
+  if(server.pointer_focus_change.link.prev){wl_list_remove(&server.pointer_focus_change.link);wl_list_init(&server.pointer_focus_change.link);}
+  server.constraint=NULL;server.constraints=NULL;server.relative=NULL;
   if(server.keyboard_initialized)wlr_keyboard_finish(&server.keyboard);server.keyboard_initialized=0;
   if(server.seat)wlr_seat_destroy(server.seat);server.seat=NULL;server.pointer_buttons=0;server.pointer_focus=NULL;server.pointer_window=0;
   if(server.allocator)wlr_allocator_destroy(server.allocator);server.allocator=NULL;
@@ -986,3 +1188,6 @@ bool maton_core_add_session(int id,const char* path) {
    * before it runs wait in this listening socket's backlog. */
   c->kind=CMD_ADD_SESSION;c->session=s;enqueue(c);return true;
 }
+
+void maton_core_capture_lost(int id){struct Command* c=calloc(1,sizeof(*c));if(c){c->kind=CMD_CAPTURE_LOST;c->id=id;enqueue(c);}}
+void maton_core_relative(int id,float x,float y,float vs,float hs,int buttons,int64_t time){struct Command* c=calloc(1,sizeof(*c));if(c){c->kind=CMD_RELATIVE;c->id=id;c->x=x;c->y=y;c->vs=vs;c->hs=hs;c->b=buttons;c->time=time;enqueue(c);}}

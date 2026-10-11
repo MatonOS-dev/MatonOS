@@ -29,6 +29,9 @@
 /dev/block/(nvme[0-9]+n[0-9]+(p[0-9]+)?|mmcblk[0-9]+(p[0-9]+)?|sd[a-z]+[0-9]*|vd[a-z]+[0-9]*) u:object_r:matonos_install_block_device:s0
 # Stable labels for both physical and fallback DRM interfaces. In particular,
 # vgem's render node must be usable by the stock allocator and Mesa SP-HAL.
-/dev/dri u:object_r:graphics_device:s0
+/dev/dri u:object_r:gpu_device:s0
 /dev/dri/renderD[0-9]+ u:object_r:gpu_device:s0
-/dev/dri/card[0-9]+ u:object_r:graphics_device:s0
+/dev/dri/card[0-9]+ u:object_r:gpu_device:s0
+
+# Dedicated copy of stock vendor toolbox, invoked as modprobe only.
+/odm/bin/modprobe -- u:object_r:matonos_modprobe_exec:s0

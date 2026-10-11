@@ -19,6 +19,19 @@ r_dir_file(pc_gpu_detect, vendor_configs_file)
 set_prop(pc_gpu_detect, vendor_maton_prop)
 set_prop(pc_gpu_detect, vendor_maton_mesa_prop)
 
-# PCI GPU metadata nodes are labelled sysfs_gpu; only this detector receives
-# access to them. Other graphics clients consume its vendor properties.
+# Other DRM metadata retains the stock sysfs_gpu label.
 r_dir_file(pc_gpu_detect, sysfs_gpu)
+
+# boot_vga chooses the primary GPU; it is not an app-visible PCI ID.
+type sysfs_matonos_boot_vga, fs_type, sysfs_type;
+allow pc_gpu_detect sysfs_matonos_boot_vga:file r_file_perms;
+allow pc_gpu_detect sysfs_type:dir search;
+allow { pc_gpu_detect vendor_modprobe pc_wakeup hal_graphics_allocator_default hal_graphics_composer_default } sysfs_matonos_pci_id:file r_file_perms;
+allow { vendor_modprobe hal_graphics_allocator_default hal_graphics_composer_default } sysfs_type:dir search;
+
+# A separate toolbox inode named modprobe: cat/setprop/readlink stay in detect.
+type matonos_modprobe_exec, exec_type, vendor_file_type, file_type;
+domain_auto_trans(pc_gpu_detect, matonos_modprobe_exec, vendor_modprobe)
+allow pc_gpu_detect vendor_toolbox_exec:file execute_no_trans;
+# The detector's timeout/fallback loop may terminate only its loader child.
+allow pc_gpu_detect vendor_modprobe:process { signal sigkill };

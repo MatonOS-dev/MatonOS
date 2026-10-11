@@ -34,7 +34,7 @@ int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
 /* Remove abandoned installer staging operations during linuxd startup. */
 int flatpak_cleanup_stale_staging(void);
 
-/* /data/matonos/linux/install/<uid>/staging/<operation> (validated). */
+/* /data/misc_de/<u>/matonos-linux/install/<uid>/staging/<operation> (validated). */
 int flatpak_staging_dir(int uid, const char* operation, char* path, unsigned long size);
 /* Remove one staging operation, as its owning UID. */
 int flatpak_remove_staging(int uid, const char* operation);

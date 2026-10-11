@@ -5,3 +5,6 @@ genfscon sysfs /devices/virtual/input u:object_r:sysfs_matonos_input:s0
 genfscon sysfs /class/input u:object_r:sysfs_matonos_discovery:s0
 genfscon sysfs /class/hidraw u:object_r:sysfs_matonos_discovery:s0
 genfscon sysfs /class/misc u:object_r:sysfs_matonos_discovery:s0
+
+# Generic scheduler status queried by desktop applications (read-only).
+genfscon proc /sys/kernel/sched_autogroup_enabled u:object_r:proc_matonos_sched_autogroup:s0

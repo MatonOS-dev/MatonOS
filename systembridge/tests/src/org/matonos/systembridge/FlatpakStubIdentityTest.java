@@ -11,6 +11,12 @@ public final class FlatpakStubIdentityTest {
         String pkg=FlatpakStubIdentity.packageFor(REF);
         assertTrue(FlatpakStubIdentity.matches(10087,10087,new String[]{pkg},pkg,new byte[][]{CERT},CERT));
     }
+    @Test public void samePackageInDifferentUsersHasIndependentUidIdentity() throws Exception {
+        String pkg=FlatpakStubIdentity.packageFor(REF);
+        assertTrue(FlatpakStubIdentity.matches(210087,210087,new String[]{pkg},pkg,new byte[][]{CERT},CERT));
+        assertFalse(FlatpakStubIdentity.matches(210087,10087,new String[]{pkg},pkg,new byte[][]{CERT},CERT));
+        assertFalse(FlatpakStubIdentity.matches(10087,210087,new String[]{pkg},pkg,new byte[][]{CERT},CERT));
+    }
     @Test public void callerCannotBorrowAnotherApplicationsIdentity() throws Exception {
         String pkg=FlatpakStubIdentity.packageFor(REF);
         String other=FlatpakStubIdentity.packageFor("app/com.example.other/x86_64/stable");
@@ -44,4 +50,16 @@ public final class FlatpakStubIdentityTest {
         assertFalse(FlatpakStubIdentity.refMatchesDeclared(null,REF));
         assertFalse(FlatpakStubIdentity.refMatchesDeclared(REF,null));
     }
+    @Test public void windowOwnershipIsSelfOnlyAndActiveUserOnly() {
+        String activity="org.matonos.compositor.stub.StubActivity";
+        assertTrue(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210087,210087,activity,true,true));
+        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,0,2,210087,210087,activity,true,true));
+        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,0,210087,210087,activity,true,true));
+        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210088,210087,activity,true,true));
+        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210087,210088,activity,true,true));
+        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210087,210087,"other.Activity",true,true));
+        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210087,210087,activity,false,true));
+        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210087,210087,activity,true,false));
+    }
+
 }

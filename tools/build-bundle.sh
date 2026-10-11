@@ -60,6 +60,13 @@ while IFS=$' \t' read -r kind source destination extra; do
   esac
 done < "$LIST"
 
+# A separate inode for the stock module-loader applet. Labeling the shared
+# vendor toolbox would also transition cat/setprop/readlink in the detector.
+# Keep its basename modprobe so toolbox dispatches only the module loader.
+[[ -x $PRODUCT_OUT/vendor/bin/toolbox ]] || die "vendor toolbox missing"
+mkdir -p "$root/bin"
+install -m 0755 "$PRODUCT_OUT/vendor/bin/toolbox" "$root/bin/modprobe"
+
 # Bundle executables live in /odm/bin and use $ORIGIN/../lib64. Keep the
 # runtime path explicit as well as setting LD_LIBRARY_PATH in service rc files.
 if command -v patchelf >/dev/null 2>&1; then

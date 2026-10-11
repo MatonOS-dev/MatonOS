@@ -131,11 +131,11 @@ if { [ -z "$supported_drivers" ] || ! find_render_node "$supported_drivers"; } &
     # reads; set both.
     setprop vendor.mesa.libgl.always.software true
     setprop vendor.maton.graphics.software true
-    if [ -x /vendor/bin/modprobe ]; then
+    if [ -x /odm/bin/modprobe ]; then
         if [ -x /vendor/bin/timeout ]; then
-            /vendor/bin/timeout 3 /vendor/bin/modprobe -d /vendor/lib/modules vgem >/dev/null 2>&1 || :
+            /vendor/bin/timeout 3 /odm/bin/modprobe -d /vendor/lib/modules vgem >/dev/null 2>&1 || :
         else
-            /vendor/bin/modprobe -d /vendor/lib/modules vgem >/dev/null 2>&1 &
+            /odm/bin/modprobe -d /vendor/lib/modules vgem >/dev/null 2>&1 &
             modprobe_pid=$!
             attempt=0
             while kill -0 "$modprobe_pid" 2>/dev/null && [ "$attempt" -lt 30 ]; do
@@ -147,8 +147,8 @@ if { [ -z "$supported_drivers" ] || ! find_render_node "$supported_drivers"; } &
     fi
 fi
 
-# Publish a hardware-independent summary for platform readers. Clients use
-# these properties instead of opening PCI sysfs nodes themselves.
+# Publish a hardware-independent summary for Settings/platform readers.
+# Mesa/gralloc also read the narrowly labeled PCI identity attributes.
 mode=software
 if [ -n "$supported_drivers" ] && find_render_node "$supported_drivers"; then
     mode=hardware

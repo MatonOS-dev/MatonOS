@@ -31,6 +31,28 @@ import java.util.concurrent.TimeUnit;
 final class FlatpakStubManager {
     private static final String TAG = "MatonFlatpakStubs";
     private final Context context;
+    private final java.util.Map<Integer, FlatpakStubManager> users = new java.util.concurrent.ConcurrentHashMap<>();
+
+    FlatpakStubManager forUser(int user) {
+        if (user == context.getUserId()) return this;
+        return users.computeIfAbsent(user, id -> new FlatpakStubManager(
+                context.createContextAsUser(android.os.UserHandle.of(id), 0)));
+    }
+
+    int verifiedUid(String ref) throws Exception {
+        PackageInfo info = context.getPackageManager().getPackageInfo(packageFor(ref), 0);
+        if (info.applicationInfo == null || !ownsStub(info.applicationInfo.uid, ref))
+            throw new SecurityException("Unverified Flatpak stub");
+        return info.applicationInfo.uid;
+    }
+
+    private JSONObject installArgs(String ref) throws Exception {
+        return new JSONObject().put("ref", ref).put("uid", verifiedUid(ref));
+    }
+
+    private String listArgs() throws Exception {
+        return new JSONObject().put("userId", context.getUserId()).toString();
+    }
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
     private ILinuxd subscribedDaemon;
     private final ILinuxdListener listener = new ILinuxdListener.Stub() {
@@ -42,12 +64,13 @@ final class FlatpakStubManager {
                     if (result != null) {
                         // linuxd names the ref of installs a stub started itself.
                         String ref = result.optString("ref", "");
-                        if (!ref.isEmpty()) {
+                        if (!ref.isEmpty() && result.has("uid")) {
+                            FlatpakStubManager owner = forUser(android.os.UserHandle.getUserId(result.getInt("uid")));
                             if (result.optBoolean("ok")) worker.execute(() -> {
-                                showLauncher(ref);
-                                reconcileCompletedInstall(ref);
+                                owner.showLauncher(ref);
+                                owner.reconcileCompletedInstall(ref);
                             });
-                            else worker.execute(() -> removeFailedStub(ref));
+                            else worker.execute(() -> owner.removeFailedStub(ref));
                         }
                     }
                     refresh();
@@ -82,8 +105,21 @@ final class FlatpakStubManager {
     });
 
     FlatpakStubManager(Context context) { this.context = context; }
-    void start() { worker.scheduleWithFixedDelay(this::reconcile, 5, 30, TimeUnit.SECONDS); }
-    void close() { worker.shutdownNow(); }
+    void start() { worker.scheduleWithFixedDelay(() -> {
+        reconcile();
+        try {
+            JSONObject inventory = new JSONObject(daemon().call("linux_data_uids", "{}"));
+            if (!inventory.optBoolean("ok")) return;
+            Set<Integer> activeUsers = new HashSet<>();
+            org.json.JSONArray uids = inventory.getJSONArray("uids");
+            for (int i = 0; i < uids.length(); i++) activeUsers.add(android.os.UserHandle.getUserId(uids.getInt(i)));
+            activeUsers.addAll(users.keySet());
+            for (int user : activeUsers) {
+                if (user != context.getUserId()) forUser(user).reconcile();
+            }
+        } catch (Exception error) { Log.w(TAG, "Cannot reconcile Android users", error); }
+    }, 5, 30, TimeUnit.SECONDS); }
+    void close() { worker.shutdownNow(); for (FlatpakStubManager user : users.values()) user.close(); }
     void refresh() { worker.execute(this::reconcile); }
 
     String launch(String appId) throws Exception {
@@ -91,7 +127,7 @@ final class FlatpakStubManager {
             throw new IllegalArgumentException("Invalid Flatpak application ID");
         ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
         if (daemon == null) throw new IllegalStateException("Flatpak service is unavailable");
-        JSONObject list = new JSONObject(daemon.call("list_installed", "{}"));
+        JSONObject list = new JSONObject(daemon.call("list_installed", listArgs()));
         if (!list.optBoolean("ok") || list.optBoolean("outputTruncated"))
             throw new IllegalStateException("Cannot read installed applications");
         for (String item : list.optString("output").split("\\r?\\n")) {
@@ -179,6 +215,9 @@ final class FlatpakStubManager {
     }
 
     boolean ownsStub(int uid,String ref) {
+        if (uid < 0) return false;
+        int user = android.os.UserHandle.getUserId(uid);
+        if (user != context.getUserId()) return forUser(user).ownsStub(uid, ref);
         try {
             if(ref==null)return false;
             PackageManager manager=context.getPackageManager();
@@ -238,7 +277,7 @@ final class FlatpakStubManager {
             PackageInfo info = context.getPackageManager().getPackageInfo(pkg, PackageManager.GET_PERMISSIONS);
             int uid = info.applicationInfo == null ? -1 : info.applicationInfo.uid;
             if (uid < 10000 || !ownsStub(uid, ref)) return;
-            JSONObject metadata = new JSONObject(daemon().call("metadata", new JSONObject().put("ref", ref).toString()));
+            JSONObject metadata = new JSONObject(daemon().call("metadata", installArgs(ref).toString()));
             if (!metadata.optBoolean("ok") || metadata.optBoolean("outputTruncated"))
                 throw new IllegalStateException("Cannot read installed Flatpak permissions");
             Set<String> expected = new HashSet<>(StubGenerator.permissionsForMetadata(metadata.optString("output")));
@@ -247,7 +286,7 @@ final class FlatpakStubManager {
             Set<String> current = new HashSet<>();
             if (declared.contains(StubGenerator.GAME_CONTROLLERS)) current.add(StubGenerator.GAME_CONTROLLERS);
             if (pending.contains(pkg)) return;
-            JSONObject entry = new JSONObject(daemon().call("desktop_entry", new JSONObject().put("ref", ref).toString()));
+            JSONObject entry = new JSONObject(daemon().call("desktop_entry", installArgs(ref).toString()));
             if (!entry.optBoolean("ok") || entry.optBoolean("outputTruncated"))
                 throw new IllegalStateException("Cannot read installed Flatpak display name");
             String name = StubGenerator.desktopDisplayName(entry.optString("output"));
@@ -277,7 +316,9 @@ final class FlatpakStubManager {
         }catch(Exception error){return null;}
     }
 
-    boolean hasGameControllers(String ref) {
+    boolean hasGameControllers(int uid, String ref) {
+        int user = android.os.UserHandle.getUserId(uid);
+        if (user != context.getUserId()) return forUser(user).hasGameControllers(uid, ref);
         try {
             String pkg = packageFor(ref);
             PackageInfo info = context.getPackageManager().getPackageInfo(pkg, 0);
@@ -306,13 +347,13 @@ final class FlatpakStubManager {
         try {
             ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
             if (daemon == null) return;
-            if (subscribedDaemon == null || !subscribedDaemon.asBinder().equals(daemon.asBinder())) {
+            if (context.getUserId() == 0 && (subscribedDaemon == null || !subscribedDaemon.asBinder().equals(daemon.asBinder()))) {
                 daemon.subscribe("progress", listener);
                 subscribedDaemon = daemon;
                 publishStubSigner(daemon);
             }
-            sweepLinuxData(daemon);
-            JSONObject list = new JSONObject(daemon.call("list_installed", "{}"));
+            if (context.getUserId() == 0) sweepLinuxData(daemon);
+            JSONObject list = new JSONObject(daemon.call("list_installed", listArgs()));
             if (!list.optBoolean("ok") || list.optBoolean("outputTruncated")) return;
             Set<String> wanted = new HashSet<>();
             for (String item : list.optString("output").split("\\r?\\n")) {
@@ -354,7 +395,7 @@ final class FlatpakStubManager {
             String pkg = packageFor(ref);
             ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
             if (daemon == null || launcherEnabled(pkg)) return;
-            JSONObject list = new JSONObject(daemon.call("list_installed", "{}"));
+            JSONObject list = new JSONObject(daemon.call("list_installed", listArgs()));
             if (!list.optBoolean("ok") || list.optBoolean("outputTruncated")) return;
             String bare = ref.substring("app/".length());
             for (String item : list.optString("output").split("\\r?\\n")) {
@@ -394,7 +435,7 @@ final class FlatpakStubManager {
     }
 
     private void create(ILinuxd daemon, String ref, String pkg, String remote, String workKey) throws Exception {
-        JSONObject entry = new JSONObject(daemon.call("desktop_entry", new JSONObject().put("ref", ref).toString()));
+        JSONObject entry = new JSONObject(daemon.call("desktop_entry", installArgs(ref).toString()));
         if (!entry.optBoolean("ok")) throw new java.io.IOException(entry.optString("error", "Desktop entry unavailable"));
         File work = new File(context.getCacheDir(), "flatpak-stubs");
         if (!work.isDirectory() && !work.mkdirs()) throw new java.io.IOException("Cannot create stub scratch directory");
@@ -406,7 +447,7 @@ final class FlatpakStubManager {
             // Regenerating metadata/permissions must not erase a valid icon.
             byte[] iconBytes = installedIcon(pkg);
             if (iconBytes == null) iconBytes = fallbackIcon();
-            JSONObject exported = new JSONObject(daemon.call("icon", new JSONObject().put("ref",ref).toString()));
+            JSONObject exported = new JSONObject(daemon.call("icon", installArgs(ref).toString()));
             if (exported.optBoolean("ok")) {
                 byte[] candidate = android.util.Base64.decode(exported.optString("output"),android.util.Base64.DEFAULT);
                 android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
@@ -415,7 +456,7 @@ final class FlatpakStubManager {
                 if (bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth <= 1024 && bounds.outHeight <= 1024)
                     iconBytes = normalizeIcon(candidate);
             }
-            JSONObject metadata = new JSONObject(daemon.call("metadata", new JSONObject().put("ref", ref).toString()));
+            JSONObject metadata = new JSONObject(daemon.call("metadata", installArgs(ref).toString()));
             if (!metadata.optBoolean("ok") || metadata.optBoolean("outputTruncated"))
                 throw new java.io.IOException("Flatpak metadata unavailable");
             // Generate a plain stub without commit info (reconciliation doesn't

@@ -172,3 +172,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_org_matonos_compositor_runtime_NativeCompositor_nativeStopped(JNIEnv*, jclass, jint id, jboolean stopped) { maton_core_stopped(id,stopped); }
 extern "C" JNIEXPORT void JNICALL
 Java_org_matonos_compositor_runtime_NativeCompositor_nativeClose(JNIEnv*, jclass, jint id) { maton_core_close(id); }
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeCaptureLost(JNIEnv*,jclass,jint id){maton_core_capture_lost(id);}
+extern "C" JNIEXPORT void JNICALL
+Java_org_matonos_compositor_runtime_NativeCompositor_nativeRelative(JNIEnv*,jclass,jint id,jfloat x,jfloat y,jfloat vs,jfloat hs,jint buttons,jlong time){maton_core_relative(id,x,y,vs,hs,buttons,time);}

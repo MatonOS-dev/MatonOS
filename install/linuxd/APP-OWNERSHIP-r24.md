@@ -36,13 +36,13 @@ directory; linuxd launches only the initial verified stub session. Until
 dbus-java lands the compositor owns the broker and portal, so the earlier
 trusted-portal-parent authentication no longer applies.
 
-Homes are `/data/matonos/linux/apps/<uid>`, mode 0700, owned by that UID/GID,
+Homes are `/data/misc_ce/<u>/matonos-linux/home/<uid>`, mode 0700, owned by that UID/GID,
 with a private data type and the stub's MLS categories. A system-owned
 `<uid>.owner` record binds the UID to the Flatpak ID; recycled UIDs cannot
 adopt another app's retained home. No automatic shared-HOME migration or
 uninstall reclamation is implemented. UID collisions fail closed and need
-an offline purge/migration. Current implementation supports user-0 normal
-app UIDs (10000–19999); other users fail closed. Init preserves dynamic home
+an offline purge/migration. Normal app UIDs in every Android user are supported; the user component is
+validated against UID / 100000. Init preserves dynamic home
 ranges instead of recursively resetting them to s0.
 
 Session transport directories are owned by the compositor, group=stub UID,

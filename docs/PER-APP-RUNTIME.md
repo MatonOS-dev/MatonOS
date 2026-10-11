@@ -18,10 +18,13 @@ broker `.so`):
 **Remaining (native + policy; needs the AOSP/apex build):**
 - linuxd's Wayland relay is **deleted**; wrapper consumes the app's absolute
   `WAYLAND_DISPLAY`; verify via Soong + `flatpak-env-wrapper` prebuilt build.
-- SELinux: `matonos_linux_stub` domain (via `seapp_contexts` for `flatpak.*`),
-  runtime-socket type via `type_transition`, `neverallow` privileged→stub
-  transition, and GPU access confirmed (`appdomain` grants `gpu_device`).
-- **Resolved:** socket typing; GPU/zero-copy access.
+- SELinux (2026-10-11): generated stubs are Android-zone stock
+  `untrusted_app_*` processes, selected by targetSdk. Device-generated signing
+  keys cannot use build-time seinfo; linuxd and the System Bridge authenticate
+  the certificate in code. Direct stub↔linuxd Binder is the scoped exception
+  to the System Bridge boundary. See [runtime socket policy](LINUX-STUB-SELINUX.md).
+- Socket policy and stock GPU access are text-reviewed; enforcing validation
+  and a policy build remain pending.
 - **Deferred (real work, not risky-cleanup):**
   - **X11**: the relay's `-x11` socket is gone, and a per-app core would have to
     `exec` Xwayland as the app UID (the exec restriction this whole change was
@@ -75,7 +78,7 @@ privileged bridge** (Surface handoff, launch via `ISystemBridge`→linuxd, DNS).
 | `linux/dbus-broker/main.c`, `broker.c` | Turn the exec'd broker into a JNI library (`System.loadLibrary`) callable in-process. Marked obsolete as a service; its bus logic is reused as a lib. |
 | `install/linuxd/FlatpakManager.c`, `socket-relay.h` | Delete the Wayland relay (`GraphicalChild`, accept/relay threads); the app talks to its own in-process compositor socket. |
 | `linux/flatpak/*` (wrapper, bwrap, app-session) | Use the in-app session sockets; no relay path, no shared `run/` namespace. |
-| sepolicy | Per-app runtime domain; remove `matonos_flatpak_socket_file`/relay types; `neverallow` privileged → app-data exec; allow the app domain to `map`/`execute` the shared-library JNI libs. |
+| sepolicy | Stock untrusted app stub domain; remove `matonos_flatpak_socket_file`/relay types; `neverallow` privileged → app-data exec; allow the app domain to `map`/`execute` the shared-library JNI libs. |
 
 ## 4. Stages
 

@@ -36,6 +36,7 @@ struct Layer {
 
 struct MatonPresenter {
   ASurfaceControl* parent;
+  ASurfaceControl* background;
   struct wlr_allocator* allocator;
   struct MatonEglUploader* uploader;
   struct Layer* layers;
@@ -126,7 +127,7 @@ static struct wlr_buffer* copy_shm(struct MatonPresenter* p, struct Layer* l, st
   return target;
 }
 
-struct Walk { struct MatonPresenter* p; ASurfaceTransaction* t; int z; bool pending; };
+struct Walk { struct MatonPresenter* p; ASurfaceTransaction* t; int z; bool pending; struct MatonFit fit; };
 
 static void present_node(struct wlr_scene_buffer* node, int sx, int sy, void* data) {
   struct Walk* walk = data;
@@ -182,7 +183,10 @@ static void present_node(struct wlr_scene_buffer* node, int sx, int sy, void* da
   }
   int width = node->dst_width > 0 ? node->dst_width : src.right - src.left;
   int height = node->dst_height > 0 ? node->dst_height : src.bottom - src.top;
-  ARect dst = {sx, sy, sx + width, sy + height};
+  ARect dst = {maton_fit_edge(walk->fit.x,walk->fit.scale,sx),
+               maton_fit_edge(walk->fit.y,walk->fit.scale,sy),
+               maton_fit_edge(walk->fit.x,walk->fit.scale,sx+width),
+               maton_fit_edge(walk->fit.y,walk->fit.scale,sy+height)};
   ASurfaceTransaction_setGeometry(t, l->control, &src, &dst, ANATIVEWINDOW_TRANSFORM_IDENTITY);
   ASurfaceTransaction_setZOrder(t, l->control, walk->z++);
   ASurfaceTransaction_setBufferAlpha(t, l->control, node->opacity);
@@ -200,18 +204,26 @@ struct MatonPresenter* maton_presenter_create(ASurfaceControl* parent, struct wl
   if (!parent || !allocator) return NULL;
   struct MatonPresenter* p = calloc(1, sizeof(*p));
   if (!p) return NULL;
+  p->background=ASurfaceControl_create(parent,"maton-background");
+  if(!p->background){free(p);return NULL;}
   p->parent = parent;
   p->allocator = allocator;
   p->uploader = uploader;
   return p;
 }
 
-bool maton_presenter_present(struct MatonPresenter* p, struct wlr_scene* scene) {
+bool maton_presenter_present(struct MatonPresenter* p, struct wlr_scene* scene, struct MatonFit fit, int width, int height) {
   if (!p || !scene) return false;
   ASurfaceTransaction* t = ASurfaceTransaction_create();
   if (!t) return true;
   for (struct Layer* l = p->layers; l; l = l->next) l->seen = false;
-  struct Walk walk = {p, t, 0, false};
+  ARect bounds={0,0,width,height};
+  ASurfaceTransaction_setColor(t,p->background,0,0,0,1,ADATASPACE_SRGB);
+  ASurfaceTransaction_setCrop(t,p->background,&bounds);
+  ASurfaceTransaction_setZOrder(t,p->background,-1);
+  ASurfaceTransaction_setVisibility(t,p->background,
+      fit.scale==1&&fit.x==0&&fit.y==0?ASURFACE_TRANSACTION_VISIBILITY_HIDE:ASURFACE_TRANSACTION_VISIBILITY_SHOW);
+  struct Walk walk = {p, t, 0, false, fit};
   wlr_scene_node_for_each_buffer(&scene->tree.node, present_node, &walk);
   /* Hide layers not drawn this frame; detach those whose node is gone. */
   struct Layer** link = &p->layers;
@@ -248,7 +260,8 @@ void maton_presenter_destroy(struct MatonPresenter* p) {
     if (l->node) wl_list_remove(&l->node_destroy.link);
     if (t) ASurfaceTransaction_reparent(t, l->control, NULL);
   }
-  if (t) { ASurfaceTransaction_apply(t); ASurfaceTransaction_delete(t); }
+  if (t) { ASurfaceTransaction_reparent(t,p->background,NULL); ASurfaceTransaction_apply(t); ASurfaceTransaction_delete(t); }
+  ASurfaceControl_release(p->background);
   while (p->layers) { struct Layer* l = p->layers; p->layers = l->next; layer_free(l); }
   free(p);
 }

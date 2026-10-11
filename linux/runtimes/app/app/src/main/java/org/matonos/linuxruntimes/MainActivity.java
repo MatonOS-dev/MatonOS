@@ -13,7 +13,7 @@ public class MainActivity extends android.app.Activity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         // This app has no UI components. It exists solely to own a UID for
-        // Flatpak runtime storage on /data/matonos/linux/apps/<runtimes uid>/
+        // Flatpak runtime storage on /data/misc_de/<user>/matonos-linux/runtime/<runtimes uid>/
         finish();
     }
 }

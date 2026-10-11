@@ -14,6 +14,7 @@
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>
 #include <spa/param/port-config.h>
+#include <spa/utils/names.h>
 
 #define TAG "MatonAudio"
 #define LOG(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
@@ -262,6 +263,14 @@ JNIEXPORT jboolean JNICALL Java_org_matonos_compositor_runtime_NativeAudio_nativ
             PW_KEY_CONFIG_NAME,"maton.conf", PW_KEY_CONFIG_PREFIX,conf, NULL);
     audio.context = pw_context_new(pw_thread_loop_get_loop(audio.loop),props,0);
     if (!audio.context) goto fail;
+    /* Never run a multi-stream sink with PipeWire's scheduler-only fallback.
+     * It forwards peer buffer IDs rather than mixing into an owned buffer.
+     * Missing APK plugins must disable audio, not leave dangling peer buffers
+     * in the sink adapter after a playback stream disconnects. */
+    struct spa_handle *mixer = pw_context_load_spa_handle(audio.context,
+            SPA_NAME_AUDIO_MIXER_DSP, NULL);
+    if (!mixer) { LOG("Required DSP audio mixer is unavailable"); goto fail; }
+    pw_unload_spa_handle(mixer);
     // The exported pw_stream must have a native-protocol peer, including its
     // transport busy/pong state. Connect through our own private socket.
     audio.core = pw_context_connect(audio.context,

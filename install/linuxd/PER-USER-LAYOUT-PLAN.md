@@ -1,5 +1,10 @@
 # Per-Android-user Linux storage (plan, 2026-10-10)
 
+Status 2026-10-11: source implementation and host validation completed;
+vold patch prepared, not applied to AOSP. No builds or device tests.
+See STORAGE-LAYOUT.md for the implemented roots and the agent result report
+for full verification limits.
+
 Goal: install files and app data belong to the Android user that owns the app,
 instead of one global `/data/matonos/linux`. Decided: install files (apps,
 runtimes, refs db) in DE storage, home/app data in CE storage. No migration
@@ -101,7 +106,7 @@ Check that, then delete the line.
 4. **Init/rc cleanup**: remove the moved mkdirs and restorecons.
 5. **Helpers.** `build-flatpak-helpers.sh` rebuilds the wrapper and bwrap
    automatically. Also sync the headers to MatonOS_apexs
-   (`stage-static-musl.sh` file list), because `FlatpakStore.c` and
+   (`stage-apex-helpers.sh` file list), because `FlatpakStore.c` and
    `app-session.h` are copied there.
 6. **Tests/docs** as listed above.
 7. **VM check**, on a fresh `/data`: install Firefox and Steam as user 0,

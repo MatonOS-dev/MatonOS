@@ -128,7 +128,7 @@ info "super: $((super_size / 1048576)) MiB"
 
 # ---------------------------------------------------------------- ESP
 esp_uuid=$(cat /proc/sys/kernel/random/uuid)
-cmdline="console=ttyS0,115200 console=tty0 quiet"
+cmdline="console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet"
 # Keep the screen black until Android's boot animation: no blinking cursor, only
 # real errors, and the kernel console on a VT nobody looks at (serial keeps all).
 cmdline+=" loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6"
@@ -242,7 +242,7 @@ EOF
   # Installed systems do not use RAM-backed /data or /metadata. Keep the
   # ramN nodes absent so the live-only block labels cannot affect installed
   # boots. The kernel default creates RAM disks unless rd_nr is set to zero.
-  installed_a="console=ttyS0,115200 console=tty0 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=0 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange"
+  installed_a="console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=0 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange"
   installed_b=${installed_a/_a /_b }
   sb_build_uki "$work/matonos-installed-a.efi" "$KERNEL" "$installed_a" "$work/matonos.sbat" "$work" \
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"

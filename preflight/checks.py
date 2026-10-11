@@ -222,6 +222,15 @@ APPROVED_PATCHES = {
     # 2026-10-04: user-approved second patch-budget entry: the Linux/Flatpak
     # sandbox (matonos_linux_app) may execute its own app data.
     "system/sepolicy/0001-data-exec-exempt-domain.patch",
+    # 2026-10-11: user-approved ("vold can stay as a patch"): vold_prepare_subdirs
+    # creates the per-user /data/misc_{de,ce}/<u>/matonos-linux roots, so they
+    # get the user's fscrypt keys and are removed with the user.
+    "system/vold/0001-prepare-matonos-linux-user-roots.patch",
+    # 2026-10-11: user-approved ("keep it as patches for now"): bridge-only
+    # caption suppression for client-decorated Linux windows, gated by
+    # ro.matonos.client_decorations.
+    "frameworks/base/0004-wm-add-gated-bridge-only-per-task-client-decoration-.patch",
+    "frameworks/base/0005-wm-shell-suppress-caption-input-and-controls-for-gat.patch",
 }
 
 

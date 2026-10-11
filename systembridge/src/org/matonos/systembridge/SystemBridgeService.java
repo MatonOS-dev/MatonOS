@@ -80,15 +80,213 @@ public final class SystemBridgeService extends Service {
         @Override public void onDisplayChanged(int displayId) { publishDisplayGeometry(); }
     };
 
+    /** Separate binding: a stub gets these four self-only calls, never general trust. */
+    public static final class LinuxWindowService extends Service {
+        @Override public void onCreate() {
+            super.onCreate();
+            startService(new Intent(this, SystemBridgeService.class));
+        }
+        @Override public IBinder onBind(Intent intent) {
+            SystemBridgeService bridge = activeService;
+            return bridge == null ? null : bridge.linuxWindowBinder;
+        }
+    }
+
+    private final Map<Integer, GeometryGesture> linuxGestures = new java.util.HashMap<>();
+    private boolean linuxWindowDenied(int uid, int taskId) {
+        Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=invalid_state_or_unavailable");
+        return false;
+    }
+
+    private final ILinuxWindowBridge.Stub linuxWindowBinder = new ILinuxWindowBridge.Stub() {
+        @Override public boolean setClientDecorated(String ref, int taskId, boolean decorated) {
+            int uid = Binder.getCallingUid();
+            long identity = Binder.clearCallingIdentity();
+            try {
+                ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
+                // Reflection keeps this app usable on a stock framework. Hidden APIs
+                // are confined to the bridge; missing hook means a clean false result.
+                android.view.IWindowManager wm = android.view.WindowManagerGlobal.getWindowManagerService();
+                Object result = android.view.IWindowManager.class.getMethod(
+                        "setMatonosClientDecorated", int.class, int.class, boolean.class)
+                        .invoke(wm, task.taskId, uid, decorated);
+                Log.i(TAG, "Linux caption uid=" + uid + " task=" + taskId + " decorated=" + decorated + " accepted=" + result);
+                return Boolean.TRUE.equals(result);
+            } catch (ReflectiveOperationException error) {
+                Log.w(TAG, "Optional Linux caption framework hook unavailable", error);
+                return linuxWindowDenied(uid, taskId);
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
+                throw error;
+            } finally { Binder.restoreCallingIdentity(identity); }
+        }
+        @Override public boolean beginGeometry(String ref, int taskId, int edges, IBinder lifetime) {
+            int uid = Binder.getCallingUid();
+            long identity = Binder.clearCallingIdentity();
+            try {
+                ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
+                if (!LinuxWindowBounds.validEdges(edges) || lifetime == null
+                        || !task.isVisible || !task.isFocused || (edges != 0 && !task.isResizeable)) return linuxWindowDenied(uid, taskId);
+                Display display = getSystemService(DisplayManager.class).getDisplay(task.displayId);
+                if (display == null) return linuxWindowDenied(uid, taskId);
+                Point size = new Point(); display.getRealSize(size);
+                if (size.x <= 0 || size.y <= 0) return linuxWindowDenied(uid, taskId);
+                android.graphics.Rect bounds = task.configuration.windowConfiguration.getBounds();
+                if (bounds.isEmpty()) return linuxWindowDenied(uid, taskId);
+                android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+                display.getRealMetrics(metrics);
+                int defaultMin = Math.max(1, Math.round(task.defaultMinSize * metrics.density));
+                GeometryGesture gesture = new GeometryGesture(uid, taskId, ref, task.token, edges,
+                        new int[]{bounds.left, bounds.top, bounds.right, bounds.bottom},
+                        new int[]{0, 0, size.x, size.y},
+                        task.minWidth > 0 ? task.minWidth : defaultMin,
+                        task.minHeight > 0 ? task.minHeight : defaultMin, lifetime);
+                synchronized (linuxGestures) {
+                    GeometryGesture old = linuxGestures.remove(uid);
+                    if (old != null) old.close();
+                    try { lifetime.linkToDeath(gesture, 0); }
+                    catch (RemoteException error) { return linuxWindowDenied(uid, taskId); }
+                    linuxGestures.put(uid, gesture);
+                    geometryHandler.postDelayed(gesture::expire, 5000);
+                }
+                Log.i(TAG, "Linux geometry begin uid=" + uid + " task=" + taskId + " edges=" + edges);
+                return true;
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
+                throw error;
+            } finally { Binder.restoreCallingIdentity(identity); }
+        }
+        @Override public boolean updateGeometry(String ref, int taskId, float dx, float dy) {
+            int uid = Binder.getCallingUid();
+            long identity = Binder.clearCallingIdentity();
+            try {
+                ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
+                synchronized (linuxGestures) {
+                    GeometryGesture g = linuxGestures.get(uid);
+                    if (g == null || g.taskId != taskId || !g.ref.equals(ref)) return linuxWindowDenied(uid, taskId);
+                    if (!task.token.equals(g.token) || !task.isFocused || !task.isVisible
+                            || SystemClock.uptimeMillis() - g.lastUpdate > 5000
+                            || !Float.isFinite(dx) || !Float.isFinite(dy)
+                            || Math.abs(dx) > g.display[2] * 2f || Math.abs(dy) > g.display[3] * 2f) {
+                        linuxGestures.remove(uid); g.close(); return linuxWindowDenied(uid, taskId);
+                    }
+                    int[] b = LinuxWindowBounds.apply(g.start, g.display, g.edges,
+                            Math.round(dx), Math.round(dy), g.minWidth, g.minHeight);
+                    WindowContainerTransaction change = new WindowContainerTransaction()
+                            .setBounds(g.token, new android.graphics.Rect(b[0], b[1], b[2], b[3]));
+                    if (g.edges != 0) change.setDragResizing(g.token, true);
+                    new WindowOrganizer().applyTransaction(change);
+                    g.resizing = g.edges != 0;
+                    g.lastUpdate = SystemClock.uptimeMillis();
+                    Log.i(TAG, "Linux geometry update uid=" + uid + " task=" + taskId
+                            + " dx=" + dx + " dy=" + dy);
+                    return true;
+                }
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
+                throw error;
+            } finally { Binder.restoreCallingIdentity(identity); }
+        }
+        @Override public void endGeometry(String ref, int taskId) {
+            int uid = Binder.getCallingUid();
+            long identity = Binder.clearCallingIdentity();
+            try {
+                // Authenticate even end; a dead/destroyed task may no longer be enumerable.
+                if (!flatpakStubManager.ownsStub(uid, ref)) deny("linux geometry end", uid, "unverified stub");
+                synchronized (linuxGestures) {
+                    GeometryGesture g = linuxGestures.get(uid);
+                    if (g != null && g.taskId == taskId && g.ref.equals(ref)) {
+                        linuxGestures.remove(uid); g.close();
+                        Log.i(TAG, "Linux geometry end uid=" + uid + " task=" + taskId);
+                    } else if (g == null) {
+                        // A bridge process restart loses the lease map. The stub's
+                        // reconnect/end still clears its own task's resizing mode.
+                        try {
+                            ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
+                            new WindowOrganizer().applyTransaction(new WindowContainerTransaction()
+                                    .setDragResizing(task.token, false));
+                            Log.i(TAG, "Linux geometry recovery end uid=" + uid + " task=" + taskId);
+                        } catch (RuntimeException error) {
+                            Log.w(TAG, "Linux geometry recovery task unavailable=" + taskId, error);
+                        }
+                    }
+                }
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
+                throw error;
+            } finally { Binder.restoreCallingIdentity(identity); }
+        }
+    };
+
+    private ActivityManager.RunningTaskInfo ownedLinuxTask(int uid, String ref, int taskId) {
+        if (!flatpakStubManager.ownsStub(uid, ref)) deny("linux window", uid, "unverified stub");
+        int user = UserHandle.getUserId(uid);
+        if (user != ActivityManager.getCurrentUser()) deny("linux window", uid, "inactive user");
+        for (ActivityManager.RunningTaskInfo task : ActivityTaskManager.getInstance().getTasks(1000)) {
+            if (task.taskId != taskId) continue;
+            if (task.topActivityInfo != null && task.topActivityInfo.applicationInfo != null
+                    && FlatpakStubIdentity.ownsWindow(uid, user, ActivityManager.getCurrentUser(),
+                            task.userId, task.effectiveUid, task.topActivityInfo.applicationInfo.uid,
+                            task.topActivityInfo.name, task.token != null,
+                            task.getWindowingMode() == WindowConfiguration.WINDOWING_MODE_FREEFORM))
+                return task;
+            break;
+        }
+        deny("linux window task=" + taskId, uid, "task is not the caller's freeform Linux window");
+        throw new AssertionError();
+    }
+
+    private final class GeometryGesture implements IBinder.DeathRecipient {
+        final int uid, taskId, edges, minWidth, minHeight;
+        final String ref;
+        final android.window.WindowContainerToken token;
+        final int[] start, display;
+        final IBinder lifetime;
+        boolean resizing;
+        long lastUpdate = SystemClock.uptimeMillis();
+        GeometryGesture(int uid, int taskId, String ref, android.window.WindowContainerToken token,
+                int edges, int[] start, int[] display, int minWidth, int minHeight, IBinder lifetime) {
+            this.uid=uid; this.taskId=taskId; this.ref=ref; this.token=token; this.edges=edges;
+            this.start=start; this.display=display; this.minWidth=minWidth; this.minHeight=minHeight;
+            this.lifetime=lifetime;
+        }
+        void close() {
+            lifetime.unlinkToDeath(this, 0);
+            if (!resizing) return;
+            resizing=false;
+            long identity = Binder.clearCallingIdentity();
+            try {
+                new WindowOrganizer().applyTransaction(new WindowContainerTransaction().setDragResizing(token, false));
+            } catch (RuntimeException error) {
+                Log.w(TAG, "Linux resize cleanup unavailable task=" + taskId, error);
+            } finally { Binder.restoreCallingIdentity(identity); }
+        }
+        void expire() {
+            synchronized (linuxGestures) {
+                if (linuxGestures.get(uid) != this) return;
+                long remaining = 5000 - (SystemClock.uptimeMillis() - lastUpdate);
+                if (remaining > 0) geometryHandler.postDelayed(this::expire, remaining);
+                else { linuxGestures.remove(uid); close(); }
+            }
+        }
+        @Override public void binderDied() {
+            synchronized (linuxGestures) {
+                if (linuxGestures.get(uid) == this) { linuxGestures.remove(uid); close(); }
+            }
+        }
+    }
+
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
         @Override public String getFlatpakLaunchStatus(String ref) {
             String caller=enforceAuthorizedCaller("flatpak_launch","getFlatpakLaunchStatus");
             if (!"org.matonos.compositor".equals(caller)) throw new SecurityException("Only the compositor may inspect launches");
+            int user = UserHandle.getUserId(Binder.getCallingUid());
             long identity=Binder.clearCallingIdentity();
             try {
+                int uid = flatpakStubManager.forUser(user).verifiedUid(ref);
                 ILinuxd daemon=ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
                 if(daemon==null)throw new IllegalStateException("Flatpak service unavailable");
-                return daemon.call("launch_status",new org.json.JSONObject().put("ref",ref).toString());
+                return daemon.call("launch_status",new org.json.JSONObject().put("ref",ref).put("uid",uid).toString());
             } catch(Exception error) { throw new IllegalStateException("Cannot inspect application",error); }
             finally { Binder.restoreCallingIdentity(identity); }
         }
@@ -118,7 +316,7 @@ public final class SystemBridgeService extends Service {
                     if (!expectedDns.equals(dnsForwarder))
                         throw new SecurityException("Per-app DNS endpoint is missing or does not match the stub UID");
                     return daemon.launchGraphical(ref, expectedDns.substring(0, expectedDns.length() - 3), x11Directory, x11Display,
-                            flatpakStubManager.hasGameControllers(ref), stubUid, stubPid, lifeline);
+                            flatpakStubManager.hasGameControllers(stubUid, ref), stubUid, stubPid, lifeline);
                 } finally {
                     Binder.restoreCallingIdentity(identity);
                 }
@@ -425,23 +623,55 @@ public final class SystemBridgeService extends Service {
                 }
                 String result;
                 if ("flatpak".equals(target)) {
+                    int user = UserHandle.getUserId(Binder.getCallingUid());
+                    if (args.has("userId")) {
+                        Object requested = args.get("userId");
+                        if (!(requested instanceof Integer) || (Integer) requested < 0)
+                            throw new IllegalArgumentException("A concrete Android user is required");
+                        int requestedUser = (Integer) requested;
+                        if (requestedUser != user &&
+                                checkCallingPermission(android.Manifest.permission.INTERACT_ACROSS_USERS) != PackageManager.PERMISSION_GRANTED &&
+                                checkCallingPermission(android.Manifest.permission.INTERACT_ACROSS_USERS_FULL) != PackageManager.PERMISSION_GRANTED)
+                            throw new SecurityException("Cross-user Flatpak management requires cross-user permission");
+                        user = requestedUser;
+                        args.remove("userId");
+                    }
+                    FlatpakStubManager owner = flatpakStubManager.forUser(user);
+                    if (args.has("uid") || args.has("runtimeUid") || args.has("installerUid"))
+                        throw new SecurityException("Installation identities are resolved by the bridge");
                     ILinuxd service = linuxdFor();
                     if (service == null) throw new IllegalStateException("Flatpak service is unavailable");
                     if ("launch_stub".equals(command)) {
                         if (args.length() != 1 || !args.has("appId") || !(args.get("appId") instanceof String))
                             throw new IllegalArgumentException("An application ID is required");
                         long identity = Binder.clearCallingIdentity();
-                        try { result = flatpakStubManager.launch(args.getString("appId")); }
+                        try { result = owner.launch(args.getString("appId")); }
                         finally { Binder.restoreCallingIdentity(identity); }
                     } else if ("install".equals(command)) {
                         /* Create the identity stub first; linuxd stages and
                          * deploys only after PackageManager assigns its UID. */
                         if (!args.has("ref") || !(args.get("ref") instanceof String))
                             throw new IllegalArgumentException("An application reference is required");
-                        result = flatpakStubManager.installAsync(args.getString("ref"), args);
+                        result = owner.installAsync(args.getString("ref"), args);
                     } else {
-                        if (("add_flathub".equals(command) || "list_remotes".equals(command)) && !args.has("runtimeUid")) {
-                            int runtimeUid = runtimesUid(UserHandle.getUserId(Binder.getCallingUid()));
+                        if ("metadata".equals(command) || "desktop_entry".equals(command) || "icon".equals(command) ||
+                                "uninstall".equals(command) || "kill".equals(command) || "installed_for_uid".equals(command) || "launch_status".equals(command)) {
+                            long identity = Binder.clearCallingIdentity();
+                            int uid;
+                            try {
+                                uid = owner.verifiedUid(args.getString("ref"));
+                            } finally { Binder.restoreCallingIdentity(identity); }
+                            args.put("uid", uid);
+                        } else if ("list_installed".equals(command)) {
+                            args.put("userId", user);
+                        } else if (!("add_flathub".equals(command) || "list_remotes".equals(command))) {
+                            throw new IllegalArgumentException("Unsupported Flatpak management command");
+                        }
+                        if ("add_flathub".equals(command) || "list_remotes".equals(command)) {
+                            long identity = Binder.clearCallingIdentity();
+                            int runtimeUid;
+                            try { runtimeUid = runtimesUid(user); }
+                            finally { Binder.restoreCallingIdentity(identity); }
                             if (runtimeUid >= 10000) args.put("runtimeUid", runtimeUid);
                         }
                         result = service.call(command, args.toString());
@@ -561,6 +791,10 @@ public final class SystemBridgeService extends Service {
         if (navigationBarWindow != null) navigationBarWindow.close();
         if (geometryHandler != null) geometryHandler.removeCallbacksAndMessages(null);
         if (activeService == this) activeService = null;
+        synchronized (linuxGestures) {
+            for (GeometryGesture gesture : linuxGestures.values()) gesture.close();
+            linuxGestures.clear();
+        }
         super.onDestroy();
     }
 
@@ -843,8 +1077,8 @@ public final class SystemBridgeService extends Service {
         String[] packages = getPackageManager().getPackagesForUid(uid);
         if (packages == null) return;
         for (String packageName : packages) try {
-            PackageInfo info = getPackageManager().getPackageInfo(packageName,
-                    PackageManager.GET_SIGNING_CERTIFICATES);
+            PackageInfo info = getPackageManager().getPackageInfoAsUser(packageName,
+                    PackageManager.GET_SIGNING_CERTIFICATES, UserHandle.getUserId(uid));
             if (info.signingInfo != null && info.signingInfo.getApkContentsSigners().length > 0
                     && isBanned(this, packageName, sha256(
                             info.signingInfo.getApkContentsSigners()[0].toByteArray()))) {
@@ -861,8 +1095,8 @@ public final class SystemBridgeService extends Service {
         String packageName = BridgeCallerIdentity.solePackage(packages);
         if (packageName == null) return null;
         try {
-            PackageInfo info = getPackageManager().getPackageInfo(packageName,
-                    PackageManager.GET_SIGNING_CERTIFICATES);
+            PackageInfo info = getPackageManager().getPackageInfoAsUser(packageName,
+                    PackageManager.GET_SIGNING_CERTIFICATES, UserHandle.getUserId(uid));
             if (info.applicationInfo.uid != uid || info.signingInfo == null) return null;
             android.content.pm.Signature[] signers = info.signingInfo.getApkContentsSigners();
             if (signers == null || signers.length != 1) return null;
@@ -1196,8 +1430,32 @@ public final class SystemBridgeService extends Service {
                     ILinuxd linuxd = bridge == null ? null : bridge.linuxdFor();
                     if (linuxd == null) throw new IllegalStateException("Flatpak service is unavailable");
                     try {
-                        result.putString("result", linuxd.call(arg, request));
-                    } catch (RemoteException e) {
+                        JSONObject args = new JSONObject(request);
+                        Object requestedUser = args.opt("userId");
+                        if (requestedUser != null && (!(requestedUser instanceof Integer) || (Integer) requestedUser < 0))
+                            throw new IllegalArgumentException("A concrete Android user is required");
+                        int user = requestedUser == null ? 0 : (Integer) requestedUser;
+                        if ("install".equals(arg)) {
+                            args.remove("userId");
+                            if (args.has("uid") || args.has("runtimeUid") || args.has("installerUid"))
+                                throw new SecurityException("Installation identities are resolved by the bridge");
+                            String ref = args.getString("ref");
+                            JSONObject accepted = new JSONObject(bridge.flatpakStubManager.forUser(user).installAsync(ref, args));
+                            accepted.put("stubPackage", FlatpakStubIdentity.packageFor(ref));
+                            result.putString("result", accepted.toString());
+                            return result;
+                        }
+                        if ("uninstall".equals(arg) || "kill".equals(arg)) {
+                            args.remove("userId");
+                            args.put("uid", bridge.flatpakStubManager.forUser(user).verifiedUid(args.getString("ref")));
+                        } else if ("list_installed".equals(arg)) {
+                            args.put("userId", user);
+                        } else if ("list_remotes".equals(arg) || "add_flathub".equals(arg)) {
+                            args.remove("userId");
+                            args.put("runtimeUid", bridge.runtimesUid(user));
+                        }
+                        result.putString("result", linuxd.call(arg, args.toString()));
+                    } catch (Exception e) {
                         throw new IllegalStateException("Flatpak service call failed", e);
                     }
                 } else throw new IllegalArgumentException("unknown bridge shell method");

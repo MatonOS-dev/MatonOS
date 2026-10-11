@@ -2,8 +2,10 @@
 # platform-side policy, never by vendor file_contexts).
 /system_ext/bin/matonos-linuxd u:object_r:matonos_linuxd_exec:s0
 /dev/shm(/.*)? u:object_r:matonos_linux_shm_file:s0
-/data/matonos/linux/staging(/.*)? u:object_r:matonos_flatpak_store_file:s0
-/data/matonos/linux/install/[0-9]+/repo/objects(/.*)? u:object_r:matonos_linux_code_file:s0
+/data/misc_de/[0-9]+/matonos-linux/install/[0-9]+/repo/objects(/.*)? u:object_r:matonos_linux_code_file:s0
+# Runtime tmp/<uid> roots deliberately have no static s0 override: linuxd
+# creates them with media_rw_data_file at verified UID-derived MLS categories.
+# A recursive restorecon would reset these dynamic labels; prepare fails closed.
 /data/matonos/linux(/.*)? u:object_r:matonos_flatpak_data_file:s0
 # Per-app Xwayland display sockets live in their own directory so the
 # compositor can hand each socket to its application's uid.
@@ -25,11 +27,10 @@
 /sys/devices(/[^/]+)*/[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}\.[0-9A-Fa-f]+/uevent -- u:object_r:sysfs_matonos_input:s0
 /sys/devices/virtual/misc/uinput/dev -- u:object_r:sysfs_matonos_input:s0
 
-/data/matonos/linux/install/[0-9]+/staging(/.*)? u:object_r:matonos_linux_data_file:s0
-/data/matonos/linux/install/[0-9]+(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
-/data/matonos/linux/home/[0-9]+(/.*)? u:object_r:matonos_linux_data_file:s0
-/data/matonos/linux/runtime/[0-9]+(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
-/data/matonos/linux/flatpak(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
+/data/misc_de/[0-9]+/matonos-linux/install/[0-9]+/staging(/.*)? u:object_r:matonos_flatpak_store_file:s0
+/data/misc_de/[0-9]+/matonos-linux/install/[0-9]+(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
+/data/misc_ce/[0-9]+/matonos-linux/home/[0-9]+(/.*)? u:object_r:matonos_linux_data_file:s0
+/data/misc_de/[0-9]+/matonos-linux/runtime/[0-9]+(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
 /data/matonos/linux/run(/.*)? u:object_r:matonos_flatpak_socket_file:s0
 /data/matonos/linux/(machine-id|udev)(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
 
@@ -38,3 +39,11 @@
 # linux/flatpak/apex_file_contexts at /apex/com.matonos.flatpak/bin.
 
 /data/matonos/linux/cache/launch-[^/]+\.log u:object_r:matonos_flatpak_log_file:s0
+
+# vold owns the encryption roots; linuxd creates only their children.
+/data/misc_(de|ce)/[0-9]+/matonos-linux u:object_r:matonos_linux_user_root_file:s0
+# Match children only: the optional suffix used to override the DE root.
+/data/misc_de/[0-9]+/matonos-linux/.* u:object_r:matonos_flatpak_data_file:s0
+/data/misc_ce/[0-9]+/matonos-linux/home u:object_r:matonos_flatpak_data_file:s0
+/data/misc_ce/[0-9]+/matonos-linux/home/[0-9]+\.owner u:object_r:matonos_flatpak_data_file:s0
+/data/misc_de/[0-9]+/matonos-linux/store(/.*)? u:object_r:matonos_flatpak_store_file:s0

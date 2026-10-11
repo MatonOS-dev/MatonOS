@@ -34,13 +34,19 @@
 # Input wake sources for s2idle (power/pc-wakeup.sh)
 /vendor/bin/pc-wakeup\.sh                             u:object_r:pc_wakeup_exec:s0
 
-# Graphics clients inspect PCI GPU metadata and enumerate the backlight class.
-# Keep these labels on read-only sysfs nodes instead of granting generic sysfs.
-/sys/devices/pci[^/]+/[^/]+/(vendor|uevent) --          u:object_r:sysfs_gpu:s0
+# PCI identity attributes on any PCI function, including downstream bridges.
+# Require a PCI BDF immediately before the attribute: USB IDs are not PCI IDs.
+# ueventd restores canonical sysfs paths at coldboot and on add/change/bind.
+/sys/devices(/[^/]+)*/[0-9A-Fa-f]{4}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}\.[0-7]/(device|vendor|subsystem_device|subsystem_vendor|revision|class|uevent) -- u:object_r:sysfs_matonos_pci_id:s0
+/sys/devices(/[^/]+)*/[0-9A-Fa-f]{4}:[0-9A-Fa-f]{2}:[0-9A-Fa-f]{2}\.[0-7]/boot_vga -- u:object_r:sysfs_matonos_boot_vga:s0
 /sys/class/backlight                                 u:object_r:sysfs_pc_backlight:s0
 
 # pc-wakeup: only power/wakeup files on PCI/USB and i8042 serio paths.
 # The script selects USB controllers/hubs/HID using the read-only metadata.
 /sys/devices/pci[^/]+(/[^/]+)*/power/wakeup -- u:object_r:sysfs_pc_wakeup:s0
 /sys/devices/platform/i8042/serio[0-9]+/power/wakeup -- u:object_r:sysfs_pc_wakeup:s0
-/sys/devices/pci[^/]+(/[^/]+)*/(class|bDeviceClass|bInterfaceClass|bInterfaceProtocol) -- u:object_r:sysfs_pc_wakeup_info:s0
+/sys/devices/pci[^/]+(/[^/]+)*/(bDeviceClass|bInterfaceClass|bInterfaceProtocol) -- u:object_r:sysfs_pc_wakeup_info:s0
+
+# Generic topology patterns: physical disks and wakeup sources vary by PC.
+/sys/devices(/[^/]+)*/block/[^/]+/stat -- u:object_r:sysfs_devices_block:s0
+/sys/devices(/[^/]+)*/wakeup/wakeup[0-9]+(/.*)? u:object_r:sysfs_wakeup:s0

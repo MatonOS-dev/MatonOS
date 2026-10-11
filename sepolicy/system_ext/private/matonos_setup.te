@@ -43,3 +43,10 @@ allow kernel device:chr_file { create setattr unlink };
 # Mesa llvmpipe in the boot animation writes its own memfd buffers
 # (memfd:lp_dma_buf, memfd:allocation fd), which arrive as generic tmpfs.
 allow bootanim tmpfs:file write;
+
+# Linux 7.2 supports SELinux's dedicated memfd class. Without this capability,
+# anonymous MessageQueue/MemoryHeapBase objects use tmpfs:file labels at s0:
+# platform_app's categorized context fails the file MLS write constraint even
+# when its TE allow exists. Use stock app/audio/codec memfd_file rules instead
+# of making tmpfs mlstrustedobject or platform_app mlstrustedsubject.
+policycap memfd_class;

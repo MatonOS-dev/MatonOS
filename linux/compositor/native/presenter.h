@@ -1,6 +1,7 @@
 #pragma once
 #include <android/surface_control.h>
 #include <stdbool.h>
+#include "window_fit.h"
 
 struct wlr_scene;
 struct wlr_allocator;
@@ -18,4 +19,4 @@ struct MatonPresenter* maton_presenter_create(ASurfaceControl* parent, struct wl
 void maton_presenter_destroy(struct MatonPresenter* presenter);
 /* Synchronises the layers with the scene in one transaction. Returns true
  * if some content could not be shown yet (all of a layer's buffers busy). */
-bool maton_presenter_present(struct MatonPresenter* presenter, struct wlr_scene* scene);
+bool maton_presenter_present(struct MatonPresenter* presenter, struct wlr_scene* scene, struct MatonFit fit, int width, int height);

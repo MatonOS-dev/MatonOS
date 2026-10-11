@@ -31,6 +31,14 @@ void maton_java_close_window(int id);
 #define MATON_STATE_FULLSCREEN_ON 1
 #define MATON_STATE_FULLSCREEN_OFF 2
 #define MATON_STATE_MINIMIZE 3
+#define MATON_STATE_CAPTURE_ON 4
+#define MATON_STATE_CAPTURE_OFF 5
+#define MATON_STATE_CLIENT_DECORATED 6
+#define MATON_STATE_SERVER_DECORATED 7
+/* 16 + wlroots edge mask; 16 alone requests a move. */
+#define MATON_STATE_GEOMETRY_BASE 16
+void maton_core_capture_lost(int id);
+void maton_core_relative(int id,float x,float y,float vs,float hs,int buttons,int64_t time);
 void maton_java_window_state(int id, int state);
 
 #ifdef __cplusplus

@@ -1,6 +1,10 @@
 # Graphics setup for pc_x86_64 (installed to /vendor/etc/init/).
 
 on early-init
+    # Detection precedes init's coldboot barrier. Init builtins do not glob;
+    # traverse /sys/devices to apply only exact file_contexts attribute rules.
+    # ueventd repeats this at coldboot and on PCI hotplug (including no devnode).
+    restorecon_recursive /sys/devices
     # Publish GPU properties and select the Vulkan HAL before core services
     # (SurfaceFlinger and the allocator) start. Detection is bounded.
     exec -- /vendor/bin/pc-gpu-detect.sh

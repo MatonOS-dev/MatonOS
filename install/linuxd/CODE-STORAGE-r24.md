@@ -3,7 +3,7 @@
 Flatpak installation uses stock Flatpak deployments. The privileged helper
 `matonos-flatpak-store` has exactly two commands: `stage` and `selftest`.
 
-For `stage`, linuxd passes the fixed `/data/matonos/linux/staging` path, a
+For `stage`, linuxd passes the fixed `/data/misc_de/<u>/matonos-linux/install/<uid>/staging/<operation>` path, a
 configured remote, and a validated install ref. The helper clears supplementary
 groups, switches to AID 2902, sets `MATON_FLATPAK_STAGING_DIR`, and execs the
 fixed APEX Flatpak wrapper with `install --system --no-deploy`. Flatpak checks
@@ -41,12 +41,12 @@ is owned by the preinstalled `org.matonos.linuxruntimes`). The bridge passes
 the calling software store's UID as the **installer UID**. Two workable flows:
 
 ### A. Install first, then rename to the stub UID
-1. `install` publishes the runtime to `/data/matonos/linux/apps/<runtime_uid>`
-   and the app to `/data/matonos/linux/apps/<installer_uid>` (`--user`).
+1. `install` publishes the runtime to `/data/misc_de/<u>/matonos-linux/runtime/<runtime_uid>`
+   and the app to `/data/misc_de/<u>/matonos-linux/install/<installer_uid>` (`--user`).
 2. The bridge reads that deployment's desktop entry/icon and installs the
    stub; PackageManager assigns the stub UID.
-3. `adopt` renames `/data/matonos/linux/apps/<installer_uid>` to
-   `/data/matonos/linux/apps/<stub_uid>` and re-homes it: ownership, MLS
+3. `adopt` renames `/data/misc_de/<u>/matonos-linux/install/<installer_uid>` to
+   `/data/misc_de/<u>/matonos-linux/install/<stub_uid>` and re-homes it: ownership, MLS
    categories, `<uid>.owner` record, runtime-installation record.
 
 Reuses today's post-install desktop/icon extraction; the cost is the rename
@@ -64,8 +64,8 @@ Verified against a real staged Flathub commit: it carries `/metadata` and
    (`StubGenerator.permissionsForMetadata`), takes the icon from the store,
    and installs the stub; PackageManager assigns the stub UID.
 3. `deploy` (new, split out of publish): hardlink the runtime into
-   `/data/matonos/linux/apps/<runtime_uid>` and the app into
-   `/data/matonos/linux/apps/<stub_uid>`, then record the runtime install.
+   `/data/misc_de/<u>/matonos-linux/runtime/<runtime_uid>` and the app into
+   `/data/misc_de/<u>/matonos-linux/install/<stub_uid>`, then record the runtime install.
 
 No rename or re-home, and the app is owned by its stub UID from the start.
 Requires the store to hand the icon (and display name) through the bridge

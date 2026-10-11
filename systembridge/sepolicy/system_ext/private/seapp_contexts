@@ -1,5 +1,8 @@
 user=_app seinfo=platform name=org.matonos.systembridge domain=matonos_system_bridge type=app_data_file levelFrom=all
 user=_app isPrivApp=true name=org.matonos.compositor domain=matonos_compositor type=matonos_compositor_data_file levelFrom=user
-# Generated Flatpak stubs host their per-app runtime (Wayland compositor,
-# session bus, portal) in their own process/UID.
-user=_app name=flatpak.* domain=matonos_linux_stub type=app_data_file levelFrom=all
+# Generated Flatpak stubs run as plain untrusted apps. They are signed with a
+# device-generated key, so no build-time seinfo can name them, and libselinux
+# rejects a name-only rule for non-privileged apps (insecure: any app could take
+# a flatpak.* name), failing the whole file and leaving every app in zygote.
+# linuxd and the System Bridge verify the stub certificate themselves.
+

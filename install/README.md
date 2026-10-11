@@ -210,8 +210,9 @@ execs the single static multicall binary with `argv[0]="flatpak"`) using
 `posix_spawn` and a fixed argv per command; no shell or `flatpak-spawn --host` is involved. It
 accepts complete `app|runtime/ID/ARCH/BRANCH` refs, checks Flatpak app IDs,
 and rejects unknown JSON fields. The system installation and app data live
-under `/data/matonos/linux`; the tree receives the dedicated
-`matonos_flatpak_data_file` SELinux label. Because the service and bridge are
+under `/data/misc_de/<u>/matonos-linux` (installs/runtimes) and
+`/data/misc_ce/<u>/matonos-linux` (app homes); each subtree receives its
+dedicated storage label. Because the service and bridge are
 both on the system side, the service uses a small system AIDL and is not a
 vendor channel or VINTF instance. The bridge and native service keep matching
 copies of these two AIDL declarations under their own Soong source roots.
@@ -219,7 +220,7 @@ Install/uninstall output is sent as
 `progress` events and returns an accepted job immediately, so a long pull does
 not hold a bridge Binder call open. Completion arrives as a `progress` event
 with `phase=complete` and the CLI result. App data is placed under
-`/data/matonos/linux/flatpak-data/.var/app`. Uninstall requests
+`/data/misc_ce/<u>/matonos-linux/home/<uid>/.var/app`. Uninstall requests
 `--delete-data` then removes unused runtimes. The service starts only after `sys.boot_completed=1`, so a missing
 CLI or Flatpak failure cannot hold up boot. D-Bus is not enabled by this
 service. The daemon uses its dedicated `matonos_linuxd` system coredomain and
@@ -241,7 +242,7 @@ headless QEMU boot, run the bridge `flatpak_test_call` with commands
 `list_installed`, `list_remotes`, `add_flathub`, `install`, and `uninstall`;
 watch `progress` for install and uninstall. A CLI test ref is
 `app/fi.mooc.tmc.tmc-cli-rust/x86_64/stable`. Confirm its ref disappears from
-`list_installed` and the app's `/data/matonos/linux/apps/<uid>/app/fi.mooc.tmc.tmc-cli-rust`
+`list_installed` and the app's `/data/misc_de/<u>/matonos-linux/install/<uid>/app/fi.mooc.tmc.tmc-cli-rust`
 deployment (and its matching app data) are gone after uninstall. Also exercise
 `kill`; the test runner must verify the returned PID and process exit.
 

@@ -316,7 +316,7 @@ user notification, plus a tiny LD_PRELOAD shmat helper; see
 `linux/sysvipc/README.md`. Do not enable CONFIG_SYSVIPC.
 
 Deliberate exception (user, 2026-10-04): Flatpaks may download and run code
-in their own `/data/matonos/linux/apps/<uid>` directory by default (no permission), as on a
+in their own `/data/misc_ce/<u>/matonos-linux/home/<uid>` directory by default (no permission), as on a
 Linux desktop; see install/linuxd/CODE-STORAGE-r24.md.
 
 Principle (user, 2026-10-04): containment beats compatibility. Default to

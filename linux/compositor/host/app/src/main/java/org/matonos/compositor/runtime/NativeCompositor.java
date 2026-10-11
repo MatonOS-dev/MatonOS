@@ -30,6 +30,8 @@ public final class NativeCompositor {
     public static native void nativeKey(int id, int key, int scan, int action, int meta, long timeNs);
     public static native void nativeMotion(int id, float x, float y, float verticalScroll,
                                           float horizontalScroll, int action, int buttons, long timeNs);
+    public static native void nativeCaptureLost(int id);
+    public static native void nativeRelative(int id, float x, float y, float vs, float hs, int buttons, long timeNs);
     public static native void nativeStopped(int id, boolean stopped);
     public static native void nativeClose(int id);
     public static native void nativeLaunchDemo();

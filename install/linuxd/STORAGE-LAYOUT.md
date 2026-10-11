@@ -1,34 +1,50 @@
 # Linux app storage layout (2026-10-07)
 
-Three roots, split by **owner** and **who reads them**:
+Android user `<u> = uid / 100000` owns two encrypted roots, created by
+`vold_prepare_subdirs` as 0711 system:system. linuxd never creates these roots.
 
 ```
+/data/misc_de/<u>/matonos-linux/
+  install/<uid>/           # per-app FLATPAK_USER_DIR, system-owned
+    repo/objects/          # verified code label
+    staging/<operation>/   # transient; handed to the installing stub UID
+    app/ exports/ overrides/ tmp/
+  runtime/<runtime_uid>/   # per-user shared FLATPAK_SYSTEM_DIR, system-owned
+  runtime/refs-<u>.json    # reference DB, opened only during each operation
+  runtime-installation    # system-owned runtime UID marker (0600)
+  store/apps/ store/runtime/ # reserved code-store locations
+/data/misc_ce/<u>/matonos-linux/
+  home/<uid>/              # HOME, uid:uid 0700, per-UID MLS label
+  home/<uid>.owner         # system-owned recycled-UID protection
 /data/matonos/linux/
-  install/<app-uid>/                      # per-app Flatpak --user install   (FLATPAK_USER_DIR)
-    repo/objects/...                      #   -> matonos_linux_code_file
-    staging/<operation>/                  #   transient, uid:system 0750   -> matonos_linux_data_file
-    app/<app-id>/<arch>/<branch>/<commit>/files   # the deployment       -> matonos_flatpak_deployment_file
-    exports/  overrides/  tmp/
-  runtime/<runtime-app-uid>/              # shared --system runtime install   (FLATPAK_SYSTEM_DIR)
-    runtime/<rt-id>/<arch>/<branch>/<commit>/files
-  home/<app-uid>/                         # app data / HOME  (uid, 0700)      -> matonos_linux_data_file:<mls>
-    .var/app/<app-id>/...
-  # not part of any install:
-  run/                                # shared, system-created socket namespace:
-                                      #   wayland-*, session-bus-*, flatpak-config-*
-  install/runtime-installation-<user> # runtime-owner markers (persistent, system)
-  staging/  cache/  flatpak-data/  store/  udev/
+  tmp/<uid>/               # UID-owned app runtime sockets (media_rw_data_file)
+  run/                     # CLI namespace configuration and relay state
+  cache/ flatpak-data/     # linuxd CLI scratch/configuration
+  machine-id udev/         # device-wide
+  store/stub-signer.der    # device-wide signing certificate
 ```
 
-| Root | Owner | SELinux type | App rights |
-| --- | --- | --- | --- |
-| `install/<uid>/**` | system | deployment (except `repo/objects` -> code, `staging` -> linux-data) | read + exec/map, no write |
-| `runtime/<guid>/**` | system | deployment | read + exec/map, no write |
-| `home/<uid>/**` | `<uid>`, 0700 | `matonos_linux_data_file:<mls>` | read/write/exec |
-| `staging/**` | system | store | none |
+Every installation and home parser checks the numeric user against the UID
+and rejects noncanonical paths, suffixes and the previous global roots.
+Install/runtime data uses DE keys; homes use CE keys. Launch fails with an
+unlock message when the CE root cannot be opened. No migration is provided;
+missing installations and reference databases are empty state.
 
-`FLATPAK_USER_DIR=install/<uid>`, `FLATPAK_SYSTEM_DIR=runtime/<runtime-app-uid>`,
-`HOME=home/<uid>`.
+vold destroys the entire DE and CE trees on user removal. linuxd holds no
+refs cache; operations release their database on completion. Pending consent
+handles are dropped when the numeric DE user directory is removed. Android
+terminates that user's stubs; lifeline EOF terminates their Linux sessions.
+
+Directory creation uses thread-local fscreate for install/runtime deployment
+roots, staging and per-UID homes. DE parents and CE home parents are created
+lazily inside the vold roots; neither is created by init. Existing state is
+not moved as a migration. Stock vold recursively restores misc_ce labels at
+user storage preparation (FsCrypt.cpp:1060); this resets dynamic MLS to s0.
+On launch linuxd repairs only its own data type back to the verified UID
+level, walking pinned inodes as that UID, without following symlinks or
+crossing filesystems. It labels the root last so interruptions retry.
+Unknown labels, foreign-owned descendants and unreadable directories fail
+closed. This maintenance path requires enforcing/device validation.
 
 ## Standard graphics runtime
 
@@ -70,15 +86,19 @@ image. The current VM's Mesa install and Firefox GPU mappings were checked.
 
 ## Known gaps / follow-ups
 
-- **SELinux labelling at creation.** `file_contexts` applies only at build/`restorecon`;
-  runtime-created dirs inherit the parent type. `home/<uid>` is labelled via `fscreate`
-  in `prepare_linux_data`. The **`install/<uid>` and `runtime/<guid>` trees are created
-  by the publish path and still need `fscreate`** (or a `restorecon` pass) to get the
-  deployment/`code` types — otherwise the app cannot execute its own binaries. Do not
-  assume `file_contexts` covers them.
+- **Enforcing validation pending.** Directory creation now uses fscreate;
+  the new vold root labels and traversal/removal rules are text-reviewed only.
+  Run the policy target and fresh-user device checks with the coordinator.
 - **Per-app runtime dir (decided 2026-10-07).** The Wayland socket and session
-  bus live in `/data/matonos/linux/tmp/<uid>/`, created by the app (stub) itself
-  as it runs under the app UID, with fixed names `wayland-0` and `bus`. The
+  bus live in `/data/matonos/linux/tmp/<uid>/`. linuxd pre-creates the root
+  as UID:UID 0700 with `media_rw_data_file` and the verified UID's stock
+  `levelFrom=all` categories (2026-10-11). The stock untrusted app stub creates
+  its children, with fixed names `wayland-0` and `bus`; the compositor changes
+  the root to 0711 for the UID-1000 supervisor's control-socket traversal.
+  This is a shared coarse internal-storage label: DAC confines contents, and
+  socket MLS constrains connections. No custom runtime type or app MLS trust.
+  Old/wrong root labels fail closed; no relabel migration is provided.
+  See `docs/LINUX-STUB-SELINUX.md`. The
   sandbox identity-binds that dir and uses it as `XDG_RUNTIME_DIR`. This replaces
   the earlier shared `run/` relay namespace (the relay and `run/wayland-*` /
   `run/session-bus-*` are gone), because socket creation moved from `linuxd` into

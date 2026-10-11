@@ -5,3 +5,6 @@ persist.vendor.maton. u:object_r:vendor_maton_prop:s0 prefix
 # the HAL reads them when PrimaryMixer is constructed.
 persist.vendor.audio.primary. u:object_r:vendor_maton_prop:s0 prefix
 vendor.mesa. u:object_r:vendor_maton_mesa_prop:s0 prefix
+
+# minigbm probes this option even when unset. Never grant vendor_default_prop.
+vendor.minigbm.debug u:object_r:vendor_maton_graphics_prop:s0 exact string

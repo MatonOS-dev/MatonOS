@@ -463,12 +463,12 @@ Feature work continues, but in this shape from now on.
   (system/sepolicy/private/domain.te ~1958–2051), so Flatpak code cannot run
   from a /data directory in an enforcing linuxd-created sandbox. Design:
   - Apps: one Flatpak USER installation per stub UID under
-    `/data/matonos/linux/apps/<uid>/`. The signed stub records the app and
+    `/data/misc_de/<u>/matonos-linux/install/<uid>/`. The signed stub records the app and
     runtime commits; linuxd verifies and publishes deployments, which Flatpak
     binds read-only into that app's sandbox. Each app's writable home is in
-    the same UID-owned tree.
+    `/data/misc_ce/<u>/matonos-linux/home/<uid>`, owned by the app UID.
   - Flatpaks may download and execute code in their own app home under
-    `/data/matonos/linux/apps/<uid>/` by default. The existing
+    `/data/misc_ce/<u>/matonos-linux/home/<uid>/` by default. The existing
     `data_exec_exempt_domain` policy patch covers this; the sandbox remains
     isolated by UID, MLS level, and its private home.
   - Runtimes and extensions: one Flatpak SYSTEM installation owned by the
@@ -681,6 +681,17 @@ Feature work continues, but in this shape from now on.
   (APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND, Android 15+) so the app's
   header bar shows through under Android's window controls. Never two
   visible title bars.
+  CSD follow-up (2026-10-11, user-authorized framework exception): the stub
+  now requests self-task caption suppression via a separate System Bridge
+  AIDL binding, with device-signed stub/ref and task UID checks. Pointer
+  move/resize requests use existing bridge-side WindowContainerTransaction
+  bounds updates and public stub pointer capture; no hidden APIs in the stub.
+  The caption-only framework hook is still a proposal: two property-gated
+  format-patch artifacts under out/pc-logs/agents/caption-hide-framework,
+  intended for the user's frameworks/base fork on matonos/v26.10. No source
+  edits or commits there, no device-repo commits, builds or device runs.
+  Until the coordinator applies the hook, Android caption controls remain.
+  Details and remaining runtime checks: out/pc-logs/agents/caption-hide-result.md.
   Scaling (user, 2026-09-28): Android's density is the source of truth,
   per window (Configuration.densityDpi, updated when a window moves to
   another display). Wayland: wp_fractional_scale_v1 (exact factor) + wl_output
@@ -1735,7 +1746,7 @@ keep offline (dev key in repo until then).
   multicall directly for OSTree and the APEX wrapper for Flatpak.
 - **Per-app installs, reuse stock Flatpak.** The preinstalled runtime app
   `org.matonos.linuxruntimes` owns the shared `--system` installation; each
-  stub owns a `--user` installation at `/data/matonos/linux/apps/<uid>`.
+  stub owns a `--user` installation at `/data/misc_de/<u>/matonos-linux/install/<uid>`.
   There is no global `/data/matonos/linux/flatpak*` installation. linuxd
   resolves an app's roots (`--user info` probe) and runs `uninstall`,
   `metadata`, `desktop_entry`, `icon` and `list_installed` through stock
@@ -1771,8 +1782,8 @@ keep offline (dev key in repo until then).
 - **Install is two-phase because the app UID is late-bound (2026-10-05).**
   The stub APK is what gets the Android UID, so a first install has none.
   Two flows are specified in `install/linuxd/CODE-STORAGE-r24.md`: (A) install
-  to `/data/matonos/linux/apps/<installer_uid>` and rename to
-  `/data/matonos/linux/apps/<stub_uid>` after the stub exists, or (B) create
+  to `/data/misc_de/<u>/matonos-linux/install/<installer_uid>` and rename to
+  `/data/misc_de/<u>/matonos-linux/install/<stub_uid>` after the stub exists, or (B) create
   the stub first (store supplies the icon, linuxd reads metadata/desktop from
   the staged commit) and install straight to the stub UID. B is preferred;
   A is the fallback. The shared runtime `--system` installation is owned by

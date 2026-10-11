@@ -64,7 +64,9 @@ target_include_directories(maton_compositor PRIVATE
   "${MATON_AOSP_ROOT}/hardware/interfaces/graphics/mapper/stable-c/include"
   "${MATON_AOSP_ROOT}/external/minigbm/cros_gralloc"
   "${MATON_AOSP_ROOT}/system/core/libcutils/include")
+find_library(MATON_XCB_LIB NAMES xcb PATHS "${MATON_XSTAGE}/lib" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH REQUIRED)
 target_link_libraries(maton_compositor PRIVATE
+  "${MATON_XCB_LIB}"
   maton_wlroots maton_wayland-server maton_wayland-client maton_pixman-1 maton_xkbcommon maton_drm
   android log EGL GLESv2 dl)
 

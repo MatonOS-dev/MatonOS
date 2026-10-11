@@ -1,0 +1,157 @@
+From: MatonOS <matonos@localhost>
+Subject: [PATCH] wm shell: suppress captions on both decoration paths
+
+Keep resize borders for gated bridge-owned client-decorated tasks.
+
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
+index 2233fc581a63..2325bdb5dd66 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
+@@ -451,6 +451,15 @@ constructor(
+                     updateDragResizeListenerIfNeeded(oldDecorationSurface)
+                 }
+             }
++            // Caption ownership can change without task/resize geometry changing.
++            // Only on a change after the first relayout: during creation the
++            // exclusion state is not set up yet, and the normal path covers it.
++            if (android.os.SystemProperties.getBoolean("ro.matonos.client_decorations", false)) {
++                val decorated = taskInfo.matonosClientDecorated
++                val previous = matonosClientDecorated
++                matonosClientDecorated = decorated
++                if (previous != null && previous != decorated) updateExclusionRegion()
++            }
+             updateOpenByDefaultFirstRunPromptIfNeeded(configChanged, taskInfo)
+         }
+ 
+@@ -860,6 +869,9 @@ constructor(
+      */
+     override fun calculateValidDragArea(): Rect? = captionController?.calculateValidDragArea()
+ 
++    /** MatonOS: last client-decorated state seen by relayout; null before the first. */
++    private var matonosClientDecorated: Boolean? = null
++
+     private fun updateExclusionRegion() {
+         exclusionRegionListener.onExclusionRegionChanged(
+             taskInfo.taskId,
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java
+index 5b9a63dcce07..0f46aa29d7d8 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java
+@@ -1273,6 +1273,20 @@ public class DesktopModeWindowDecoration extends WindowDecoration<WindowDecorLin
+         // from being visible if freeform task window above is translucent.
+         // Otherwise if fluid resize is enabled, add a background to freeform tasks.
+         relayoutParams.mShouldSetBackground = desktopConfig.shouldSetBackground(taskInfo);
++        // Linux client titlebars already draw controls. Unlike transparent captions,
++        // suppress the entire caption and its input/insets; restore on server mode.
++        if (isMatonosClientDecorated(taskInfo)) {
++            relayoutParams.mIsCaptionVisible = false;
++            relayoutParams.mIsInsetSource = false;
++            relayoutParams.mShouldSetAppBounds = false;
++            relayoutParams.mCaptionHeightCalculator = (decorContext, display) -> 0;
++            relayoutParams.mCaptionTopPadding = 0;
++        }
++    }
++
++    private static boolean isMatonosClientDecorated(ActivityManager.RunningTaskInfo taskInfo) {
++        return android.os.SystemProperties.getBoolean("ro.matonos.client_decorations", false)
++                && taskInfo.isFreeform() && taskInfo.matonosClientDecorated;
+     }
+ 
+     private static int getCornerRadiusId(int layoutResId) {
+@@ -1843,6 +1857,7 @@ public class DesktopModeWindowDecoration extends WindowDecoration<WindowDecorLin
+      * @return {@code true} if event is inside caption view, {@code false} if not
+      */
+     boolean checkTouchEventInCaption(MotionEvent ev) {
++        if (isMatonosClientDecorated(mTaskInfo)) return false;
+         final PointF inputPoint = offsetCaptionLocation(ev);
+         return inputPoint.x >= mResult.mCaptionX
+                 && inputPoint.x <= mResult.mCaptionX + mResult.mCaptionWidth
+@@ -1974,8 +1989,10 @@ public class DesktopModeWindowDecoration extends WindowDecoration<WindowDecorLin
+             // Task can't be moved in full immersive, so skip excluding the caption region.
+             return exclusionRegion;
+         }
+-        exclusionRegion.union(new Rect(0, 0, mResult.mWidth,
+-                getCaptionHeight(mTaskInfo.getWindowingMode())));
++        if (!isMatonosClientDecorated(mTaskInfo)) {
++            exclusionRegion.union(new Rect(0, 0, mResult.mWidth,
++                    getCaptionHeight(mTaskInfo.getWindowingMode())));
++        }
+         exclusionRegion.translate(mPositionInParent.x, mPositionInParent.y);
+         return exclusionRegion;
+     }
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecoration.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecoration.java
+index 2e1e050b0946..7c02e1fc478c 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecoration.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecoration.java
+@@ -173,6 +173,7 @@ public abstract class WindowDecoration<T extends View & TaskFocusStateConsumer>
+     protected Configuration mWindowDecorConfig;
+     TaskDragResizer mTaskDragResizer;
+     boolean mIsCaptionVisible;
++    private boolean mMatonosCaptionSuppressed;
+ 
+     boolean mIsStatusBarVisible;
+     boolean mIsKeyguardVisibleAndOccluded;
+@@ -632,9 +633,17 @@ public abstract class WindowDecoration<T extends View & TaskFocusStateConsumer>
+      */
+     private void updateCaptionVisibility(View rootView, @NonNull RelayoutParams params) {
+         mIsCaptionVisible = params.mIsCaptionVisible;
+-        if (!DesktopModeFlags.ENABLE_DESKTOP_APP_HANDLE_ANIMATION.isTrue()) {
++        final boolean suppressed = android.os.SystemProperties.getBoolean(
++                "ro.matonos.client_decorations", false)
++                && params.mRunningTaskInfo.isFreeform()
++                && params.mRunningTaskInfo.matonosClientDecorated;
++        // Animation may otherwise leave the old controls visible. Force hide and
++        // one restore across a CSD change, then resume the stock animation path.
++        if (suppressed || mMatonosCaptionSuppressed
++                || !DesktopModeFlags.ENABLE_DESKTOP_APP_HANDLE_ANIMATION.isTrue()) {
+             setCaptionVisibility(rootView, mIsCaptionVisible);
+         }
++        mMatonosCaptionSuppressed = suppressed;
+     }
+ 
+     void setTaskDragResizer(TaskDragResizer taskDragResizer) {
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecoration2.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecoration2.kt
+index 91596257efba..2966040a81c7 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecoration2.kt
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecoration2.kt
+@@ -272,6 +272,22 @@ abstract class WindowDecoration2<T>(
+                 )
+             }
+ 
++            // MatonOS Linux clients own their titlebar. Release caption views/menus and
++            // insets, but keep the decoration surface and ordinary resize borders above.
++            if (android.os.SystemProperties.getBoolean("ro.matonos.client_decorations", false)
++                && taskInfo.isFreeform && taskInfo.matonosClientDecorated) {
++                releaseCaptionController(wct, startT)
++                lastValidDragArea = null
++                return RelayoutResult(
++                    captionResult = CaptionController.CaptionRelayoutResult(
++                        captionHeight = 0, captionWidth = 0, captionX = 0, captionY = 0,
++                        captionTopPadding = 0, customizableCaptionRegion = android.graphics.Region(),
++                    ),
++                    taskWidth = taskBounds.width(), taskHeight = taskBounds.height(),
++                    cornerRadius = cornerRadius, shadowRadius = shadowRadius,
++                    borderSettings = borderSettings, boxShadowSettings = boxShadowSettings,
++                )
++            }
+             val controller = getOrCreateCaptionController(params.captionType, wct, startT)
+             if (controller == null) {
+                 logD(TAG, "relayout(task=%d) null caption controller, skipping", taskInfo.taskId)
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/CaptionController.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/CaptionController.kt
+index 448b72287a41..a6e671b6d6a5 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/CaptionController.kt
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/CaptionController.kt
+@@ -432,6 +432,11 @@ abstract class CaptionController<T>(
+         ) {
+             captionInsets?.remove(wct)
+             captionInsets = null
++            // Also remove the inset installed by addCaptionInset before releasing CSD captions.
++            windowDecorationInsets?.remove(wct)
++            windowDecorationInsets = null
++            injectingGestureOfInterest = false
++            isCaptionVisible = false
+             windowDecorationViewHolder = null
+ 
+             val viewHost = captionViewHost ?: return false
+-- 
+2.43.0

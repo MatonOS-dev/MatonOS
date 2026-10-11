@@ -50,6 +50,11 @@ maton_selinux_validate() {
 
 maton_selinux_cmdline() {
   maton_selinux_validate "$1" || return 1
+  local boot_cmdline=$1
+  if [[ ! " $boot_cmdline " =~ [[:space:]]audit_backlog_limit= ]]; then
+    boot_cmdline+=" audit_backlog_limit=8192"
+  fi
+  set -- "$boot_cmdline"
   if [[ " $1 " =~ [[:space:]]androidboot\.selinux= ]]; then
     printf '%s\n' "$1"
   else

@@ -10,7 +10,8 @@ type matonos_channel_service, protected_service, hal_service_type, service_manag
 type matonos_install_block_device, dev_type;
 # addons: GPT entries 6/7 hold service-written raw ext4 slot images, mounted RO.
 type matonos_addons_block_device, dev_type;
-type matonos_addon_mount_file, file_type, vendor_file_type;
+# /mnt/vendor mountpoint is writable tmpfs, not immutable /vendor content.
+type matonos_addon_mount_file, file_type;
 type vendor_addon_module_file, file_type, vendor_file_type, contextmount_type;
 type matonos_addon_data_file, file_type, data_file_type;
 type matonos_addon_manager, domain;
@@ -101,8 +102,8 @@ allow hal_audio_default matonos_driver:unix_stream_socket connectto;
 type matonos_rfkill_device, dev_type;
 type matonos_vhci_device, dev_type;
 # DRM nodes are created dynamically by whichever PCI/display drivers exist.
-# Keep render access on Android's existing GPU device type; cards retain the
-# graphics-device type so the stock composer policy continues to apply.
+# Render and card nodes use the stock GPU type; the composer receives explicit
+# GPU rights below. Android clients must not need graphics_device grants.
 allow matonos_driver matonos_rfkill_device:chr_file rw_file_perms;
 # AOSP's Linux Bluetooth HAL uses the MGMT channel to unblock rfkill before
 # opening the controller's standard HCI user channel.
@@ -182,9 +183,8 @@ allow matonos_driver matonos_driver_exec:file { execute getattr map open read };
 # Run the Android kernel-module helper in its narrow privileged module loader
 # domain. Audio uses it to preload optional HDA codec modules from /vendor.
 domain_auto_trans(matonos_driver, vendor_toolbox_exec, vendor_modprobe)
-# nogpu: the early graphics selector has the same narrowly scoped module-loader
-# transition when it needs to load the optional vgem render node.
-domain_auto_trans(pc_gpu_detect, vendor_toolbox_exec, vendor_modprobe)
+# The graphics selector uses a distinct modprobe inode; never transition
+# its other toolbox applets (cat/readlink/setprop) into the module loader.
 # nogpu: Mesa reads its software-rendering choice from vendor.mesa.* properties
 # (debug.* is core-owned: vendor domains may never set it — neverallow).
 set_prop(pc_gpu_detect, vendor_maton_mesa_prop)
@@ -232,6 +232,9 @@ get_prop(surfaceflinger, vendor_maton_mesa_prop)
 get_prop(bootanim, vendor_maton_mesa_prop)
 get_prop(zygote, vendor_maton_mesa_prop)
 get_prop(hal_graphics_allocator_default, vendor_maton_mesa_prop)
+# Every Mesa client (apps' RenderThread, system_server's UI) reads the GPU
+# selection; without it Mesa falls back to llvmpipe, whose JIT needs execmem.
+get_prop({ appdomain -isolated_app_all system_server }, vendor_maton_mesa_prop)
 
 # The audio HAL's AIDL FMQ memfds are ordinary tmpfs files on this kernel's
 # memfd-class path. Give the HAL-created queue objects a private label so the
@@ -286,3 +289,17 @@ allow hal_power_default tmpfs:file { map read write };
 
 # modprobe/timeout started by pc-gpu-detect inherit its stdio/script fds.
 allow vendor_modprobe pc_gpu_detect:fd use;
+
+# Round 1: DRM directory/card nodes now use the stock GPU device type.
+# Stock gpu_sphal_domain already supplies app/allocator/composer directory I/O.
+allow { bootanim surfaceflinger matonos_driver } gpu_device:dir r_dir_perms;
+allow hal_graphics_composer_default gpu_device:chr_file rw_file_perms;
+allow bootanim gpu_device:chr_file getattr;
+get_prop(domain, vendor_maton_graphics_prop)
+# kdevtmpfs creates nodes before ueventd can apply their final device labels.
+# Directory creation only; generic block-node mutations are forbidden by
+# stock coredomain.te and require fixing devtmpfs labeling instead.
+allow kernel device:dir create;
+# init owns the mount; vendor_init owns the optional ODM mountpoint mkdir.
+allow vendor_init matonos_addon_mount_file:dir create;
+allow init matonos_addon_mount_file:dir mounton;

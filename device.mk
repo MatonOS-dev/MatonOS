@@ -107,6 +107,17 @@ PRODUCT_RELEASE_CONFIG_MAPS += device/maton/pc_x86_64/release/release_config_map
 # release drops it, the display falls back to the classic touch-first shell.
 PRODUCT_PRODUCT_PROPERTIES += \
     persist.wm.debug.force_desktop_first_on_default_display_for_testing=true
+# No phantom-process cap ("Disable child process restrictions"): stock Android
+# kills the oldest app child processes past 32 device-wide. Linux apps (Steam
+# alone runs ~30) live and die with their stub, so the cap only killed
+# Xwayland and with it every X client.
+PRODUCT_PRODUCT_PROPERTIES += \
+    persist.sys.fflag.override.settings_enable_monitor_phantom_procs=false
+
+# SELinux gauntlet: no audit rate limit, so permissive boots log every denial
+# instead of "audit_lost". Remove when the policy runs enforcing.
+PRODUCT_PRODUCT_PROPERTIES += \
+    persist.logd.audit.rate=0
 # No modem on PCs: drop SIM/carrier-only apps (user, 2026-09-25). Keep
 # TeleService and CarrierConfig: the framework and Settings expect them even
 # on Wi-Fi-only devices.
@@ -176,3 +187,6 @@ PRODUCT_VENDOR_PROPERTIES += ro.logd.size=16M
 # to the system partition.)
 PRODUCT_SYSTEM_EXT_PROPERTIES += \
     sys.use_memfd=true
+
+# Optional self-task caption hook in the frameworks/base fork; default-off upstream.
+PRODUCT_SYSTEM_EXT_PROPERTIES += ro.matonos.client_decorations=true
