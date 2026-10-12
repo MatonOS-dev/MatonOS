@@ -14,3 +14,8 @@ type sysfs_pc_wakeup_info, fs_type, sysfs_type;
 allow pc_wakeup sysfs_type:dir search;
 allow pc_wakeup sysfs_pc_wakeup:file { getattr open read write };
 allow pc_wakeup sysfs_pc_wakeup_info:file r_file_perms;
+
+# restorecon_recursive crosses stock wakeup links and relabels block stats.
+allow vendor_init sysfs_wakeup:lnk_file getattr;
+allow vendor_init sysfs:file relabelfrom;
+allow vendor_init sysfs_devices_block:file relabelto;

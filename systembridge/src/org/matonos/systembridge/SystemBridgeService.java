@@ -219,6 +219,10 @@ public final class SystemBridgeService extends Service {
     };
 
     private ActivityManager.RunningTaskInfo ownedLinuxTask(int uid, String ref, int taskId) {
+        enforceNotBanned(uid, "linux window");
+        // The installer's per-device signer pre-approves this self-only
+        // capability. Never route stubs through the general permission/trust
+        // gate: they do not receive SYSTEM_BRIDGE or any daemon targets.
         if (!flatpakStubManager.ownsStub(uid, ref)) deny("linux window", uid, "unverified stub");
         int user = UserHandle.getUserId(uid);
         if (user != ActivityManager.getCurrentUser()) deny("linux window", uid, "inactive user");
@@ -228,8 +232,11 @@ public final class SystemBridgeService extends Service {
                     && FlatpakStubIdentity.ownsWindow(uid, user, ActivityManager.getCurrentUser(),
                             task.userId, task.effectiveUid, task.topActivityInfo.applicationInfo.uid,
                             task.topActivityInfo.name, task.token != null,
-                            task.getWindowingMode() == WindowConfiguration.WINDOWING_MODE_FREEFORM))
+                            task.getWindowingMode() == WindowConfiguration.WINDOWING_MODE_FREEFORM)) {
+                Log.i(TAG, "Authorized Linux window uid=" + uid + " task=" + taskId
+                        + " signer=stub scope=self-task");
                 return task;
+            }
             break;
         }
         deny("linux window task=" + taskId, uid, "task is not the caller's freeform Linux window");

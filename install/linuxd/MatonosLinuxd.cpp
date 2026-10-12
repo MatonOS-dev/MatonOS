@@ -53,10 +53,17 @@ std::vector<android::sp<ILinuxdListener>> g_progress_listeners;
 std::mutex g_event_mutex;
 std::condition_variable g_event_condition;
 std::deque<std::string> g_events;
-/* "install me"/"update me" in flight: stub UIDs, and operation ID -> (uid, ref). */
+/* Self installs/updates in flight: stub UIDs and per-operation completion state. */
 std::mutex g_self_mutex;
 std::set<int> g_self_busy;
-std::map<std::string, std::pair<int, std::string>> g_self_operations;
+struct SelfOperationState {
+    int uid;
+    std::string ref;
+    bool complete = false;
+    std::string result;
+};
+std::condition_variable g_self_condition;
+std::map<std::string, std::shared_ptr<SelfOperationState>> g_self_operations;
 
 class ListenerDeathRecipient final : public android::IBinder::DeathRecipient {
   public:
@@ -192,10 +199,13 @@ void PublishCompletion(const FlatpakResult& result) {
         std::lock_guard<std::mutex> guard(g_self_mutex);
         auto operation = g_self_operations.find(result.operation_id);
         if (operation != g_self_operations.end()) {
-            event["result"]["ref"] = operation->second.second;
-            event["result"]["uid"] = operation->second.first;
-            g_self_busy.erase(operation->second.first);
+            event["result"]["ref"] = operation->second->ref;
+            event["result"]["uid"] = operation->second->uid;
+            g_self_busy.erase(operation->second->uid);
+            operation->second->result = Encode(event["result"]);
+            operation->second->complete = true;
             g_self_operations.erase(operation);
+            g_self_condition.notify_all();
         }
     }
     const std::string body = Encode(event);
@@ -280,13 +290,17 @@ std::string SelfOperation(bool update, const std::string& package, const std::st
     if (runtime_uid < 10000 || runtime_uid == uid) return Encode(Error("Linux runtime app missing"));
     const std::string operation_id = !operation_in.empty() ? operation_in :
             std::string(update ? "update-" : "install-") + std::to_string(uid) + "-" + std::to_string(time(nullptr));
+    auto operation = std::make_shared<SelfOperationState>();
+    operation->uid = uid;
+    operation->ref = ref;
     {
         std::lock_guard<std::mutex> guard(g_self_mutex);
+        if (g_self_operations.count(operation_id)) return Encode(Error("operation ID already in use"));
         if (!g_self_busy.insert(uid).second) {
             Json::Value out; out["ok"] = true; out["accepted"] = true; out["running"] = true;
             return Encode(out);
         }
-        g_self_operations[operation_id] = {uid, ref};
+        g_self_operations[operation_id] = operation;
     }
     auto fail = [&](const std::string& message) {
         {
@@ -311,8 +325,12 @@ std::string SelfOperation(bool update, const std::string& package, const std::st
     const std::string message = result.error ? result.error : "Flatpak install was rejected";
     flatpak_manager_result_clear(&result);
     if (!accepted) return fail(message);
-    Json::Value out; out["ok"] = true; out["accepted"] = true; out["operationId"] = operation_id;
-    return Encode(out);
+    // The stub owns the foreground service and wake lock. Keep its Binder
+    // call alive through download AND asynchronous deployment, including
+    // failure/cancellation, rather than releasing them on "accepted".
+    std::unique_lock<std::mutex> lock(g_self_mutex);
+    g_self_condition.wait(lock, [&] { return operation->complete; });
+    return operation->result;
 }
 
 bool HexDecode(const std::string& hex, std::vector<unsigned char>* out) {

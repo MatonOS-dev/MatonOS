@@ -3,11 +3,13 @@
     <permission
         android:name="org.matonos.permission.SYSTEM_BRIDGE"
         android:protectionLevel="signature|privileged|development" />
+    <!-- Controller access is granted at install time for now; stubs still
+         declare it from Flatpak metadata and the bridge checks the grant. -->
     <permission
         android:name="org.matonos.permission.GAME_CONTROLLERS"
         android:label="@string/game_controllers_label"
         android:description="@string/game_controllers_description"
-        android:protectionLevel="dangerous" />
+        android:protectionLevel="normal" />
     <!-- Shelf's provider service is protected by this capability; the platform-signed
          bridge requests it so only the audited gatekeeper can bind the built-in provider. -->
     <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />

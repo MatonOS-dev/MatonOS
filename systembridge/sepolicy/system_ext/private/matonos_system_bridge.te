@@ -531,3 +531,77 @@ allow { appdomain -isolated_app_all system_server surfaceflinger bootanim matono
 # (udmabuf_device is a private platform type, so this lives here, not in vendor.)
 allow { appdomain -isolated_app_all system_server } udmabuf_device:chr_file { read write };
 allow { appdomain system_server surfaceflinger bootanim matonos_linux_app } sysfs_type:dir search;
+
+# Round 4: boot metadata and context-mounted POSIX shm.
+type sysfs_matonos_ksm, fs_type, sysfs_type;
+allow system_server sysfs_matonos_ksm:file { open read };
+allow matonos_linux_shm_file self:filesystem associate;
+# Input-device uevent metadata uses the existing read-only input label.
+# DMI product name is presentation metadata, not a firmware control.
+type sysfs_matonos_product_name, fs_type, sysfs_type;
+allow untrusted_app_all sysfs_matonos_product_name:file { open read };
+
+# OSTree publication: hardlinks, symlinks and FICLONE on managed storage.
+allow matonos_flatpak_installer matonos_flatpak_store_file:file { link ioctl };
+allowxperm matonos_flatpak_installer matonos_flatpak_store_file:file ioctl { 0x9409 };
+allow matonos_flatpak_installer matonos_flatpak_store_file:lnk_file { create getattr rename };
+allow matonos_linuxd matonos_flatpak_store_file:{ file lnk_file } link;
+allow matonos_linuxd matonos_flatpak_data_file:file ioctl;
+allowxperm matonos_linuxd matonos_flatpak_data_file:file ioctl { 0x9409 };
+allow matonos_linuxd matonos_flatpak_deployment_file:{ dir file } relabelfrom;
+allow matonos_linuxd matonos_linux_code_file:file link;
+allow matonos_linuxd matonos_linux_code_file:lnk_file { getattr read relabelto unlink };
+allow matonos_linuxd matonos_linux_user_root_file:dir remove_name;
+allow matonos_linuxd matonos_linux_data_file:dir ioctl;
+allowxperm matonos_linuxd matonos_linux_data_file:dir ioctl { 0x581f 0x5820 };
+allow matonos_linuxd cgroup_v2:file { getattr read };
+allow matonos_linuxd media_rw_data_file:lnk_file read;
+# Authenticated stub lifeline: inherited pipe only, no private app files.
+allow matonos_linuxd untrusted_app_all:fifo_file { getattr read };
+allow { matonos_linux_app matonos_bwrap matonos_app_launch } matonos_linuxd:fifo_file read;
+allow matonos_linux_app matonos_linuxd:fifo_file write;
+
+# Verified launch inheritance. Do not grant noatsecure: secure exec must
+# keep sanitizing the environment across these domain changes.
+allow matonos_flatpak_run matonos_bwrap:process { rlimitinh siginh };
+allow matonos_flatpak_run matonos_bwrap:process2 nnp_transition;
+allow matonos_bwrap matonos_app_launch:process { rlimitinh siginh };
+allow matonos_bwrap matonos_app_launch:process2 { nnp_transition nosuid_transition };
+allow matonos_app_launch matonos_app_exec_exec:file { execute map read };
+allow matonos_app_launch { matonos_bwrap matonos_flatpak_run matonos_linuxd }:fd use;
+allow matonos_bwrap matonos_flatpak_run:fd use;
+allow { matonos_bwrap matonos_app_launch } matonos_flatpak_run:memfd_file { getattr read write };
+allow untrusted_app_all matonos_linux_app:memfd_file { read write map };
+allow untrusted_app_all self:memfd_file { open setattr };
+allow matonos_app_launch matonos_flatpak_log_file:file { write append };
+allow matonos_bwrap matonos_flatpak_log_file:file ioctl;
+allowxperm matonos_bwrap matonos_flatpak_log_file:file ioctl { 0x5401 };
+
+# Flatpak/bwrap inspect the fixed APEX, read-only deployments and locks.
+allow matonos_bwrap matonos_flatpak_cli_exec:file { execute execute_no_trans getattr map read open };
+allow matonos_flatpak_run matonos_flatpak_data_file:dir { open read };
+allow matonos_flatpak_run matonos_flatpak_data_file:lnk_file { getattr read };
+allow matonos_flatpak_run matonos_linux_code_file:dir r_dir_perms;
+allow matonos_flatpak_run matonos_linux_code_file:file { getattr open read };
+allow matonos_flatpak_run audio_device:dir getattr;
+allow matonos_flatpak_run sysfs:dir read;
+allow matonos_bwrap matonos_flatpak_data_file:dir { getattr ioctl read open search };
+allow matonos_bwrap matonos_flatpak_data_file:file { getattr open read lock };
+allow matonos_bwrap matonos_flatpak_data_file:lnk_file read;
+allow matonos_bwrap matonos_flatpak_deployment_file:dir { r_dir_perms ioctl mounton };
+allow matonos_bwrap matonos_flatpak_deployment_file:file { r_file_perms lock mounton };
+allow matonos_bwrap matonos_flatpak_deployment_file:lnk_file read;
+allow matonos_bwrap matonos_linux_code_file:file { getattr read open map };
+allow matonos_bwrap matonos_flatpak_socket_file:file getattr;
+allow matonos_bwrap matonos_linux_data_file:dir { create_dir_perms ioctl };
+allow matonos_bwrap matonos_linux_data_file:file { create rename setattr };
+allow matonos_bwrap udmabuf_device:chr_file getattr;
+allow matonos_bwrap self:cap_userns { net_admin setpcap };
+# Configure loopback only inside the new network namespace.
+allow matonos_bwrap self:netlink_route_socket nlmsg;
+# Namespace setup reads only these two tunables. No generic proc file reads.
+type proc_matonos_namespace_limits, fs_type, proc_type;
+allow matonos_bwrap proc_matonos_namespace_limits:file { read open };
+# nsfs handles are anonymous namespace inodes, not missing disk labels.
+type matonos_namespace_file, fs_type;
+allow matonos_bwrap matonos_namespace_file:file getattr;

@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.util.Log;
 import org.matonos.systembridge.ILinuxd;
 
@@ -27,8 +28,12 @@ public class InstallActivity extends Activity {
         final String operationId = operation == null ? "" : operation;
         final String pkg = getPackageName();
         final Intent download = new Intent(this, InstallService.class);
-        startForegroundService(download);
-        new Thread(() -> {
+        final PowerManager.WakeLock wakeLock = getSystemService(PowerManager.class)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MatonOS:FlatpakInstall");
+        wakeLock.acquire();
+        try { startForegroundService(download); }
+        catch (RuntimeException | Error error) { wakeLock.release(); throw error; }
+        try { new Thread(() -> {
             try {
                 // ServiceManager is hidden API; this lookup is the stub's only use of it.
                 IBinder binder = (IBinder) Class.forName("android.os.ServiceManager")
@@ -38,8 +43,16 @@ public class InstallActivity extends Activity {
                 String result = update() ? linuxd.updateSelf(pkg, operationId) : linuxd.installSelf(pkg, operationId);
                 Log.i(TAG, (update() ? "update me: " : "install me: ") + result);
             } catch (Exception error) { Log.e(TAG, "Cannot start the Flatpak install", error); }
-            finally { stopService(download); }
+            finally {
+                try { stopService(download); }
+                finally { wakeLock.release(); }
+            }
             runOnUiThread(this::finish);
-        }).start();
+        }).start(); }
+        catch (RuntimeException | Error error) {
+            try { stopService(download); }
+            finally { wakeLock.release(); }
+            throw error;
+        }
     }
 }

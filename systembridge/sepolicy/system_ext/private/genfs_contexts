@@ -8,3 +8,10 @@ genfscon sysfs /class/misc u:object_r:sysfs_matonos_discovery:s0
 
 # Generic scheduler status queried by desktop applications (read-only).
 genfscon proc /sys/kernel/sched_autogroup_enabled u:object_r:proc_matonos_sched_autogroup:s0
+
+# Read-only boot memory accounting and namespace setup metadata.
+genfscon sysfs /kernel/mm/ksm u:object_r:sysfs_matonos_ksm:s0
+genfscon sysfs /devices/virtual/dmi/id/product_name u:object_r:sysfs_matonos_product_name:s0
+genfscon proc /sys/kernel/overflowuid u:object_r:proc_matonos_namespace_limits:s0
+genfscon proc /sys/user/max_user_namespaces u:object_r:proc_matonos_namespace_limits:s0
+genfscon nsfs / u:object_r:matonos_namespace_file:s0

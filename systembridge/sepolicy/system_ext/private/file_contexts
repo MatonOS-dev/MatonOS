@@ -47,3 +47,5 @@
 /data/misc_ce/[0-9]+/matonos-linux/home u:object_r:matonos_flatpak_data_file:s0
 /data/misc_ce/[0-9]+/matonos-linux/home/[0-9]+\.owner u:object_r:matonos_flatpak_data_file:s0
 /data/misc_de/[0-9]+/matonos-linux/store(/.*)? u:object_r:matonos_flatpak_store_file:s0
+
+/sys/devices(/[^/]+)*/input[0-9]+/uevent -- u:object_r:sysfs_matonos_input:s0

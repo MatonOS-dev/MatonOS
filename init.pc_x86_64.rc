@@ -38,3 +38,21 @@ service vendor.pc-wakeup /vendor/bin/pc-wakeup.sh
 
 on boot
     start vendor.pc-wakeup
+
+# Android's suspend service must retain wake-lock APIs, but never the kernel
+# suspend control. Stock main.cpp falls back to socketpair FDs when state
+# cannot be opened; both autosuspend and forceSuspend then cannot suspend.
+# Platform on-init permissions run first; early_hal starts later at boot.
+on init
+    chown root root /sys/power/state
+    chmod 0600 /sys/power/state
+    chown root root /sys/power/wakeup_count
+    chmod 0600 /sys/power/wakeup_count
+    write /sys/power/autosleep off
+    chown root root /sys/power/autosleep
+    chmod 0600 /sys/power/autosleep
+
+# Stock on-boot assigns autosleep to system: take it back after that action.
+on boot
+    chown root root /sys/power/autosleep
+    chmod 0600 /sys/power/autosleep

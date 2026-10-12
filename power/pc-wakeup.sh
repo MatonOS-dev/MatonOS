@@ -1,7 +1,7 @@
 #!/vendor/bin/sh
 # pc-wakeup.sh: let keyboards and mice wake the PC from s2idle.
 #
-# Android suspends when the screen turns off, so a key press or mouse
+# Matonos-sleepd alone suspends the PC, so a key press or mouse
 # movement/click must be able to resume the system. Linux enables wakeup on
 # USB keyboards itself, but leaves mice, the i8042 mouse/touchpad port and
 # often the hubs and controllers between them and the CPU off. Enable:

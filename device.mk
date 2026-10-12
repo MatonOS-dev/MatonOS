@@ -190,3 +190,7 @@ PRODUCT_SYSTEM_EXT_PROPERTIES += \
 
 # Optional self-task caption hook in the frameworks/base fork; default-off upstream.
 PRODUCT_SYSTEM_EXT_PROPERTIES += ro.matonos.client_decorations=true
+
+# Legacy charger/libsuspend must not become a second suspend policy on PCs.
+# The stock AIDL charger already returns false; pin the legacy HIDL default too.
+PRODUCT_SYSTEM_EXT_PROPERTIES += ro.charger.enable_suspend=false

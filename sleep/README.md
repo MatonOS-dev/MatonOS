@@ -140,3 +140,33 @@ the zero-patch rule.
 
 Audio playback and the stay-awake setting still need separate end-to-end tests
 on a fresh image. No AOSP patch was added.
+
+## Android suspend boundary (round 4, 2026-10-12)
+
+`config_useAutoSuspend=false` prevents normal PowerManager autosuspend,
+including the path reached after `goToSleep`. It does not gate the privileged
+`PowerManager.forceSuspend` API. Before the stock `system_suspend` early HAL
+starts, device init makes `/sys/power/state` and `wakeup_count` root-only.
+The service runs as `system` with only `BLOCK_SUSPEND`, so its stock startup
+falls back to socketpair descriptors: wake-lock/statistics APIs still run,
+but neither autosuspend nor forceSuspend can write the kernel power state.
+Sleepd runs as root and retains the real control. Kernel autosleep stays
+disabled in `kernel/pc.config`; device init also pins its control to root
+where present. Legacy charger suspend is explicitly disabled with
+`ro.charger.enable_suspend=false`; the stock AIDL charger already disables it.
+No permanent Android wake lock is used to enforce this boundary, so sleepd's
+idle policy remains enabled.
+
+The stub holds `MatonOS:FlatpakInstall`, a partial wake lock, before invoking
+linuxd for install or update. The self-operation Binder call now waits for
+actual deployment completion rather than returning at asynchronous acceptance.
+Its `finally` releases the lock and foreground download service on success,
+failure, or a cancelled operation's terminal result. Generated stubs already
+request `WAKE_LOCK`. This uses the existing power-state forwarder, including
+its two-second polling delay and heartbeat recovery policy above.
+
+These changes passed host checks; verify on the next image that system_suspend
+cannot open the real power-state files, install/update locks appear in dumpsys
+and sleepd's deferral log, and ordinary idle suspend still works. No QEMU
+suspend/resume GPU fix is included: sleepd currently does not quiesce graphics
+before writing `mem`, and the virtio-gpu resume path needs separate investigation.

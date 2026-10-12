@@ -305,31 +305,8 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         if(ref==null||ref.trim().isEmpty()){message("This launcher has no application reference.");return;}
         linuxWindow = new LinuxWindowClient(this, ref, () -> { endGeometry(); applyCaption(); });
         if(minimum>HostContract.getInterfaceVersion()){message("Update the Linux host to launch this application.");return;}
-        try {
-            String[] requested = getPackageManager().getPackageInfo(getPackageName(), PackageManager.GET_PERMISSIONS).requestedPermissions;
-            String permission = "org.matonos.permission.GAME_CONTROLLERS";
-            if (window == 0 && requested != null) {
-                java.util.List<String> declared = java.util.Arrays.asList(requested);
-                // Ask at most once per stub. A denial is remembered so the
-                // prompt is never repeated; the app still launches either way.
-                // Do not gate on shouldShowRequestPermissionRationale(): it is
-                // false before the first request, so the prompt would not appear.
-                android.content.SharedPreferences answered = getSharedPreferences("flatpak_stub_permissions", MODE_PRIVATE);
-                if (declared.contains(permission)
-                        && checkSelfPermission(permission) != PackageManager.PERMISSION_GRANTED
-                        && !answered.getBoolean("asked_" + permission, false)) {
-                    answered.edit().putBoolean("asked_" + permission, true).apply();
-                    requestPermissions(new String[]{permission}, 2900);
-                    return;
-                }
-            }
-        } catch (PackageManager.NameNotFoundException error) { failure("Cannot read permissions", error); return; }
         // Start the per-app runtime (session bus + portal) in THIS process/UID.
         startRuntimeAndConnect();
-    }
-    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grants) {
-        super.onRequestPermissionsResult(requestCode, permissions, grants);
-        if ((requestCode == 2900 || requestCode == 2901) && !destroyed) startRuntimeAndConnect();
     }
     private void startRuntimeAndConnect() {
         try {
