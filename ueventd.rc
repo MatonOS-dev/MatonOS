@@ -20,3 +20,6 @@ firmware_directories /mnt/vendor/addons/firmware/
 
 # bluetooth: the HCI HAL toggles its selected controller through rfkill.
 /dev/rfkill               0660   bluetooth  bluetooth
+
+# Wine/Proton NT sync objects; open to all apps as on desktop distributions.
+/dev/ntsync               0666   root       root

@@ -1,0 +1,20 @@
+diff --git a/libc/SECCOMP_ALLOWLIST_APP.TXT b/libc/SECCOMP_ALLOWLIST_APP.TXT
+index bf443adb4..336c1299d 100644
+--- a/libc/SECCOMP_ALLOWLIST_APP.TXT
++++ b/libc/SECCOMP_ALLOWLIST_APP.TXT
+@@ -59,3 +59,15 @@ mkdir(const char *pathname, mode_t mode)	lp32
+ # Not used by bionic in U because riscv64 doesn't have it, but still
+ # used by legacy apps (http://b/254179267).
+ renameat(int, const char*, int, const char*)  arm,x86,arm64,x86_64
++
++# MatonOS: futex2 and futex_waitv for Linux apps (Proton/Wine fsync, native
++# games). Unprivileged and per-thread; same futex core as the allowed futex().
++futex_waitv(void*, unsigned int, unsigned int, void*, int)	all
++futex_wake(void*, unsigned long, int, unsigned int)	all
++futex_wait(void*, unsigned long, unsigned long, unsigned int, void*, int)	all
++futex_requeue(void*, unsigned int, int, int)	all
++# MatonOS: restartable sequences (glibc registers rseq per thread).
++rseq(void*, unsigned int, int, unsigned int)	all
++# MatonOS: robust futex lists (glibc robust mutexes, owner-death recovery).
++set_robust_list(void*, size_t)	all
++get_robust_list(int, void**, size_t*)	all

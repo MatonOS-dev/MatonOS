@@ -11,3 +11,4 @@ type matonos_flatpak_data_file, file_type, data_file_type, core_data_file_type;
 # Public PCI identity only: vendor HALs and platform Mesa clients share it.
 # No config/resource/modalias/uevent files and no writable hardware controls.
 type sysfs_matonos_pci_id, fs_type, sysfs_type;
+type ntsync_device, dev_type, mlstrustedobject;

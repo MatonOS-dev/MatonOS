@@ -49,3 +49,4 @@
 /data/misc_de/[0-9]+/matonos-linux/store(/.*)? u:object_r:matonos_flatpak_store_file:s0
 
 /sys/devices(/[^/]+)*/input[0-9]+/uevent -- u:object_r:sysfs_matonos_input:s0
+/dev/ntsync u:object_r:ntsync_device:s0

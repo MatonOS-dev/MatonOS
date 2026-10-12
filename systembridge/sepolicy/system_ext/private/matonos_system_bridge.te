@@ -610,3 +610,8 @@ allow matonos_bwrap proc_matonos_namespace_limits:file { read open };
 # nsfs handles are anonymous namespace inodes, not missing disk labels.
 type matonos_namespace_file, fs_type;
 allow matonos_bwrap matonos_namespace_file:file getattr;
+
+# Wine/Proton ntsync: apps (and Linux layer v3 payloads inside them) may use
+# the NT sync device; ioctls limited to ntsync's 'N' 0x80-0x8d range.
+allow { appdomain -isolated_app_all } ntsync_device:chr_file { getattr open read write ioctl };
+allowxperm { appdomain -isolated_app_all } ntsync_device:chr_file ioctl { 0x4e80-0x4e8d };
