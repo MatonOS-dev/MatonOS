@@ -134,9 +134,9 @@ int runtime_refs_save(RuntimeRefs* db) {
 RuntimeRefs* runtime_refs_open(const char* directory, unsigned user) {
     RuntimeRefs* db = calloc(1, sizeof(*db)); if (!db) return NULL;
     db->dir = -1; db->user = user;
-    int root = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (root < 0) goto bad;
-    db->dir = safe_directory_at(root, directory + 1, 0); close(root);
+    /* linuxd owns this managed root; do not read rootfs or its ancestors. */
+    if (!directory || directory[0] != '/') { errno = EINVAL; goto bad; }
+    db->dir = open(directory, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
     if (db->dir < 0) goto bad;
     snprintf(db->name, sizeof(db->name), "refs-%u.json", user);
     int fd = openat(db->dir, db->name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);

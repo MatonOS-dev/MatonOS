@@ -8,7 +8,7 @@ aidl = (root / "install/linuxd/aidl/org/matonos/systembridge/ILinuxd.aidl").read
 methods = re.findall(r"^\s*(?:String|void|android\.os\.ParcelFileDescriptor\[\])\s+(\w+)\(", aidl, re.M)
 assert methods == ["call", "subscribe", "unsubscribe", "createDnsForwarderSockets",
                    "launchGraphical", "installSelf", "updateSelf", "prepareRuntime",
-                   "downloadsRequest", "answerDownloads"], methods
+                   "downloadsRequest", "answerDownloads", "registerIdentity"], methods
 stub = (root / "linux/compositor/host/app/src/main/java/org/matonos/compositor/stub/DownloadsGrant.java").read_text()
 assert "FIRST_CALL_TRANSACTION + (answer ? 9 : 8)" in stub
 assert 'writeInterfaceToken("org.matonos.systembridge.ILinuxd")' in stub

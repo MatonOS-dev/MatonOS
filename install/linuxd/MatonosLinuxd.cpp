@@ -1,5 +1,6 @@
 #include <org/matonos/systembridge/BnLinuxd.h>
 #include <org/matonos/systembridge/ILinuxdListener.h>
+#include <org/matonos/systembridge/ILinuxdIdentity.h>
 #include <binder/IServiceManager.h>
 #include <binder/IBinder.h>
 #include <binder/IInterface.h>
@@ -43,6 +44,38 @@
 
 using org::matonos::systembridge::BnLinuxd;
 using org::matonos::systembridge::ILinuxdListener;
+using org::matonos::systembridge::ILinuxdIdentity;
+
+static std::mutex g_identity_mutex;
+static android::sp<ILinuxdIdentity> g_identity;
+extern "C" int stub_identity_query(const char* command, int uid, const char* package,
+        char* ref, size_t ref_size, char* remote, size_t remote_size) {
+    android::sp<ILinuxdIdentity> identity;
+    { std::lock_guard<std::mutex> lock(g_identity_mutex); identity = g_identity; }
+    if (!identity) return -1;
+    android::String16 response;
+    // Clear the incoming stub's Binder identity for the outgoing bridge call.
+    auto* state = android::IPCThreadState::self();
+    const int64_t token = state->clearCallingIdentity();
+    auto status = identity->query(android::String16(command), uid, android::String16(package), &response);
+    state->restoreCallingIdentity(token);
+    if (!status.isOk()) return -1;
+    Json::Value value;
+    Json::CharReaderBuilder builder;
+    std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+    const std::string json = android::String8(response).c_str();
+    std::string errors;
+    if (json.size() > 4096 || !reader->parse(json.data(), json.data() + json.size(), &value, &errors) ||
+            !value.isObject() || !value["value"].isInt()) return -1;
+    if (ref) {
+        if (!value["ref"].isString() || !value["remote"].isString()) return -1;
+        const std::string r = value["ref"].asString(), m = value["remote"].asString();
+        if (r.size() >= ref_size || m.size() >= remote_size ||
+                r.find('\0') != std::string::npos || m.find('\0') != std::string::npos) return -1;
+        memcpy(ref, r.c_str(), r.size() + 1); memcpy(remote, m.c_str(), m.size() + 1);
+    }
+    return value["value"].asInt();
+}
 
 namespace {
 constexpr char kInstance[] = "org.matonos.systembridge.ILinuxd/default";
@@ -352,6 +385,12 @@ bool HexDecode(const std::string& hex, std::vector<unsigned char>* out) {
 
 class LinuxdService final : public BnLinuxd {
   public:
+    android::binder::Status registerIdentity(const android::sp<ILinuxdIdentity>& identity) override {
+        if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
+        std::lock_guard<std::mutex> lock(g_identity_mutex);
+        g_identity = identity;
+        return android::binder::Status::ok();
+    }
     android::binder::Status downloadsRequest(const android::String16& packageName,
             android::String16* aidl_return) override {
         const int uid = android::IPCThreadState::self()->getCallingUid();

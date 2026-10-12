@@ -3,6 +3,7 @@ filegroup {
     srcs: [
         "aidl/org/matonos/systembridge/ILinuxd.aidl",
         "aidl/org/matonos/systembridge/ILinuxdListener.aidl",
+        "aidl/org/matonos/systembridge/ILinuxdIdentity.aidl",
     ],
     path: "aidl",
 }

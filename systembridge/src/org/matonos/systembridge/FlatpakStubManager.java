@@ -105,6 +105,50 @@ final class FlatpakStubManager {
     });
 
     FlatpakStubManager(Context context) { this.context = context; }
+    private final ILinuxdIdentity identity = new ILinuxdIdentity.Stub() {
+        @Override public String query(String command, int uid, String packageName) {
+            // linuxd is a system-UID service; never expose this callback to apps.
+            if (android.os.Binder.getCallingUid() != android.os.Process.SYSTEM_UID)
+                throw new SecurityException("Identity queries require linuxd");
+            final long token = android.os.Binder.clearCallingIdentity();
+            JSONObject result = new JSONObject();
+            try {
+                if (uid < 10000 || android.os.UserHandle.getAppId(uid) < 10000 ||
+                        android.os.UserHandle.getAppId(uid) > 19999)
+                    throw new SecurityException("Invalid application UID");
+                FlatpakStubManager owner = forUser(android.os.UserHandle.getUserId(uid));
+                PackageManager pm = owner.context.getPackageManager();
+                int value = -1;
+                if ("runtime".equals(command)) {
+                    value = pm.getApplicationInfo("org.matonos.linuxruntimes", 0).uid;
+                    if (android.os.UserHandle.getUserId(value) != android.os.UserHandle.getUserId(uid)) value = -1;
+                } else {
+                    if ("live".equals(command)) {
+                        // Preserve reused/shared UIDs; only PM-confirmed absence permits pruning.
+                        String[] packages = pm.getPackagesForUid(uid);
+                        value = packages == null || packages.length == 0 ? 0 : 1;
+                    } else if ("verify".equals(command)) {
+                        String pkg = BridgeCallerIdentity.solePackage(pm.getPackagesForUid(uid));
+                        if (pkg != null && FlatpakStubIdentity.isGeneratedStub(pkg) && pkg.equals(packageName)) {
+                            String ref = owner.declaredRef(pkg);
+                            if (owner.ownsStub(uid, ref)) {
+                                value = uid;
+                                result.put("ref", ref).put("remote", owner.remoteFor(pkg));
+                            }
+                        }
+                    }
+                }
+                result.put("value", value);
+            } catch (Exception error) {
+                try { result.put("value", -1); } catch (org.json.JSONException ignored) { }
+                Log.w(TAG, "Cannot resolve linuxd identity", error);
+            } finally {
+                android.os.Binder.restoreCallingIdentity(token);
+            }
+            return result.toString();
+        }
+    };
+
     void start() { worker.scheduleWithFixedDelay(() -> {
         reconcile();
         try {
@@ -348,6 +392,7 @@ final class FlatpakStubManager {
             ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
             if (daemon == null) return;
             if (context.getUserId() == 0 && (subscribedDaemon == null || !subscribedDaemon.asBinder().equals(daemon.asBinder()))) {
+                daemon.registerIdentity(identity);
                 daemon.subscribe("progress", listener);
                 subscribedDaemon = daemon;
                 publishStubSigner(daemon);
@@ -549,7 +594,7 @@ final class FlatpakStubManager {
         } catch (IllegalArgumentException gone) { return false; }
     }
 
-    /** linuxd checks a stub calling it directly against this certificate. */
+    /** Legacy signer handoff; current linuxd uses the live identity provider. */
     private void publishStubSigner(ILinuxd daemon) {
         try {
             byte[] certificate = StubGenerator.getExistingSigningCertificate();

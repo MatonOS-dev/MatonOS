@@ -1729,6 +1729,20 @@ system_server's environment (`BOOTCLASSPATH` etc.): prefix them with
 ANR traces are in `/data/anr`. If a headless VM stops answering, check QMP
 `query-status` for `suspended` and send `system_wakeup`.
 
+### linuxd enforcing identity (2026-10-12)
+linuxd resolves generated-stub identity and the shared runtime UID through a
+live, authenticated System Bridge callback to PackageManager. It reuses the
+bridge's per-device signer, sole-package and declared-ref checks; no private
+app-data scans or native APK discovery. Missing/dead providers fail closed;
+runtime cleanup preserves occupied/reused UIDs. RuntimeRefs opens its owned
+managed directory directly, without reading rootfs ancestors. Host checks
+are recorded in out/pc-logs/agents/linuxd-enforcing-result.md; image/VM
+validation remains for the coordinator.
+
+**v3 decision (implement later):** move installs to a system-wide
+`/data/linux-app/` store keyed by app id (`uid % 100000`), and retire
+`org.matonos.linuxruntimes`. This fix retains the current per-user layout.
+
 ### Flatpak APEX updates (2026-10-04)
 `com.matonos.flatpak` updates out-of-cycle (CVE fixes, newer Flatpak/bwrap
 pair) via staged install (adb install for dev; the
