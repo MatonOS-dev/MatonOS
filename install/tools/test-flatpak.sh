@@ -24,7 +24,7 @@ wait_for_ref() {
   local wanted=$1 present=$2 result
   for ((attempt=0; attempt<300; attempt++)); do
     result=$(list_installed)
-    if python3 -c 'import json,sys; ref,wanted=sys.argv[1],sys.argv[2]=="yes"; text=json.load(sys.stdin).get("output",""); raise SystemExit(0 if ((ref in text)==wanted) else 1)' \
+    if python3 -c 'import json,sys; ref,wanted=sys.argv[1],sys.argv[2]=="yes"; ref=ref.split("/",1)[1] if ref.startswith(("app/","runtime/")) else ref; text=json.load(sys.stdin).get("output",""); raise SystemExit(0 if ((ref in text)==wanted) else 1)' \
         "$wanted" "$present" <<<"$result"
     then return 0; fi
     sleep 2
