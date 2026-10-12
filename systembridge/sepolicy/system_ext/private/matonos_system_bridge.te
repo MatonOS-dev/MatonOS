@@ -81,6 +81,12 @@ type matonos_compositor, domain;
 # coredomain permits the system-side linuxd relay to connect to the host.
 typeattribute matonos_compositor coredomain, mlstrustedsubject;
 app_domain(matonos_compositor);
+# The custom host data type is outside stock app.te's concrete app-data list.
+# Only the selected host domain may manage its own cache and runtime sockets.
+allow matonos_compositor matonos_compositor_data_file:dir create_dir_perms;
+allow matonos_compositor matonos_compositor_data_file:file create_file_perms;
+allow matonos_compositor matonos_compositor_data_file:lnk_file create_file_perms;
+allow matonos_compositor matonos_compositor_data_file:sock_file create_file_perms;
 
 # The compositor delegates its Wayland and X11 directories through Binder. DAC keeps
 # its private parent inaccessible; linuxd connects through that fd.
@@ -459,9 +465,8 @@ allowxperm matonos_linuxd matonos_flatpak_deployment_file:file ioctl { 0x9409 };
 allow init { matonos_flatpak_data_file matonos_linux_shm_file }:dir mounton;
 allow init matonos_linux_shm_file:filesystem { mount relabelfrom relabelto };
 allow storaged sysfs_devices_block:file { read open getattr };
-# App-private ART cache; no grant on generic system_data_file.
-allow secure_element system_app_data_file:dir create_dir_perms;
-allow secure_element system_app_data_file:file create_file_perms;
+# Secure Element's package-specific seapp rule uses stock app_data_file rights.
+# system_app_data_file is reserved to user=system by stock seapp assertions.
 # Kernel lacks memfd_class labeling: mirror stock shared-memory rights on
 # the existing creator-specific tmpfs types, without allowing global tmpfs.
 allow audioserver { appdomain_tmpfs system_server_tmpfs }:file { read write map };

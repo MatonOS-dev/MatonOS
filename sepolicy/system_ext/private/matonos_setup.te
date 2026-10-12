@@ -39,6 +39,14 @@ allow init debugfs_bootreceiver_tracing:dir add_name;
 # The stock neverallow still blocks kernel open/read/write on generic devices.
 allow kernel device:dir { add_name remove_name rmdir };
 allow kernel device:chr_file { create setattr unlink };
+# kdevtmpfs creates/removes temporary loop/sr/dm nodes before ueventd labels
+# the Android-visible nodes. Stock forbids core generic block mutation; keep
+# it denied, like stock kernel tmpfs block-node dontaudits. restorecon cannot
+# label a node before mknod, and fs_use_trans devtmpfs ignores genfs labels.
+dontaudit kernel device:blk_file { create setattr unlink };
+# Stock debuggerd probes mapped APKs while unwinding. Its core/vendor overlay
+# open prohibition is intentional; suppress expected probes, preserve denial.
+dontaudit crash_dump vendor_overlay_file:file { getattr map open read };
 
 # Mesa llvmpipe in the boot animation writes its own memfd buffers
 # (memfd:lp_dma_buf, memfd:allocation fd), which arrive as generic tmpfs.
