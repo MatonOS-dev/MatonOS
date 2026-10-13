@@ -14,7 +14,7 @@ Updated: 2026-10-06 (evening). Read this before touching Flatpak installs.
    finds `org.matonos.compositor.stub.InstallActivity` by the
    `org.matonos.linuxhost.INSTALL` action + `FLATPAK_REF` metadata, and starts
    it ("install me": unprivileged, no permission, idempotent).
-4. **InstallActivity** → compositor `IEmbeddedHost.installSelf(ref)` → bridge
+4. **InstallActivity** → compositor `stub InstallClient → bridge installSelf(ref)` → bridge
    `installFlatpakStub(uid, ref)`: verifies the stub, returns at once if the
    Flatpak is already installed (linuxd `installed_for_uid`), otherwise stages
    and installs. The same activity resumes installs interrupted by a crash or

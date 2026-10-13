@@ -1,13 +1,10 @@
 package org.matonos.compositor.stub;
 
 import android.app.Activity;
-import android.content.ComponentName;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.os.IBinder;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.Surface;
@@ -15,9 +12,6 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.widget.TextView;
 import org.json.JSONObject;
-import org.matonos.compositor.IEmbeddedHost;
-import org.matonos.compositor.IEmbeddedSession;
-import org.matonos.compositor.IEmbeddedWindowListener;
 
 /** Shared activity code runs in the generated app's own package and task. */
 public final class StubActivity extends Activity implements SurfaceHolder.Callback, org.matonos.compositor.PerAppRuntime.WindowHost {
@@ -98,18 +92,11 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         if (runtime != null && window != 0) runtime.setFullscreen(window, on);
     }
     private static final WindowLifetime WINDOWS = new WindowLifetime();
-    // Kept for the process lifetime, including activity recreation and all
-    // windows. Only process death closes the writer; no compositor-held copy.
-    private static android.os.ParcelFileDescriptor[] processLife;
-    private static synchronized android.os.ParcelFileDescriptor lifeline() throws java.io.IOException {
-        if(processLife==null)processLife=android.os.ParcelFileDescriptor.createPipe();
-        return processLife[0];
-    }
     private android.os.PowerManager.WakeLock portalWake;
     private boolean stopped;
     private String ref;
     private volatile int window;
-    private boolean bound, attached;
+    private boolean attached;
     private volatile boolean destroyed;
     private TextView status;
     // Captured mice expose deltas as X/Y on Android; some sources also
@@ -182,37 +169,20 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     }
     private SurfaceView view;
     private Surface surface;
-    private IEmbeddedSession session;
     private volatile org.matonos.compositor.PerAppRuntime runtime;
-    private final IEmbeddedWindowListener listener = new IEmbeddedWindowListener.Stub() {
-        public boolean openUri(Intent intent) {
-            java.util.concurrent.FutureTask<Boolean> task=new java.util.concurrent.FutureTask<>(() -> {
-                if(destroyed || isFinishing())return false;
-                try {startActivity(intent);return true;}catch(android.content.ActivityNotFoundException|SecurityException e){return false;}
-            });
-            runOnUiThread(task);
-            try {return task.get(4,java.util.concurrent.TimeUnit.SECONDS);}
-            catch(Exception e){task.cancel(false);return false;}
-        }
-        public void onWindowOpened(int id, int width, int height) {
-            runOnUiThread(() -> {
-                if (destroyed || window == id) return;
-                if (window == 0) showWindow(id);
-                else if (getIntent().getIntExtra(WINDOW,0)==0) startActivity(new Intent().setComponent(getComponentName())
-                        .putExtra(WINDOW,id)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK));
-            });
-        }
-        public void onInhibitChanged(boolean active) {
-            runOnUiThread(() -> {
-                if(destroyed)return;
-                setInhibited(active);
-            });
-        }
-        public void onWindowClosed(int id) {
-            runOnUiThread(() -> { if (!destroyed && window == id) finish(); });
-        }
-    };
+    @Override public boolean openUri(Intent intent) {
+        java.util.concurrent.FutureTask<Boolean> task = new java.util.concurrent.FutureTask<>(() -> {
+            if (destroyed || isFinishing()) return false;
+            try { startActivity(intent); return true; }
+            catch (android.content.ActivityNotFoundException | SecurityException error) { return false; }
+        });
+        runOnUiThread(task);
+        try { return task.get(4, java.util.concurrent.TimeUnit.SECONDS); }
+        catch (Exception error) { task.cancel(false); return false; }
+    }
+    @Override public void inhibitChanged(boolean active) {
+        runOnUiThread(() -> { if (!destroyed) setInhibited(active); });
+    }
     // Per-app compositor callbacks (in-process).
     @Override public void windowOpened(int id, int width, int height) {
         runOnUiThread(() -> {
@@ -232,63 +202,33 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     @Override public void windowClosed(int id) {
         runOnUiThread(() -> { if (!destroyed && window == id) finish(); });
     }
-    private final ServiceConnection connection = new ServiceConnection() {
-        public void onServiceConnected(ComponentName name, IBinder binder) {
-            // Bridge verification may take time; never wait on the activity thread.
-            new Thread(() -> {
-                IEmbeddedSession opened=null;
-                try {
-                    runtime=StubService.runtime();
-                    for(int i=0;i<50&&runtime==null;i++){Thread.sleep(100);runtime=StubService.runtime();}
-                    if(destroyed)return;
-                    if(runtime==null)throw new IllegalStateException("The app runtime did not become ready");
-                    runtime.setWindowHost(StubActivity.this, window);
-                    if (DnsForwarder.acquire() == null)
-                        throw new IllegalStateException("Per-app DNS sockets could not be bound");
-                    opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener,lifeline(),DnsForwarder.endpoint());
-                    final IEmbeddedSession active=opened;
-                    boolean needsLaunch=window==0;
-                    runOnUiThread(() -> {
-                        if (destroyed) {
-                            try { active.unregisterListener(listener); } catch(Exception ignored){}
-                            return;
-                        }
-                        session=active;
-                        if (window!=0) { if(view==null)showWindow(window);else attachIfReady(); }
-                    });
-                    if (needsLaunch && !destroyed) {
-                        // v2 privileged bind-fd grants cannot be used by the v3 stub loader.
-                        if (destroyed) return;
-                        JSONObject result=V3Launcher.launch(StubActivity.this, active);
-                        if (!result.optBoolean("ok")) { message(result.optString("error","Application could not start"));return; }
-                        message("Waiting for the application window…");
-                        for(int i=0;i<30&&!destroyed&&window==0;i++) {
-                            Thread.sleep(1000);
-                            JSONObject state=V3Launcher.getLaunchStatus();
-                            if (!state.optBoolean("ok")) { runOnUiThread(() -> {if(!destroyed)finish();});return; }
-                        }
-                        if(!destroyed&&window==0)message("Application is running, but no window has appeared.");
-                    }
-                    // Every window observes process exit, including secondary
-                    // activities after the first window has closed.
-                    while(!destroyed) {
-                        Thread.sleep(1000);
-                        JSONObject state=V3Launcher.getLaunchStatus();
-                        if(!state.optBoolean("ok")) {runOnUiThread(() -> {if(!destroyed)finish();});break;}
-                    }
-                } catch(Exception e) { failure("Cannot start application",e); }
-                finally {
-                    if(destroyed&&opened!=null)try{opened.unregisterListener(listener);}catch(Exception ignored){}
+    private void launchLocally() {
+        new Thread(() -> {
+            try {
+                runtime = StubService.runtime();
+                for (int i=0; i<50 && runtime==null && !destroyed; i++) {
+                    Thread.sleep(100); runtime=StubService.runtime();
                 }
-            },"flatpak-stub-launch").start();
-        }
-        public void onServiceDisconnected(ComponentName name) {
-            setInhibited(false);
-            session=null;attached=false;
-            failure("Compositor disconnected",new IllegalStateException("The compositor stopped unexpectedly."));
-            window=0;view=null;surface=null;
-        }
-    };
+                if (destroyed) return;
+                if (runtime==null) throw new IllegalStateException("The app runtime did not become ready");
+                runtime.setWindowHost(this, window);
+                runOnUiThread(() -> {
+                    if (!destroyed && window!=0) { if(view==null)showWindow(window);else attachIfReady(); }
+                });
+                JSONObject result=V3Launcher.launch(this, ref);
+                if (!result.optBoolean("ok")) { message(result.optString("error","Application could not start"));return; }
+                message("Waiting for the application window…");
+                int seconds=0;
+                while (!destroyed) {
+                    Thread.sleep(1000);
+                    if (!V3Launcher.getLaunchStatus().optBoolean("ok")) {
+                        runOnUiThread(() -> { if(!destroyed)finish(); }); break;
+                    }
+                    if (++seconds==30 && window==0) message("Application is running, but no window has appeared.");
+                }
+            } catch(Exception error) { failure("Cannot start application",error); }
+        }, "flatpak-stub-launch").start();
+    }
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         WINDOWS.opened(this);
@@ -310,17 +250,8 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     private void startRuntimeAndConnect() {
         try {
             startForegroundService(new Intent(this, StubService.class).putExtra(HostContract.EXTRA_FLATPAK_REF, ref));
-            connectHost();
+            launchLocally();
         } catch(Exception error) { failure("Cannot start the app runtime",error); }
-    }
-    private void connectHost() {
-        Intent host=new Intent("org.matonos.compositor.EMBEDDED")
-                .setClassName("org.matonos.compositor","org.matonos.compositor.CompositorService");
-        try {
-            startForegroundService(host);
-            bound=bindService(host,connection,BIND_AUTO_CREATE);
-            if(!bound)message("Cannot connect to the compositor.");
-        } catch(Exception e){failure("Cannot connect to the compositor",e);}
     }
     // Runs on the activity thread, in the generated stub package's UID.
     private void setInhibited(boolean active) {
@@ -384,7 +315,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         if(runtime!=null && window!=0)try{runtime.stopped(window,stopped);}catch(Exception ignored){}
     }
     private void attachIfReady() {
-        if(attached||session==null||surface==null||!surface.isValid()||window==0)return;
+        if(attached||runtime==null||surface==null||!surface.isValid()||window==0)return;
         try{runtime.attach(window,surface,view.getWidth(),view.getHeight());attached=true;reportStopped();}
         catch(Exception e){failure("Cannot display application window",e);}
     }
@@ -399,13 +330,13 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         attached=false;surface=null;
     }
     @Override public boolean dispatchKeyEvent(KeyEvent event){
-        if(session==null||window==0)return super.dispatchKeyEvent(event);
+        if(runtime==null||window==0)return super.dispatchKeyEvent(event);
         try{runtime.key(window,event.getKeyCode(),event.getScanCode(),event.getAction(),event.getMetaState(),event.getEventTime()*1000000L);}
         catch(Exception e){failure("Cannot send keyboard input",e);}
         return true;
     }
     private boolean motion(MotionEvent event){
-        if(session==null||window==0)return false;
+        if(runtime==null||window==0)return false;
         if (geometryMotion(event, false)) return true;
         pointerX=event.getRawX(); pointerY=event.getRawY(); pointerTime=event.getEventTime();
         pointerDown=(event.getButtonState() & MotionEvent.BUTTON_PRIMARY) != 0;
@@ -424,19 +355,16 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
         if(window!=0)SHOWING.remove(window,this);
         if(runtime!=null)runtime.clearWindowHost(this);
         setInhibited(false);
-        if(session!=null){
+        if(runtime!=null){
             try{if(attached&&runtime!=null)runtime.detach(window);}catch(Exception ignored){}
             if(runtime!=null&&isFinishing()&&window!=0)runtime.closeWindow(window);
-            try{session.unregisterListener(listener);}catch(Exception ignored){}
         }
-        if(bound)unbindService(connection);
         super.onDestroy();
         if(WINDOWS.destroyed(this,isFinishing(),isChangingConfigurations())) {
             // The runtime and native callbacks are owned by this process.
             // Ending the last Android window must end that whole session:
-            // process exit closes the lifeline, and the verified supervisor
-            // kills/reaps its pinned Linux process group. Reopening therefore
-            // gets a fresh host PID/cgroup instead of a windowless old app.
+            // The loader parent-death signal and Android app cgroup end
+            // the Linux tree with the stub. Reopening gets a fresh process.
             // A grace period lets the app open a new window first (cancelled
             // when one opens); the close request already went to the app.
             MAIN.postDelayed(END_SESSION,LAST_WINDOW_GRACE_MS);

@@ -1,8 +1,4 @@
 user=_app seinfo=platform name=org.matonos.systembridge domain=matonos_system_bridge type=app_data_file levelFrom=all
-user=_app isPrivApp=true name=org.matonos.compositor domain=matonos_compositor type=matonos_compositor_data_file levelFrom=user
-# Zygote passes the process niceName, whereas installd passes the package name.
-# The provider/service runs in this named process; keep both selectors exact.
-user=_app isPrivApp=true name=org.matonos.compositor:compositor domain=matonos_compositor type=matonos_compositor_data_file levelFrom=user
 # Stock secure_element selector has no data type; installd otherwise leaves
 # com.android.se under generic system_data_file. Keep its domain/MLS identity.
 user=secure_element seinfo=platform name=com.android.se domain=secure_element type=app_data_file levelFrom=all

@@ -292,57 +292,6 @@ public final class SystemBridgeService extends Service {
     }
 
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
-        @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor x11Directory, String x11Display) {
-            throw new SecurityException("A signed stub process and lifeline are required");
-        }
-
-        @Override public String getOwnedFlatpakLaunchSpec(String ref, android.os.ParcelFileDescriptor x11Directory, String x11Display, String dnsForwarder, int stubUid, int stubPid, android.os.ParcelFileDescriptor lifeline) {
-            try {
-                String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
-                if (!"org.matonos.compositor".equals(caller))
-                    throw new SecurityException("Only the compositor may launch graphical Flatpaks");
-                // Accept only a socket name inside the delegated X11 directory.
-                if (x11Display != null && x11Display.length() > 0 &&
-                        (!x11Display.matches("X[0-9]+") || x11Directory == null))
-                    throw new SecurityException("Invalid compositor X11 socket capability");
-                if (lifeline == null || stubPid <= 0 || stubUid < 10000 ||
-                        !flatpakStubManager.ownsStub(stubUid, ref))
-                    throw new SecurityException("Unverified stub owner");
-                long identity = Binder.clearCallingIdentity();
-                try {
-                    ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
-                    if (daemon == null) throw new IllegalStateException("Flatpak service is unavailable");
-                    String expectedDns = String.format(Locale.ROOT, "127.%d.%d.%d:53",
-                            10 + ((stubUid >>> 16) & 0x3f), (stubUid >>> 8) & 0xff, stubUid & 0xff);
-                    if (!expectedDns.equals(dnsForwarder))
-                        throw new SecurityException("Per-app DNS endpoint is missing or does not match the stub UID");
-                    return daemon.launchSpec(ref, expectedDns.substring(0, expectedDns.length() - 3), x11Directory, x11Display,
-                            flatpakStubManager.hasGameControllers(stubUid, ref), stubUid, stubPid, lifeline);
-                } finally {
-                    Binder.restoreCallingIdentity(identity);
-                }
-            } catch (RemoteException e) {
-                // Server-side visibility: the client only sees the exception
-                // class, never this stack.
-                Log.e(TAG, "launchFlatpak failed for " + ref, e);
-                throw new IllegalStateException("Flatpak service disconnected", e);
-            } catch (RuntimeException error) {
-                Log.e(TAG, "launchFlatpak failed for " + ref, error);
-                throw error;
-            } finally {
-                if (lifeline != null) try { lifeline.close(); } catch (java.io.IOException ignored) { }
-                if (x11Directory != null) try { x11Directory.close(); } catch (java.io.IOException ignored) { }
-            }
-        }
-
-        @Override public boolean isFlatpakStub(int uid, String ref) {
-            String caller=enforceAuthorizedCaller("flatpak_launch","isFlatpakStub");
-            if(!"org.matonos.compositor".equals(caller))throw new SecurityException("Compositor only");
-            long identity=Binder.clearCallingIdentity();
-            try{return flatpakStubManager!=null&&flatpakStubManager.ownsStub(uid,ref);}
-            finally{Binder.restoreCallingIdentity(identity);}
-        }
-
         @Override public String getFlatpakStubCommits(int uid, String ref) {
             // linuxd runs as system; app callers must pass the existing scoped gate.
             if (Binder.getCallingUid() != android.os.Process.SYSTEM_UID)

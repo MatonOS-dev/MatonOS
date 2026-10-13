@@ -1,13 +1,17 @@
 # Linux layer v3 launch from the stub
 
-The generated stub owns its compositor, session bus, DNS forwarding and Linux
-process tree. The trusted compositor service coordinates identity and the resolver address; it
-requests `ILinuxd.launchSpec` through `getOwnedFlatpakLaunchSpec` in the System
-Bridge. linuxd validates the same installed app ref, runtime UID, X11 capability
-and metadata as the former graphical launch. It returns `{ok, argv, env, root,
-installation, runtimeInstallation}`. No app process is spawned by linuxd and no
-privileged cgroup, Downloads or lifeline descriptor is returned in the spec.
-The install/query CLI still runs in linuxd; installation layout is unchanged.
+The generated stub alone owns its compositor, Xwayland, session bus, DNS
+forwarding and Linux process tree. V3Launcher builds the Flatpak command locally
+from StubActivity's manifest ref, with the same socket, filesystem, device and
+portal overrides as before. Flatpak reads deployment metadata itself. There is
+no launch coordinator, privileged launch verification or launch-spec RPC.
+The security boundary is the stub UID and its existing read access.
+
+FLATPAK_USER_DIR is `/data/misc_de/<user>/matonos-linux/install/<stubUid>`;
+FLATPAK_SYSTEM_DIR is the same user's `runtime/<linuxruntimesUid>`, derived
+from PackageManager's org.matonos.linuxruntimes identity. These match the existing
+installer path constants. Controller environment variables are removed.
+Install/query operations still run in linuxd; installation layout is unchanged.
 
 `stub.V3Launcher` gets the host's `nativeLibraryDir` from PackageManager and
 starts `libmatonos-v3-loader.so` with ProcessBuilder in the stub UID. The host is
@@ -30,9 +34,9 @@ existing last-window shutdown remains; explicit management stop uses the bridge
 force-stopping the certificate-verified stub package, rather than linuxd PIDs.
 
 Output from both streams goes to MatonV3. The per-process V3Launcher status
-reports loader exitCode; StubActivity observes it for every window. Sessions
-still use lifeline EOF for cleanup and check EOF before replacing an old PID.
-Relaunch stubs after updating the host: pre-alpha Binder interfaces are changed.
+reports loader exitCode; StubActivity observes it for every window. There is no coordinator lifeline; the loader parent-death signal and Android
+app cgroup own cleanup. Relaunch stubs after updating the host. Regenerate old
+stubs for the version-15 per-package PortalFiles provider and runtime query.
 
 Policy gives untrusted_app_all read/search/mmap/execute on the existing code and
 deployment types, plus traversal of the Linux storage root. It grants no
@@ -74,3 +78,11 @@ Round 8: the Java stub binds UDP/TCP at its UID-derived address on 5353 before
 opening a session. There is no DNS socket FD relay or privileged linuxd bind.
 V3Launcher passes that exact address/port via --dns-forwarder while resolv.conf
 retains logical port 53. See DNS-FORWARDER.md for translation and validation.
+
+Round 9: launch coordination and embedded Binder interfaces are deleted.
+PortalFiles runs in each generated stub's default process, with a package-scoped
+URI authority, because its capability registry belongs to that process's portal.
+The host's demo provider also uses its default process. The host has no custom
+SELinux domain: stock priv_app policy supplies its UI/provider permissions.
+All custom host domain/data labels and coordinator socket rules are removed.
+Fresh-image policy and portal grant validation are pending.

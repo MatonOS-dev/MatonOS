@@ -1,3 +1,6 @@
+> Historical snapshot: the launch coordinator and embedded Binder APIs described
+> here were deleted in round 9. See ../linux/compositor/V3-LAUNCH.md for current design.
+
 # Handover — per-app runtime sockets in `tmp/<uid>` (2026-10-07)
 
 ## Decision

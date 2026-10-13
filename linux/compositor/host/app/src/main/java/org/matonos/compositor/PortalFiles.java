@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap;
 /** Capability URIs for received FDs. Android URI grants authorize recipients;
  * the provider never resolves a Linux pathname using host privileges. */
 public final class PortalFiles extends ContentProvider {
-    static final String AUTHORITY="org.matonos.compositor.portal.files";
+    private static String authority(android.content.Context context) { return context.getPackageName()+".portal.files"; }
     private static final android.os.HandlerThread ioThread=new android.os.HandlerThread("portal-file-io");
     static {ioThread.start();}
     private static final android.os.Handler io=new android.os.Handler(ioThread.getLooper());
@@ -30,17 +30,17 @@ public final class PortalFiles extends ContentProvider {
         try {return new java.io.File(android.system.Os.readlink("/proc/self/fd/"+fd.getFd())).getName();}
         catch(Exception e){return "Linux document";}
     }
-    static Uri publish(ParcelFileDescriptor fd,boolean directory,boolean writable,Object owner) throws Exception {
+    static Uri publish(android.content.Context context,ParcelFileDescriptor fd,boolean directory,boolean writable,Object owner) throws Exception {
         String token=java.util.UUID.randomUUID().toString();
         if(files.size()>=256)throw new IllegalStateException("Too many portal files");
         String filename=name(fd);int dot=filename.lastIndexOf('.');
         String mime=dot<0?null:android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(filename.substring(dot+1).toLowerCase(java.util.Locale.ROOT));
         files.put(token,new Entry(ParcelFileDescriptor.dup(fd.getFileDescriptor()),directory?"vnd.android.document/directory":mime==null?"application/octet-stream":mime,writable,owner));
-        return new Uri.Builder().scheme("content").authority(AUTHORITY).appendPath(token).build();
+        return new Uri.Builder().scheme("content").authority(authority(context)).appendPath(token).build();
     }
     static void release(android.content.Context context,Object owner) {
         files.forEach((token,e)-> {if(e.owner==owner && files.remove(token,e)) {
-            context.revokeUriPermission(Uri.parse("content://"+AUTHORITY+"/"+token),android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION|android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            context.revokeUriPermission(Uri.parse("content://"+authority(context)+"/"+token),android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION|android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             synchronized(e){try {e.fd.close();}catch(Exception ignored){}}
         }});
     }

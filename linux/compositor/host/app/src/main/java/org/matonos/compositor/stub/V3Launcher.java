@@ -3,9 +3,7 @@ package org.matonos.compositor.stub;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.util.Log;
-import org.json.JSONArray;
 import org.json.JSONObject;
-import org.matonos.compositor.IEmbeddedSession;
 import org.matonos.compositor.PerAppRuntime;
 import java.io.BufferedReader;
 import java.io.File;
@@ -13,7 +11,6 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.Map;
 
 /** One Linux process tree per stub UID, under the inherited app filter/domain. */
@@ -22,11 +19,16 @@ final class V3Launcher {
     private static Integer exit;
     private static String error;
 
-    static synchronized JSONObject launch(Context context, IEmbeddedSession session) throws Exception {
+    static synchronized JSONObject launch(Context context, String ref) throws Exception {
         if (process != null) return getLaunchStatus();
-        JSONObject response = new JSONObject(session.launch());
-        if (!response.optBoolean("ok")) return response;
-        JSONObject spec = response;
+        if (ref == null || !ref.matches("app/[A-Za-z0-9_.-]+/x86_64/[A-Za-z0-9_.-]+"))
+            throw new IllegalArgumentException("Invalid application reference");
+        int uid = android.os.Process.myUid();
+        int runtimeUid = context.getPackageManager().getApplicationInfo("org.matonos.linuxruntimes", 0).uid;
+        if (runtimeUid / 100000 != uid / 100000)
+            throw new IllegalStateException("Runtime installation belongs to another user");
+        // Same layout as MATON_DE_ROOT_FORMAT and the installer roots.
+        String root = "/data/misc_de/" + (uid / 100000) + "/matonos-linux";
         // PackageManager follows signature-verified updates of the image host.
         ApplicationInfo host = context.getPackageManager().getApplicationInfo("org.matonos.compositor", 0);
         File loader = new File(host.nativeLibraryDir, "libmatonos-v3-loader.so");
@@ -43,8 +45,7 @@ final class V3Launcher {
             if (!directory.isDirectory() && !directory.mkdirs())
                 throw new java.io.IOException("Cannot create application directory " + directory);
         File resolv = new File(cache, "v3-resolv.conf");
-        JSONObject supplied = spec.getJSONObject("env");
-        String dns = supplied.getString("MATON_FLATPAK_DNS");
+        String dns = DnsForwarder.endpoint().replaceFirst(":53$", "");
         if (!dns.matches("127\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}"))
             throw new IllegalArgumentException("Invalid per-app DNS endpoint");
         Files.write(resolv.toPath(), ("nameserver " + dns + "\n").getBytes(StandardCharsets.UTF_8));
@@ -61,14 +62,19 @@ final class V3Launcher {
         if (x11.isDirectory()) {
             command.add("--map"); command.add(x11.getAbsolutePath()); command.add("/tmp/.X11-unix");
         }
-        JSONArray argv = spec.getJSONArray("argv");
-        for (int i = 0; i < argv.length(); ++i) command.add(argv.getString(i));
+        java.util.Collections.addAll(command,
+                "/apex/com.matonos.flatpak/bin/matonos-app-flatpak",
+                "--user", "run", "--socket=wayland", "--socket=x11", "--no-documents-portal",
+                "--no-a11y-bus", "--nofilesystem=host", "--nofilesystem=/tmp",
+                "--nodevice=all", "--device=dri",
+                "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1", "--env=GTK_CSD=0",
+                "--env=NO_AT_BRIDGE=1", ref.substring(4));
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
         Map<String, String> env = builder.environment();
         env.clear();
-        for (Iterator<String> keys = supplied.keys(); keys.hasNext();) {
-            String key = keys.next(); env.put(key, supplied.getString(key));
-        }
+        env.put("FLATPAK_SYSTEM_DIR", root + "/runtime/" + runtimeUid);
+        env.put("FLATPAK_USER_DIR", root + "/install/" + uid);
+        env.put("MATON_FLATPAK_DNS", dns);
         env.put("PATH", "/apex/com.matonos.flatpak/bin:/system/bin");
         env.put("LD_LIBRARY_PATH", "/apex/com.matonos.flatpak/lib64:/system/lib64");
         env.put("HOME", home.getAbsolutePath());

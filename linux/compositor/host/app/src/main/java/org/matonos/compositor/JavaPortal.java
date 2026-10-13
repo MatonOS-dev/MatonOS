@@ -138,7 +138,7 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
                 Variant write=options.get("writable");if(write!=null){if(!"b".equals(write.signature))return false;writable=(Boolean)write.value;}
                 int flags=Os.fcntlInt(source.getFileDescriptor(),OsConstants.F_GETFL,0);
                 if((flags&OsConstants.O_ACCMODE)==OsConstants.O_WRONLY || (writable&&(flags&OsConstants.O_ACCMODE)==OsConstants.O_RDONLY))return false;
-                fileOwner=new String(caller);uri=PortalFiles.publish(source,directory,writable,fileOwner);
+                fileOwner=new String(caller);uri=PortalFiles.publish(context,source,directory,writable,fileOwner);
             } finally {source.close();}
             synchronized(fileOwners){if(stopped){PortalFiles.revoke(context,uri);return false;}fileOwners.add(fileOwner);}
         }

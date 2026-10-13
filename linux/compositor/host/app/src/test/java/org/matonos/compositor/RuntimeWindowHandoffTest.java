@@ -15,6 +15,9 @@ public final class RuntimeWindowHandoffTest {
             if (width != 640 || height != 400) throw new AssertionError("Lost window dimensions");
             opened.add(id);
         }
+        boolean uriOpened, inhibited;
+        public boolean openUri(android.content.Intent intent) { uriOpened=true; return true; }
+        public void inhibitChanged(boolean active) { inhibited=active; }
         public void windowClosed(int id) { closed.add(id); }
     }
 
@@ -41,6 +44,14 @@ public final class RuntimeWindowHandoffTest {
         Host secondary = new Host();
         runtime.setWindowHost(secondary, 8);
         if (!secondary.opened.equals(List.of(8))) throw new AssertionError("Secondary adopted wrong window");
+        Method open = PerAppRuntime.class.getDeclaredMethod("open", android.content.Intent.class);
+        open.setAccessible(true);
+        if (!Boolean.TRUE.equals(open.invoke(runtime, new Object[]{null})) || !secondary.uriOpened || root.uriOpened)
+            throw new AssertionError("URI callback did not reach the current local host");
+        Field inhibited = PerAppRuntime.class.getDeclaredField("inhibited");
+        inhibited.setAccessible(true); inhibited.setBoolean(runtime, true);
+        runtime.setWindowHost(secondary, 8);
+        if (!secondary.inhibited) throw new AssertionError("Inhibit state was not replayed locally");
         runtime.clearWindowHost(root); // old activity must not clear its replacement
         closed.invoke(runtime, 8);
         if (!secondary.closed.equals(List.of(8))) throw new AssertionError("Replacement lost callback");

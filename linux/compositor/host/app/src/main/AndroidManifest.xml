@@ -1,9 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <queries>
+        <package android:name="org.matonos.linuxruntimes" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
@@ -12,14 +11,8 @@
     <application android:label="Maton Wayland" android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:multiArch="true" android:extractNativeLibs="true">
         <provider android:name=".PortalFiles" android:authorities="org.matonos.compositor.portal.files"
-            android:process=":compositor" android:exported="false" android:grantUriPermissions="true" />
+            android:exported="false" android:grantUriPermissions="true" />
         <library android:name="org.matonos.linuxhost" />
-        <!-- Exported embedded Binder authenticates the exact generated stub;
-             the legacy full compositor Binder remains restricted to this UID. -->
-        <service android:name=".CompositorService" android:process=":compositor" android:exported="true"
-            android:foregroundServiceType="specialUse">
-            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Runs the local Wayland compositor" />
-        </service>
         <activity android:name=".WindowActivity" android:exported="false" android:resizeableActivity="true"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
         <activity android:name=".stub.StubActivity" android:exported="true" />

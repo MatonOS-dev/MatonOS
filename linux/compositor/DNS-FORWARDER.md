@@ -20,10 +20,8 @@ The kernel clamps the Java listener's requested maximum backlog to somaxconn.
 Sockets close when the stub process exits. The retained native forwarder
 implementation still binds a fixed port (not used); production stubs use Java.
 
-The authenticated `openSession` call carries the logical `address:53` to the
-bridge's existing `getOwnedFlatpakLaunchSpec` request. The bridge validates the
-full UID-derived address and sends its address alone as linuxd's `dnsServers`.
-The existing `MATON_FLATPAK_DNS` monitor writer remains unchanged, as does the
+V3Launcher gets the logical address directly from the in-process DnsForwarder.
+The existing MATON_FLATPAK_DNS monitor writer remains unchanged, as does the
 static-apex resolver writer. `/etc/resolv.conf` still says `nameserver address`.
 
 V3Launcher checks that address against its own UID, then passes

@@ -5,13 +5,8 @@
 #include <cstdlib>
 #include <cstring>
 
-/*
- * The core is process-global. It is bound twice:
- *   - org.matonos.compositor.CompositorService  (transitional, shared host)
- *   - org.matonos.compositor.runtime.NativeCompositor (per-app runtime)
- * Each process uses one binding, so the shared statics are per-process. The
- * per-app binding lets a stub host its own compositor in its own UID.
- */
+/* NativeCompositor binds one core per process. Each stub's PerAppRuntime
+ * owns its callbacks and compositor under that stub's UID. */
 
 static JavaVM* vm;
 static jobject service;
@@ -125,7 +120,7 @@ static void jni_attach(JNIEnv* env, jint id, jobject surface, jint width, jint h
   maton_core_attach(id, output, width, height);
 }
 
-/* ---- org.matonos.compositor.CompositorService (transitional) ---- */
+/* ---- Per-app NativeCompositor binding ---- */
 
 /* ---- org.matonos.compositor.runtime.NativeCompositor (per-app) ---- */
 

@@ -43,7 +43,7 @@ final class DownloadsGrant {
             input.writeInterfaceToken("org.matonos.systembridge.ILinuxd");
             input.writeString(packageName);
             if (answer) { input.writeString(request); input.writeBoolean(allow); }
-            if (!daemon.transact(IBinder.FIRST_CALL_TRANSACTION + (answer ? 8 : 7), input, output, 0))
+            if (!daemon.transact(IBinder.FIRST_CALL_TRANSACTION + (answer ? 7 : 6), input, output, 0))
                 throw new IllegalStateException("Update MatonOS for folder permissions");
             output.readException();
             String result = output.readString();

@@ -6,7 +6,7 @@ package org.matonos.compositor.runtime;
  * <p>The broker runs in the owning app's process and UID (loaded as a native
  * library), so it parses untrusted D-Bus in the app's context, never in a
  * privileged one. Replaces the old exec'd {@code matonos-dbus-broker} helper and
- * the system-side {@code CompositorService} ownership of the bus.
+ * the system-side {@code PerAppRuntime} ownership of the bus.
  */
 public final class NativeBroker {
     static { System.loadLibrary("matonos-dbus-broker"); }

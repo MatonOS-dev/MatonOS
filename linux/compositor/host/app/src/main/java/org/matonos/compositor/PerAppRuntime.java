@@ -25,6 +25,8 @@ public final class PerAppRuntime implements AutoCloseable {
     public interface WindowHost {
         void windowOpened(int id, int width, int height);
         void windowClosed(int id);
+        boolean openUri(Intent intent);
+        void inhibitChanged(boolean active);
     }
 
     private static final int SESSION = 1;
@@ -38,6 +40,7 @@ public final class PerAppRuntime implements AutoCloseable {
     // an Android activity can attach to a window that already exists.
     private final java.util.LinkedHashMap<Integer, int[]> windows = new java.util.LinkedHashMap<>();
     private PowerManager.WakeLock wake;
+    private boolean inhibited;
 
     public PerAppRuntime(Context context, File directory, String ref) throws Exception {
         this.context = context;
@@ -99,6 +102,7 @@ public final class PerAppRuntime implements AutoCloseable {
     public String waylandSocket() { return new File(directory, "wayland-0").getAbsolutePath(); }
     public synchronized void setWindowHost(WindowHost host, int requestedWindow) {
         this.host = host;
+        host.inhibitChanged(inhibited);
         for (java.util.Map.Entry<Integer, int[]> window : windows.entrySet()) {
             if (requestedWindow != 0 && requestedWindow != window.getKey()) continue;
             int[] size = window.getValue();
@@ -150,6 +154,8 @@ public final class PerAppRuntime implements AutoCloseable {
     public void closeWindow(int id) { NativeCompositor.nativeClose(id); }
 
     private boolean open(Intent intent) {
+        WindowHost h = host;
+        if (h != null) return h.openUri(intent);
         try {
             context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             return true;
@@ -158,7 +164,10 @@ public final class PerAppRuntime implements AutoCloseable {
         }
     }
 
-    private void inhibit(boolean active) {
+    private synchronized void inhibit(boolean active) {
+        inhibited = active;
+        WindowHost h = host;
+        if (h != null) h.inhibitChanged(active);
         if (active) {
             if (wake == null) {
                 wake = context.getSystemService(PowerManager.class)

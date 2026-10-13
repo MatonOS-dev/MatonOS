@@ -144,7 +144,7 @@ for symmetry (the existing `Writer` already does).
               app / Flatpak  ──GDBus──►  native broker  ──MBP1 frames──┐
               (unique name)              (linux/dbus-broker)          │
                                                                       ▼
-   CompositorService ──► SessionBus ──► JavaPortal  ──► PeerConnection ──► PortalChannel
+   PerAppRuntime ──► SessionBus ──► JavaPortal  ──► PeerConnection ──► PortalChannel
                                               │              │
                                               ▼              ▼
                                         PortalBackend   org.matonos.dbus codec
@@ -173,7 +173,7 @@ Reused/reduced:
 | `PortalExportedObjects` | collapse to a ~40-line router (`backend.dispatch` + send); no annotated interfaces, no annotations |
 | `JavaPortal` | keep MBP1 handshake, fd ownership and platform callbacks; swap `DirectConnectionBuilder`/`DirectConnection` for `LocalSocketChannel` + `PeerConnection` |
 | `MatonLocalTransportProvider` | **delete** (transport provider, socket provider, reader/writer, `SocketChannel` subclass, fake SASL all go) |
-| `SessionBus`, `PortalBackend`, `PortalIntrospection`, `PortalFiles`, `CompositorService` | unchanged |
+| `SessionBus`, `PortalBackend`, `PortalIntrospection`, `PortalFiles`, `PerAppRuntime` | unchanged |
 
 Descriptor ownership: `PortalChannel.read` acquires a frame's descriptors and
 `PeerConnection` releases them via `PortalChannel.closeDescriptors`, once per

@@ -706,35 +706,6 @@ static void start_package_operation(int uninstall, const char* ref, int delete_d
     result->accepted = 1;
 }
 
-/* Exact Context/devices tokens; no app-specific policy or override files. */
-static int declared_controllers(const char* metadata, int* all_devices) {
-    char* copy = strdup(metadata ? metadata : "");
-    if (!copy) return 0;
-    int context = 0, controllers = 0;
-    char* state;
-    for (char* line = strtok_r(copy, "\n", &state); line; line = strtok_r(NULL, "\n", &state)) {
-        while (*line == ' ' || *line == '\t') ++line;
-        size_t length = strlen(line);
-        while (length && strchr(" \t\r", line[length-1])) line[--length] = 0;
-        if (*line == '[') { context = !strcmp(line, "[Context]"); continue; }
-        char* equals = strchr(line, '=');
-        if (!context || !equals) continue;
-        char* key_end = equals;
-        while (key_end > line && strchr(" \t", key_end[-1])) --key_end;
-        if (key_end-line != 7 || strncmp(line, "devices", 7)) continue;
-        controllers = 0; *all_devices = 0;
-        char* tokens;
-        for (char* token = strtok_r(equals+1, ";", &tokens); token; token = strtok_r(NULL, ";", &tokens)) {
-            while (*token == ' ' || *token == '\t') ++token;
-            length = strlen(token);
-            while (length && strchr(" \t\r", token[length-1])) token[--length] = 0;
-            if (!strcmp(token, "all")) { controllers = 1; *all_devices = 1; }
-            if (!strcmp(token, "input")) controllers = 1;
-        }
-    }
-    free(copy); return controllers;
-}
-
 static int owned_directory(const char* path,int uid) {
     char copy[512];if(strlen(path)>=sizeof(copy))return -1;strcpy(copy,path);
     int fd=open("/",O_PATH|O_DIRECTORY|O_CLOEXEC);char* save=NULL;
@@ -924,89 +895,6 @@ int flatpak_manager_downloads_answer(const char* ref,int uid,int pid,const char*
     pthread_mutex_unlock(&g_downloads_mutex);
     return valid?0:-1;
 }
-/* JSON escaping is shared by every argv/env/path field. */
-static void launch_json_string(FILE *out,const char *value) {
-    fputc('"',out);
-    for(const unsigned char *p=(const unsigned char *)value;*p;p++) {
-        if(*p=='"' || *p=='\\') {fputc('\\',out);fputc(*p,out);}
-        else if(*p<32) fprintf(out,"\\u%04x",*p);
-        else fputc(*p,out);
-    }
-    fputc('"',out);
-}
-
-void flatpak_manager_launch_spec(const char* ref, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, int stub_uid, int stub_pid, int lifeline_fd, FlatpakResult* result) {
-    (void)stub_pid;
-    struct stat socket_info;
-    int runtime_uid = -1;
-    char system_install[128], user_install[128];
-    if (stub_uid < 10000 || lifeline_fd < 0) {
-        set_error(result, "verified stub process required"); return;
-    }
-    if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
-        set_error(result, "valid installed application ref required"); return;
-    }
-    if (!valid_install_uid(stub_uid) || remembered_runtime_install(stub_uid, &runtime_uid) ||
-            runtime_uid / 100000 != stub_uid / 100000) {
-        set_error(result, "shared runtime installation is unavailable"); return;
-    }
-    snprintf(system_install, sizeof(system_install), MATON_DE_ROOT_FORMAT "/runtime/%d", maton_user_of((unsigned)(runtime_uid)), runtime_uid);
-    snprintf(user_install, sizeof(user_install), MATON_DE_ROOT_FORMAT "/install/%d", maton_user_of((unsigned)(stub_uid)), stub_uid);
-    bool has_x11 = x11_display && x11_display[0];
-    struct stat x11_directory;
-    if (has_x11 && (x11_display[0] != 'X' || !x11_display[1] || strlen(x11_display) >= 64 ||
-            strspn(x11_display + 1, "0123456789") != strlen(x11_display + 1))) {
-        set_error(result, "invalid X11 socket name"); return;
-    }
-    if (has_x11 && (fstat(x11_directory_fd, &x11_directory) || !S_ISDIR(x11_directory.st_mode) ||
-            fstatat(x11_directory_fd, x11_display, &socket_info, AT_SYMLINK_NOFOLLOW) ||
-            !S_ISSOCK(socket_info.st_mode) || socket_info.st_uid != x11_directory.st_uid)) {
-        /* A dead Xwayland must not block the app: launch Wayland-only. */
-        __android_log_print(ANDROID_LOG_WARN, "matonos-linuxd", "X11 socket %s unavailable; launching %s without X11", x11_display, ref);
-        has_x11 = false;
-    }
-    /* Check the full installed ref rather than accepting arbitrary commands. */
-    const char* info_args[] = {"--user", "info", ref};
-    ChildResult installed = run_cli_in(info_args, 3, 0, system_install, user_install);
-    if (installed.status != 0) { result_from_child(result, &installed); return; }
-    free(installed.output);
-    const char* metadata_args[] = {"--user", "info", "--show-metadata", ref};
-    ChildResult metadata = run_cli_in(metadata_args, 4, 0, system_install, user_install);
-    int controllers = 0, all_devices = 0;
-    if (metadata.status == 0 && !metadata.truncated)
-        controllers = declared_controllers(metadata.output, &all_devices) && game_controllers;
-    free(metadata.output);
-    /* A launch spec contains no privileged descriptors, labels or inherited
-     * linuxd environment. The stub supplies its private HOME/cache/session.
-     * Controller inventory is still empty: fail closed, as in v2. */
-    (void)controllers;
-    (void)all_devices;
-    (void)has_x11;
-    char *wire=NULL; size_t length=0;
-    FILE *out=open_memstream(&wire,&length);
-    if(!out){set_error(result,"cannot allocate launch specification");return;}
-    fputs("{\"argv\":[",out);
-    const char *argv[]={"/apex/com.matonos.flatpak/bin/matonos-app-flatpak",
-        "--user","run","--socket=wayland","--socket=x11","--no-documents-portal",
-        "--no-a11y-bus","--nofilesystem=host","--nofilesystem=/tmp",
-        "--nodevice=all","--device=dri",
-        "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1","--env=GTK_CSD=0",
-        "--env=NO_AT_BRIDGE=1",ref+4};
-    for(size_t i=0;i<sizeof(argv)/sizeof(argv[0]);i++){
-        if(i)fputc(',',out); launch_json_string(out,argv[i]);
-    }
-    fputs("],\"env\":{\"FLATPAK_SYSTEM_DIR\":",out);launch_json_string(out,system_install);
-    fputs(",\"FLATPAK_USER_DIR\":",out);launch_json_string(out,user_install);
-    fputs(",\"MATON_FLATPAK_DNS\":",out);launch_json_string(out,dns_servers?dns_servers:"");
-    fputs(",\"MATON_GAME_CONTROLLERS\":\"0\",\"MATON_SESSION_PAD_NODES\":\"\"},\"installation\":",out);
-    launch_json_string(out,user_install);
-    fputs(",\"runtimeInstallation\":",out);launch_json_string(out,system_install);
-    fputs(",\"root\":\"/\"}",out);
-    int failed=ferror(out);if(fclose(out))failed=1;
-    if(failed){free(wire);set_error(result,"cannot encode launch specification");return;}
-    result->output=wire;result->ok=1;result->exit_code=0;
-}
-
 /* Return only an installed app's exported desktop entry to the bridge. */
 static void read_desktop_entry(const char* ref, int app_uid, FlatpakResult* result) {
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {

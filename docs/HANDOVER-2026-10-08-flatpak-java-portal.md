@@ -1,3 +1,6 @@
+> Historical snapshot: the launch coordinator and embedded Binder APIs described
+> here were deleted in round 9. See ../linux/compositor/V3-LAUNCH.md for current design.
+
 # Handover: Java Flatpak portal for Brave — 2026-10-08
 
 ## Active task and latest decision

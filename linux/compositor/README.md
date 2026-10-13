@@ -6,8 +6,8 @@ The earlier v2 launch/domain notes below are historical; there is no v2 fallback
 > own compositor (`PerAppRuntime` → `NativeCompositor.nativeStart`), its own
 > Xwayland and bus. Cross-app features go through Android APIs (clipboard,
 > drag and drop, intents). Do not add a central Wayland display, session
-> service or compositor process. `CompositorService` (`:compositor`) is a
-> launch coordinator only and is being removed. Text below that describes a
+> service or compositor process. The launch coordinator is gone;
+> V3Launcher builds and runs the Flatpak command in the stub UID. Text below that describes a
 > service owning the Wayland display is historical.
 
 # MatonOS Wayland compositor v1 — implementation in progress
@@ -40,7 +40,7 @@ MatonOS is based on AOSP.
   pixels once with GLES before SurfaceControl presents that same allocation.
   If EGL import/upload fails, the output stays blank and the service remains
   alive.
-- (Historical, superseded: per-app compositor in the stub.) The service owned the Wayland display in its `:compositor` process. Each XDG
+- (Historical, superseded: per-app compositor in the stub.) The service owned the Wayland display in a separate host process. Each XDG
   toplevel gets its own wlroots scene and headless output; a Java callback
   starts a matching `WindowActivity` for new toplevels. A bundled Wayland SHM
   demo client connects over a socket under the app's private files directory.
@@ -130,33 +130,14 @@ Generic PCs with no graphics device must still boot. The compositor runs only
 when its host Activity starts, fails closed to a blank surface if an optional
 API or GPU path is unavailable, and never gates Android boot.
 
-## Flatpak launch wiring (2026-10-01)
+## Flatpak launch wiring (v3, 2026-10-13)
 
-Version-9 Flatpak stubs render directly in their own `StubActivity`, retaining
-their package, icon, title and Android task. They bind the host's embedded
-service interface, not a host Activity. The bridge verifies the exact ref's
-generated package, sole caller UID and Android Keystore signing certificate.
-The returned session Binder accepts controls only from that UID and only for
-windows owned by that session. The full legacy compositor Binder is host-only.
-
-Each application has a distinct Wayland listening socket in a host-owned
-directory. Accepted clients' local socket paths associate new toplevels with
-the correct stub session; additional windows open another activity in the same
-stub package. The compositor service remains central and native rendering
-stays in its process. The host delegates a descriptor for each application's
-Wayland-only directory through the bridge. Linuxd exposes
-a private relay socket to Flatpak and forwards stream data and SCM_RIGHTS
-buffer descriptors, retaining the directory capability until the process exits.
-The launch wrapper preserves only the selected private relay socket path.
-GTK/Firefox are forced onto Wayland with software GL; X11 is disabled. Startup
-failures appear inside the stub and logs remain in the Linux cache.
-
-The compositor now checks Wayland socket creation correctly, advertises an
-initial virtual output, exposes subsurfaces/viewporter, draws XDG popups,
-forwards keyboard events to its seat and sends window close requests. Window
-outputs explicitly select ARGB to match the Android allocator, and the virtual
-monitor exposes logical geometry through xdg-output. Clipboard,
-IME, Xwayland, portals and audio remain outside this launch change.
+Each stub launches directly through V3Launcher and hosts all runtime components
+in its own process. Window, inhibit and URI callbacks are local Java calls.
+No shared service, embedded Binder session or privileged launch spec remains.
+See [V3-LAUNCH.md](V3-LAUNCH.md) for paths, overrides and verification limits.
+PortalFiles providers run in each stub under a package-scoped authority; regenerate
+version-15 stubs. The host support/demo UI uses stock priv_app policy.
 
 Window decorations (2026-10-02): the compositor implements xdg-decoration and
 the legacy server-decoration protocol and answers every toplevel with
@@ -168,7 +149,7 @@ exported into every Flatpak launch for toolkits that ignore the protocol.
 
 Xwayland (2026-10-02): each application session owns a lazy Xwayland server
 (Xwayland 24.1.13 built for bionic by `build-xwayland.sh`; the server binary
-and its libraries ship in system_ext). `CompositorService` initializes the
+and its libraries ship in system_ext). The per-app runtime initializes its
 per-app socket directory (`/data/matonos/linux/x11`, created by init, labeled
 `matonos_x11_socket_file`) and the compositor chowns each display socket to
 the session's application uid, so an app can only reach its own display.

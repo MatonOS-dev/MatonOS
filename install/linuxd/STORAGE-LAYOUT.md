@@ -33,7 +33,7 @@ missing installations and reference databases are empty state.
 vold destroys the entire DE and CE trees on user removal. linuxd holds no
 refs cache; operations release their database on completion. Pending consent
 handles are dropped when the numeric DE user directory is removed. Android
-terminates that user's stubs; lifeline EOF terminates their Linux sessions.
+terminates that user's stubs; stub process death terminates their loader through its parent-death signal.
 
 Directory creation uses thread-local fscreate for install/runtime deployment
 roots, staging and per-UID homes. DE parents and CE home parents are created
