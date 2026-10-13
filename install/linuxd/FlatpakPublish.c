@@ -7,6 +7,7 @@
 #include "LinuxStorage.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <ftw.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -593,6 +594,14 @@ static int reclaim_tree(int parent, const char* name) {
 
 /* The stub's --user installation needs the remote (and keyring) before
  * linuxd checks and publishes into it; copied from the runtime install. */
+/* ostree init inherits linuxd's restrictive umask; stubs read the
+ * deployment, so match Flatpak's own modes (dirs 0755, files 0644). */
+static int repo_world_readable(const char* path, const struct stat* st, int type, struct FTW* ftw) {
+    (void)ftw;
+    if (type == FTW_SL) return 0;
+    return chmod(path, type == FTW_D || type == FTW_DP ? 0755 : (st->st_mode & 0111 ? 0755 : 0644));
+}
+
 static int ensure_user_remote(const char* system_repo, const char* user_dir, const char* remote) {
     char config[PATH_MAX], group[192], line[512];
     if (snprintf(config, sizeof(config), "%s/repo/config", user_dir) >= (int)sizeof(config) ||
@@ -743,7 +752,8 @@ int flatpak_publish_tracked(const char* app_ref, const char* app_commit,
          * .lease): create its repository before configuring the remote. */
         struct stat repo_st;
         const char* init_args[] = {"init", "--mode=bare-user-only"};
-        if (stat(user_repo, &repo_st) && run_ostree(user_repo, init_args, 2, NULL, 0)) {
+        if (stat(user_repo, &repo_st) && (run_ostree(user_repo, init_args, 2, NULL, 0) ||
+                nftw(user_repo, repo_world_readable, 16, FTW_PHYS))) {
             fail(error, error_size, "cannot create the app installation repository"); return -1;
         }
     }
