@@ -85,6 +85,10 @@ allow matonos_compositor matonos_compositor_data_file:dir create_dir_perms;
 allow matonos_compositor matonos_compositor_data_file:file create_file_perms;
 allow matonos_compositor matonos_compositor_data_file:lnk_file create_file_perms;
 allow matonos_compositor matonos_compositor_data_file:sock_file create_file_perms;
+# Stock app domains list their framework services explicitly (app_domain()
+# grants none); without app_api_service the process cannot attach to
+# ActivityManager and dies at startup on enforcing builds.
+allow matonos_compositor { app_api_service audioserver_service mediaserver_service mediametrics_service }:service_manager find;
 
 # The compositor delegates its Wayland and X11 directories through Binder. DAC keeps
 # its private parent inaccessible; linuxd connects through that fd.

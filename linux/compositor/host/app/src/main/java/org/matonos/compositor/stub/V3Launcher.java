@@ -34,8 +34,11 @@ final class V3Launcher {
             throw new IllegalStateException("Update the Linux host: v3 loader is missing");
         PerAppRuntime runtime = StubService.runtime();
         if (runtime == null) throw new IllegalStateException("Application runtime is unavailable");
-        File home = new File(context.getDataDir(), "home");
-        File cache = context.getCacheDir();
+        // Canonical paths: /data/user/0 is a symlink to /data/data, and Flatpak
+        // recreates symlinked HOME ancestors in the sandbox, which collides
+        // with directories bwrap already made for other binds.
+        File home = new File(context.getDataDir().getCanonicalFile(), "home");
+        File cache = context.getCacheDir().getCanonicalFile();
         for (File directory : new File[]{home, cache, new File(home, ".config"), new File(home, ".local/share")})
             if (!directory.isDirectory() && !directory.mkdirs())
                 throw new java.io.IOException("Cannot create application directory " + directory);
@@ -47,6 +50,8 @@ final class V3Launcher {
         Files.write(resolv.toPath(), ("nameserver " + dns + "\n").getBytes(StandardCharsets.UTF_8));
         ArrayList<String> command = new ArrayList<>();
         command.add(loader.getAbsolutePath());
+        // adb (root): touch <cache>/v3-trace to log every trapped call.
+        if (new File(cache, "v3-trace").exists()) command.add("--trace");
         command.add("--parent-pid"); command.add(Integer.toString(android.os.Process.myPid()));
         command.add("--map"); command.add(resolv.getAbsolutePath()); command.add("/etc/resolv.conf");
         File x11 = new File(runtime.directory(), "x11");
