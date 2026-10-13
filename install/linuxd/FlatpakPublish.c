@@ -738,6 +738,15 @@ int flatpak_publish_tracked(const char* app_ref, const char* app_commit,
         if (up >= 0) close(up);
         if (rc) { fail(error, error_size, "cannot take back the staging tree"); return -1; }
     }
+    {
+        /* Each publish targets a fresh versioned deployment dir (only
+         * .lease): create its repository before configuring the remote. */
+        struct stat repo_st;
+        const char* init_args[] = {"init", "--mode=bare-user-only"};
+        if (stat(user_repo, &repo_st) && run_ostree(user_repo, init_args, 2, NULL, 0)) {
+            fail(error, error_size, "cannot create the app installation repository"); return -1;
+        }
+    }
     if (ensure_user_remote(system_repo, user_dir, remote)) {
         fail(error, error_size, "cannot configure the remote in the app installation"); return -1;
     }

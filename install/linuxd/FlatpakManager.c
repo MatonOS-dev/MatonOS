@@ -252,6 +252,16 @@ static ChildResult run_cli_in(const char* const* args, size_t count, int progres
     result.truncated = 0;
     result.output = calloc(k_output_limit + 1, 1);
     if (!result.output) return result;
+    /* install/<appid> is only ever created by deployment_commit() as the
+     * atomic link to a versioned dir. Flatpak would mkdir a missing
+     * FLATPAK_USER_DIR itself, which blocks that link, so a query on an
+     * app without a deployment just reports "not installed". */
+    struct stat user_root;
+    if (user_dir && lstat(user_dir, &user_root) != 0) {
+        snprintf(result.output, k_output_limit + 1, "not installed");
+        result.status = 1;
+        return result;
+    }
     if (pipe2(pipes, O_CLOEXEC) != 0) {
         snprintf(result.output, k_output_limit + 1, "pipe failed: %s", strerror(errno));
         return result;
@@ -502,6 +512,10 @@ static void* package_operation_thread(void* data) {
     g_package_operation_active = 0;
     pthread_mutex_unlock(&g_package_state_mutex);
     result.operation_id = operation->operation_id ? strdup(operation->operation_id) : NULL;
+    if (!result.ok)
+        __android_log_print(ANDROID_LOG_WARN, "matonos-linuxd", "%s %s failed: %s",
+                operation->uninstall ? "uninstall" : "install", operation->ref ? operation->ref : "?",
+                result.error ? result.error : "unknown error");
     if (g_complete_callback) g_complete_callback(&result, g_callback_context);
     flatpak_manager_result_clear(&result);
     free(operation->ref);

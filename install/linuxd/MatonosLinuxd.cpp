@@ -171,6 +171,9 @@ bool StartEventDispatcher() {
 }
 
 Json::Value Error(const std::string& message) {
+    // Every refused request is logged: Binder callers often surface only a
+    // generic failure, which made install problems invisible on device.
+    __android_log_print(ANDROID_LOG_WARN, "matonos-linuxd", "request failed: %s", message.c_str());
     Json::Value result(Json::objectValue);
     result["ok"] = false;
     result["error"] = message;

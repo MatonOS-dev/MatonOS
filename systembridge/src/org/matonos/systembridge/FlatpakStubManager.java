@@ -410,6 +410,13 @@ final class FlatpakStubManager {
                 daemon.registerIdentity(identity);
                 daemon.subscribe("progress", listener);
                 subscribedDaemon = daemon;
+                // A restarted linuxd has no identity callback: until we
+                // register again every stub install fails verification, so
+                // re-register as soon as it is back, not at the next tick.
+                daemon.asBinder().linkToDeath(() -> worker.execute(() -> {
+                    ServiceManager.waitForService("org.matonos.systembridge.ILinuxd/default");
+                    reconcile();
+                }), 0);
                 publishStubSigner(daemon);
             }
             JSONObject list = new JSONObject(daemon.call("list_installed", listArgs()));
