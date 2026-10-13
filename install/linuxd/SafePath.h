@@ -71,7 +71,7 @@ static inline FILE* safe_fopen_absolute(const char* path) {
     char* slash = strrchr(copy, '/');
     if (!slash || !slash[1]) { errno = EINVAL; return NULL; }
     *slash = 0;
-    int root = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    int root = open("/", O_PATH | O_DIRECTORY | O_CLOEXEC); /* O_PATH: no rootfs read */
     if (root < 0) return NULL;
     int dirfd = safe_directory_at(root, copy, 0);
     close(root);
@@ -88,7 +88,7 @@ static inline FILE* safe_fopen_absolute(const char* path) {
 
 static inline DIR* safe_opendir_absolute(const char* path) {
     if (!path || path[0] != '/') { errno = EINVAL; return NULL; }
-    int root = open("/", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    int root = open("/", O_PATH | O_DIRECTORY | O_CLOEXEC); /* O_PATH: no rootfs read */
     if (root < 0) return NULL;
     int fd = safe_directory_at(root, path + 1, 0);
     close(root);
