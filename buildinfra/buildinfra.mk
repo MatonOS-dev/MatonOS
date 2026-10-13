@@ -6,3 +6,8 @@ PRODUCT_PACKAGES += MatonOSFlathub
 PRODUCT_PACKAGES += MatonWaylandHost
 # linux runtimes: owns the UID for Flatpak SYSTEM installations
 PRODUCT_PACKAGES += MatonOSLinuxRuntimes
+
+# v3-stub: system APKs do not get PM extraction. Match the host's bundled
+# nativeLibraryDir; updates instead use the executable extracted from the APK.
+PRODUCT_COPY_FILES += \
+    device/maton/pc_x86_64/buildinfra/apps-built/libmatonos-v3-loader.so:$(TARGET_COPY_OUT_SYSTEM_EXT)/priv-app/MatonWaylandHost/lib/x86_64/libmatonos-v3-loader.so

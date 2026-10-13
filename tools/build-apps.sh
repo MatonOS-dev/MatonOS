@@ -142,7 +142,7 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   stamp=$DEVICE_DIR/prebuilt/apps-built/.$key_id.inputs
   extra_inputs=()
   if [[ $key_id == matonos-wayland-host ]]; then
-    extra_inputs+=("$DEVICE_DIR/linux/compositor/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker" "$DEVICE_DIR/linux/sysvipc" "$DEVICE_DIR/linux/pipewire")
+    extra_inputs+=("$DEVICE_DIR/linux/compositor/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker" "$DEVICE_DIR/linux/sysvipc" "$DEVICE_DIR/linux/pipewire" "$DEVICE_DIR/linux/compat-proxy")
   fi
   # The broker records the image Flatpak build version. Rebuild the APK when
   # that generated input changes, even when app sources are unchanged.
@@ -230,6 +230,11 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   [[ -n $apk_cert && $apk_cert == "$cert_sha" ]] || die "APK signer does not match persistent key for $key_id"
   cp "$apk" "$DEVICE_DIR/prebuilt/apps-built/$apk_name"
   cp "$apk" "$DEVICE_DIR/buildinfra/apps-built/$apk_name"
+  if [[ $key_id == matonos-wayland-host ]]; then
+    unzip -p "$apk" lib/x86_64/libmatonos-v3-loader.so > "$DEVICE_DIR/buildinfra/apps-built/libmatonos-v3-loader.so"
+    chmod 0755 "$DEVICE_DIR/buildinfra/apps-built/libmatonos-v3-loader.so"
+    [[ -s $DEVICE_DIR/buildinfra/apps-built/libmatonos-v3-loader.so ]] || die "host APK has no v3 loader"
+  fi
   if [[ $key_id == matonos-wayland-host ]]; then rm -rf "$normalized_dir"; normalized_dir=; fi
   info "Staged $DEVICE_DIR/prebuilt/apps-built/$apk_name (certificate SHA-256 $cert_sha)"
   printf '%s\n' "$fingerprint" > "$stamp"

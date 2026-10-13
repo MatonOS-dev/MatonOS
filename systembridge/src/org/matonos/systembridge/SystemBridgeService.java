@@ -283,26 +283,20 @@ public final class SystemBridgeService extends Service {
         }
     }
 
-    private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
-        @Override public String getFlatpakLaunchStatus(String ref) {
-            String caller=enforceAuthorizedCaller("flatpak_launch","getFlatpakLaunchStatus");
-            if (!"org.matonos.compositor".equals(caller)) throw new SecurityException("Only the compositor may inspect launches");
-            int user = UserHandle.getUserId(Binder.getCallingUid());
-            long identity=Binder.clearCallingIdentity();
-            try {
-                int uid = flatpakStubManager.forUser(user).verifiedUid(ref);
-                ILinuxd daemon=ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
-                if(daemon==null)throw new IllegalStateException("Flatpak service unavailable");
-                return daemon.call("launch_status",new org.json.JSONObject().put("ref",ref).put("uid",uid).toString());
-            } catch(Exception error) { throw new IllegalStateException("Cannot inspect application",error); }
-            finally { Binder.restoreCallingIdentity(identity); }
-        }
+    /** Android owns the stub's whole process tree in v3; linuxd has no app PID. */
+    private String stopOwnedFlatpak(FlatpakStubManager owner, String ref) throws Exception {
+        int uid = owner.verifiedUid(ref);
+        android.app.ActivityManager.getService().forceStopPackage(
+                FlatpakStubIdentity.packageFor(ref), UserHandle.getUserId(uid));
+        return new JSONObject().put("ok", true).put("exitCode", 0).toString();
+    }
 
+    private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
         @Override public String launchFlatpak(String ref, android.os.ParcelFileDescriptor x11Directory, String x11Display) {
             throw new SecurityException("A signed stub process and lifeline are required");
         }
 
-        @Override public String launchOwnedFlatpak(String ref, android.os.ParcelFileDescriptor x11Directory, String x11Display, String dnsForwarder, int stubUid, int stubPid, android.os.ParcelFileDescriptor lifeline) {
+        @Override public String getOwnedFlatpakLaunchSpec(String ref, android.os.ParcelFileDescriptor x11Directory, String x11Display, String dnsForwarder, int stubUid, int stubPid, android.os.ParcelFileDescriptor lifeline) {
             try {
                 String caller = enforceAuthorizedCaller("flatpak_launch", "launchFlatpak");
                 if (!"org.matonos.compositor".equals(caller))
@@ -322,7 +316,7 @@ public final class SystemBridgeService extends Service {
                             10 + ((stubUid >>> 16) & 0x3f), (stubUid >>> 8) & 0xff, stubUid & 0xff);
                     if (!expectedDns.equals(dnsForwarder))
                         throw new SecurityException("Per-app DNS endpoint is missing or does not match the stub UID");
-                    return daemon.launchGraphical(ref, expectedDns.substring(0, expectedDns.length() - 3), x11Directory, x11Display,
+                    return daemon.launchSpec(ref, expectedDns.substring(0, expectedDns.length() - 3), x11Directory, x11Display,
                             flatpakStubManager.hasGameControllers(stubUid, ref), stubUid, stubPid, lifeline);
                 } finally {
                     Binder.restoreCallingIdentity(identity);
@@ -660,9 +654,13 @@ public final class SystemBridgeService extends Service {
                         if (!args.has("ref") || !(args.get("ref") instanceof String))
                             throw new IllegalArgumentException("An application reference is required");
                         result = owner.installAsync(args.getString("ref"), args);
+                    } else if ("kill".equals(command)) {
+                        long identity = Binder.clearCallingIdentity();
+                        try { result = stopOwnedFlatpak(owner, args.getString("ref")); }
+                        finally { Binder.restoreCallingIdentity(identity); }
                     } else {
                         if ("metadata".equals(command) || "desktop_entry".equals(command) || "icon".equals(command) ||
-                                "uninstall".equals(command) || "kill".equals(command) || "installed_for_uid".equals(command) || "launch_status".equals(command)) {
+                                "uninstall".equals(command) || "installed_for_uid".equals(command)) {
                             long identity = Binder.clearCallingIdentity();
                             int uid;
                             try {
@@ -1452,7 +1450,11 @@ public final class SystemBridgeService extends Service {
                             result.putString("result", accepted.toString());
                             return result;
                         }
-                        if ("uninstall".equals(arg) || "kill".equals(arg)) {
+                        if ("kill".equals(arg)) {
+                            result.putString("result", bridge.stopOwnedFlatpak(bridge.flatpakStubManager.forUser(user), args.getString("ref")));
+                            return result;
+                        }
+                        if ("uninstall".equals(arg)) {
                             args.remove("userId");
                             args.put("uid", bridge.flatpakStubManager.forUser(user).verifiedUid(args.getString("ref")));
                         } else if ("list_installed".equals(arg)) {

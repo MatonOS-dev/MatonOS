@@ -25,7 +25,7 @@ typedef struct FlatpakResult {
 typedef void (*FlatpakProgressCallback)(const char* line, void* context);
 typedef void (*FlatpakCompleteCallback)(const FlatpakResult* result, void* context);
 
-void flatpak_manager_launch_graphical(const char* ref, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, int stub_uid, int stub_pid, int lifeline_fd, FlatpakResult* result);
+void flatpak_manager_launch_spec(const char* ref, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, int stub_uid, int stub_pid, int lifeline_fd, FlatpakResult* result);
 /* Create/verify the app's fixed runtime dir /data/matonos/linux/tmp/<uid>. */
 int flatpak_manager_prepare_runtime(int uid);
 /* Signed-stub negotiation; the native side owns metadata and all paths. */

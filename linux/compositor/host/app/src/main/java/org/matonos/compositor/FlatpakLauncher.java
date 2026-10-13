@@ -14,9 +14,8 @@ import org.matonos.systembridge.ISystemBridge;
 final class FlatpakLauncher {
     private interface Request<T> { T run(ISystemBridge bridge) throws Exception; }
     static String launch(Context context,String ref,String dnsForwarder,int uid,int pid,ParcelFileDescriptor lifeline) throws Exception {
-        return request(context,bridge->bridge.launchOwnedFlatpak(ref,null,null,dnsForwarder,uid,pid,lifeline));
+        return request(context,bridge->bridge.getOwnedFlatpakLaunchSpec(ref,null,null,dnsForwarder,uid,pid,lifeline));
     }
-    static String status(Context context,String ref) throws Exception {return request(context,bridge->bridge.getFlatpakLaunchStatus(ref));}
     static boolean verifyStub(Context context,int uid,String ref) throws Exception {
         return request(context,bridge->bridge.isFlatpakStub(uid,ref));
     }

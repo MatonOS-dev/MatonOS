@@ -34,11 +34,10 @@
 /data/matonos/linux/run(/.*)? u:object_r:matonos_flatpak_socket_file:s0
 /data/matonos/linux/(machine-id|udev)(/.*)? u:object_r:matonos_flatpak_deployment_file:s0
 
-# r24: the Flatpak CLI, installer helper, bwrap layers and app launcher moved
+# The Flatpak CLI and installer helper live
 # into the com.matonos.flatpak APEX. Their exec types are applied by
 # linux/flatpak/apex_file_contexts at /apex/com.matonos.flatpak/bin.
 
-/data/matonos/linux/cache/launch-[^/]+\.log u:object_r:matonos_flatpak_log_file:s0
 
 # vold owns the encryption roots; linuxd creates only their children.
 /data/misc_(de|ce)/[0-9]+/matonos-linux u:object_r:matonos_linux_user_root_file:s0

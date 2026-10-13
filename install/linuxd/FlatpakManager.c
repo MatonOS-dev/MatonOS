@@ -706,109 +706,6 @@ static void start_package_operation(int uninstall, const char* ref, int delete_d
     result->accepted = 1;
 }
 
-typedef struct LaunchChild { pid_t pid; int slot; MatonSessionPads *pads;
-    unsigned uid; MatonFolderRequests downloads; } LaunchChild;
-
-static void finish_downloads(unsigned uid,MatonFolderRequests* folders) {
-    int scan_requested=folders->count!=0;
-    long gid=syscall(SYS_setfsgid,1023),owner=syscall(SYS_setfsuid,uid);
-    for(size_t i=0;i<folders->count;i++)if(!folders->items[i].readonly) {
-        if(maton_media_walk(folders->items[i].fd,uid/100000,uid))
-            __android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","Downloads teardown: %s",strerror(errno));
-    }
-    syscall(SYS_setfsuid,owner);syscall(SYS_setfsgid,gid);
-    if(scan_requested) {
-        /* Native cmd invokes the stock ActivityManager broadcast operation;
-         * no Java process, app lifetime, or compositor interface is needed. */
-        char user[32],uri[128];snprintf(user,sizeof(user),"%u",uid/100000);
-        snprintf(uri,sizeof(uri),"file:///storage/emulated/%u/Download",uid/100000);
-        char* args[]={"cmd","activity","broadcast","--async","--user",user,
-            "-a","android.intent.action.MEDIA_SCANNER_SCAN_FILE","-d",uri,NULL};
-        pid_t scan;
-        int rc=posix_spawn(&scan,"/system/bin/cmd",NULL,NULL,args,environ);
-        if(!rc){while(waitpid(scan,NULL,0)<0 && errno==EINTR){}}
-        else __android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","Downloads scan request: %s",strerror(rc));
-    }
-    maton_folders_clear(folders);
-}
-static pthread_mutex_t g_launch_mutex=PTHREAD_MUTEX_INITIALIZER;
-static struct { char ref[512], log[512]; pid_t pid; int uid; int group; int alive; } g_launches[128];
-static int record_launch(const char* ref,const char* log,pid_t pid,int uid,int group) {
-    int pinned=fcntl(group,F_DUPFD_CLOEXEC,0);if(pinned<0)return -1;
-    int slot=-1;pthread_mutex_lock(&g_launch_mutex);
-    for(int i=0;i<128;i++)if(g_launches[i].uid==uid && !strcmp(g_launches[i].ref,ref)){slot=i;break;}
-    if(slot<0)for(int i=0;i<128;i++)if(!g_launches[i].alive){slot=i;break;}
-    if(slot>=0){if(g_launches[slot].alive)close(g_launches[slot].group);
-        g_launches[slot].group=pinned;snprintf(g_launches[slot].ref,sizeof(g_launches[slot].ref),"%s",ref);
-        snprintf(g_launches[slot].log,sizeof(g_launches[slot].log),"%s",log);
-        g_launches[slot].pid=pid;g_launches[slot].uid=uid;g_launches[slot].alive=1;}
-    if(slot<0)close(pinned);
-    pthread_mutex_unlock(&g_launch_mutex);return slot;
-}
-static void record_exit(int slot,pid_t pid) {
-    pthread_mutex_lock(&g_launch_mutex);
-    if(slot>=0&&g_launches[slot].pid==pid&&g_launches[slot].alive){
-        g_launches[slot].alive=0;close(g_launches[slot].group);}
-    pthread_mutex_unlock(&g_launch_mutex);
-}
-static void read_launch_status(const char* ref,int uid,FlatpakResult* result) {
-    if(!flatpak_manager_valid_ref(ref)){set_error(result,"Invalid application reference");return;}
-    int alive=0;char path[512]={0};pthread_mutex_lock(&g_launch_mutex);
-    for(int i=0;i<128;i++)if(g_launches[i].uid==uid && !strcmp(g_launches[i].ref,ref)){
-        alive=g_launches[i].alive;snprintf(path,sizeof(path),"%s",g_launches[i].log);break;}
-    pthread_mutex_unlock(&g_launch_mutex);
-    if(alive){result->ok=1;return;}
-    char message[4096]="Application exited before opening a window";
-    FILE* log=path[0]?fopen(path,"re"):NULL;
-    if(log){size_t count=fread(message,1,sizeof(message)-1,log);message[count]=0;fclose(log);}
-    set_error(result,message[0]?message:"Application exited before opening a window");
-}
-/* Kill only the pinned per-process cgroup of this UID's recorded launch. */
-static void kill_launch(const char* ref,int uid,FlatpakResult* result) {
-    if(!flatpak_manager_installed_for_uid(ref,uid)){set_error(result,"installed application deployment not found");return;}
-    int rc=0;pthread_mutex_lock(&g_launch_mutex);
-    for(int i=0;i<128;i++)if(g_launches[i].alive && g_launches[i].uid==uid && !strcmp(g_launches[i].ref,ref)) {
-        int fd=openat(g_launches[i].group,"cgroup.kill",O_WRONLY|O_CLOEXEC|O_NOFOLLOW);
-        if(fd<0)rc=-1;
-        else {if(write(fd,"1",1)!=1)rc=-1;close(fd);}
-    }
-    pthread_mutex_unlock(&g_launch_mutex);
-    if(rc)set_error(result,"cannot terminate application cgroup");
-    else {result->ok=1;result->exit_code=0;}
-}
-/* The app's Wayland socket belongs to its own in-process compositor; linuxd no
- * longer relays the stream. Reaping only waits for exit and tears down pads. */
-static void* reap_launch(void* argument) {
-    LaunchChild* child=argument;
-    int status;
-    while(waitpid(child->pid,&status,0)<0 && errno==EINTR){}
-    maton_pads_destroy(child->pads);
-    finish_downloads(child->uid,&child->downloads);
-    record_exit(child->slot,child->pid);
-    free(child);
-    return NULL;
-}
-
-/* Android mounts a shell-owned debug tmpfs at /tmp. Apps that request
- * filesystems=/tmp (Brave, Chromium-based apps) would get it bound into the
- * sandbox, where bwrap, running as system, cannot create flatpak's
- * /tmp/.X11-unix mount point. Apply the global override in the app's actual
- * --user installation; the shared runtime installation does not own this
- * app's permission overrides. */
-static void deny_host_tmp(const char* system_dir, const char* user_dir) {
-    static char applied_dir[256];
-    if (user_dir && !strcmp(applied_dir, user_dir)) return;
-    char override_path[320], buffer[4096] = {0};
-    if (!user_dir || snprintf(override_path, sizeof(override_path), "%s/overrides/global", user_dir) >= (int)sizeof(override_path)) return;
-    int fd = open(override_path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd >= 0) { ssize_t got = read(fd, buffer, sizeof(buffer) - 1); close(fd); if (got > 0 && strstr(buffer, "!/tmp")) { snprintf(applied_dir, sizeof(applied_dir), "%s", user_dir); return; } }
-    const char* args[] = {"--user", "override", "--nofilesystem=/tmp"};
-    ChildResult child = run_cli_in(args, 3, 0, system_dir, user_dir);
-    if (child.status == 0) snprintf(applied_dir, sizeof(applied_dir), "%s", user_dir);
-    else __android_log_print(ANDROID_LOG_WARN, "matonos-linuxd", "cannot apply the global /tmp override (status %d)", child.status);
-    free(child.output);
-}
-
 /* Exact Context/devices tokens; no app-specific policy or override files. */
 static int declared_controllers(const char* metadata, int* all_devices) {
     char* copy = strdup(metadata ? metadata : "");
@@ -857,46 +754,7 @@ static int create_context(const char* label) {
     size_t n=label?strlen(label):0;
     int rc=write(fd,label?label:"",n)==(ssize_t)n?0:-1;close(fd);return rc;
 }
-static int data_child(int parent,const char* name,int uid,const char* label) {
-    int made=mkdirat(parent,name,0700)==0;
-    if(!made&&errno!=EEXIST)return -1;
-    /* Existing homes are deliberately UID-owned and mode 0700. linuxd has
-     * CHOWN but not DAC_OVERRIDE, so it must not try to read-open one just to
-     * verify it. O_PATH pins the inode without granting directory contents;
-     * metadata and the SELinux label can still be checked through that fd. */
-    int fd=openat(parent,name,(made?O_RDONLY:O_PATH)|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-    if(fd<0)return -1;
-    if(!made) {
-        struct stat st;char proc_path[64],context[256]={0};
-        int n=snprintf(proc_path,sizeof(proc_path),"/proc/self/fd/%d",fd);
-        ssize_t label_size=n>0&&(size_t)n<sizeof(proc_path)?
-                getxattr(proc_path,"security.selinux",context,sizeof(context)-1):-1;
-        if(fstat(fd,&st)||!S_ISDIR(st.st_mode)||st.st_uid!=(uid_t)uid||
-           (st.st_mode&0777)!=0700||label_size<=0 ||
-           (strcmp(context,label) &&
-            (strcmp(context,"u:object_r:matonos_linux_data_file:s0") ||
-             maton_home_repair_labels(fd,(unsigned)uid,label)))) {
-            close(fd);errno=EPERM;return -1;
-        }
-        return fd;
-    }
-    /* AOSP: libcutils/private/android_projectid_config.h PROJECT_ID_APP_START
-     * = 50000; installd/utils.cpp:438-440 uses uid - 10000 + range start.
-     * Set before chown while linuxd owns the new directory. Existing trees
-     * inherit their original project ID; dev builds require no migration. */
-    struct fsxattr attrs={0};
-    if(made && ioctl(fd,FS_IOC_FSGETXATTR,&attrs)==0) {
-        attrs.fsx_projid=(unsigned)uid-10000+50000;
-        attrs.fsx_xflags|=FS_XFLAG_PROJINHERIT;
-        if(ioctl(fd,FS_IOC_FSSETXATTR,&attrs))
-            __android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","project quota unavailable uid=%d: %s",uid,strerror(errno));
-    } else if(made) __android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","project quota unsupported uid=%d",uid);
-    struct stat st;char context[256]={0};
-    if((made&&fchown(fd,uid,uid))||fstat(fd,&st)||st.st_uid!=(uid_t)uid||
-       (st.st_mode&0777)!=0700||fgetxattr(fd,"security.selinux",context,sizeof(context)-1)<=0||
-       strcmp(context,label)){close(fd);errno=EPERM;return -1;}
-    return fd;
-}
+
 int flatpak_manager_prepare_runtime(int uid) {
     if(uid<0||uid%100000<10000||uid%100000>19999)return -1;
     char level[64],label[160],name[32];
@@ -931,52 +789,6 @@ int flatpak_manager_prepare_runtime(int uid) {
     return 0;
 }
 
-static int prepare_linux_data(int uid,const char* ref) {
-    char level[64],label[160];
-    if(uid%100000<10000||uid%100000>19999||maton_mls_level_from_uid(uid,level,sizeof(level))) {
-        __android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","prepare: uid %d outside app range",uid);return -1;
-    }
-    /* The system bridge authenticates the stub UID and installed ref before
-     * calling linuxd. Derive the app data MLS label from that verified UID;
-     * the launch may run after the short-lived stub process has exited, so a
-     * /proc/<pid> check here is both racy and unnecessary. */
-    snprintf(label,sizeof(label),"u:object_r:matonos_linux_data_file:%s",level);
-    /* The app's writable state is home/<uid>; the --user install root is
-     * system-owned and never touched here. */
-    int root=maton_home_root((unsigned)uid,1);
-    if(root<0) {__android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","prepare: no home root: %s",strerror(errno));return -1;}
-    char name[32];snprintf(name,sizeof(name),"%d",uid);
-    /* Retain the existing system-owned UID owner record: a recycled UID
-     * must never inherit another Flatpak's home. The stub chooses no path. */
-    char record_name[48],id[256];
-    const char* end=strchr(ref+4,'/');size_t length=end?(size_t)(end-ref-4):0;
-    if(!length||length>=sizeof(id)){close(root);__android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","prepare: bad ref %s",ref);return -1;}
-    memcpy(id,ref+4,length);id[length]=0;
-    snprintf(record_name,sizeof(record_name),"%d.owner",uid);
-    int record=openat(root,record_name,O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC,0640);
-    if(record>=0) {
-        int bad=write(record,id,length)!=(ssize_t)length;close(record);
-        if(bad){close(root);__android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","prepare: cannot write owner record");return -1;}
-    } else {
-        if(errno!=EEXIST){close(root);__android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","prepare: owner record: %s",strerror(errno));return -1;}
-        record=openat(root,record_name,O_RDONLY|O_NOFOLLOW|O_CLOEXEC);
-        char stored[256]={0};struct stat owner;
-        ssize_t n=record>=0?read(record,stored,sizeof(stored)-1):-1;
-        int bad=record<0||fstat(record,&owner)||!S_ISREG(owner.st_mode)||
-            owner.st_uid!=1000||n!=(ssize_t)length||memcmp(stored,id,length);
-        if(record>=0)close(record);
-        if(bad){close(root);__android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","prepare: owner record mismatch for uid %d (recycled?)",uid);errno=EPERM;return -1;}
-    }
-    int home=-1,rc=-1;
-    if(create_context(label)){__android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","prepare: fscreate '%s': %s",label,strerror(errno));goto done;}
-    home=data_child(root,name,uid,label);
-    if(home<0){__android_log_print(ANDROID_LOG_WARN,"matonos-linuxd","prepare: home %s: %s",name,strerror(errno));goto done;}
-    rc=0;
-done:
-    (void)create_context(NULL);
-    if(home>=0)close(home);close(root);
-    return rc;
-}
 /* Never follow symlinks or cross a mount while deleting an orphan. */
 static int remove_contents(int fd,dev_t device) {
     DIR* dir=fdopendir(dup(fd));if(!dir)return -1;
@@ -1112,28 +924,19 @@ int flatpak_manager_downloads_answer(const char* ref,int uid,int pid,const char*
     pthread_mutex_unlock(&g_downloads_mutex);
     return valid?0:-1;
 }
-static int launch_downloads(const char* ref,int uid,int pid,int group,MatonFolderRequests* folders) {
-    DownloadsAnswer* answer=NULL;
-    pthread_mutex_lock(&g_downloads_mutex);
-    DownloadsAnswer** slot=&g_downloads_answers;
-    while(*slot && (*slot)->uid!=uid)slot=&(*slot)->next;
-    if(*slot){answer=*slot;*slot=answer->next;}
-    pthread_mutex_unlock(&g_downloads_mutex);
-    if(!answer)return 0;
-    struct stat identity;FlatpakResult effective={0};
-    flatpak_manager_downloads_request(ref,uid,&effective);
-    int valid=answer->pid==pid && !fstat(group,&identity) && identity.st_dev==answer->cgroup.st_dev &&
-        identity.st_ino==answer->cgroup.st_ino && effective.ok && effective.output &&
-        !strcmp(answer->request,effective.output);
-    flatpak_manager_result_clear(&effective);
-    int rc=0;
-    if(valid)rc=maton_folders_decode(answer->request,folders,0) || maton_media_open((unsigned)uid,folders);
-    close(answer->group);free(answer->request);free(answer);
-    if(rc){maton_folders_clear(folders);return -1;}
-    return 0;
+/* JSON escaping is shared by every argv/env/path field. */
+static void launch_json_string(FILE *out,const char *value) {
+    fputc('"',out);
+    for(const unsigned char *p=(const unsigned char *)value;*p;p++) {
+        if(*p=='"' || *p=='\\') {fputc('\\',out);fputc(*p,out);}
+        else if(*p<32) fprintf(out,"\\u%04x",*p);
+        else fputc(*p,out);
+    }
+    fputc('"',out);
 }
 
-void flatpak_manager_launch_graphical(const char* ref, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, int stub_uid, int stub_pid, int lifeline_fd, FlatpakResult* result) {
+void flatpak_manager_launch_spec(const char* ref, const char* dns_servers, int x11_directory_fd, const char* x11_display, int game_controllers, int stub_uid, int stub_pid, int lifeline_fd, FlatpakResult* result) {
+    (void)stub_pid;
     struct stat socket_info;
     int runtime_uid = -1;
     char system_install[128], user_install[128];
@@ -1162,14 +965,6 @@ void flatpak_manager_launch_graphical(const char* ref, const char* dns_servers, 
         __android_log_print(ANDROID_LOG_WARN, "matonos-linuxd", "X11 socket %s unavailable; launching %s without X11", x11_display, ref);
         has_x11 = false;
     }
-    int ce_root=maton_storage_root((unsigned)stub_uid,1);
-    if(ce_root<0) {
-        set_error(result,"Linux app home is unavailable. Unlock the Android user before launching.");return;
-    }
-    close(ce_root);
-    if (prepare_linux_data(stub_uid,ref)) {
-        set_error(result,"cannot prepare verified Linux data");return;
-    }
     /* Check the full installed ref rather than accepting arbitrary commands. */
     const char* info_args[] = {"--user", "info", ref};
     ChildResult installed = run_cli_in(info_args, 3, 0, system_install, user_install);
@@ -1181,142 +976,35 @@ void flatpak_manager_launch_graphical(const char* ref, const char* dns_servers, 
     if (metadata.status == 0 && !metadata.truncated)
         controllers = declared_controllers(metadata.output, &all_devices) && game_controllers;
     free(metadata.output);
-    /* Open Android's exact per-process cgroup while handling the authenticated
-     * launch request. Pass the pinned directory as a capability: the wrapper
-     * must not race Android reaping the stub by reopening /proc/<pid> or a
-     * PID-derived path later. */
-    char stub_group_path[128];
-    snprintf(stub_group_path, sizeof(stub_group_path),
-            "/sys/fs/cgroup/apps/uid_%d/pid_%d", stub_uid, stub_pid);
-    int stub_group_fd = open(stub_group_path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-    if (stub_group_fd < 0) { set_error(result, "cannot pin verified app cgroup"); return; }
-    MatonFolderRequests downloads={0};
-    if(launch_downloads(ref,stub_uid,stub_pid,stub_group_fd,&downloads)) {
-        close(stub_group_fd);set_error(result,"cannot prepare granted Downloads folder");return;
+    /* A launch spec contains no privileged descriptors, labels or inherited
+     * linuxd environment. The stub supplies its private HOME/cache/session.
+     * Controller inventory is still empty: fail closed, as in v2. */
+    (void)controllers;
+    (void)all_devices;
+    (void)has_x11;
+    char *wire=NULL; size_t length=0;
+    FILE *out=open_memstream(&wire,&length);
+    if(!out){set_error(result,"cannot allocate launch specification");return;}
+    fputs("{\"argv\":[",out);
+    const char *argv[]={"/apex/com.matonos.flatpak/bin/matonos-app-flatpak",
+        "--user","run","--socket=wayland","--socket=x11","--no-documents-portal",
+        "--no-a11y-bus","--nofilesystem=host","--nofilesystem=/tmp",
+        "--nodevice=all","--device=dri",
+        "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1","--env=GTK_CSD=0",
+        "--env=NO_AT_BRIDGE=1",ref+4};
+    for(size_t i=0;i<sizeof(argv)/sizeof(argv[0]);i++){
+        if(i)fputc(',',out); launch_json_string(out,argv[i]);
     }
-    char* download_wire=maton_folders_encode(&downloads);
-    char* download_env=NULL;
-    if(!download_wire || asprintf(&download_env,"MATON_DOWNLOAD_GRANTS=%s",download_wire)<0) {
-        free(download_wire);maton_folders_clear(&downloads);close(stub_group_fd);
-        set_error(result,"cannot encode Downloads capabilities");return;
-    }
-    free(download_wire);
-    deny_host_tmp(system_install,user_install);
-    /* Keep the X11 source above the fixed child slot 199 so the spawn dup2
-     * action cannot overwrite it before it has been copied. */
-    int x11_capability = has_x11 ? fcntl(x11_directory_fd, F_DUPFD_CLOEXEC, 200) : -1;
-    if(has_x11 && x11_capability<0){free(download_env);maton_folders_clear(&downloads);close(stub_group_fd);set_error(result,"cannot duplicate X11 directory");return;}
-    char log_path[512];
-    snprintf(log_path, sizeof(log_path), "/data/matonos/linux/cache/launch-%d-%.*s.log",
-            stub_uid, (int)(strchr(ref + 4, '/') - (ref + 4)), ref + 4);
-    int logfd = open(log_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
-    posix_spawn_file_actions_t actions;
-    int rc = posix_spawn_file_actions_init(&actions);
-    if (rc) { free(download_env);maton_folders_clear(&downloads);if(x11_capability>=0)close(x11_capability); if (logfd >= 0) close(logfd); close(stub_group_fd); set_error(result, "Flatpak launch setup failed"); return; }
-    rc = 0;
-    if (!rc && logfd >= 0) rc = posix_spawn_file_actions_adddup2(&actions, logfd, STDOUT_FILENO);
-    if (!rc && logfd >= 0) rc = posix_spawn_file_actions_adddup2(&actions, logfd, STDERR_FILENO);
-    if (!rc && logfd >= 0) rc = posix_spawn_file_actions_addclose(&actions, logfd);
-    int owner_fd = fcntl(lifeline_fd, F_DUPFD_CLOEXEC, 200);
-    if (owner_fd < 0) rc = errno;
-    int group_capability = fcntl(stub_group_fd, F_DUPFD_CLOEXEC, 200);
-    if (group_capability < 0) rc = errno;
-    if (!rc) rc = posix_spawn_file_actions_adddup2(&actions, owner_fd, 196);
-    if (!rc) rc = posix_spawn_file_actions_adddup2(&actions, group_capability, 198);
-    if (!rc && has_x11) rc = posix_spawn_file_actions_adddup2(&actions, x11_capability, 199);
-    for(size_t i=0;!rc && i<downloads.count;i++)
-        rc=posix_spawn_file_actions_adddup2(&actions,downloads.items[i].fd,downloads.items[i].fd);
-    /* Phase 1: no Android inventory relay yet; fail closed with no pads. */
-    MatonSessionPads *pads=maton_pads_create(NULL,0,(unsigned)stub_uid,NULL,NULL);
-    if(!pads)rc=errno;
-    char pad_env[320];
-    snprintf(pad_env,sizeof(pad_env),"MATON_SESSION_PAD_NODES=%s",maton_pads_nodes(pads));
-    char owner_env[384];
-    snprintf(owner_env,sizeof(owner_env),"MATON_APP_OWNER=%d:%d:%d:%.*s",stub_uid,stub_pid,controllers,(int)(strchr(ref+4,'/')-ref-4),ref+4);
-    char dns_env[2048];
-    snprintf(dns_env,sizeof(dns_env),"MATON_FLATPAK_DNS=%s",dns_servers ? dns_servers : "");
-    char x11_env[160];
-    snprintf(x11_env,sizeof(x11_env),"MATON_SESSION_X11_NAME=%s",has_x11?x11_display:"");
-    char system_install_env[160], user_install_env[160];
-    snprintf(system_install_env, sizeof(system_install_env), "FLATPAK_SYSTEM_DIR=%s", system_install);
-    snprintf(user_install_env, sizeof(user_install_env), "FLATPAK_USER_DIR=%s", user_install);
-    size_t env_count = 0;
-    while (environ[env_count]) ++env_count;
-    char** env = calloc(env_count + 15, sizeof(char*));
-    size_t n = 0;
-    if (env) {
-        for (size_t i = 0; i < env_count; ++i)
-            if (strncmp(environ[i], "WAYLAND_DISPLAY=", 16) != 0 &&
-                    strncmp(environ[i],"MATON_FLATPAK_DNS=",18) != 0 &&
-                    strncmp(environ[i],"DISPLAY=",8) != 0 &&
-                    strncmp(environ[i],"MATON_GAME_CONTROLLERS=",23) != 0 &&
-                    strncmp(environ[i],"MATON_SESSION_X11_",18) != 0 &&
-                    strncmp(environ[i],"MATON_SESSION_PAD_NODES=",24) != 0 &&
-                    strncmp(environ[i],"MATON_DOWNLOAD_GRANTS=",22) != 0 &&
-                    strncmp(environ[i],"FLATPAK_SYSTEM_DIR=",19) != 0 &&
-                    strncmp(environ[i],"FLATPAK_USER_DIR=",17) != 0 &&
-                    strncmp(environ[i],"DBUS_SESSION_BUS_ADDRESS=",25) != 0) env[n++] = environ[i];
-        env[n++] = system_install_env;
-        env[n++] = user_install_env;
-        env[n++] = pad_env;
-        env[n++] = owner_env;
-        env[n++] = download_env;
-        env[n++] = "MATON_APP_LIFELINE=196";
-        env[n++] = dns_env;
-        if(has_x11) {env[n++]="MATON_SESSION_X11_FD=199";env[n++]=x11_env;}
-        env[n] = controllers ? "MATON_GAME_CONTROLLERS=1" : "MATON_GAME_CONTROLLERS=0";
-    } else rc = ENOMEM;
-    /* Both display sockets are granted; toolkits choose their backend.
-     * Android's caption bar is the only window decoration, so toolkits that
-     * ignore the decoration protocol are told to drop their own. The GPU's
-     * render node is passed in: Wayland clients render on it and hand their
-     * dma-bufs to the compositor, which shows them without a copy. */
-    char* argv[] = {(char*)"flatpak", "--user", "run",
-            "--socket=wayland", "--socket=x11", "--no-documents-portal",
-            /* Session-bus access is the installation's global override.
-             * Keep per-app permissions free of this launch-chain lever. */
-            "--no-a11y-bus",
-            "--nodevice=all", "--device=dri",
-            "--env=QT_WAYLAND_DISABLE_WINDOWDECORATION=1", "--env=GTK_CSD=0",
-            "--env=NO_AT_BRIDGE=1",
-            (char*)ref + 4, NULL};
-    pid_t child = -1;
-    if (!rc) rc = posix_spawn(&child, k_flatpak, &actions, NULL, argv, env);
-    posix_spawn_file_actions_destroy(&actions);
-    if (owner_fd >= 0) close(owner_fd);
-    if (group_capability >= 0) close(group_capability);
-    if (logfd >= 0) close(logfd); free(env);free(download_env);
-    if (x11_capability >= 0) close(x11_capability);
-    if (rc) { close(stub_group_fd);maton_folders_clear(&downloads);maton_pads_destroy(pads); set_error(result, strerror(rc)); return; }
-    int launch_slot=record_launch(ref,log_path,child,stub_uid,stub_group_fd);
-    close(stub_group_fd);
-    if(launch_slot<0){maton_pads_destroy(pads);kill(child,SIGTERM);while(waitpid(child,NULL,0)<0&&errno==EINTR){}finish_downloads(stub_uid,&downloads);set_error(result,"Too many active launches");return;}
-    /* Report immediate CLI failures to the launch Activity instead of a blank window. */
-    for (int i = 0; i < 8; ++i) {
-        int status; pid_t exited = waitpid(child, &status, WNOHANG);
-        if (exited == child) {
-            finish_downloads(stub_uid,&downloads);
-            maton_pads_destroy(pads);
-            record_exit(launch_slot,child);
-            FILE* log = fopen(log_path, "re");
-            char message[4096] = "Flatpak exited before opening a window";
-            if (log) { size_t count = fread(message, 1, sizeof(message)-1, log); message[count] = 0; fclose(log); }
-            if (WIFEXITED(status) && WEXITSTATUS(status)==0) { result->ok=1; result->exit_code=0; return; }
-            set_error(result, message[0] ? message : "Flatpak exited before opening a window"); return;
-        }
-        struct timespec delay = {.tv_sec = 0, .tv_nsec = 250000000}; nanosleep(&delay, NULL);
-    }
-    LaunchChild* state = malloc(sizeof(*state));
-    pthread_t reaper;
-    if (state) { state->pads=pads; state->pid = child; state->slot=launch_slot;
-        state->uid=(unsigned)stub_uid;state->downloads=downloads; }
-    if (!state || pthread_create(&reaper, NULL, reap_launch, state)) {
-        maton_pads_destroy(pads);record_exit(launch_slot,child);free(state); kill(child, SIGTERM); while (waitpid(child, NULL, 0) < 0 && errno == EINTR) { }
-        finish_downloads(stub_uid,&downloads);
-        set_error(result, "cannot reap Flatpak process"); return;
-    }
-    pthread_detach(reaper);
-    result->ok = 1; result->has_pid = 1; result->pid = (long)child;
+    fputs("],\"env\":{\"FLATPAK_SYSTEM_DIR\":",out);launch_json_string(out,system_install);
+    fputs(",\"FLATPAK_USER_DIR\":",out);launch_json_string(out,user_install);
+    fputs(",\"MATON_FLATPAK_DNS\":",out);launch_json_string(out,dns_servers?dns_servers:"");
+    fputs(",\"MATON_GAME_CONTROLLERS\":\"0\",\"MATON_SESSION_PAD_NODES\":\"\"},\"installation\":",out);
+    launch_json_string(out,user_install);
+    fputs(",\"runtimeInstallation\":",out);launch_json_string(out,system_install);
+    fputs(",\"root\":\"/\"}",out);
+    int failed=ferror(out);if(fclose(out))failed=1;
+    if(failed){free(wire);set_error(result,"cannot encode launch specification");return;}
+    result->output=wire;result->ok=1;result->exit_code=0;
 }
 
 /* Return only an installed app's exported desktop entry to the bridge. */
@@ -1541,11 +1229,6 @@ void flatpak_manager_call(const char* command, const char* ref,
         if (changes_remote) pthread_mutex_unlock(&g_operation_mutex);
         result_from_child(result, &child);
         free(child.output);
-    } else if (strcmp(command, "kill") == 0) {
-        kill_launch(ref,app_uid,result);
-    } else if (strcmp(command, "launch_status") == 0) {
-        if (!flatpak_manager_installed_for_uid(ref, app_uid)) { set_error(result, "installed application deployment not found"); return; }
-        read_launch_status(ref,app_uid,result);
     } else if (strcmp(command, "icon") == 0) {
         read_exported_icon(ref, app_uid, result);
     } else if (strcmp(command, "metadata") == 0) {

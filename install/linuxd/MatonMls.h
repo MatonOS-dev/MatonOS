@@ -14,8 +14,8 @@
  *   app processes, so the level is a pure function of the verified UID.
  *
  * The categories are derived here, never taken from a caller-supplied string:
- * linuxd computes them from the stub UID it verified, and matonos-app-exec
- * recomputes them from the UID it actually runs as. The AOSP algorithm is
+ * linuxd computes them from the stub UID it verified. v3 payloads inherit
+ * the stub process identity directly. The AOSP algorithm is
  * copied verbatim; keep it in sync with the AOSP release this tree tracks.
  */
 
