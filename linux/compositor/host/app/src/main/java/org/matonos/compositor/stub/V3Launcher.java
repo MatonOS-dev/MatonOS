@@ -52,6 +52,9 @@ final class V3Launcher {
         command.add(loader.getAbsolutePath());
         // adb (root): touch <cache>/v3-trace to log every trapped call.
         if (new File(cache, "v3-trace").exists()) command.add("--trace");
+        if (!DnsForwarder.endpoint().equals(dns + ":53") || DnsForwarder.acquire() == null)
+            throw new IllegalStateException("Per-app DNS forwarder is unavailable");
+        command.add("--dns-forwarder"); command.add(dns + ":" + DnsForwarder.port);
         command.add("--parent-pid"); command.add(Integer.toString(android.os.Process.myPid()));
         command.add("--map"); command.add(resolv.getAbsolutePath()); command.add("/etc/resolv.conf");
         File x11 = new File(runtime.directory(), "x11");

@@ -1,7 +1,7 @@
 # Linux layer v3 launch from the stub
 
 The generated stub owns its compositor, session bus, DNS forwarding and Linux
-process tree. The trusted compositor service coordinates identity and DNS; it
+process tree. The trusted compositor service coordinates identity and the resolver address; it
 requests `ILinuxd.launchSpec` through `getOwnedFlatpakLaunchSpec` in the System
 Bridge. linuxd validates the same installed app ref, runtime UID, X11 capability
 and metadata as the former graphical launch. It returns `{ok, argv, env, root,
@@ -69,3 +69,8 @@ Open integration checks:
   portal supervisor is gone. Check Desktop portals on the retained private bus.
 
 Coordinator VM steps are in out/pc-logs/agents/v3-stub-result.md.
+
+Round 8: the Java stub binds UDP/TCP at its UID-derived address on 5353 before
+opening a session. There is no DNS socket FD relay or privileged linuxd bind.
+V3Launcher passes that exact address/port via --dns-forwarder while resolv.conf
+retains logical port 53. See DNS-FORWARDER.md for translation and validation.

@@ -38,10 +38,9 @@ allow matonos_linuxd matonos_flatpak_data_file:lnk_file create_file_perms;
 allow matonos_linuxd matonos_flatpak_data_file:sock_file create_file_perms;
 allow matonos_linuxd matonos_flatpak_store_file:dir r_dir_perms;
 allow matonos_linuxd matonos_flatpak_store_file:file r_file_perms;
-allow matonos_linuxd self:capability { setuid setgid chown kill net_bind_service };
+allow matonos_linuxd self:capability { setuid setgid chown kill };
 allow matonos_linuxd self:capability fowner;
 # Port 53 has no dedicated label in Android policy (generic `port` type).
-allow matonos_linuxd port:{ udp_socket tcp_socket } name_bind;
 allow matonos_linuxd self:process { fork sigchld signal };
 net_domain(matonos_linuxd)
 
@@ -327,13 +326,6 @@ allow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_fil
 allow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file matonos_app_code_exec matonos_runtime_exec }:lnk_file r_file_perms;
 allow untrusted_app_all matonos_linux_user_root_file:dir { getattr search };
 allow untrusted_app_all matonos_flatpak_cli_exec:file { r_file_perms execute };
-
-# Per-app DNS forwarder: linuxd binds the privileged 127.x:53 sockets and the
-# fds travel bridge -> compositor -> stub, where the forwarder serves them.
-allow { matonos_system_bridge matonos_compositor untrusted_app_all } matonos_linuxd:fd use;
-allow { matonos_system_bridge matonos_compositor untrusted_app_all } matonos_linuxd:{ udp_socket tcp_socket } { getattr getopt read write };
-allow untrusted_app_all matonos_linuxd:udp_socket { recvfrom sendto };
-allow untrusted_app_all matonos_linuxd:tcp_socket { accept listen };
 
 # v3 stubs publish the per-app Xwayland display as a symlink in their own
 # runtime dir (stock media_rw_data_file, already create/unlink for files).

@@ -28,7 +28,7 @@ public final class CompositorService extends Service {
     }
 
     private final IEmbeddedHost.Stub embedded = new IEmbeddedHost.Stub() {
-        public IEmbeddedSession openSession(String ref, IEmbeddedWindowListener listener, android.os.ParcelFileDescriptor lifeline, String dnsForwarder, android.os.ParcelFileDescriptor[] dnsSockets) {
+        public IEmbeddedSession openSession(String ref, IEmbeddedWindowListener listener, android.os.ParcelFileDescriptor lifeline, String dnsForwarder) {
             int pid = android.os.Binder.getCallingPid();
             int uid = android.os.Binder.getCallingUid();
             if (lifeline == null || listener == null || ref == null || !ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"))
@@ -53,11 +53,7 @@ public final class CompositorService extends Service {
                     }
                     if (session == null) {
                         if (sessions.size() >= 128) throw new IllegalStateException("Too many application sessions");
-                        android.os.ParcelFileDescriptor[] privilegedDns = FlatpakLauncher.createDnsSockets(
-                                CompositorService.this, uid, ref, dnsForwarder);
-                        if (privilegedDns == null || privilegedDns.length != 2 || privilegedDns[0] == null || privilegedDns[1] == null)
-                            throw new IllegalStateException("System bridge did not provide DNS sockets");
-                        session = new EmbeddedSession(uid, ref, dnsForwarder, privilegedDns);
+                        session = new EmbeddedSession(uid, ref, dnsForwarder);
                         session.pid=pid; session.lifeline=lifeline;
                         sessions.put(ref, session);
                         session.watchLifeline();
@@ -65,7 +61,6 @@ public final class CompositorService extends Service {
                     if (session.pid != pid) throw new SecurityException("Previous stub session is still registered; restart the host session");
                     if (session.lifeline != lifeline) lifeline.close();
                     if (session.uid != uid) throw new SecurityException("Session belongs to another UID");
-                    session.duplicateDnsSockets(dnsSockets);
                     session.listeners.register(listener);
                     listener.onInhibitChanged(false);
                     return session;
@@ -82,20 +77,12 @@ public final class CompositorService extends Service {
         android.os.ParcelFileDescriptor lifeline;
         final String ref;
         final String dnsForwarder;
-        final android.os.ParcelFileDescriptor[] dnsSockets;
         final android.os.RemoteCallbackList<IEmbeddedWindowListener> listeners = new android.os.RemoteCallbackList<>();
-        EmbeddedSession(int uid, String ref, String dnsForwarder, android.os.ParcelFileDescriptor[] dnsSockets) throws Exception {
+        EmbeddedSession(int uid, String ref, String dnsForwarder) throws Exception {
             this.uid=uid;this.ref=ref;
             this.dnsForwarder=dnsForwarder;
-            this.dnsSockets=dnsSockets;
             // The app's Wayland session is created by its own in-process core
             // (PerAppRuntime); the host no longer creates a session for it.
-        }
-        void duplicateDnsSockets(android.os.ParcelFileDescriptor[] out) throws Exception {
-            if (out == null || out.length != 2) throw new IllegalArgumentException("DNS socket output array must have two entries");
-            out[0]=android.os.ParcelFileDescriptor.dup(dnsSockets[0].getFileDescriptor());
-            try { out[1]=android.os.ParcelFileDescriptor.dup(dnsSockets[1].getFileDescriptor()); }
-            catch (Exception error) { out[0].close(); out[0]=null; throw error; }
         }
         void watchLifeline() {
             if (lifeline == null) return;
@@ -115,8 +102,6 @@ public final class CompositorService extends Service {
         }
         void closeResources() {
             if (lifeline != null) try { lifeline.close(); } catch (Exception ignored) {}
-            for (android.os.ParcelFileDescriptor socket : dnsSockets)
-                if (socket != null) try { socket.close(); } catch (Exception ignored) {}
         }
         private void check() {
             if (android.os.Binder.getCallingUid()!=uid) throw new SecurityException("Session belongs to another UID");
