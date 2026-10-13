@@ -22,10 +22,13 @@ static inline int safe_directory_at(int rootfd, const char* path, int create) {
         char* slash = strchr(part, '/');
         if (slash) *slash = 0;
         if (!*part || !strcmp(part, ".") || !strcmp(part, "..")) { close(fd); errno = EINVAL; return -1; }
-        int next = openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        /* Intermediate dirs only need search: O_PATH avoids SELinux read on
+         * ancestors such as /data. The final dir is readable for fdopendir. */
+        int mode = slash ? O_PATH : O_RDONLY;
+        int next = openat(fd, part, mode | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
         if (next < 0 && errno == ENOENT && create) {
             if (mkdirat(fd, part, 0700)) { int error = errno; close(fd); errno = error; return -1; }
-            next = openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+            next = openat(fd, part, mode | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
         }
         int error = errno;
         close(fd);

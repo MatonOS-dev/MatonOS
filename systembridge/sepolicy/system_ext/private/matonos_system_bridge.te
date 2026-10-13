@@ -323,3 +323,14 @@ allow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_fil
 allow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file matonos_app_code_exec matonos_runtime_exec }:lnk_file r_file_perms;
 allow untrusted_app_all matonos_linux_user_root_file:dir { getattr search };
 allow untrusted_app_all matonos_flatpak_cli_exec:file { r_file_perms execute };
+
+# Per-app DNS forwarder: linuxd binds the privileged 127.x:53 sockets and the
+# fds travel bridge -> compositor -> stub, where the forwarder serves them.
+allow { matonos_system_bridge matonos_compositor untrusted_app_all } matonos_linuxd:fd use;
+allow { matonos_system_bridge matonos_compositor untrusted_app_all } matonos_linuxd:{ udp_socket tcp_socket } { getattr getopt read write };
+allow untrusted_app_all matonos_linuxd:udp_socket { recvfrom sendto };
+allow untrusted_app_all matonos_linuxd:tcp_socket { accept listen };
+
+# v3 stubs publish the per-app Xwayland display as a symlink in their own
+# runtime dir (stock media_rw_data_file, already create/unlink for files).
+allow untrusted_app_all media_rw_data_file:lnk_file { create unlink read getattr };
