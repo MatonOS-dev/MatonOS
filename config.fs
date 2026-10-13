@@ -2,10 +2,6 @@
 [AID_VENDOR_GAME_CONTROLLERS]
 value: 2900
 
-# Never inherited by Linux payloads; linuxd creates session pads.
-[AID_VENDOR_LINUXD_UINPUT]
-value: 2901
-
 # Reserved Flatpak installer identity (system uid range, inet group). Used by
 # matonos-glibc-enter to run management transactions as a non-root system uid
 # with network access (group 3003 set in the entry helper). Falls within the

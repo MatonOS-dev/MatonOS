@@ -39,7 +39,7 @@ adb_cmd wait-for-device
 adb_cmd shell setprop persist.vendor.maton.flatpak_test 1
 # Verify the expected spike executable before network or repository changes.
 # The real path runs the launcher as linuxd's system UID (1000). Running it as
-# root would leave root-owned files under /data/matonos/linux (machine-id) and
+# root would leave root-owned files in the management/code store and
 # poison later real launches, so switch to that UID first.
 FLATPAK=/apex/com.matonos.flatpak/bin/matonos-flatpak
 adb_cmd shell su 1000 "$FLATPAK" flatpak --version
@@ -100,7 +100,7 @@ payload=$(python3 -c 'import json,sys; print(json.dumps({"ref":sys.argv[1],"user
 bridge_call uninstall "$payload"
 wait_for_ref "$REF" no
 # App data lives in the stub's per-app home, not a global Flatpak tree.
-data_glob="/data/misc_ce/$ANDROID_USER/matonos-linux/home/*/.var/app/$app_id"
+data_glob="/data/user/$ANDROID_USER/flatpak.$app_id/home/.var/app/$app_id"
 if adb_cmd shell sh -c "ls -d $data_glob >/dev/null 2>&1"; then
   echo "Flatpak app data still exists: $data_glob" >&2
   exit 1

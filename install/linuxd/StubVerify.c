@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#define SIGNER_PATH "/data/matonos/linux/store/stub-signer.der"
+#define SIGNER_PATH "/data/linux-app/store/stub-signer.der"
 #define SIGNER_TEMP SIGNER_PATH ".tmp"
 #define MAX_CERT 8192
 
@@ -28,8 +28,8 @@ int stub_store_signer(const unsigned char* der, size_t length) {
 extern int stub_identity_query(const char* command, int uid, const char* package,
         char* ref, size_t ref_size, char* remote, size_t remote_size);
 
-int stub_runtime_uid(int uid) {
-    return stub_identity_query("runtime", uid, "", NULL, 0, NULL, 0);
+int stub_user_has_package(int uid) {
+    return stub_identity_query("user-live",uid,"",NULL,0,NULL,0);
 }
 int stub_uid_has_package(int uid) {
     return stub_identity_query("live", uid, "", NULL, 0, NULL, 0);

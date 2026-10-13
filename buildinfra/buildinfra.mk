@@ -4,8 +4,6 @@ PRODUCT_PACKAGES += MatonOSSettings
 PRODUCT_PACKAGES += MatonOSFlathub
 # compositor: v4 Wayland compositor host (not privileged)
 PRODUCT_PACKAGES += MatonWaylandHost
-# linux runtimes: owns the UID for Flatpak SYSTEM installations
-PRODUCT_PACKAGES += MatonOSLinuxRuntimes
 
 # v3-stub: system APKs do not get PM extraction. Match the host's bundled
 # nativeLibraryDir; updates instead use the executable extracted from the APK.

@@ -25,12 +25,6 @@ typedef struct FlatpakResult {
 typedef void (*FlatpakProgressCallback)(const char* line, void* context);
 typedef void (*FlatpakCompleteCallback)(const FlatpakResult* result, void* context);
 
-/* Create/verify the app's fixed runtime dir /data/matonos/linux/tmp/<uid>. */
-int flatpak_manager_prepare_runtime(int uid);
-/* Signed-stub negotiation; the native side owns metadata and all paths. */
-void flatpak_manager_downloads_request(const char* ref, int uid, FlatpakResult* result);
-int flatpak_manager_downloads_answer(const char* ref, int uid, int pid,
-        const char* request, int allow);
 void flatpak_manager_init(void);
 void flatpak_manager_reconcile_runtime_refs(void);
 void flatpak_manager_set_callbacks(FlatpakProgressCallback progress,
@@ -40,13 +34,13 @@ int flatpak_manager_valid_app_id(const char* value);
 void flatpak_manager_call(const char* command, const char* ref,
         int delete_data, const char* operation_id, const char* app_commit,
         const char* runtime_ref, const char* runtime_commit, const char* remote,
-        int app_uid, int runtime_uid, FlatpakResult* result);
+        int app_uid, FlatpakResult* result);
 
 /* Stage a signed app from its configured remote, as the installing UID (the
- * stub), into /data/misc_de/<u>/matonos-linux/install/<uid>/staging/<operation>, before
+ * stub), into /data/linux-app/staging/<uid>/<operation>, before
  * publishing it into that stub UID's Flatpak installation. */
 int flatpak_manager_prepare(const char* ref, const char* remote, int installer_uid,
-        int runtime_uid_hint, const char* operation_id,
+        const char* operation_id,
         char* app_commit, unsigned long app_commit_size,
         char* runtime_ref, unsigned long runtime_ref_size,
         char* runtime_commit, unsigned long runtime_commit_size,
@@ -54,7 +48,7 @@ int flatpak_manager_prepare(const char* ref, const char* remote, int installer_u
         char* desktop, unsigned long desktop_size,
         char* error, unsigned long error_size);
 int flatpak_manager_installed_for_uid(const char* ref, int uid);
-int flatpak_manager_delete_data(int uid);
+
 void flatpak_manager_result_clear(FlatpakResult* result);
 
 #ifdef __cplusplus

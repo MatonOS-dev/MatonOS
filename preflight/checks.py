@@ -219,10 +219,6 @@ APPROVED_PATCHES = {
     # missing `return` after UNABLE_TO_OPEN_INTERFACE); stops a crash loop with
     # no controller.
     "hardware/interfaces/0001-bluetooth-hci-return-when-opens-fail.patch",
-    # 2026-10-11: user-approved ("vold can stay as a patch"): vold_prepare_subdirs
-    # creates the per-user /data/misc_{de,ce}/<u>/matonos-linux roots, so they
-    # get the user's fscrypt keys and are removed with the user.
-    "system/vold/0001-prepare-matonos-linux-user-roots.patch",
     # 2026-10-11: user-approved ("keep it as patches for now"): bridge-only
     # caption suppression for client-decorated Linux windows, gated by
     # ro.matonos.client_decorations.

@@ -230,3 +230,14 @@ int runtime_refs_prune(RuntimeRefs* db, RuntimeRefsPrune prune, void* context) {
     free(ext); return 0;
 }
 void runtime_refs_close(RuntimeRefs* db) { if (db) { if (db->dir >= 0) close(db->dir); for (size_t i = 0; i < db->count; i++) free(db->entries[i].uids); free(db->entries); free(db->data); free(db); } }
+
+void runtime_refs_clear_owners(RuntimeRefs* db) {
+    if(db)for(size_t i=0;i<db->count;i++)db->entries[i].count=0;
+}
+int runtime_refs_merge(RuntimeRefs* db,const RuntimeRefs* source) {
+    if(!db||!source)return -1;
+    for(size_t i=0;i<source->count;i++)
+        for(size_t j=0;j<source->entries[i].count;j++)
+            if(runtime_refs_add(db,source->entries[i].ref,source->entries[i].uids[j]))return -1;
+    return 0;
+}

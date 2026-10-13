@@ -14,7 +14,6 @@ firmware_directories /mnt/vendor/addons/firmware/
 
 # GID 2900 is reserved for future raw-HID grants. Uinput is linuxd-owned.
 /dev/hidraw*              0660   root       vendor_game_controllers
-/dev/uinput               0660   root       vendor_linuxd_uinput
 
 /dev/rtc0                 0664   system     system
 

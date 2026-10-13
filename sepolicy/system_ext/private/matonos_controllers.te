@@ -1,9 +1,3 @@
-# Linuxd-owned per-session uinput pads. v3 app access to them (fd passing to
-# the stub, no bind mounts) is follow-up work; the v2 sandbox grants are gone.
-allow matonos_linuxd input_device:chr_file { getattr setattr };
-allow matonos_linuxd uhid_device:chr_file { getattr open read write ioctl };
-allowxperm matonos_linuxd uhid_device:chr_file ioctl { 0x5500-0x55ff };
-
 # Verify the bridge UID via the existing platform permission Binder service.
 binder_call(matonos_linuxd, system_server)
 allow matonos_linuxd permission_service:service_manager find;

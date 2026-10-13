@@ -241,7 +241,7 @@ EOF
 # the EGL provider supports direct clients and needs no *_dri.so modules.
 # SHA1 comes from the bionic libgcrypt the Flatpak stack already ships.
 # MIT-SHM off: the kernel has no SysV IPC and each app's SysV segments live in
-# its own supervisor (linux/sysvipc), which Xwayland cannot see. Without the
+# the v3 proxy's virtual view, which Xwayland cannot see. Without the
 # extension X11 clients always use plain image transfers.
 [[ -d $SRC/xwayland-24.1.13 ]] || tar -xf "$DOWN/xwayland-24.1.13.tar.xz" -C "$SRC"
 GLX_PATCH=$ROOT/xwayland-egl-glx.patch

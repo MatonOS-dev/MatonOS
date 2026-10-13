@@ -92,44 +92,6 @@ sizes; the installed and live fstabs use slotselect; tools/make-live.sh creates
 an A-only super and four signed UKIs. These changes are deliberately shared
 boot/build inputs, with the live fstab and cmdline preserving live boot.
 
-## Flatpak system service integration (2026-09-28)
-
-- `install/install.mk` packages `matonos-linuxd`; `install/linuxd/Android.bp`
-  builds the system_ext native service and installs its init rc. The
-  boot-completed trigger and `disabled` service declaration keep it off the
-  boot-critical path.
-- A small local system AIDL (`ILinuxd`) connects System Bridge directly to the
-  service; it does not register a vendor channel or VINTF instance. Its
-  matching AIDL sources live in the native service and the bridge, which need
-  separate Soong roots.
-- `systembridge/sepolicy/system_ext/{public,private}` declares the
-  system_ext `matonos_linuxd` coredomain, private service-manager label, and
-  dedicated `matonos_flatpak_data_file` type. Existing fixed file-context
-  rules label `/system_ext/bin/matonos-linuxd` and `/data/matonos/linux`.
-- `systembridge/SystemBridgeService.java` adds the `flatpak` target and the
-  root-only, live-debug `flatpak_test_call` hook; the target caller allowlist
-  authorizes only pinned built-in `org.matonos.settings`.
-- No AOSP source patch, D-Bus exposure, kernel change, or host-command
-  spawning is added. The service invokes only the fixed Flatpak CLI. The
-  system-side domain is required because SELinux rejected labeling a
-  system_ext executable and `/data` tree as vendor `matonos_driver` types.
-- Runtime integration remains open: upstream Flatpak defaults to its
-  system-helper, which uses the system bus for non-root system installs.
-  `matonos-linuxd` currently runs as `system`; confirm the spike build flags
-  and install behavior before enabling D-Bus. If the helper path is required,
-  record the minimal bus/helper design as a shared change first.
-
-## 2026-09-28 build follow-up
-
-- `install/linuxd/Android.bp`: wrapped the local AIDL declarations in a
-  filegroup rooted at `aidl`, fixing Soong's generated-output path mismatch.
-  The generated platform C++ backend uses `org::...` and `String16`; the
-  service source has been aligned to that generated interface. A later full
-  build passed the installer SELinux policy checks but stopped in
-  `matonos-linuxd` before producing an image. Preflight now passes after the
-  coordinator formatted glib's Android.bp. A current full image and target-only
-  verification are pending.
-
 ## User-file migration removal (2026-09-29)
 
 Per the user's repeated decision, the implementation no longer migrates user

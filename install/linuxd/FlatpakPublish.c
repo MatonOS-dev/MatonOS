@@ -83,9 +83,9 @@ static int remove_tree_at(int parent, const char* name) {
 /* Copy exactly one remote group from the runtime system installation. */
 static int seed_remote_from(const char* source, const char* staging, const char* remote);
 
-static int seed_remote(const char* staging, int runtime_uid, const char* remote) {
+static int seed_remote(const char* staging, const char* remote) {
     char source[PATH_MAX];
-    if (snprintf(source, sizeof(source), MATON_DE_ROOT_FORMAT "/runtime/%d/repo", maton_user_of((unsigned)(runtime_uid)), runtime_uid) >= (int)sizeof(source)) return -1;
+    if (snprintf(source, sizeof(source), MATON_RUNTIME_DIR "/repo") >= (int)sizeof(source)) return -1;
     return seed_remote_from(source, staging, remote);
 }
 
@@ -185,7 +185,7 @@ static int remove_staging_as(int uid, const char* operation) {
     if (child < 0) return -1;
     if (child == 0) {
         char path[192];
-        snprintf(path, sizeof(path), MATON_DE_ROOT_FORMAT "/install/%d/staging", maton_user_of((unsigned)(uid)), uid);
+        snprintf(path, sizeof(path), MATON_STAGING_ROOT "/%d", uid);
         if (setgroups(0, NULL) || setresgid(uid, uid, uid) || setresuid(uid, uid, uid)) _exit(1);
         size_t used = strlen(path);
         if (snprintf(path + used, sizeof(path) - used, "/%s", operation) >= (int)(sizeof(path) - used)) _exit(1);
@@ -207,17 +207,18 @@ static int remove_staging_as(int uid, const char* operation) {
     /* linuxd owns staging/: remove the emptied operation and anything it
      * created itself before handing over. */
     char staging_path[96];
-    snprintf(staging_path, sizeof(staging_path), MATON_DE_ROOT_FORMAT "/install/%d/staging", maton_user_of((unsigned)(uid)), uid);
+    snprintf(staging_path, sizeof(staging_path), MATON_STAGING_ROOT "/%d", uid);
     int staging = open(staging_path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
     if (staging < 0) return errno == ENOENT ? 0 : -1;
     int rc = remove_tree_at(staging, operation) && errno != ENOENT ? -1 : 0;
     close(staging);
+    if(!rc && rmdir(staging_path) && errno!=ENOTEMPTY && errno!=ENOENT)rc=-1;
     return rc;
 }
 
 int flatpak_staging_dir(int uid, const char* operation, char* path, unsigned long size) {
     if (uid < 10000 || uid % 100000 < 10000 || uid % 100000 > 19999 || !valid_operation_id(operation)) return -1;
-    return snprintf(path, size, MATON_DE_ROOT_FORMAT "/install/%d/staging/%s", maton_user_of((unsigned)(uid)), uid, operation) < (int)size ? 0 : -1;
+    return snprintf(path, size, MATON_STAGING_ROOT "/%d/%s", uid, operation) < (int)size ? 0 : -1;
 }
 
 int flatpak_remove_staging(int uid, const char* operation) {
@@ -226,12 +227,12 @@ int flatpak_remove_staging(int uid, const char* operation) {
 
 int flatpak_cleanup_stale_staging(void) {
     MatonPathScan scan;unsigned uid;int rc=0;
-    if(maton_scan_open(&scan,"install"))return -1;
+    if(maton_scan_open(&scan,"staging"))return -1;
     while(maton_scan_next(&scan,&uid)>0) {
-        char path[160];maton_install_dir(path,sizeof(path),uid);
+        char path[160];maton_staging_owner(path,sizeof(path),uid);
         int app=open(path,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
         if(app<0)continue;
-        int staging=openat(app,"staging",O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);close(app);
+        int staging=dup(app);close(app);
         if(staging<0)continue;
         DIR* ops=fdopendir(staging);
         if(!ops){close(staging);rc=-1;break;}
@@ -247,19 +248,19 @@ int flatpak_cleanup_stale_staging(void) {
 
 static int create_staging(int uid, const char* operation, char* path, size_t size) {
     if (uid < 10000 || uid % 100000 < 10000 || uid % 100000 > 19999 || !valid_operation_id(operation)) return -1;
-    if(maton_prepare_de((unsigned)uid))return -1;
+    if(maton_store_prepare())return -1;
     char install_root[160];
-    snprintf(install_root,sizeof(install_root),MATON_DE_ROOT_FORMAT "/install",maton_user_of((unsigned)uid));
+    snprintf(install_root,sizeof(install_root),"%s",MATON_STAGING_ROOT);
     int data = open(install_root, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
     if (data < 0) return -1;
     char owner[32]; snprintf(owner, sizeof(owner), "%d", uid);
-    int app = maton_storage_child(data,owner,"u:object_r:matonos_flatpak_deployment_file:s0",0711);
+    int app = maton_storage_child(data,owner,"u:object_r:matonos_flatpak_store_file:s0",0711);
     close(data); if (app < 0) return -1;
     /* The stub UID must traverse it (mkdirat's mode is masked by umask). */
     if (fchmod(app, 0711)) { close(app); return -1; }
     /* apps/<uid> and staging/ stay linuxd's (system); each operation is
      * built by linuxd and handed to the stub UID by hand_over_staging(). */
-    int staging = maton_storage_child(app,"staging","u:object_r:matonos_flatpak_store_file:s0",0711);
+    int staging = dup(app);
     close(app); if (staging < 0) return -1;
     struct stat st;
     if (fstat(staging, &st) || st.st_uid != AID_SYSTEM || fchmod(staging, 0711) ||
@@ -267,7 +268,7 @@ static int create_staging(int uid, const char* operation, char* path, size_t siz
         maton_storage_context(NULL);close(staging); return -1;
     }
     maton_storage_context(NULL);close(staging);
-    return snprintf(path, size, MATON_DE_ROOT_FORMAT "/install/%d/staging/%s", maton_user_of((unsigned)(uid)), uid, operation) < (int)size ? 0 : -1;
+    return snprintf(path, size, MATON_STAGING_ROOT "/%d/%s", uid, operation) < (int)size ? 0 : -1;
 }
 
 static const char* tool_path(const char* applet) {
@@ -712,12 +713,9 @@ int flatpak_publish_tracked(const char* app_ref, const char* app_commit,
         return -1;
     }
 #ifndef MATONOS_PUBLISH_HOST_TEST
-    unsigned app_uid=0,runtime_uid=0;
-    if(!maton_parse_install_path(user_dir,&app_uid) ||
-       !maton_parse_path(system_dir,"de","runtime",&runtime_uid) ||
-       maton_user_of(app_uid)!=maton_user_of(runtime_uid) ||
-       maton_prepare_install(runtime_uid,1) || maton_prepare_install(app_uid,0)) {
-        fail(error,error_size,"per-user installation roots unavailable or inconsistent");return -1;
+    unsigned app_id=0;
+    if(!maton_parse_install_path(user_dir,&app_id) || strcmp(system_dir,MATON_RUNTIME_DIR) || maton_store_prepare()) {
+        fail(error,error_size,"system-wide installation roots unavailable or inconsistent");return -1;
     }
 #endif
     if (snprintf(staging_repo, sizeof(staging_repo), "%s/repo", staging_dir) >= (int)sizeof(staging_repo)) {
@@ -883,7 +881,7 @@ static int app_id_from_ref(const char* ref, char* out, size_t size) {
 }
 
 int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
-        int runtime_uid, const char* operation_id,
+        const char* operation_id,
         char* app_commit, unsigned long app_commit_size,
         char* runtime_ref_out, unsigned long runtime_ref_size,
         char* runtime_commit, unsigned long runtime_commit_size,
@@ -896,7 +894,6 @@ int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
     if (!app_ref || !remote || !operation_id || !app_commit || !runtime_ref_out ||
             !runtime_commit || !metadata || !desktop || !*remote ||
             strncmp(app_ref, "app/", 4) || !valid_remote(remote) ||
-            runtime_uid < 10000 || runtime_uid % 100000 < 10000 || runtime_uid % 100000 > 19999 ||
             !valid_operation_id(operation_id)) {
         fail(error, error_size, "invalid prepare request"); return -1;
     }
@@ -915,7 +912,7 @@ int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
             fail(error, error_size, "cannot create staging repository"); goto bad;
         }
     }
-    if (seed_remote(staging_dir, runtime_uid, remote)) {
+    if (seed_remote(staging_dir, remote)) {
         fail(error, error_size, "runtime remote configuration or trusted keyring is missing"); goto bad;
     }
     if (!remote_verification_enabled(staging_repo, remote)) {

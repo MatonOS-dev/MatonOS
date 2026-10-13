@@ -1,116 +1,100 @@
-# Linux app storage layout (2026-10-07)
+# System-wide Linux app storage (round 10, 2026-10-13)
 
-Android user `<u> = uid / 100000` owns two encrypted roots, created by
-`vold_prepare_subdirs` as 0711 system:system. linuxd never creates these roots.
-
-```
-/data/misc_de/<u>/matonos-linux/
-  install/<uid>/           # per-app FLATPAK_USER_DIR, system-owned
-    repo/objects/          # verified code label
-    staging/<operation>/   # transient; handed to the installing stub UID
-    app/ exports/ overrides/ tmp/
-  runtime/<runtime_uid>/   # per-user shared FLATPAK_SYSTEM_DIR, system-owned
-  runtime/refs-<u>.json    # reference DB, opened only during each operation
-  runtime-installation    # system-owned runtime UID marker (0600)
-  store/apps/ store/runtime/ # reserved code-store locations
-/data/misc_ce/<u>/matonos-linux/
-  home/<uid>/              # HOME, uid:uid 0700, per-UID MLS label
-  home/<uid>.owner         # system-owned recycled-UID protection
-/data/matonos/linux/
-  tmp/<uid>/               # UID-owned app runtime sockets (media_rw_data_file)
-  run/                     # CLI namespace configuration and relay state
-  cache/ flatpak-data/     # linuxd CLI scratch/configuration
-  machine-id udev/         # device-wide
-  store/stub-signer.der    # device-wide signing certificate
-```
-
-Every installation and home parser checks the numeric user against the UID
-and rejects noncanonical paths, suffixes and the previous global roots.
-Install/runtime data uses DE keys; homes use CE keys. Launch fails with an
-unlock message when the CE root cannot be opened. No migration is provided;
-missing installations and reference databases are empty state.
-
-vold destroys the entire DE and CE trees on user removal. linuxd holds no
-refs cache; operations release their database on completion. Pending consent
-handles are dropped when the numeric DE user directory is removed. Android
-terminates that user's stubs; stub process death terminates their loader through its parent-death signal.
-
-Directory creation uses thread-local fscreate for install/runtime deployment
-roots, staging and per-UID homes. DE parents and CE home parents are created
-lazily inside the vold roots; neither is created by init. Existing state is
-not moved as a migration. Stock vold recursively restores misc_ce labels at
-user storage preparation (FsCrypt.cpp:1060); this resets dynamic MLS to s0.
-On launch linuxd repairs only its own data type back to the verified UID
-level, walking pinned inodes as that UID, without following symlinks or
-crossing filesystems. It labels the root last so interruptions retry.
-Unknown labels, foreign-owned descendants and unreadable directories fail
-closed. This maintenance path requires enforcing/device validation.
-
-## Standard graphics runtime
-
-Every runtime declaring `[Extension org.freedesktop.Platform.GL]` also gets
-`org.freedesktop.Platform.GL.default` (Mesa) in the shared runtime install.
-The architecture comes from the runtime ref; the GL branch comes from its
-authenticated metadata (`versions` first, legacy `version` otherwise).
-For example, KDE `5.15-25.08` uses GL `25.08`, not `5.15-25.08`.
-
-Prepare downloads it as the installing stub UID. Publish verifies the staged
-extension with the remote keyring, seals its objects, and deploys it offline
-before the runtime and app. Missing, unverified or undeployable Mesa makes
-the install fail. Runtimes without a GL declaration do not acquire one.
-
-Focused checks (outputs outside source):
+Init creates `/data/linux-app` as system:system 0755 with
+`encryption=Require` in post-fs-data. It is a sibling of PackageManager's
+app-code directory, using the system DE policy. Failure never blocks boot;
+linuxd operations fail if the prepared root is unavailable.
 
 ```
-cc -Wall -Wextra -Werror install/linuxd/tests/gl-runtime-test.c -o "$AOSP_ROOT/out/gl-runtime-test"
-"$AOSP_ROOT/out/gl-runtime-test"
-python3 install/linuxd/tests/gl-publish-test.py "$AOSP_ROOT/out/gl-publish-tests"
+/data/linux-app/
+  install/<appid> -> <appid>-<random>  # atomic current pointer
+  install/<appid>-<random>/          # immutable Flatpak app installation
+    .lease                          # stub's shared POSIX process-lifetime lock
+    refs-0.json                     # this version's shared runtime references
+    repo/objects/                   # verified code type
+    app/ exports/ overrides/ ...
+  runtime/                          # shared Flatpak runtime/extension installation
+    refs-0.json                     # global app-id reference-count database
+    repo/objects/                   # verified code type
+  staging/<uid>/<operation>/         # temporary signed pull, as installing stub UID
+  store/                            # reserved installer storage
 ```
 
-The publication test uses a fake CLI to check command ordering and error
-propagation; real signature and graphics verification still require a built
-image. The current VM's Mesa install and Firefox GPU mappings were checked.
+`appid = uid % 100000`; an app installed for multiple users shares one code
+installation. Temporary downloads retain the full UID for network attribution
+and ownership. Empty staging-owner directories are removed after publication.
+There is no permanent linuxd-managed user data. HOME is `<stub dataDir>/home`,
+with cache in the stub's ordinary cache directory. PackageManager owns data
+creation, encryption, labels, quotas and deletion. No migration is provided.
 
-## Why this shape (verified in the Flatpak source)
+## Publish and lifetime
 
-- `overrides/` is `<FLATPAK_USER_DIR>/overrides` (`flatpak-dir.c:2809`), **read-only at
-  run**, written only by `flatpak override` — so it stays system-owned.
-- At run, Flatpak writes only under **HOME** (`flatpak_get_data_dir` =
-  `$HOME/.var/app/<id>`; `flatpak_ensure_data_dir` makes `data/`,`cache/`,`config/`,
-  `cache/tmp`) and under `$XDG_RUNTIME_DIR/.flatpak/<id>/tmp` for shared tmp. The
-  sandbox `/tmp` is bwrap `--dir /tmp` (ephemeral, private).
-- `flatpak-run.c` never references the install root, so the install/runtime trees are
-  read-only at run. `repo/tmp` is OSTree staging, used at install/update only.
-- So **no directory inside `install/`/`runtime/` needs to be app-writable**; all
-  app-writable state is `home/<uid>`.
+The store creates the device-signed stub first. Its verified UID/ref drives the
+existing stage → install → stub-completion flow. linuxd imports pinned signed
+commits offline, seals objects and deploys into a fresh random app-id directory;
+it atomically renames a relative current-pointer symlink only after success.
+Failure leaves the previous pointer intact. Flatpak's internal `--user` selector
+is retained for the separate app root while `--system` selects shared runtimes;
+both installations are system-wide and system-owned, with no app write access.
+This preserves stock Flatpak's two-root lookup without a store-API redesign.
 
-## Known gaps / follow-ups
+V3Launcher resolves current to a physical version, acquires a read-only shared
+FileLock on `.lease`, rechecks current and keeps the channel for the entire stub
+process lifetime. linuxd collects retired versions only with an exclusive POSIX
+lock. Closing the last window, force-stop or crash releases the lease on process
+exit. A pointer swap cannot redirect a running stub to a new deployment.
 
-- **Enforcing validation pending.** Directory creation now uses fscreate;
-  the new vold root labels and traversal/removal rules are text-reviewed only.
-  Run the policy target and fresh-user device checks with the coordinator.
-- **Per-app runtime dir (decided 2026-10-07).** The Wayland socket and session
-  bus live in `/data/matonos/linux/tmp/<uid>/`. linuxd pre-creates the root
-  as UID:UID 0700 with `media_rw_data_file` and the verified UID's stock
-  `levelFrom=all` categories (2026-10-11). The stock untrusted app stub creates
-  its children, with fixed names `wayland-0` and `bus`; the compositor changes
-  the root to 0711 for the UID-1000 supervisor's control-socket traversal.
-  This is a shared coarse internal-storage label: DAC confines contents, and
-  socket MLS constrains connections. No custom runtime type or app MLS trust.
-  Old/wrong root labels fail closed; no relabel migration is provided.
-  See `docs/LINUX-STUB-SELINUX.md`. The
-  sandbox identity-binds that dir and uses it as `XDG_RUNTIME_DIR`. This replaces
-  the earlier shared `run/` relay namespace (the relay and `run/wayland-*` /
-  `run/session-bus-*` are gone), because socket creation moved from `linuxd` into
-  the app's in-process runtime. `run/` is now only for `flatpak-config-*`.
-  See `docs/HANDOVER-2026-10-07-per-app-runtime-sockets.md`.
-- **Prebuilt helpers.** `linux/flatpak/prebuilt/static/x86_64/{matonos-bwrap,
-  flatpak-env-wrapper,matonos-flatpak-store}` embed the old paths; rebuild them from
-  source (MatonOS_apexs `flatpak/build-helpers.sh`) and refresh
-  `prebuilt/static/SOURCE`.
-- **Cross-app isolation (security, user-requested 2026-10-07).** One app UID must not be
-  able to read another app's install (`install/<other>`) or home (`home/<other>`). The
-  per-UID MLS categories (`linux_data:<mls>`) are the intended mechanism, but this is
-  not yet enforced/verified (permissive SELinux does not enforce it). Verify with AVCs
-  and add `neverallow`/constraints so a compromised app in `matonos_linux_app` cannot
-  read `install/[0-9]+` or `home/[0-9]+` of a different UID.
+RuntimeRefs retains a manifest in each version plus a global reference database.
+Publication protects runtime and extension refs before deployment. Reconciliation
+merges all remaining version manifests before pruning; an old leased version
+keeps its runtime refs. Missing databases are empty; corrupt inventories fail
+closed. There are no new size/count caps. Stock Flatpak still owns runtime
+commit deployment lifetime within its shared installation.
+
+The bridge watches package removal for all users and periodically reconciles.
+linuxd asks the authenticated bridge's live PackageManager provider whether any
+user still occupies the app ID, conservatively preserving reused/shared IDs and
+unknown state. It removes current only after all users remove the stub and its
+lease is free. Inventories remain filtered to stubs installed for the requested
+user; they do not create stubs in other users automatically.
+
+## Policy
+
+Existing deployment and verified-code types mirror apk_data_file ownership:
+linuxd writes; untrusted_app_all gets directory/file read, map, execute and lease
+lock, with explicit neverallows for writes and execute_no_trans. Staging/store
+retain the installer data type. Generic linux-app contexts precede more specific
+staging and repo-object contexts, avoiding equal-stem last-match overrides.
+No home MLS repair, per-user roots, home type, vold storage grants or vold patch
+remain. Bridge user enumeration uses its declared MANAGE_USERS permission.
+
+Daemon scratch/config, device metadata and temporary per-UID sockets remain
+under `/data/linux-app/manager`; those are not app runtimes, homes or installs.
+
+## Verification and fresh-image checks
+
+Host checks: full compositor/bridge Java, NDK API36 linuxd C/C++ objects,
+helper builds, native build script, compat-proxy suite, signed-publication fake
+CLI tests, RuntimeRefs tests, canonical paths, production cross-user queries,
+and atomic-pointer/collector/lease/runtime-reference tests. Host tests do not
+prove encryption, enforcing policy, real GPG pulls or graphics.
+
+Coordinator must reverse any already-applied retired vold patch in its AOSP
+checkout, rebuild all participants and the APEX helpers, and test a fresh image:
+
+1. Check normal boot with no Flatpak installs, encryption policy and root labels.
+2. Install and launch a small app; verify physical version paths, stub HOME/cache,
+   runtime sharing, DNS, Wayland/X11, portals and an actual rendered window.
+3. Install the same stub for a secondary user; verify one app-id deployment and
+   distinct PM data. User-scoped inventories must contain only that user's stubs.
+4. Update while the old stub runs: pointer changes, old version/runtime refs stay;
+   close/relaunch, wait for reconciliation, and verify old-version collection.
+5. Remove one user's stub, then remove a user: other users retain code. Remove
+   the final stub: code and unused runtime refs disappear after leases release;
+   PackageManager removes private data. Repeat after crash and force-stop.
+6. Collect AVCs; another app may read shared code but cannot write it. Run the
+   normal policy target and built-image label checker. Never grant deployment
+   writes or execute_no_trans to fix a launch failure.
+
+Run the same flow on Ryzen 5800X/RX 6600/Intel 7265, Surface Pro 3 and HP ProDesk
+600 G1 after QEMU integration. No kernel changes or image/adb tests in this round.

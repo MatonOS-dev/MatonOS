@@ -7,23 +7,14 @@ listed currently fails. Source: `out/pc-logs/agents/codex-sanity-result.md`
 (H1, M1), all owned policy under `sepolicy/` and `systembridge/sepolicy/`,
 `NOTES.md`, and the installer/handover diagnostics.
 
-## Known current blocker
+## Linux v3 validation
 
-- **Linux deployment execution / executable library mapping (M1):**
-  `systembridge/sepolicy/system_ext/private/matonos_system_bridge.te`
-  grants `matonos_linuxd` only `create_file_perms` on
-  `matonos_flatpak_data_file`. That macro does not grant `execute` or
-  `execute_no_trans`. Unlike the review's description, the checked-out AOSP
-  `system/sepolicy/public/global_macros` does include `map` through
-  `rw_file_perms`; executable mappings still require `execute`. `systembridge/sepolicy/system_ext/private/file_contexts`
-  labels the entire `/data/matonos/linux` tree with this data type. Flatpak
-  deployed ELF binaries and shared libraries therefore lack executable-file access
-  through the current policy. This breaks Linux app launches, not necessarily
-  Android boot completion. Follow-up must separate immutable executable and
-  library deployments from writable application data, rather than broadly
-  granting writable-data execution. Test a newly installed app, ELF execution,
-  dynamic library loading, CLI and graphical launches, Wayland and Xwayland,
-  and a second launch after restarting linuxd.
+The v2 launch-policy diagnosis is retired with that implementation. Use
+[the current Linux policy](../docs/LINUX-STUB-SELINUX.md) and
+[storage tests](../install/linuxd/STORAGE-LAYOUT.md) for v3. Apps load immutable
+code inside their own stub process; linuxd never launches payloads or delegates
+runtime sockets/FDs. Policy compilation and a fresh enforcing boot remain
+required; no broader execution permission is a fallback.
 
 ## M1 blocker already changed on this branch, still to validate
 
@@ -63,19 +54,9 @@ listed currently fails. Source: `out/pc-logs/agents/codex-sanity-result.md`
   comment alone is not proof of a remaining missing allow. Validate PCI and
   DRM directory/link/metadata labels, hardware GPU selection and the vgem
   fallback, module loading, and graphics/Vulkan properties under enforcing.
-- **memfd labeling:** `NOTES.md` explicitly says to revisit memfd SELinux
-  labeling before enforcing. Mainline has no ashmem and this system forces
-  `sys.use_memfd=true`. Confirm the compiled policy's memfd-class behavior
-  and actual descriptor labels/access across Android app/system domains and
-  linuxd/compositor. Existing compositor relay rules name
-  `matonos_linuxd_tmpfs:file`; verify they cover the descriptors actually
-  used, including read/write/map and FD transfer. Test older SDK apps,
-  Wayland shared-memory rendering, AHB/dma-buf rendering and Xwayland.
-- **linuxd GPU access:** `HANDOVER-2026-10-03.md` previously says GPU access
-  works only permissively. Current bridge policy already grants linuxd
-  `graphics_device:dir` reads and `gpu_device:chr_file rw_file_perms`. Keep
-  accelerated Linux rendering in the regression matrix; do not list that
-  older missing grant as still absent.
+- **memfd and graphics:** validate v3's app-owned descriptors and rendering
+  under the stock app domain. linuxd has no GPU-device grants or compositor
+  relay. Cover Wayland and Xwayland without cross-domain runtime FD access.
 
 ## Policy scan and complete boot matrix
 
@@ -95,8 +76,8 @@ and AVCs with image/source identities and timestamps. Confirm the installer
 service starts only on live media, completes a disposable installation, and
 BootControl blesses a booted installed slot. No permissive fallback is a pass.
 
-Cover bridge service discovery/calls, linuxd install/run/remove, compositor
-socket and FD delegation, controller access, inputd/uinput, sleepd suspend,
+Cover bridge service discovery/calls, linuxd install/update/remove, stub-owned
+compositor sockets, inputd/uinput, sleepd suspend,
 PipeWire/audio selection (HDA/no card/selector failure), Wi-Fi/Bluetooth with
 present/missing/hotplugged hardware, and signed add-on mount/module/firmware
 paths. These are validation coverage, not additional confirmed missing rules.

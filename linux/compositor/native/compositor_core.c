@@ -1094,9 +1094,8 @@ bool maton_core_start(const char* socket_name,const char* runtime_dir){
   bool expected=false;if(!atomic_compare_exchange_strong(&server.started,&expected,true)){pthread_mutex_lock(&server.mutex);bool ok=server.ok;pthread_mutex_unlock(&server.mutex);return ok;}
   if(!socket_name||!runtime_dir||strlen(socket_name)>=sizeof(server.socket_name)||strlen(runtime_dir)>=sizeof(server.runtime_dir))goto fail;
   strcpy(server.socket_name,socket_name);strcpy(server.runtime_dir,runtime_dir);
-  if(mkdir(runtime_dir,0700)&&errno!=EEXIST)goto fail;/* 0711: the uid-1000 Flatpak supervisor must reach bus-control (which
-   * checks peer creds itself); Wayland sockets stay 0600 + peer-UID check. */
-  if(chmod(runtime_dir,0711)||setenv("XDG_RUNTIME_DIR",runtime_dir,1))goto fail;
+  if(mkdir(runtime_dir,0700)&&errno!=EEXIST)goto fail;
+  if(chmod(runtime_dir,0700)||setenv("XDG_RUNTIME_DIR",runtime_dir,1))goto fail;
   char path[640];snprintf(path,sizeof(path),"%s/%s",runtime_dir,socket_name);unlink(path);
   pthread_mutex_lock(&server.mutex);server.ready=server.ok=0;pthread_mutex_unlock(&server.mutex);
   atomic_store(&server.stopping,false);

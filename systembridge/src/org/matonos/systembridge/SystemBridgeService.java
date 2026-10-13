@@ -61,7 +61,6 @@ import org.matonos.systembridge.ILinuxdListener;
 public final class SystemBridgeService extends Service {
     private static final String TAG = "MatonSystemBridge";
     private static final String PERMISSION = "org.matonos.permission.SYSTEM_BRIDGE";
-    private static final String RUNTIMES_PACKAGE = "org.matonos.linuxruntimes";
     private static final int MAX_EXPOSED_TASKS = 50;
     private static volatile SystemBridgeService activeService;
     private volatile Set<String> allowedCerts;
@@ -567,7 +566,7 @@ public final class SystemBridgeService extends Service {
                         args.remove("userId");
                     }
                     FlatpakStubManager owner = flatpakStubManager.forUser(user);
-                    if (args.has("uid") || args.has("runtimeUid") || args.has("installerUid"))
+                    if (args.has("uid") || args.has("installerUid"))
                         throw new SecurityException("Installation identities are resolved by the bridge");
                     ILinuxd service = linuxdFor();
                     if (service == null) throw new IllegalStateException("Flatpak service is unavailable");
@@ -583,6 +582,10 @@ public final class SystemBridgeService extends Service {
                         if (!args.has("ref") || !(args.get("ref") instanceof String))
                             throw new IllegalArgumentException("An application reference is required");
                         result = owner.installAsync(args.getString("ref"), args);
+                    } else if ("uninstall".equals(command)) {
+                        long identity=Binder.clearCallingIdentity();
+                        try {result=owner.uninstall(args.getString("ref"),args.optBoolean("deleteData",false));}
+                        finally{Binder.restoreCallingIdentity(identity);}
                     } else if ("kill".equals(command)) {
                         long identity = Binder.clearCallingIdentity();
                         try { result = stopOwnedFlatpak(owner, args.getString("ref")); }
@@ -600,13 +603,6 @@ public final class SystemBridgeService extends Service {
                             args.put("userId", user);
                         } else if (!("add_flathub".equals(command) || "list_remotes".equals(command))) {
                             throw new IllegalArgumentException("Unsupported Flatpak management command");
-                        }
-                        if ("add_flathub".equals(command) || "list_remotes".equals(command)) {
-                            long identity = Binder.clearCallingIdentity();
-                            int runtimeUid;
-                            try { runtimeUid = runtimesUid(user); }
-                            finally { Binder.restoreCallingIdentity(identity); }
-                            if (runtimeUid >= 10000) args.put("runtimeUid", runtimeUid);
                         }
                         result = service.call(command, args.toString());
                     }
@@ -1371,7 +1367,7 @@ public final class SystemBridgeService extends Service {
                         int user = requestedUser == null ? 0 : (Integer) requestedUser;
                         if ("install".equals(arg)) {
                             args.remove("userId");
-                            if (args.has("uid") || args.has("runtimeUid") || args.has("installerUid"))
+                            if (args.has("uid") || args.has("installerUid"))
                                 throw new SecurityException("Installation identities are resolved by the bridge");
                             String ref = args.getString("ref");
                             JSONObject accepted = new JSONObject(bridge.flatpakStubManager.forUser(user).installAsync(ref, args));
@@ -1390,9 +1386,10 @@ public final class SystemBridgeService extends Service {
                             args.put("userId", user);
                         } else if ("list_remotes".equals(arg) || "add_flathub".equals(arg)) {
                             args.remove("userId");
-                            args.put("runtimeUid", bridge.runtimesUid(user));
                         }
-                        result.putString("result", linuxd.call(arg, args.toString()));
+                        result.putString("result", "uninstall".equals(arg)
+                                ? bridge.flatpakStubManager.forUser(user).uninstall(args.getString("ref"),args.optBoolean("deleteData",false))
+                                : linuxd.call(arg, args.toString()));
                     } catch (Exception e) {
                         throw new IllegalStateException("Flatpak service call failed", e);
                     }
@@ -1550,16 +1547,6 @@ public final class SystemBridgeService extends Service {
     private ILinuxd linuxdFor() {
         IBinder service = ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default");
         return ILinuxd.Stub.asInterface(service);
-    }
-
-    /** UID of the preinstalled runtime app that owns the shared --system install. */
-    private int runtimesUid(int userId) {
-        try {
-            return getPackageManager().getApplicationInfoAsUser(RUNTIMES_PACKAGE, 0, userId).uid;
-        } catch (Exception error) {
-            Log.w(TAG, "Runtime app UID unavailable for user " + userId);
-            return -1;
-        }
     }
 
     private boolean channelAvailable(String target) {

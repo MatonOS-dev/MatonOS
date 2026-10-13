@@ -24,6 +24,7 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <!-- input: pointer settings are written for the current user (USER_CURRENT). -->
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" />
+    <uses-permission android:name="android.permission.MANAGE_USERS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- sleep: read PowerManager's held wake locks from its privileged dump. -->
     <uses-permission android:name="android.permission.DUMP" />

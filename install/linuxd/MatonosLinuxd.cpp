@@ -318,8 +318,6 @@ std::string SelfOperation(bool update, const std::string& package, const std::st
         return Encode(out);
     }
     if (update && !installed) return Encode(Error("not installed"));
-    const int runtime_uid = stub_runtime_uid(uid);
-    if (runtime_uid < 10000 || runtime_uid == uid) return Encode(Error("Linux runtime app missing"));
     const std::string operation_id = !operation_in.empty() ? operation_in :
             std::string(update ? "update-" : "install-") + std::to_string(uid) + "-" + std::to_string(time(nullptr));
     auto operation = std::make_shared<SelfOperationState>();
@@ -345,14 +343,14 @@ std::string SelfOperation(bool update, const std::string& package, const std::st
     };
     PublishProgress(std::string(update ? "update" : "install") + " started");
     std::vector<char> app_commit(65), runtime_ref(512), runtime_commit(65), metadata(16384), desktop(131072);
-    if (flatpak_manager_prepare(ref.c_str(), remote.c_str(), uid, runtime_uid, operation_id.c_str(),
+    if (flatpak_manager_prepare(ref.c_str(), remote.c_str(), uid, operation_id.c_str(),
             app_commit.data(), app_commit.size(), runtime_ref.data(), runtime_ref.size(),
             runtime_commit.data(), runtime_commit.size(), metadata.data(), metadata.size(),
             desktop.data(), desktop.size(), error, sizeof(error)))
         return fail(error[0] ? error : "cannot prepare Flatpak install");
     FlatpakResult result{};
     flatpak_manager_call("install", ref.c_str(), 0, operation_id.c_str(), app_commit.data(),
-            runtime_ref.data(), runtime_commit.data(), remote.c_str(), uid, runtime_uid, &result);
+            runtime_ref.data(), runtime_commit.data(), remote.c_str(), uid, &result);
     const bool accepted = result.ok && result.accepted;
     const std::string message = result.error ? result.error : "Flatpak install was rejected";
     flatpak_manager_result_clear(&result);
@@ -390,38 +388,6 @@ class LinuxdService final : public BnLinuxd {
         g_identity = identity;
         return android::binder::Status::ok();
     }
-    android::binder::Status downloadsRequest(const android::String16& packageName,
-            android::String16* aidl_return) override {
-        const int uid = android::IPCThreadState::self()->getCallingUid();
-        char error[512] = {}, ref[1100], remote[130];
-        FlatpakResult result = {};
-        if (stub_verify_caller(uid, ToUtf8(packageName).c_str(), ref, sizeof(ref),
-                remote, sizeof(remote), error, sizeof(error))) {
-            *aidl_return = android::String16(Encode(Error("unverified stub")).c_str());
-        } else {
-            flatpak_manager_downloads_request(ref, uid, &result);
-            *aidl_return = android::String16(Encode(EncodeResult(result)).c_str());
-            flatpak_manager_result_clear(&result);
-        }
-        return android::binder::Status::ok();
-    }
-
-    android::binder::Status answerDownloads(const android::String16& packageName,
-            const android::String16& request, bool allow,
-            android::String16* aidl_return) override {
-        const int uid = android::IPCThreadState::self()->getCallingUid();
-        const int pid = android::IPCThreadState::self()->getCallingPid();
-        char error[512] = {}, ref[1100], remote[130];
-        Json::Value out;
-        if (stub_verify_caller(uid, ToUtf8(packageName).c_str(), ref, sizeof(ref),
-                remote, sizeof(remote), error, sizeof(error)) ||
-                flatpak_manager_downloads_answer(ref, uid, pid, ToUtf8(request).c_str(), allow))
-            out = Error("Downloads request changed or stub is unavailable");
-        else out["ok"] = true;
-        *aidl_return = android::String16(Encode(out).c_str());
-        return android::binder::Status::ok();
-    }
-
     android::binder::Status installSelf(const android::String16& packageName,
             const android::String16& operationId, android::String16* aidl_return) override {
         *aidl_return = android::String16(SelfOperation(false, ToUtf8(packageName), ToUtf8(operationId)).c_str());
@@ -431,24 +397,6 @@ class LinuxdService final : public BnLinuxd {
     android::binder::Status updateSelf(const android::String16& packageName,
             const android::String16& operationId, android::String16* aidl_return) override {
         *aidl_return = android::String16(SelfOperation(true, ToUtf8(packageName), ToUtf8(operationId)).c_str());
-        return android::binder::Status::ok();
-    }
-
-    android::binder::Status prepareRuntime(const android::String16& packageName,
-            android::String16* aidl_return) override {
-        const int uid = static_cast<int>(android::IPCThreadState::self()->getCallingUid());
-        char error[512] = {0}, ref_buffer[1100], remote_buffer[130];
-        if (stub_verify_caller(uid, ToUtf8(packageName).c_str(), ref_buffer, sizeof(ref_buffer),
-                remote_buffer, sizeof(remote_buffer), error, sizeof(error))) {
-            *aidl_return = android::String16(Encode(Error(error[0] ? error : "unverified stub")).c_str());
-            return android::binder::Status::ok();
-        }
-        if (flatpak_manager_prepare_runtime(uid)) {
-            *aidl_return = android::String16(Encode(Error("cannot prepare runtime directory")).c_str());
-            return android::binder::Status::ok();
-        }
-        Json::Value out; out["ok"] = true;
-        *aidl_return = android::String16(Encode(out).c_str());
         return android::binder::Status::ok();
     }
 
@@ -467,18 +415,10 @@ class LinuxdService final : public BnLinuxd {
             return android::binder::Status::ok();
         }
 
-        if (command == "delete_linux_data") {
-            if(!OnlyKeys(request,{"uid"}) || !request["uid"].isInt()) reply(Encode(Error("uid required")));
-            else if(flatpak_manager_delete_data(request["uid"].asInt())) reply(Encode(Error("Linux data deletion failed")));
-            else { Json::Value ok;ok["ok"]=true;reply(Encode(ok)); }
+        if(command == "reconcile_deployments") {
+            if(!OnlyKeys(request,{}))reply(Encode(Error("unexpected arguments")));
+            else { flatpak_manager_reconcile_runtime_refs();Json::Value out;out["ok"]=true;reply(Encode(out)); }
             return android::binder::Status::ok();
-        }
-        if(command == "linux_data_uids") {
-            Json::Value out;out["ok"]=true;out["uids"]=Json::Value(Json::arrayValue);
-            MatonPathScan dir;unsigned uid;
-            if(maton_scan_open(&dir,"install")) {reply(Encode(Error("Linux data inventory unavailable")));return android::binder::Status::ok();}
-            while(maton_scan_next(&dir,&uid)>0) out["uids"].append(static_cast<int>(uid));
-            maton_scan_close(&dir);reply(Encode(out));return android::binder::Status::ok();
         }
         if (command == "set_stub_signer") {
             /* The bridge's per-device stub certificate, checked on "install me". */
@@ -496,8 +436,8 @@ class LinuxdService final : public BnLinuxd {
         if (command == "stage") {
             /* Stage only after the stub exists: the pull runs as the stub UID
              * (installerUid), so its network use and DNS are the stub's. */
-            if (!OnlyKeys(request, {"ref", "remote", "installerUid", "runtimeUid", "operationId"}) || !request["ref"].isString() ||
-                    !request["installerUid"].isInt() || !request["runtimeUid"].isInt() || !request["operationId"].isString() ||
+            if (!OnlyKeys(request, {"ref", "remote", "installerUid", "operationId"}) || !request["ref"].isString() ||
+                    !request["installerUid"].isInt() || !request["operationId"].isString() ||
                     HasEmbeddedNul(request["ref"].asString()) ||
                     (request.isMember("remote") && (!request["remote"].isString() ||
                             HasEmbeddedNul(request["remote"].asString())))) {
@@ -508,7 +448,7 @@ class LinuxdService final : public BnLinuxd {
             const std::string remote = request.isMember("remote") ? request["remote"].asString() : std::string("flathub");
             std::vector<char> app_commit(65), runtime_ref(512), runtime_commit(65), metadata(16384), desktop(131072), error(512);
             if (flatpak_manager_prepare(ref.c_str(), remote.c_str(), request["installerUid"].asInt(),
-                    request["runtimeUid"].asInt(), request["operationId"].asCString(),
+                    request["operationId"].asCString(),
                     app_commit.data(), app_commit.size(), runtime_ref.data(), runtime_ref.size(),
                     runtime_commit.data(), runtime_commit.size(), metadata.data(), metadata.size(),
                     desktop.data(), desktop.size(), error.data(), error.size())) {
@@ -533,20 +473,20 @@ class LinuxdService final : public BnLinuxd {
         const char* runtime_ref = nullptr;
         const char* runtime_commit = nullptr;
         const char* remote = nullptr;
-        int app_uid = -1, runtime_uid = -1;
+        int app_uid = -1;
         std::string operation_id_storage;
         const char* operation_id = nullptr;
-        if (command == "install" || command == "uninstall" || command == "kill" || command == "installed_for_uid" || (command == "metadata" || command == "desktop_entry" || command == "icon" || command == "launch_status")) {
+        if (command == "install" || command == "uninstall" || command == "installed_for_uid" || (command == "metadata" || command == "desktop_entry" || command == "icon")) {
             const bool uninstall = command == "uninstall";
             const bool install = command == "install";
             const bool installed_for_uid = command == "installed_for_uid";
             if (!(uninstall ? OnlyKeys(request, {"ref", "uid", "deleteData", "operationId"}) :
-                    install ? OnlyKeys(request, {"ref", "operationId", "appCommit", "runtimeRef", "runtimeCommit", "remote", "uid", "runtimeUid"}) :
+                    install ? OnlyKeys(request, {"ref", "operationId", "appCommit", "runtimeRef", "runtimeCommit", "remote", "uid"}) :
                     installed_for_uid ? OnlyKeys(request, {"ref", "uid"}) :
                     OnlyKeys(request, {"ref", "uid", "operationId"})) || !request["ref"].isString() ||
                     (install && (!request["appCommit"].isString() || !request["runtimeRef"].isString() ||
                         !request["runtimeCommit"].isString() || !request["remote"].isString() ||
-                        !request["uid"].isInt() || !request["runtimeUid"].isInt())) ||
+                        !request["uid"].isInt())) ||
                     (!request["uid"].isInt() || request["uid"].asInt() < 10000) ||
                     (install && (HasEmbeddedNul(request["appCommit"].asString()) ||
                         HasEmbeddedNul(request["runtimeRef"].asString()) ||
@@ -566,10 +506,9 @@ class LinuxdService final : public BnLinuxd {
                 runtime_ref_storage = request["runtimeRef"].asString(); runtime_ref = runtime_ref_storage.c_str();
                 runtime_commit_storage = request["runtimeCommit"].asString(); runtime_commit = runtime_commit_storage.c_str();
                 remote_storage = request["remote"].asString(); remote = remote_storage.c_str();
-                app_uid = request["uid"].asInt(); runtime_uid = request["runtimeUid"].asInt();
-                if (app_uid < 10000 || runtime_uid < 10000 || app_uid == runtime_uid ||
-                        app_uid / 100000 != runtime_uid / 100000) {
-                    reply(Encode(Error("valid same-user app and runtime package UIDs are required")));
+                app_uid = request["uid"].asInt();
+                if (app_uid < 10000) {
+                    reply(Encode(Error("valid app UID required")));
                     return android::binder::Status::ok();
                 }
             }
@@ -583,15 +522,9 @@ class LinuxdService final : public BnLinuxd {
             }
             app_uid = request["userId"].asInt();
         } else if (command == "list_remotes" || command == "add_flathub") {
-            /* The bridge supplies the preinstalled runtime app's UID so remote
-             * setup targets that app's --system installation. */
-            if (!OnlyKeys(request, {"runtimeUid"}) ||
-                    (request.isMember("runtimeUid") && (!request["runtimeUid"].isInt() ||
-                            request["runtimeUid"].asInt() < 10000))) {
-                reply(Encode(Error("a valid runtimeUid is required")));
-                return android::binder::Status::ok();
+            if(!OnlyKeys(request,{})) {
+                reply(Encode(Error("unexpected arguments")));return android::binder::Status::ok();
             }
-            if (request.isMember("runtimeUid")) runtime_uid = request["runtimeUid"].asInt();
         } else if (!OnlyKeys(request, {})) {
             reply(Encode(Error("unexpected arguments")));
             return android::binder::Status::ok();
@@ -600,7 +533,7 @@ class LinuxdService final : public BnLinuxd {
         if (command == "install" || command == "uninstall") PublishProgress(command + " started");
         FlatpakResult result{};
         flatpak_manager_call(command.c_str(), ref, delete_data,
-                operation_id, app_commit, runtime_ref, runtime_commit, remote, app_uid, runtime_uid, &result);
+                operation_id, app_commit, runtime_ref, runtime_commit, remote, app_uid, &result);
         reply(Encode(EncodeResult(result)));
         flatpak_manager_result_clear(&result);
         return android::binder::Status::ok();

@@ -15,7 +15,6 @@ import org.json.JSONObject;
 
 /** Shared activity code runs in the generated app's own package and task. */
 public final class StubActivity extends Activity implements SurfaceHolder.Callback, org.matonos.compositor.PerAppRuntime.WindowHost {
-    private final DownloadsGrant downloadsGrant = new DownloadsGrant();
     private volatile boolean foreground;
     private static final String WINDOW = "org.matonos.linuxhost.WINDOW_ID";
     /** After the last window closes, the session lives this long for a new
@@ -346,11 +345,10 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
     }
     @Override protected void onSaveInstanceState(Bundle state){state.putInt(WINDOW,window);super.onSaveInstanceState(state);}
     @Override protected void onResume() { super.onResume(); foreground = true; }
-    @Override protected void onPause() { endGeometry(); foreground = false; downloadsGrant.backgrounded(); super.onPause(); }
+    @Override protected void onPause() { endGeometry(); foreground = false; super.onPause(); }
     @Override protected void onDestroy(){
         endGeometry();
         if (linuxWindow != null) linuxWindow.close();
-        downloadsGrant.close();
         destroyed=true;
         if(window!=0)SHOWING.remove(window,this);
         if(runtime!=null)runtime.clearWindowHost(this);

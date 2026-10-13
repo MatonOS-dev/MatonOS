@@ -50,11 +50,21 @@ final class FlatpakStubManager {
         return new JSONObject().put("ref", ref).put("uid", verifiedUid(ref));
     }
 
+    String uninstall(String ref,boolean deleteData) throws Exception {
+        verifiedUid(ref); // Certificate and declared-ref checks precede PM removal.
+        String pkg=packageFor(ref);
+        context.getPackageManager().getPackageInstaller().uninstall(
+                new android.content.pm.VersionedPackage(pkg,android.content.pm.PackageManager.VERSION_CODE_HIGHEST),
+                deleteData?0:PackageManager.DELETE_KEEP_DATA,resultSender);
+        return new JSONObject().put("ok",true).put("accepted",true).toString();
+    }
+
     private String listArgs() throws Exception {
         return new JSONObject().put("userId", context.getUserId()).toString();
     }
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
     private ILinuxd subscribedDaemon;
+    private boolean removalReceiverRegistered;
     private final ILinuxdListener listener = new ILinuxdListener.Stub() {
         @Override public void onEvent(String topic, String json) {
             try {
@@ -119,14 +129,20 @@ final class FlatpakStubManager {
                 FlatpakStubManager owner = forUser(android.os.UserHandle.getUserId(uid));
                 PackageManager pm = owner.context.getPackageManager();
                 int value = -1;
-                if ("runtime".equals(command)) {
-                    value = pm.getApplicationInfo("org.matonos.linuxruntimes", 0).uid;
-                    if (android.os.UserHandle.getUserId(value) != android.os.UserHandle.getUserId(uid)) value = -1;
-                } else {
-                    if ("live".equals(command)) {
-                        // Preserve reused/shared UIDs; only PM-confirmed absence permits pruning.
-                        String[] packages = pm.getPackagesForUid(uid);
-                        value = packages == null || packages.length == 0 ? 0 : 1;
+                {
+                    if ("user-live".equals(command)) {
+                        String pkg=BridgeCallerIdentity.solePackage(pm.getPackagesForUid(uid));
+                        value=pkg!=null && FlatpakStubIdentity.isGeneratedStub(pkg) && owner.ownsStub(uid,owner.declaredRef(pkg))?1:0;
+                    } else if ("live".equals(command)) {
+                        // System-wide app-id ownership: preserve the deployment if
+                        // any Android user still has a package at this app id.
+                        value=0;
+                        android.os.UserManager um=context.getSystemService(android.os.UserManager.class);
+                        for(android.os.UserHandle user:um.getUserHandles(true)) {
+                            PackageManager userPm=forUser(user.getIdentifier()).context.getPackageManager();
+                            String[] packages=userPm.getPackagesForUid(android.os.UserHandle.getUid(user.getIdentifier(),android.os.UserHandle.getAppId(uid)));
+                            if(packages!=null && packages.length>0){value=1;break;}
+                        }
                     } else if ("verify".equals(command)) {
                         String pkg = BridgeCallerIdentity.solePackage(pm.getPackagesForUid(uid));
                         if (pkg != null && FlatpakStubIdentity.isGeneratedStub(pkg) && pkg.equals(packageName)) {
@@ -149,21 +165,35 @@ final class FlatpakStubManager {
         }
     };
 
-    void start() { worker.scheduleWithFixedDelay(() -> {
-        reconcile();
-        try {
-            JSONObject inventory = new JSONObject(daemon().call("linux_data_uids", "{}"));
-            if (!inventory.optBoolean("ok")) return;
-            Set<Integer> activeUsers = new HashSet<>();
-            org.json.JSONArray uids = inventory.getJSONArray("uids");
-            for (int i = 0; i < uids.length(); i++) activeUsers.add(android.os.UserHandle.getUserId(uids.getInt(i)));
-            activeUsers.addAll(users.keySet());
-            for (int user : activeUsers) {
-                if (user != context.getUserId()) forUser(user).reconcile();
-            }
-        } catch (Exception error) { Log.w(TAG, "Cannot reconcile Android users", error); }
-    }, 5, 30, TimeUnit.SECONDS); }
-    void close() { worker.shutdownNow(); for (FlatpakStubManager user : users.values()) user.close(); }
+    void start() {
+        registerRemovalReceiver();
+        worker.scheduleWithFixedDelay(() -> {
+            reconcile();
+            try {
+                android.os.UserManager um=context.getSystemService(android.os.UserManager.class);
+                for(android.os.UserHandle user:um.getUserHandles(true))
+                    if(user.getIdentifier()!=context.getUserId())forUser(user.getIdentifier()).reconcile();
+                daemon().call("reconcile_deployments","{}");
+            } catch(Exception error){Log.w(TAG,"Cannot reconcile system-wide deployments",error);}
+        },5,30,TimeUnit.SECONDS);
+    }
+    private final android.content.BroadcastReceiver removed=new android.content.BroadcastReceiver() {
+        @Override public void onReceive(Context ignored,Intent intent) {
+            if(intent.getBooleanExtra(Intent.EXTRA_REPLACING,false))return;
+            if(!intent.getBooleanExtra(Intent.EXTRA_REMOVED_FOR_ALL_USERS,false))return;
+            worker.execute(() -> {
+                try{daemon().call("reconcile_deployments","{}");}
+                catch(Exception error){Log.w(TAG,"Deployment removal deferred",error);}
+            });
+        }
+    };
+    private void registerRemovalReceiver() {
+        android.content.IntentFilter filter=new android.content.IntentFilter(Intent.ACTION_PACKAGE_REMOVED);
+        filter.addDataScheme("package");
+        context.registerReceiverAsUser(removed,android.os.UserHandle.ALL,filter,null,null);
+        removalReceiverRegistered=true;
+    }
+    void close() { if(removalReceiverRegistered)context.unregisterReceiver(removed);worker.shutdownNow(); for (FlatpakStubManager user : users.values()) user.close(); }
     void refresh() { worker.execute(this::reconcile); }
 
     String launch(String appId) throws Exception {
@@ -372,21 +402,6 @@ final class FlatpakStubManager {
         } catch (Exception error) { return false; }
     }
 
-    private void sweepLinuxData(ILinuxd daemon) throws Exception {
-        JSONObject inventory=new JSONObject(daemon.call("linux_data_uids","{}"));
-        if(!inventory.optBoolean("ok"))return;
-        org.json.JSONArray uids=inventory.getJSONArray("uids");
-        for(int i=0;i<uids.length();i++) {
-            int uid=uids.getInt(i);
-            // PM remains authoritative, including after user/package removal.
-            // Preserve any reused UID: uncertainty must never destroy user data.
-            String[] packages=context.getPackageManager().getPackagesForUid(uid);
-            if(packages!=null && packages.length>0)continue;
-            JSONObject reply=new JSONObject(daemon.call("delete_linux_data",new JSONObject().put("uid",uid).toString()));
-            if(!reply.optBoolean("ok"))Log.w(TAG,"Linux data cleanup failed for uid "+uid);
-        }
-    }
-
     private void reconcile() {
         try {
             ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
@@ -397,7 +412,6 @@ final class FlatpakStubManager {
                 subscribedDaemon = daemon;
                 publishStubSigner(daemon);
             }
-            if (context.getUserId() == 0) sweepLinuxData(daemon);
             JSONObject list = new JSONObject(daemon.call("list_installed", listArgs()));
             if (!list.optBoolean("ok") || list.optBoolean("outputTruncated")) return;
             Set<String> wanted = new HashSet<>();
@@ -407,6 +421,8 @@ final class FlatpakStubManager {
                 if (!ref.startsWith("app/")) ref = "app/" + ref;
                 if (!ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+")) continue;
                 String pkg = packageFor(ref);
+                try { context.getPackageManager().getPackageInfo(pkg,0); }
+                catch(PackageManager.NameNotFoundException absent){continue;}
                 wanted.add(pkg);
                 if (pending.contains(pkg)) continue;
                 try {

@@ -1,76 +1,45 @@
 # Flatpak staging and verified publication
 
-Flatpak installation uses stock Flatpak deployments. The privileged helper
-`matonos-flatpak-store` has exactly two commands: `stage` and `selftest`.
+The current layout is [STORAGE-LAYOUT.md](STORAGE-LAYOUT.md). The existing
+stage → install → generated-stub flow remains; the store-API redesign is deferred.
 
-For `stage`, linuxd passes the fixed `/data/misc_de/<u>/matonos-linux/install/<uid>/staging/<operation>` path, a
-configured remote, and a validated install ref. The helper clears supplementary
-groups, switches to AID 2902, sets `MATON_FLATPAK_STAGING_DIR`, and execs the
-fixed APEX Flatpak wrapper with `install --system --no-deploy`. Flatpak checks
-the remote's configured commit and summary signatures while pulling into the
-shared staging repository. The helper cannot choose installation options or
-write outside that repository.
+1. The bridge installs the per-device signed identity stub first. PackageManager
+   assigns its UID. linuxd verifies the calling package/ref through the bridge's
+   live authenticated identity callback; apps choose no paths or install flags.
+2. `stage` prepares `/data/linux-app/staging/<uid>/<operation>`, hands its
+   transient repository to the installing stub UID, and invokes the fixed
+   `matonos-flatpak-store` helper. The helper clears supplementary groups and
+   switches all UID/GID slots to that stub UID for network attribution.
+   The wrapper validates the operation path/owner and selects that repository
+   for both Flatpak roots during the no-deploy pull.
+3. linuxd verifies pinned app/runtime commits, authenticated related refs and
+   remote GPG/summary flags. `ostree pull-local --untrusted --gpg-verify` checks
+   imported content before code objects are sealed with the verified-code type.
+4. Runtimes/extensions go to the shared `/data/linux-app/runtime` installation;
+   app code goes to a fresh `install/<appid>-<random>` version. Standard Mesa is
+   selected from authenticated runtime GL metadata. Missing/invalid required
+   dependencies fail the operation. RuntimeRefs durably protects selected refs
+   before deployment and records the exact shared refs in each version.
+5. Only successful publication atomically replaces `install/<appid>`. Previous
+   versions remain while a stub holds their read-only shared lease. Runtime
+   reconciliation merges retained versions before pruning unused shared refs.
 
-linuxd checks the staged refs against the requested commit pins and verifies
-that both GPG checks are enabled. It then uses signature-verifying
-`ostree pull-local` into the target repositories and runs
-`flatpak install --no-pull` to publish the deployments. The staging directory
-uses `matonos_flatpak_store_file`; that type grants the installer only staging
-repository access and grants linuxd read access for verification.
+Both roots are system-owned, system-wide installations. The current two-root
+Flatpak invocation keeps `--user` for the app root and `--system` for runtimes;
+these CLI selectors do not transfer ownership or create user-specific stores.
+No runtime APK/UID, adoption rename, ownership marker, linuxd-owned user HOME,
+per-user encrypted code trees or MLS home relabel is involved.
 
-`matonos_flatpak_installer` retains network access, setuid/setgid for AID 2902,
-the APEX Flatpak wrapper execution, shared staging repository writes, and the
-inherited descriptor needed to report the child result. It has no mount, loop,
-filesystem relabel, fs-verity, image creation, or `sys_admin` permissions.
-The stage helper does not create or mount filesystems.
+Uninstall is PackageManager stub removal for the selected user. Code is collected
+only when no user retains a package at that app ID and no stub leases the version.
+PackageManager removes private user data; linuxd never sweeps app homes.
 
-The host publish harness remains:
+The helper exposes only `stage` and `selftest`. Installer policy allows transient
+repository access, network use and the narrow UID switch; no mount/loop/image
+creation or app-data access. Build both helper and wrapper with
+`tools/build-flatpak-helpers.sh`; it fingerprints the shared path header.
 
-```sh
-bash install/linuxd/tests/flatpak-publish-host-test.sh
-```
-
-The harness checks good signed refs, bad pins and corrupted objects. Set
-`MATONOS_PUBLISH_RUN_LAUNCH_TEST=1` to include the launch-chain probe.
-
-## First install: the app UID is late-bound
-
-The stub APK is what receives the Android UID, so a first install has no app
-UID yet. Only the shared runtime `--system` installation is known up front (it
-is owned by the preinstalled `org.matonos.linuxruntimes`). The bridge passes
-the calling software store's UID as the **installer UID**. Two workable flows:
-
-### A. Install first, then rename to the stub UID
-1. `install` publishes the runtime to `/data/misc_de/<u>/matonos-linux/runtime/<runtime_uid>`
-   and the app to `/data/misc_de/<u>/matonos-linux/install/<installer_uid>` (`--user`).
-2. The bridge reads that deployment's desktop entry/icon and installs the
-   stub; PackageManager assigns the stub UID.
-3. `adopt` renames `/data/misc_de/<u>/matonos-linux/install/<installer_uid>` to
-   `/data/misc_de/<u>/matonos-linux/install/<stub_uid>` and re-homes it: ownership, MLS
-   categories, `<uid>.owner` record, runtime-installation record.
-
-Reuses today's post-install desktop/icon extraction; the cost is the rename
-plus relabel, and the app briefly lives under the store's UID.
-
-### B. Stub first, then install directly to the stub UID (preferred)
-Verified against a real staged Flathub commit: it carries `/metadata` and
-`/export/share/applications/<id>.desktop`, but often **no exported PNG** under
-`/export`. So the icon comes from the software centre's Flathub appstream
-(already fetched by `rn-apps/flathub/src/FlathubApi.ts`), not the deployment.
-1. `stage` (new): linuxd stages the signature-verified commit and returns the
-   pinned commits, `/metadata` and the exported desktop entry read from the
-   staged commit (`ostree cat <commit> /metadata`, etc.). No deploy yet.
-2. The bridge maps `/metadata` to Android permissions
-   (`StubGenerator.permissionsForMetadata`), takes the icon from the store,
-   and installs the stub; PackageManager assigns the stub UID.
-3. `deploy` (new, split out of publish): hardlink the runtime into
-   `/data/misc_de/<u>/matonos-linux/runtime/<runtime_uid>` and the app into
-   `/data/misc_de/<u>/matonos-linux/install/<stub_uid>`, then record the runtime install.
-
-No rename or re-home, and the app is owned by its stub UID from the start.
-Requires the store to hand the icon (and display name) through the bridge
-before deploy.
-
-Both flows keep one owner per install, hardlink the runtime from the shared
-staging repo, and leave the runtime/system side unchanged. Updates to an
-already-installed app use its stub UID directly (no adopt step).
+Host publication tests use a fake CLI to verify offline import/deployment order,
+related refs, GL handling and failure propagation. Real signature verification,
+Flatpak read-only launch/locking, encryption and enforcing SELinux need a fresh
+coordinator-built image. No migration or arbitrary store limits are introduced.

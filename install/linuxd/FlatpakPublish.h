@@ -23,7 +23,7 @@ int flatpak_publish_tracked(const char*, const char*, const char*, const char*,
  * pins plus the app's /metadata and exported desktop entry from the staged
  * commit. No deployment happens; deploy re-verifies the returned pins. */
 int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
-        int runtime_uid, const char* operation_id,
+        const char* operation_id,
         char* app_commit, unsigned long app_commit_size,
         char* runtime_ref, unsigned long runtime_ref_size,
         char* runtime_commit, unsigned long runtime_commit_size,
@@ -34,7 +34,7 @@ int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
 /* Remove abandoned installer staging operations during linuxd startup. */
 int flatpak_cleanup_stale_staging(void);
 
-/* /data/misc_de/<u>/matonos-linux/install/<uid>/staging/<operation> (validated). */
+/* /data/linux-app/staging/<uid>/<operation> (validated). */
 int flatpak_staging_dir(int uid, const char* operation, char* path, unsigned long size);
 /* Remove one staging operation, as its owning UID. */
 int flatpak_remove_staging(int uid, const char* operation);

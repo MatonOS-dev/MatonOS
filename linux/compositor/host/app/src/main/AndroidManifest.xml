@@ -2,7 +2,6 @@
     <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <queries>
-        <package android:name="org.matonos.linuxruntimes" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />

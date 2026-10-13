@@ -20,7 +20,7 @@ import java.util.function.Consumer;
  */
 final class SessionBus implements AutoCloseable {
     final JavaPortal portals;
-    private final File socket, control, policy, sysvipc;
+    private final File socket, policy;
     private volatile boolean running;
 
     SessionBus(Context context, File directory, String ref, int appUid,
@@ -29,12 +29,9 @@ final class SessionBus implements AutoCloseable {
             throw new IllegalArgumentException("Invalid application reference");
         String app = ref.split("/")[1];
         socket = new File(directory, "bus");
-        control = new File(directory, "bus-control");
         policy = new File(directory, "bus.policy");
-        // SysV IPC supervisor socket (linux/dbus-broker/sysvipc-host.c).
-        sysvipc = new File(directory, "bus-sysvipc");
         // A stale bus must have died with its host before these are removed.
-        for (File file : new File[]{socket, control, policy, sysvipc})
+        for (File file : new File[]{socket, policy})
             if (file.exists() && !file.delete()) throw new IOException("Cannot remove stale bus file");
         try (FileOutputStream out = new FileOutputStream(policy)) {
             // The bus is private to this app: it may register and call any
@@ -49,15 +46,14 @@ final class SessionBus implements AutoCloseable {
             throw new IOException("Session broker failed to start");
         }
         running = true;
-        // Portal registration uses the control socket. The bus socket appears
-        // before native initialization has created that endpoint.
+        // The private bus socket appears after native initialization.
         try {
-            for (int i = 0; i < 50 && (!socket.exists() || !control.exists()); i++) Thread.sleep(100);
+            for (int i = 0; i < 50 && !socket.exists(); i++) Thread.sleep(100);
         } catch (InterruptedException error) {
             try { close(); } finally { Thread.currentThread().interrupt(); }
             throw error;
         }
-        if (!socket.exists() || !control.exists()) { close(); throw new IOException("Session broker failed to become ready"); }
+        if (!socket.exists()) { close(); throw new IOException("Session broker failed to become ready"); }
     }
 
     boolean isAlive() { return running; }
@@ -66,7 +62,7 @@ final class SessionBus implements AutoCloseable {
         running = false;
         try { portals.close(); } finally {
             try { NativeBroker.nativeStop(); } finally {
-                socket.delete(); control.delete(); policy.delete(); sysvipc.delete();
+                socket.delete(); policy.delete();
             }
         }
     }

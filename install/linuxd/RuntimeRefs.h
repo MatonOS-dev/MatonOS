@@ -17,6 +17,10 @@ int runtime_refs_save(RuntimeRefs*);
 int runtime_refs_remove(RuntimeRefs*, int uid);
 int runtime_refs_reconcile(RuntimeRefs*, RuntimeRefsLive, void*);
 int runtime_refs_prune(RuntimeRefs*, RuntimeRefsPrune, void*);
+/* Rebuild ownership from retained immutable versions; keep zero-owner entries
+ * as prune candidates. No disk write until the full snapshot is valid. */
+void runtime_refs_clear_owners(RuntimeRefs*);
+int runtime_refs_merge(RuntimeRefs*, const RuntimeRefs*);
 void runtime_refs_close(RuntimeRefs*);
 #ifdef __cplusplus
 }

@@ -4,20 +4,15 @@
 #include "FlatpakPublish.h"
 #include "RuntimeRefs.h"
 #include "StubVerify.h"
-#include "UdevDatabase.h"
-#include "SessionPads.h"
 #include "SafePath.h"
 #include "FlatpakIcon.h"
-#include "MatonMls.h"
-#include "DownloadsGrant.h"
-#include "DownloadsMedia.h"
 #include <sys/xattr.h>
 #include <sys/ioctl.h>
 #include <linux/fs.h>
 
 #include "../../linux/flatpak/linux-paths.h"
 #include "LinuxStorage.h"
-#include "HomeLabels.h"
+#include "DeploymentStore.h"
 #include <sys/inotify.h>
 #include <errno.h>
 #include <dirent.h>
@@ -159,86 +154,23 @@ void flatpak_manager_set_callbacks(FlatpakProgressCallback progress,
     g_callback_context = context;
 }
 
-static void start_user_removal_watch(void);
+
 
 void flatpak_manager_init(void) {
-    /* Per-operation install roots are supplied explicitly (app_install_roots /
-     * flatpak_publish); the app --user install lives under
-     * /data/misc_de/<u>/matonos-linux/install/<uid>, the shared --system runtime under
-     * /data/misc_de/<u>/matonos-linux/runtime/<runtime_uid>, and app data under
-     * /data/misc_ce/<u>/matonos-linux/home/<uid>. Only the CLI's own config/home/cache is
-     * global here. */
-    maton_udev_start();
-    start_user_removal_watch();
-    setenv("TMPDIR", "/data/matonos/linux/cache", 1);
-    setenv("XDG_RUNTIME_DIR", "/data/matonos/linux/run", 1);
-    setenv("FLATPAK_SYSTEM_CACHE_DIR", "/data/matonos/linux/cache", 1);
-    setenv("HOME", "/data/matonos/linux/flatpak-data", 1);
-    setenv("XDG_DATA_HOME", "/data/matonos/linux/flatpak-data/.local/share", 1);
+    /* Fixed management scratch only; app runtimes belong to the stubs. */
+    if (maton_store_prepare()) fprintf(stderr, "linuxd: management storage unavailable\n");
+
+    setenv("TMPDIR", "/data/linux-app/manager/cache", 1);
+    setenv("XDG_RUNTIME_DIR", "/data/linux-app/manager/run", 1);
+    setenv("FLATPAK_SYSTEM_CACHE_DIR", "/data/linux-app/manager/cache", 1);
+    setenv("HOME", "/data/linux-app/manager/home", 1);
+    setenv("XDG_DATA_HOME", "/data/linux-app/manager/home/.local/share", 1);
 }
 
 static int valid_install_uid(int uid) {
     return uid >= 10000 && uid % 100000 >= 10000 && uid % 100000 <= 19999;
 }
 
-static int remember_runtime_install(int uid) {
-    char temporary[160], path[160];
-    char value[32];
-    if (!valid_install_uid(uid) || maton_prepare_de((unsigned)uid)) { errno = EINVAL; return -1; }
-    unsigned android_user = (unsigned)uid / 100000;
-    snprintf(temporary, sizeof(temporary), MATON_DE_ROOT_FORMAT "/runtime-installation.tmp", android_user);
-    snprintf(path, sizeof(path), MATON_DE_ROOT_FORMAT "/runtime-installation", android_user);
-    int length = snprintf(value, sizeof(value), "%d\n", uid);
-    if(maton_storage_context("u:object_r:matonos_flatpak_data_file:s0"))return -1;
-    int fd = open(temporary, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0600);
-    int open_error=errno;
-    if(maton_storage_context(NULL)){if(fd>=0)close(fd);return -1;}
-    errno=open_error;
-    if (fd < 0) return -1;
-    int ok = fchmod(fd, 0600) == 0 && write(fd, value, (size_t)length) == length && fsync(fd) == 0;
-    int saved = errno;
-    close(fd);
-    if (!ok || rename(temporary, path)) {
-        if (ok) saved = errno;
-        unlink(temporary);
-        errno = saved;
-        return -1;
-    }
-    return 0;
-}
-
-static int remembered_runtime_install(int app_uid, int* uid) {
-    char path[160];
-    char value[32];
-    struct stat st;
-    if (!valid_install_uid(app_uid)) { errno = EINVAL; return -1; }
-    snprintf(path, sizeof(path), MATON_DE_ROOT_FORMAT "/runtime-installation",
-            (unsigned)app_uid / 100000);
-    int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) return -1;
-    ssize_t size = read(fd, value, sizeof(value) - 1);
-    int bad = fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_uid != 1000 ||
-            (st.st_mode & 0777) != 0600 || size <= 0 || size >= (ssize_t)sizeof(value) - 1;
-    close(fd);
-    if (bad) { errno = EINVAL; return -1; }
-    value[size] = '\0';
-    char* end = NULL;
-    long parsed = strtol(value, &end, 10);
-    if (!end || (*end != '\n' && *end != '\0') || parsed < 10000 || parsed > INT_MAX ||
-            !valid_install_uid((int)parsed) || maton_user_of((unsigned)parsed) != maton_user_of((unsigned)app_uid)) {
-        errno = EINVAL;
-        return -1;
-    }
-    *uid = (int)parsed;
-    return 0;
-}
-
-/* r24 storage model: ONE runtime app owns the shared --system installation at
- * /data/misc_de/<u>/matonos-linux/runtime/<runtime_uid>; each stub owns a --user
- * installation at /data/misc_de/<u>/matonos-linux/install/<app_uid>, and its writable data
- * at /data/misc_ce/<u>/matonos-linux/home/<app_uid>. The old global
- * /data/matonos/linux/flatpak* installation roots are gone. Reuse stock
- * Flatpak to verify a ref in the explicitly selected UID installation. */
 static ChildResult run_cli_in(const char* const* args, size_t count, int progress,
         const char* system_dir, const char* user_dir);
 
@@ -247,12 +179,8 @@ int flatpak_manager_installed_for_uid(const char* ref, int uid) {
     if (!ref || strncmp(ref, "app/", 4) || !flatpak_manager_valid_ref(ref) ||
             !valid_install_uid(uid)) return 0;
     char user_dir[256], system_dir[256];
-    int runtime_uid = -1;
-    if (maton_install_dir(user_dir, sizeof(user_dir), (unsigned)uid)) return 0;
-    if (remembered_runtime_install(uid, &runtime_uid) == 0)
-        maton_runtime_dir(system_dir, sizeof(system_dir), maton_user_of((unsigned)uid), (unsigned)runtime_uid);
-    else
-        snprintf(system_dir, sizeof(system_dir), "%s", user_dir);
+    if (maton_install_dir(user_dir,sizeof(user_dir),(unsigned)uid)) return 0;
+    snprintf(system_dir,sizeof(system_dir),"%s",MATON_RUNTIME_DIR);
     const char* args[] = {"--user", "info", ref};
     ChildResult child = run_cli_in(args, 3, 0, system_dir, user_dir);
     int installed = child.status == 0 && !child.truncated;
@@ -262,11 +190,13 @@ int flatpak_manager_installed_for_uid(const char* ref, int uid) {
 
 static int app_install_roots(const char* ref, int app_uid, char* system_dir, size_t system_size,
         char* user_dir, size_t user_size) {
-    int runtime_uid = -1;
     if (!flatpak_manager_installed_for_uid(ref, app_uid)) return -1;
-    if (remembered_runtime_install(app_uid, &runtime_uid)) return -1;
-    if (maton_runtime_dir(system_dir, system_size, maton_user_of((unsigned)app_uid), (unsigned)runtime_uid) ||
-            maton_install_dir(user_dir, user_size, (unsigned)app_uid)) return -1;
+    snprintf(system_dir,system_size,"%s",MATON_RUNTIME_DIR);
+    char pointer[PATH_MAX],resolved[PATH_MAX];unsigned appid;
+    if(maton_install_dir(pointer,sizeof(pointer),(unsigned)app_uid)||!realpath(pointer,resolved)||
+       !maton_parse_install_path(resolved,&appid)||appid!=maton_app_id((unsigned)app_uid)||
+       strlen(resolved)>=user_size)return -1;
+    strcpy(user_dir,resolved);
     return 0;
 }
 
@@ -316,8 +246,6 @@ static ChildResult run_cli_in(const char* const* args, size_t count, int progres
     int timed_out = 0;
     struct timespec deadline;
     size_t used = 0;
-    size_t output_capacity = k_output_limit + 1;
-    int folder_permissions = count == 4 && !strcmp(args[2], "--show-permissions");
     char pending[4097];
     size_t pending_length = 0;
     result.status = 127;
@@ -417,21 +345,7 @@ static ChildResult run_cli_in(const char* const* args, size_t count, int progres
             result.truncated = 1;
             break;
         }
-        if (folder_permissions) {
-            if ((size_t)n > SIZE_MAX - used - 1) {
-                result.truncated = 1; (void)kill(-child, SIGKILL); break;
-            }
-            size_t needed = used + (size_t)n + 1;
-            if (needed > output_capacity) {
-                size_t grown = output_capacity <= SIZE_MAX / 2 ? output_capacity * 2 : SIZE_MAX;
-                if (grown < needed) grown = needed;
-                char* output = realloc(result.output, grown);
-                if (!output) { result.truncated = 1; (void)kill(-child, SIGKILL); break; }
-                result.output = output; output_capacity = grown;
-            }
-            memcpy(result.output + used, buffer, (size_t)n);
-            used += (size_t)n; result.output[used] = 0;
-        } else if (used < k_output_limit) {
+        if (used < k_output_limit) {
             size_t keep = (size_t)n;
             if (keep > k_output_limit - used) {
                 keep = k_output_limit - used;
@@ -493,12 +407,12 @@ static void result_from_child(FlatpakResult* result, ChildResult* child) {
     child->output = NULL;
 }
 
-typedef struct RefContext { RuntimeRefs* db; const char* system; unsigned user; int uid; } RefContext;
+typedef struct RefContext { RuntimeRefs* db; RuntimeRefs* version; const char* system; unsigned user; int uid; } RefContext;
 static int ref_record(const char* ref, void* opaque) {
     RefContext* c = opaque;
-    return runtime_refs_add(c->db, ref, c->uid) || runtime_refs_save(c->db);
+    return runtime_refs_add(c->db, ref, c->uid) || runtime_refs_save(c->db) ||
+            runtime_refs_add(c->version,ref,c->uid) || runtime_refs_save(c->version);
 }
-static int ref_live(int uid, void* opaque) { (void)opaque; return stub_uid_has_package(uid); }
 static int ref_prune(const char* ref, int* extension, void* opaque) {
     RefContext* c = opaque;
     if (extension) {
@@ -514,30 +428,24 @@ static int ref_prune(const char* ref, int* extension, void* opaque) {
 }
 static int ref_complete(const char* const* refs, size_t count, void* opaque) {
     RefContext* c = opaque;
-    return runtime_refs_replace(c->db, c->uid, refs, count) ||
-            runtime_refs_prune(c->db, ref_prune, c);
+    return runtime_refs_replace(c->version, c->uid, refs, count);
 }
 static RuntimeRefs* ref_open(RefContext* c) {
     char root[160];
-    snprintf(root,sizeof(root),MATON_DE_ROOT_FORMAT "/runtime",c->user);
-    return runtime_refs_open(root, c->user);
+    snprintf(root,sizeof(root),"%s",MATON_RUNTIME_DIR);
+    (void)c; return runtime_refs_open(root, 0);
 }
+static int collect_deployments(void);
+static int retained_refs(RuntimeRefs* db);
 void flatpak_manager_reconcile_runtime_refs(void) {
     pthread_mutex_lock(&g_operation_mutex);
-    MatonPathScan dir; unsigned scan_uid;
-    if (!maton_scan_open(&dir,"runtime")) {
-        while (maton_scan_next(&dir,&scan_uid)>0) {
-            int uid=(int)scan_uid;
-            if (stub_runtime_uid(uid)!=uid) continue;
-            char system[256];maton_runtime_dir(system,sizeof(system),maton_user_of(scan_uid),scan_uid);
-            RefContext c = {.system=system,.user=maton_user_of(scan_uid)};
-            c.db=ref_open(&c);
-            if(!c.db || runtime_refs_reconcile(c.db,ref_live,NULL) || runtime_refs_prune(c.db,ref_prune,&c))
-                fprintf(stderr,"linuxd: runtime refs reconciliation deferred for user %u\n",c.user);
-            runtime_refs_close(c.db);
-        }
-        maton_scan_close(&dir);
-    }
+    /* Keep all shared references until old versions can be collected. */
+    int pending=collect_deployments();
+    RefContext c={.system=MATON_RUNTIME_DIR};c.db=ref_open(&c);
+    if(!c.db || retained_refs(c.db) ||
+       (!pending && runtime_refs_prune(c.db,ref_prune,&c)))
+        fprintf(stderr,"linuxd: shared runtime cleanup deferred\n");
+    runtime_refs_close(c.db);
     pthread_mutex_unlock(&g_operation_mutex);
 }
 
@@ -551,74 +459,38 @@ typedef struct PackageOperation {
     char* runtime_commit;
     char* remote;
     int app_uid;
-    int runtime_uid;
 } PackageOperation;
 
 static void* package_operation_thread(void* data) {
     PackageOperation* operation = data;
     FlatpakResult result;
-    ChildResult child;
     memset(&result, 0, sizeof(result));
     pthread_mutex_lock(&g_operation_mutex);
     if (operation->uninstall) {
-        /* The app is a --user deployment in its own UID directory; the shared
-         * runtime lives in the runtime app's --system directory. Both are
-         * resolved from the verified UID; no global lookup exists. */
-        char system_dir[256], user_dir[256];
-        if (app_install_roots(operation->ref, operation->app_uid, system_dir, sizeof(system_dir),
-                user_dir, sizeof(user_dir))) {
-            result.ok = 0;
-            result.exit_code = 1;
-            result.error = strdup("installed application deployment not found");
-        } else {
-            unsigned parsed_uid=0;
-            if(!maton_parse_install_path(user_dir,&parsed_uid)) { errno=EINVAL; parsed_uid=0; }
-            int owner_uid=(int)parsed_uid;
-            RefContext refs = {.system = system_dir, .user = (unsigned)owner_uid / 100000, .uid = owner_uid};
-            refs.db = ref_open(&refs);
-            const char* args_with_delete[] = {"--user", "uninstall", "--delete-data", "--noninteractive", "--assumeyes", operation->ref};
-            const char* args_keep_data[] = {"--user", "uninstall", "--noninteractive", "--assumeyes", operation->ref};
-            child = operation->delete_data ? run_cli_in(args_with_delete, sizeof(args_with_delete) / sizeof(args_with_delete[0]), 1, system_dir, user_dir) :
-                    run_cli_in(args_keep_data, sizeof(args_keep_data) / sizeof(args_keep_data[0]), 1, system_dir, user_dir);
-            result_from_child(&result, &child);
-            free(child.output);
-            if (result.ok) {
-                int cleanup = !refs.db || runtime_refs_remove(refs.db, owner_uid) ||
-                        runtime_refs_prune(refs.db, ref_prune, &refs);
-                child.status = cleanup ? 1 : 0;
-                result.has_unused_cleanup = 1;
-                result.unused_cleanup_ok = child.status == 0;
-                result.unused_cleanup_exit_code = child.status;
-                if (child.status) {
-                    result.ok = 0;
-                    if (!result.error) result.error = strdup("App was removed, but runtime reference cleanup was deferred");
-                }
-                free(child.output);
-            }
-            runtime_refs_close(refs.db);
-        }
+        result.ok=0;result.exit_code=1;
+        result.error=strdup("Remove the stub package; deployment cleanup follows PackageManager removal for all users");
     } else {
         char system_dir[256], user_dir[256], error[512] = {0};
-        snprintf(system_dir, sizeof(system_dir), MATON_DE_ROOT_FORMAT "/runtime/%d", maton_user_of((unsigned)(operation->runtime_uid)), operation->runtime_uid);
-        snprintf(user_dir, sizeof(user_dir), MATON_DE_ROOT_FORMAT "/install/%d", maton_user_of((unsigned)(operation->app_uid)), operation->app_uid);
+        snprintf(system_dir,sizeof(system_dir),"%s",MATON_RUNTIME_DIR);
+        user_dir[0]=0;
         publish_progress_line("Verifying pinned Flatpak commits and publishing runtime/app");
         /* The stub staged this operation into its own staging directory. */
         char staging_dir[160];
-        RefContext refs = {.system = system_dir, .user = (unsigned)operation->app_uid / 100000, .uid = operation->app_uid};
+        RefContext refs = {.system = system_dir, .user = 0, .uid = (int)maton_app_id((unsigned)operation->app_uid)};
+        int rc = deployment_create((unsigned)operation->app_uid,user_dir,sizeof(user_dir));
         refs.db = ref_open(&refs);
-        int rc = maton_prepare_install((unsigned)operation->runtime_uid,1) || maton_prepare_install((unsigned)operation->app_uid,0);
+        refs.version=!rc?runtime_refs_open(user_dir,0):NULL;
         if(!rc) rc = flatpak_staging_dir(operation->app_uid, operation->operation_id,
                 staging_dir, sizeof(staging_dir));
         if (rc) snprintf(error, sizeof(error), "invalid staging operation");
-        else if (!refs.db) { rc = -1; snprintf(error, sizeof(error), "runtime reference database unavailable"); }
+        else if (!refs.db || !refs.version) { rc = -1; snprintf(error, sizeof(error), "runtime reference database unavailable"); }
         else rc = flatpak_publish_tracked(operation->ref, operation->app_commit,
                 operation->runtime_ref, operation->runtime_commit, operation->remote,
                 staging_dir, system_dir, user_dir, error, sizeof(error), ref_record, ref_complete, &refs);
-        runtime_refs_close(refs.db);
+        runtime_refs_close(refs.db);runtime_refs_close(refs.version);
         if (operation->operation_id) flatpak_remove_staging(operation->app_uid, operation->operation_id);
-        if (rc == 0 && remember_runtime_install(operation->runtime_uid)) {
-            snprintf(error, sizeof(error), "published app but cannot record its shared runtime installation");
-            rc = -1;
+        if (!rc && deployment_commit((unsigned)operation->app_uid,user_dir)) {
+            snprintf(error,sizeof(error),"cannot commit deployment pointer");rc=-1;
         }
         result.ok = rc == 0;
         result.exit_code = rc == 0 ? 0 : 1;
@@ -644,7 +516,7 @@ static void* package_operation_thread(void* data) {
 
 static void start_package_operation(int uninstall, const char* ref, int delete_data,
         const char* operation_id, const char* app_commit, const char* runtime_ref,
-        const char* runtime_commit, const char* remote, int app_uid, int runtime_uid,
+        const char* runtime_commit, const char* remote, int app_uid,
         FlatpakResult* result) {
     PackageOperation* operation = calloc(1, sizeof(*operation));
     pthread_t thread;
@@ -666,7 +538,6 @@ static void start_package_operation(int uninstall, const char* ref, int delete_d
     operation->uninstall = uninstall;
     operation->delete_data = delete_data;
     operation->app_uid = app_uid;
-    operation->runtime_uid = runtime_uid;
     operation->operation_id = operation_id ? strdup(operation_id) : NULL;
     if (operation_id && !operation->operation_id) { free(operation); pthread_mutex_lock(&g_package_state_mutex); g_package_operation_active = 0; pthread_mutex_unlock(&g_package_state_mutex); set_error(result, "cannot allocate operation ID"); return; }
     operation->ref = strdup(ref);
@@ -706,60 +577,6 @@ static void start_package_operation(int uninstall, const char* ref, int delete_d
     result->accepted = 1;
 }
 
-static int owned_directory(const char* path,int uid) {
-    char copy[512];if(strlen(path)>=sizeof(copy))return -1;strcpy(copy,path);
-    int fd=open("/",O_PATH|O_DIRECTORY|O_CLOEXEC);char* save=NULL;
-    for(char* part=strtok_r(copy,"/",&save);part;part=strtok_r(NULL,"/",&save)) {
-        if(!strcmp(part,".")||!strcmp(part,"..")){close(fd);return -1;}
-        int next=openat(fd,part,O_PATH|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);close(fd);fd=next;
-        if(fd<0)return -1;
-    }
-    struct stat st;if(fstat(fd,&st) || (uid>=0 && st.st_uid!=(uid_t)uid)){close(fd);return -1;}
-    return fd;
-}
-/* linux-data: no caller-selected path and no symlink traversal. fscreate is
- * thread-local, so concurrent Binder calls cannot exchange MLS categories. */
-static int create_context(const char* label) {
-    int fd=open("/proc/thread-self/attr/fscreate",O_WRONLY|O_CLOEXEC);
-    if(fd<0)return -1;
-    size_t n=label?strlen(label):0;
-    int rc=write(fd,label?label:"",n)==(ssize_t)n?0:-1;close(fd);return rc;
-}
-
-int flatpak_manager_prepare_runtime(int uid) {
-    if(uid<0||uid%100000<10000||uid%100000>19999)return -1;
-    char level[64],label[160],name[32];
-    if(maton_mls_level_from_uid(uid,level,sizeof(level)))return -1;
-    /* Stock untrusted_app_* may create/unlink media_rw_data_file, but not
-     * custom runtime types. Preserve levelFrom=all so socket creation and
-     * the untrusted stub <-> same-level Linux payload satisfy stock MLS. */
-    snprintf(label,sizeof(label),"u:object_r:media_rw_data_file:%s",level);
-    int root=owned_directory("/data/matonos/linux/tmp",1000);
-    if(root<0)return -1;
-    snprintf(name,sizeof(name),"%d",uid);
-    if(create_context(label)){close(root);return -1;}
-    int made=mkdirat(root,name,0700)==0;
-    int saved_errno=errno;
-    if(create_context(NULL) || (!made && saved_errno!=EEXIST)){close(root);return -1;}
-    /* Existing runtime roots are UID-owned 0700/0711; pin with O_PATH so
-     * linuxd needs no DAC override just to validate/restore their mode. */
-    int dir=openat(root,name,O_PATH|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-    struct stat st;char path[64],context[256]={0};
-    snprintf(path,sizeof(path),"/proc/self/fd/%d",dir);
-    if(dir<0||fstat(dir,&st)||!S_ISDIR(st.st_mode)||
-       st.st_uid!=(uid_t)(made?1000:uid)||
-       getxattr(path,"security.selinux",context,sizeof(context)-1)<=0||strcmp(context,label)) {
-        if(dir>=0)close(dir);
-        close(root);
-        errno=EPERM;
-        return -1;
-    }
-    /* No migration/relabel of old custom-type trees: fail closed. */
-    if(chown(path,uid,uid)||chmod(path,0700)){close(dir);close(root);return -1;}
-    close(dir);close(root);
-    return 0;
-}
-
 /* Never follow symlinks or cross a mount while deleting an orphan. */
 static int remove_contents(int fd,dev_t device) {
     DIR* dir=fdopendir(dup(fd));if(!dir)return -1;
@@ -779,122 +596,56 @@ static int remove_contents(int fd,dev_t device) {
     }
     closedir(dir);return rc;
 }
-int flatpak_manager_delete_data(int uid) {
-    if(uid%100000<10000||uid%100000>19999){errno=EINVAL;return -1;}
-    int root=maton_home_root((unsigned)uid,0);if(root<0)return -1;
-    char name[32];snprintf(name,sizeof(name),"%d",uid);
-    int app=openat(root,name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-    if(app<0){
-        int rc=-1;
-        if(errno==ENOENT){snprintf(name,sizeof(name),"%d.owner",uid);rc=unlinkat(root,name,0);if(rc&&errno==ENOENT)rc=0;}
-        close(root);return rc;
+/* Return nonzero while any retired version must be preserved. */
+static int collect_deployments(void) {
+    int parent=open(MATON_INSTALL_ROOT,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+    if(parent<0)return errno==ENOENT?0:1;
+    DIR* entries=fdopendir(dup(parent));if(!entries){close(parent);return 1;}
+    struct dirent* e;int pending=0;
+    while((e=readdir(entries))) {
+        char path[PATH_MAX];unsigned appid;
+        snprintf(path,sizeof(path),"%s/%s",MATON_INSTALL_ROOT,e->d_name);
+        if(!strchr(e->d_name,'-') || !maton_parse_install_path(path,&appid))continue;
+        char pointer[32],target[NAME_MAX+1];snprintf(pointer,sizeof(pointer),"%u",appid);
+        ssize_t n=readlinkat(parent,pointer,target,sizeof(target)-1);
+        if(n>=0)target[n]=0;
+        int current=n>=0 && !strcmp(target,e->d_name);
+        int live=stub_uid_has_package((int)appid);
+        if(live<0 || (current && live)){if(!current)pending=1;continue;}
+        int dir=openat(parent,e->d_name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+        if(dir<0){pending=1;continue;}
+        int lease=deployment_exclusive(dir);struct stat st;
+        if(lease<0){close(dir);pending=1;continue;}
+        int rc=fstat(dir,&st)||st.st_uid!=1000;
+        if(!rc && current && unlinkat(parent,pointer,0))rc=-1;
+        if(!rc)rc=remove_contents(dir,st.st_dev);
+        close(dir);
+        if(!rc)rc=unlinkat(parent,e->d_name,AT_REMOVEDIR);
+        close(lease);if(rc)pending=1;
     }
-    struct stat st;int rc=fstat(app,&st)||st.st_uid!=(uid_t)uid?-1:remove_contents(app,st.st_dev);
-    close(app);if(!rc)rc=unlinkat(root,name,AT_REMOVEDIR);
-    if(!rc){snprintf(name,sizeof(name),"%d.owner",uid);if(unlinkat(root,name,0)&&errno!=ENOENT)rc=-1;}
-    close(root);return rc;
+    closedir(entries);close(parent);return pending;
 }
 
-/* The compositor delegates only its socket directories, never its app data root. */
-typedef struct DownloadsAnswer {
-    int uid,pid,group;
-    char* request;
-    struct stat cgroup;
-    struct DownloadsAnswer* next;
-} DownloadsAnswer;
-static DownloadsAnswer* g_downloads_answers;
-static pthread_mutex_t g_downloads_mutex=PTHREAD_MUTEX_INITIALIZER;
-
-/* vold removes misc_de/<user> after destroying both encrypted trees. No
- * refs database is cached: each package operation opens and closes its DB.
- * Drop unused one-launch consent handles when that user disappears. */
-static void* user_removal_watch(void* opaque) {
-    int fd=(int)(intptr_t)opaque;
-    union { struct inotify_event align; char bytes[sizeof(struct inotify_event)+NAME_MAX+1]; } buffer;
-    for(;;) {
-        ssize_t n=read(fd,buffer.bytes,sizeof(buffer.bytes));
-        if(n<0 && errno==EINTR)continue;
-        if(n<=0)break;
-        for(size_t offset=0;offset<(size_t)n;) {
-            struct inotify_event* e=(struct inotify_event*)(buffer.bytes+offset);
-            offset+=sizeof(*e)+e->len;
-            if(!(e->mask&(IN_DELETE|IN_MOVED_FROM|IN_Q_OVERFLOW)))continue;
-            char* end=NULL;unsigned long user=e->len?strtoul(e->name,&end,10):0;
-            if(!(e->mask&IN_Q_OVERFLOW) && (!e->len || !*e->name || *end || user>INT_MAX/100000))continue;
-            pthread_mutex_lock(&g_downloads_mutex);
-            DownloadsAnswer** slot=&g_downloads_answers;
-            while(*slot) {
-                DownloadsAnswer* answer=*slot;
-                if((e->mask&IN_Q_OVERFLOW) || maton_user_of((unsigned)answer->uid)==user) {
-                    *slot=answer->next;close(answer->group);free(answer->request);free(answer);
-                }else slot=&answer->next;
-            }
-            pthread_mutex_unlock(&g_downloads_mutex);
-        }
+/* Reference counts include current and leased retired versions, across users.
+ * Fail closed on a corrupted inventory; never publish a partial snapshot. */
+static int retained_refs(RuntimeRefs* db) {
+    int fd=open(MATON_INSTALL_ROOT,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+    if(fd<0)return -1;
+    DIR* entries=fdopendir(fd);if(!entries){close(fd);return -1;}
+    runtime_refs_clear_owners(db);
+    struct dirent* e;int rc=0;
+    while((e=readdir(entries))) {
+        char path[PATH_MAX];unsigned appid;
+        snprintf(path,sizeof(path),"%s/%s",MATON_INSTALL_ROOT,e->d_name);
+        if(!strchr(e->d_name,'-') || !maton_parse_install_path(path,&appid))continue;
+        RuntimeRefs* version=runtime_refs_open(path,0);
+        if(!version || runtime_refs_merge(db,version)){rc=-1;runtime_refs_close(version);break;}
+        runtime_refs_close(version);
     }
-    close(fd);return NULL;
-}
-static void start_user_removal_watch(void) {
-    int fd=inotify_init1(IN_CLOEXEC);if(fd<0)return;
-    if(inotify_add_watch(fd,"/data/misc_de",IN_DELETE|IN_MOVED_FROM)<0){close(fd);return;}
-    pthread_t thread;
-    if(pthread_create(&thread,NULL,user_removal_watch,(void*)(intptr_t)fd)){close(fd);return;}
-    pthread_detach(thread);
+    closedir(entries);
+    return rc?rc:runtime_refs_save(db);
 }
 
-void flatpak_manager_downloads_request(const char* ref,int uid,FlatpakResult* result) {
-    pthread_mutex_lock(&g_downloads_mutex);
-    DownloadsAnswer** previous=&g_downloads_answers;
-    while(*previous && (*previous)->uid!=uid)previous=&(*previous)->next;
-    if(*previous){DownloadsAnswer* old=*previous;*previous=old->next;close(old->group);free(old->request);free(old);}
-    pthread_mutex_unlock(&g_downloads_mutex);
-    int runtime_uid;
-    if(!valid_install_uid(uid) || !flatpak_manager_valid_ref(ref) || strncmp(ref,"app/",4) ||
-            remembered_runtime_install(uid,&runtime_uid) || runtime_uid/100000!=uid/100000) {
-        set_error(result,"verified app installation required");return;
-    }
-    char system[128],user[128];
-    snprintf(system,sizeof(system),MATON_DE_ROOT_FORMAT "/runtime/%d", maton_user_of((unsigned)(runtime_uid)), runtime_uid);
-    snprintf(user,sizeof(user),MATON_DE_ROOT_FORMAT "/install/%d", maton_user_of((unsigned)(uid)), uid);
-    const char* args[]={"--user","info","--show-permissions",ref};
-    ChildResult child=run_cli_in(args,4,0,system,user);
-    if(child.status){result_from_child(result,&child);return;}
-    if(child.truncated){free(child.output);set_error(result,"cannot read complete effective permissions");return;}
-    MatonFolderRequests folders={0};
-    char* permissions=maton_permissions_unescape(child.output);free(child.output);
-    if(!permissions || maton_folders_metadata(permissions,&folders)) {
-        free(permissions);set_error(result,"invalid effective folder permissions");return;
-    }
-    free(permissions);
-    result->output=maton_folders_encode(&folders);
-    maton_folders_clear(&folders);
-    if(!result->output){set_error(result,"cannot encode folder request");return;}
-    result->ok=1;
-}
-int flatpak_manager_downloads_answer(const char* ref,int uid,int pid,const char* request,int allow) {
-    FlatpakResult effective={0};flatpak_manager_downloads_request(ref,uid,&effective);
-    int valid=effective.ok && effective.output && !strcmp(effective.output,request);
-    flatpak_manager_result_clear(&effective);
-    char path[128];snprintf(path,sizeof(path),"/sys/fs/cgroup/apps/uid_%d/pid_%d",uid,pid);
-    int group=open(path,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-    struct stat identity;
-    if(group<0 || fstat(group,&identity))valid=0;
-    DownloadsAnswer* answer=NULL;
-    if(valid && allow && *request) {
-        answer=calloc(1,sizeof(*answer));
-        if(answer)answer->request=strdup(request);
-        if(!answer || !answer->request){free(answer);answer=NULL;valid=0;}
-        else {answer->uid=uid;answer->pid=pid;answer->group=group;answer->cgroup=identity;group=-1;}
-    }
-    if(group>=0)close(group);
-    pthread_mutex_lock(&g_downloads_mutex);
-    DownloadsAnswer** slot=&g_downloads_answers;
-    while(*slot && (*slot)->uid!=uid)slot=&(*slot)->next;
-    if(*slot){DownloadsAnswer* old=*slot;*slot=old->next;close(old->group);free(old->request);free(old);}
-    if(answer){answer->next=g_downloads_answers;g_downloads_answers=answer;}
-    pthread_mutex_unlock(&g_downloads_mutex);
-    return valid?0:-1;
-}
 /* Return only an installed app's exported desktop entry to the bridge. */
 static void read_desktop_entry(const char* ref, int app_uid, FlatpakResult* result) {
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
@@ -918,8 +669,7 @@ static void read_desktop_entry(const char* ref, int app_uid, FlatpakResult* resu
     size_t length = (size_t)(slash - (ref + 4));
     if (length >= sizeof(app_id)) { free(child.output); set_error(result, "application ID too long"); return; }
     memcpy(app_id, ref + 4, length); app_id[length] = 0;
-    /* The deployment must be a per-app --user install under
-     * /data/misc_de/<u>/matonos-linux/install/<uid>/app/. */
+    /* The resolved deployment must stay inside this immutable version. */
     char per_app[272];
     snprintf(per_app,sizeof(per_app),"%s/app/",user_dir);
     if (strncmp(child.output, per_app, strlen(per_app)) != 0 ||
@@ -995,9 +745,7 @@ static void read_exported_icon(const char* ref, int app_uid, FlatpakResult* resu
     free(bytes); result->output=encoded; result->ok=1; result->exit_code=0;
 }
 
-/* List app refs by running stock Flatpak against each per-app --user
- * installation under /data/misc_de/<u>/matonos-linux/install/<uid>. There is no global
- * Flatpak installation any more. */
+/* Shared code inventory filtered by live per-user PackageManager identities. */
 static void list_installed_refs(int user, FlatpakResult* result) {
     size_t capacity = 4096, used = 1;
     char* list = malloc(capacity);
@@ -1007,14 +755,13 @@ static void list_installed_refs(int user, FlatpakResult* result) {
     if(maton_scan_open_user(&apps,"install",(unsigned)user)) {free(list);set_error(result,"cannot read installed applications");return;}
     int truncated=0;
     while(!truncated && maton_scan_next(&apps,&scan_uid)>0) {
+        int present=stub_user_has_package(user*100000+(int)scan_uid);
+        if(present<0){maton_scan_close(&apps);free(list);set_error(result,"PackageManager inventory unavailable");return;}
+        if(!present)continue;
         long uid=scan_uid;
         char user_dir[256], system_dir[256];
         maton_install_dir(user_dir, sizeof(user_dir), (unsigned)uid);
-        int runtime_uid = -1;
-        if (remembered_runtime_install((int)uid, &runtime_uid) == 0)
-            maton_runtime_dir(system_dir, sizeof(system_dir), maton_user_of((unsigned)uid), (unsigned)runtime_uid);
-        else
-            snprintf(system_dir, sizeof(system_dir), "%s", user_dir);
+        snprintf(system_dir,sizeof(system_dir),"%s",MATON_RUNTIME_DIR);
         const char* args[] = {"--user", "list", "--app", "--columns=ref"};
         ChildResult child = run_cli_in(args, 4, 0, system_dir, user_dir);
         if (child.status == 0 && child.output) {
@@ -1037,7 +784,7 @@ static void list_installed_refs(int user, FlatpakResult* result) {
 }
 
 int flatpak_manager_prepare(const char* ref, const char* remote, int installer_uid,
-        int runtime_uid_hint, const char* operation_id,
+        const char* operation_id,
         char* app_commit, unsigned long app_commit_size,
         char* runtime_ref, unsigned long runtime_ref_size,
         char* runtime_commit, unsigned long runtime_commit_size,
@@ -1045,7 +792,6 @@ int flatpak_manager_prepare(const char* ref, const char* remote, int installer_u
         char* desktop, unsigned long desktop_size,
         char* error, unsigned long error_size) {
     if (error && error_size) error[0] = '\0';
-    int runtime_uid = -1;
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) || !valid_install_uid(installer_uid)) {
         if (error && error_size) snprintf(error, error_size, "valid application ref required");
         return -1;
@@ -1054,16 +800,8 @@ int flatpak_manager_prepare(const char* ref, const char* remote, int installer_u
         if (error && error_size) snprintf(error, error_size, "valid operation ID required");
         return -1;
     }
-    /* The marker is written after the first publish, so the first install of
-     * each Android user takes the bridge's runtime UID; later ones must match. */
-    if (remembered_runtime_install(installer_uid, &runtime_uid)) runtime_uid = runtime_uid_hint;
-    if (!valid_install_uid(runtime_uid) || runtime_uid / 100000 != installer_uid / 100000 ||
-            runtime_uid != runtime_uid_hint) {
-        if (error && error_size) snprintf(error, error_size, "runtime installation UID mismatch");
-        return -1;
-    }
     return flatpak_prepare(ref, (remote && *remote) ? remote : "flathub",
-            installer_uid, runtime_uid, operation_id, app_commit, app_commit_size,
+            installer_uid, operation_id, app_commit, app_commit_size,
             runtime_ref, runtime_ref_size, runtime_commit, runtime_commit_size,
             metadata, metadata_size, desktop, desktop_size, error, error_size);
 }
@@ -1071,7 +809,7 @@ int flatpak_manager_prepare(const char* ref, const char* remote, int installer_u
 void flatpak_manager_call(const char* command, const char* ref,
         int delete_data, const char* operation_id, const char* app_commit,
         const char* runtime_ref, const char* runtime_commit, const char* remote,
-        int app_uid, int runtime_uid, FlatpakResult* result) {
+        int app_uid, FlatpakResult* result) {
     if (!result) return;
     memset(result, 0, sizeof(*result));
     result->exit_code = 127;
@@ -1089,15 +827,13 @@ void flatpak_manager_call(const char* command, const char* ref,
         if (!result->output) set_error(result, "cannot allocate install status");
         return;
     }
-    /* Remote management targets the runtime app's --system installation for
-     * the calling Android user (the bridge supplies its UID). */
+    /* Remote configuration is system-wide and controlled only by linuxd. */
     if (strcmp(command, "list_remotes") == 0 || strcmp(command, "add_flathub") == 0) {
         ChildResult child;
         int changes_remote = strcmp(command, "add_flathub") == 0;
         char system_dir[256];
-        int have_runtime = valid_install_uid(runtime_uid) && !maton_prepare_install((unsigned)runtime_uid,1) &&
-                !maton_runtime_dir(system_dir, sizeof(system_dir), maton_user_of((unsigned)runtime_uid), (unsigned)runtime_uid);
-        if(!have_runtime) {set_error(result,"per-user runtime installation unavailable");return;}
+        if(maton_store_prepare()) {set_error(result,"system store unavailable");return;}
+        snprintf(system_dir,sizeof(system_dir),"%s",MATON_RUNTIME_DIR);
         // Flatpak supports listing the committed state during a transaction.
         // Never queue a Binder caller behind a ten-minute install.
         if (changes_remote && pthread_mutex_trylock(&g_operation_mutex) != 0) {
@@ -1136,14 +872,13 @@ void flatpak_manager_call(const char* command, const char* ref,
         if (!flatpak_manager_valid_ref(ref)) set_error(result, "valid complete Flatpak ref required");
         else if (strcmp(command, "install") == 0 && (!flatpak_manager_valid_ref(runtime_ref) ||
                 strncmp(runtime_ref, "runtime/", 8) || !remote || !*remote || strlen(remote) > 128 ||
-                !valid_install_uid(app_uid) || !valid_install_uid(runtime_uid) ||
-                app_uid / 100000 != runtime_uid / 100000))
-            set_error(result, "valid pinned runtime ref, remote, and same-user installation UIDs are required");
+                !valid_install_uid(app_uid)))
+            set_error(result, "valid pinned runtime ref, remote, and stub UID are required");
         else if (strcmp(command, "uninstall") == 0 && !flatpak_manager_installed_for_uid(ref, app_uid))
             set_error(result, "installed application deployment not found");
         else start_package_operation(strcmp(command, "uninstall") == 0, ref, delete_data,
                 operation_id, app_commit, runtime_ref, runtime_commit, remote,
-                app_uid, runtime_uid, result);
+                app_uid, result);
     } else {
         set_error(result, "unsupported Flatpak command");
     }

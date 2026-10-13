@@ -2,36 +2,18 @@
 service matonos-linuxd /system_ext/bin/matonos-linuxd
     class late_start
     user system
-    group system inet vendor_linuxd_uinput
-    # Only the child launcher changes supplementary groups. SYS_ADMIN is
-    # inherited only by the exec'd matonos-flatpak-store helper, whose SELinux
-    # installer domain is the sole holder of the code-store mount/loop grants.
-    capabilities SETGID SETUID CHOWN FOWNER KILL SYS_ADMIN
+    group system inet
+    # SETUID/SETGID are inherited by the staging helper for stub-attributed pulls.
+    # linuxd needs CHOWN/FOWNER to seal downloaded staging objects.
+    capabilities SETGID SETUID CHOWN FOWNER
     disabled
     restart_period 5
     seclabel u:r:matonos_linuxd:s0
 
+# Same system DE encryption policy as PackageManager's /data/app sibling.
+on post-fs-data
+    mkdir /data/linux-app 0755 system system encryption=Require
+    restorecon /data/linux-app
+
 on property:sys.boot_completed=1
-    # Stock Flatpak allocates per-app shared-memory directories on the host
-    # before it invokes bwrap. Android does not otherwise provide /dev/shm.
-    mkdir /dev/shm 01777 root root
-    mount tmpfs tmpfs /dev/shm nosuid nodev noexec mode=1777,context=u:object_r:matonos_linux_shm_file:s0
-    mkdir /data/matonos 0771 system system
-    mkdir /data/matonos/linux 0771 system system
-    mkdir /data/matonos/linux/cache 0770 system system
-    mkdir /data/matonos/linux/flatpak-data 0770 system system
-    # Shared, system-created socket namespace (relays + session bus); not a
-    # per-app XDG_RUNTIME_DIR: linuxd (system) binds the relay sockets here.
-    mkdir /data/matonos/linux/run 0711 system system
-    # Per-app XDG_RUNTIME_DIR. RAM-backed and cleared every boot; linuxd creates
-    # each <uid> subdir on the stub's request (0711 blocks other apps from
-    # squatting). The whole mount is one type, so path traversal just works.
-    mkdir /data/matonos/linux/tmp 0711 system system
-    mount tmpfs tmpfs /data/matonos/linux/tmp nosuid nodev mode=0711,uid=1000,gid=1000,size=64m,context=u:object_r:matonos_linux_runtime_file:s0
-    # r24 code store: image files and their mount points (installer-owned).
-    mkdir /data/matonos/linux/store 0700 system system
-    # Preserve dynamic MLS ranges on app-owned homes across daemon restarts.
-    restorecon /data/matonos/linux
-    restorecon_recursive /data/matonos/linux/cache /data/matonos/linux/run /data/matonos/linux/udev /data/matonos/linux/store
-    restorecon /data/matonos/linux/machine-id
     start matonos-linuxd

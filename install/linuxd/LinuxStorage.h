@@ -2,7 +2,7 @@
 #define MATON_LINUX_STORAGE_H
 #include "../../linux/flatpak/linux-paths.h"
 #include <sys/stat.h>
-/* These roots are prepared by vold, never created by linuxd. */
+/* Init prepares the encrypted root; linuxd prepares fixed children only. */
 static inline int maton_storage_context(const char* label) {
 #ifdef MATONOS_PUBLISH_HOST_TEST
     (void)label;return 0;
@@ -24,49 +24,25 @@ static inline int maton_storage_child(int parent,const char* name,const char* la
     if(fstat(fd,&st)||st.st_uid!=1000||fchmod(fd,mode)){close(fd);errno=EPERM;return -1;}
     return fd;
 }
-static inline int maton_storage_root(unsigned uid,int ce) {
-    if(!maton_path_uid_valid(uid)){errno=EINVAL;return -1;}
-    int base=open(ce?MATON_MISC_CE:MATON_MISC_DE,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-    if(base<0)return -1;
-    char user[32];snprintf(user,sizeof(user),"%u",maton_user_of(uid));
-    int parent=openat(base,user,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);close(base);
-    if(parent<0)return -1;
-    int root=openat(parent,"matonos-linux",O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);close(parent);
+/* Init owns the encrypted root. linuxd only prepares fixed children. */
+static inline int maton_store_prepare(void) {
+    int root=open(MATON_LINUX_ROOT,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
     if(root<0)return -1;
     struct stat st;
-    if(fstat(root,&st)||st.st_uid!=1000||(st.st_mode&0777)!=0711){close(root);errno=EPERM;return -1;}
-    return root;
-}
-static inline int maton_prepare_de(unsigned uid) {
-    int root=maton_storage_root(uid,0);if(root<0)return -1;
-    const char* names[]={"install","runtime","store"};
-    for(size_t i=0;i<sizeof(names)/sizeof(names[0]);i++) {
-        int child=maton_storage_child(root,names[i],i==2?"u:object_r:matonos_flatpak_store_file:s0":"u:object_r:matonos_flatpak_data_file:s0",i==2?0700:0711);
-        if(child<0){close(root);return -1;}
-        if(i==2) {
-            const char* stores[]={"apps","runtime"};
-            for(size_t j=0;j<2;j++) {
-                int sub=maton_storage_child(child,stores[j],"u:object_r:matonos_flatpak_store_file:s0",0700);
-                if(sub<0){close(child);close(root);return -1;}close(sub);
-            }
-        }
-        close(child);
+    if(fstat(root,&st)||st.st_uid!=1000){close(root);errno=EPERM;return -1;}
+    const char* names[]={"install","runtime","staging","store"};
+    for(size_t i=0;i<4;i++) {
+        int child=maton_storage_child(root,names[i],i>=2?"u:object_r:matonos_flatpak_store_file:s0":"u:object_r:matonos_flatpak_deployment_file:s0",i>=2?0711:0755);
+        if(child<0){close(root);return -1;}close(child);
     }
-    close(root);return 0;
-}
-static inline int maton_prepare_install(unsigned uid,int runtime) {
-    if(maton_prepare_de(uid))return -1;
-    int root=maton_storage_root(uid,0);if(root<0)return -1;
-    int parent=openat(root,runtime?"runtime":"install",O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);close(root);
-    if(parent<0)return -1;
-    char name[32];snprintf(name,sizeof(name),"%u",uid);
-    int child=maton_storage_child(parent,name,"u:object_r:matonos_flatpak_deployment_file:s0",0711);
-    close(parent);if(child<0)return -1;close(child);return 0;
-}
-static inline int maton_home_root(unsigned uid,int create) {
-    int root=maton_storage_root(uid,1);if(root<0)return -1;
-    int home=create ? maton_storage_child(root,"home","u:object_r:matonos_flatpak_data_file:s0",0711) :
-        openat(root,"home",O_PATH|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-    close(root);return home;
+    int manager=maton_storage_child(root,"manager","u:object_r:matonos_flatpak_deployment_file:s0",0700);
+    close(root);
+    if(manager<0)return -1;
+    const char* scratch[]={"home","cache","run","tmp"};
+    for(size_t i=0;i<4;i++) {
+        int child=maton_storage_child(manager,scratch[i],"u:object_r:matonos_flatpak_deployment_file:s0",0700);
+        if(child<0){close(manager);return -1;}close(child);
+    }
+    close(manager);return 0;
 }
 #endif

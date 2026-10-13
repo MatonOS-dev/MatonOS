@@ -22,43 +22,19 @@ binder_call(untrusted_app_all, matonos_system_bridge)
 neverallow { domain -matonos_linuxd } matonos_linuxd_service:service_manager add;
 binder_use(matonos_linuxd)
 binder_call(matonos_system_bridge, matonos_linuxd)
-# Installation metadata probes may inspect graphics devices; apps use stock app GPU rights.
-allow matonos_linuxd graphics_device:dir r_dir_perms;
-allow matonos_linuxd gpu_device:chr_file rw_file_perms;
 # linuxd sends asynchronous operation progress back to the bridge.
 binder_call(matonos_linuxd, matonos_system_bridge)
 
 # linuxd executes fixed install/query helpers; app launches stay in the stub.
 allow matonos_linuxd system_file:dir r_dir_perms;
 allow matonos_linuxd system_file:file { execute execute_no_trans getattr map open read };
-allow matonos_linuxd matonos_flatpak_data_file:dir create_dir_perms;
-allow matonos_linuxd matonos_flatpak_data_file:file create_file_perms;
-allow matonos_linuxd matonos_flatpak_data_file:lnk_file create_file_perms;
-allow matonos_linuxd matonos_flatpak_data_file:sock_file create_file_perms;
 allow matonos_linuxd matonos_flatpak_store_file:dir r_dir_perms;
 allow matonos_linuxd matonos_flatpak_store_file:file r_file_perms;
-allow matonos_linuxd self:capability { setuid setgid chown kill };
+allow matonos_linuxd self:capability { setuid setgid chown };
 allow matonos_linuxd self:capability fowner;
-# Port 53 has no dedicated label in Android policy (generic `port` type).
+# Management remote-add retrieves repository configuration over HTTPS.
 allow matonos_linuxd self:process { fork sigchld signal };
 net_domain(matonos_linuxd)
-
-# Metadata discovery only; no input/hidraw/uinput device access is granted.
-allow matonos_linuxd self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
-# Device-owned system_ext metadata ABI. ueventd restores these file_contexts
-# labels on coldboot and every add/change/bind/online device uevent.
-type sysfs_matonos_input, fs_type, sysfs_type;
-# Class links are created outside the device uevent subtree. genfscon labels
-# them immediately; the discovery type never grants access to regular files.
-type sysfs_matonos_discovery, fs_type, sysfs_type;
-# Traversal may cross already-labelled bus/platform directories. No generic
-# sysfs file reads: coredomain.te forbids those, including in enforcing builds.
-# Bionic realpath() uses O_PATH/fstat/stat on the resolved node directory.
-allow matonos_linuxd sysfs_type:dir { getattr search };
-allow matonos_linuxd sysfs_matonos_input:dir { getattr search };
-allow matonos_linuxd sysfs_matonos_input:file { getattr open read };
-allow matonos_linuxd sysfs_matonos_discovery:dir { getattr open read search };
-allow matonos_linuxd sysfs_matonos_discovery:lnk_file { getattr read };
 
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.
@@ -71,49 +47,19 @@ binder_call(matonos_system_bridge, system_server)
 allow matonos_system_bridge vendor_configs_file:dir search;
 allow matonos_system_bridge vendor_configs_file:file r_file_perms;
 
-# Generated stubs are Android-zone stock untrusted_app_* processes. Their
-# device-generated certificate is checked by linuxd and the System Bridge;
-# no custom app domain, MLS trust, or name-only seapp rule is appropriate.
-# Runtime directories use stock media_rw_data_file (internal storage): unlike
-# a custom app_data_file_type, it is in app_neverallows' create/unlink list.
-# linuxd pre-creates the UID-owned root at the verified UID's levelFrom=all
-# categories. Stubs inherit that level on newly created files and sockets.
-# DAC and the per-app mount namespace confine this shared/coarse file type.
-# Traverse linuxd-owned /data/matonos/linux/tmp parents, never create there.
-allow untrusted_app_all matonos_flatpak_data_file:dir { getattr search };
-allow untrusted_app_all media_rw_data_file:sock_file create_file_perms;
-type matonos_linux_shm_file, file_type, dev_type, mlstrustedobject;
-# Flatpak creates UID-owned 0700 per-app directories before namespace setup.
-# Payloads use their own bwrap tmpfs; the host mount is never exported whole.
-# Stock app rights already provide runtime directory/file creation and GPU
-# access. Do not grant untrusted apps a custom runtime type or graphics node.
-allow matonos_linuxd media_rw_data_file:sock_file { getattr write };
-# Stock domain.te already forbids privileged transitions into appdomain.
+# Runtime sockets live in each stub's PM-owned app data and use stock app policy.
 
-# The per-app session broker is a JNI library loaded inside the app's own
-# process (from the APK's nativeLibraryDir); there is no /system_ext/bin broker.
-
-type matonos_linux_data_file, file_type, data_file_type, core_data_file_type;
 type matonos_flatpak_deployment_file, file_type, data_file_type, core_data_file_type;
 type matonos_flatpak_cli_exec, exec_type, system_file_type, file_type;
-type matonos_flatpak_socket_file, file_type, data_file_type, core_data_file_type, mlstrustedobject;
 allow matonos_linuxd matonos_flatpak_cli_exec:file { execute execute_no_trans read open getattr map };
-allow matonos_linuxd untrusted_app_all:unix_stream_socket connectto;
 allow matonos_linuxd matonos_flatpak_deployment_file:dir create_dir_perms;
 allow matonos_linuxd matonos_flatpak_deployment_file:{ file lnk_file } create_file_perms;
-allow matonos_linuxd matonos_flatpak_data_file:file relabelfrom;
-allow matonos_linuxd matonos_flatpak_data_file:dir relabelfrom;
 allow matonos_linuxd matonos_linux_code_file:dir { create_dir_perms relabelto relabelfrom setattr };
 allow matonos_linuxd matonos_linux_code_file:file { create_file_perms relabelto relabelfrom setattr };
 # OSTree materializes deployments by hard-linking objects within the private
 # deployment tree. The target type is confined to linuxd-managed Flatpak data.
 allow matonos_linuxd matonos_flatpak_deployment_file:file link;
-allow matonos_linuxd matonos_linux_data_file:dir { create_dir_perms relabelfrom relabelto };
-allow matonos_linuxd matonos_flatpak_socket_file:dir create_dir_perms;
-allow matonos_linuxd matonos_flatpak_socket_file:{ file sock_file lnk_file } create_file_perms;
-allow matonos_linuxd cgroup_v2:dir { getattr open read search setattr };
 
-allow matonos_linuxd matonos_flatpak_data_file:dir relabelfrom;
 
 
 # Flatpak's wait/status path issues FIONREAD on its inherited anonymous pipe.
@@ -125,10 +71,7 @@ allowxperm matonos_linuxd self:fifo_file ioctl { 0x5413 };
 # Flatpak deployment code uses dedicated exec labels; mutable per-app
 # downloads use the separate data label below. Flatpak itself stages signed
 # refs in the shared repository before linuxd verifies and publishes them.
-type matonos_app_code_exec, exec_type, file_type;
-type matonos_runtime_exec, exec_type, file_type;
 # Flatpak app data remains a non-executable data_file_type.
-type matonos_app_volume_file, file_type, data_file_type, core_data_file_type;
 # Shared staging repository, populated only by the installer helper.
 type matonos_flatpak_store_file, file_type, data_file_type, core_data_file_type;
 type matonos_linux_code_file, file_type, data_file_type, core_data_file_type;
@@ -149,46 +92,15 @@ allow matonos_flatpak_installer matonos_flatpak_store_file:file create_file_perm
 allow matonos_flatpak_installer matonos_flatpak_cli_exec:file rx_file_perms;
 allow matonos_flatpak_installer matonos_linuxd:fd use;
 
-# Downloads keep stock Android's media_rw_data_file label (a dedicated type
-# would violate app_neverallows: MediaProvider and apps must create/unlink
-# there). Scope comes from the sandbox instead: linuxd opens only the granted
-# /data/media/<u>/Download subtree and hands bwrap an fd; the payload's mount
-# namespace contains nothing else of /data/media. RO grants use locked RO
-# mounts.
-allow matonos_linuxd media_userdir_file:dir { getattr search };
-allow matonos_linuxd media_rw_data_file:dir { r_dir_perms create add_name setattr ioctl };
-allow matonos_linuxd media_rw_data_file:{ file lnk_file } { getattr setattr };
-allowxperm matonos_linuxd media_rw_data_file:dir ioctl { 0x581f 0x5820 };
-# Shared storage is data, never code for a Linux payload.
-# Launch glue only passes the bind fd through; it never opens media content.
-# A teardown scan survives the stub's death: linuxd runs native cmd with a
-# fixed MEDIA_SCANNER_SCAN_FILE broadcast, authenticated as its system UID.
-allow matonos_linuxd activity_service:service_manager find;
-binder_call(matonos_linuxd, system_server)
-# JITs (Wine/Proton, Chromium) need executable anonymous mappings.
-
-# linux-data: UID-owned home, MLS categories derived from verified stub UID.
+# linux-app: only linuxd writes deployment metadata; stub data belongs to PM.
 allow matonos_linuxd self:process setfscreate;
-allow matonos_linuxd matonos_linux_data_file:{ file lnk_file sock_file } { create_file_perms relabelfrom relabelto };
-allow matonos_linuxd matonos_linux_data_file:dir { setattr rmdir };
-neverallow domain matonos_linux_data_file:file { execute execute_no_trans };
-neverallow appdomain matonos_linux_data_file:{ dir file lnk_file sock_file } *;
 
-# Per-user DE/CE roots are prepared by vold, never by linuxd in system_data_file.
-type matonos_linux_user_root_file, file_type, data_file_type, core_data_file_type;
-allow vold_prepare_subdirs matonos_linux_user_root_file:dir { create_dir_perms relabelto relabelfrom };
-allow vold_prepare_subdirs self:process setfscreate;
+# Init creates the encrypted system DE root; no per-user roots or vold patch.
 allow { matonos_linuxd matonos_flatpak_installer } system_data_file:dir { getattr search };
-allow matonos_linuxd system_data_file:dir { open read watch };
-allow { matonos_linuxd matonos_flatpak_installer } matonos_linux_user_root_file:dir { getattr search open read write add_name };
-# User removal recursively destroys both roots and their children.
-allow { vold vold_prepare_subdirs } { matonos_linux_user_root_file matonos_flatpak_data_file matonos_flatpak_deployment_file matonos_linux_code_file matonos_linux_data_file matonos_flatpak_store_file }:dir { r_dir_perms write remove_name rmdir };
-allow { vold vold_prepare_subdirs } { matonos_flatpak_data_file matonos_flatpak_deployment_file matonos_linux_code_file matonos_linux_data_file matonos_flatpak_store_file }:{ file lnk_file sock_file fifo_file } { getattr unlink };
 
 # Round 1: staging is installer-owned storage, never executable app-home data.
 allow matonos_linuxd matonos_flatpak_store_file:dir { create_dir_perms relabelfrom relabelto };
 allow matonos_linuxd matonos_flatpak_store_file:{ file lnk_file } { create_file_perms relabelfrom relabelto };
-allow matonos_flatpak_installer matonos_flatpak_data_file:dir search;
 allow matonos_flatpak_installer matonos_flatpak_installer_exec:file rx_file_perms;
 allow matonos_flatpak_installer system_file:file { execute execute_no_trans read open getattr map };
 allow matonos_flatpak_installer proc_modules:file r_file_perms;
@@ -200,11 +112,8 @@ allow matonos_linuxd system_userdir_file:dir { read open watch };
 allow matonos_linuxd apk_data_file:dir r_dir_perms;
 allow matonos_linuxd apk_data_file:file r_file_perms;
 # OSTree hardlinks its own metadata/objects during publication.
-allow matonos_linuxd { matonos_flatpak_data_file matonos_linux_data_file }:file link;
 allow matonos_linuxd matonos_flatpak_deployment_file:file ioctl;
 allowxperm matonos_linuxd matonos_flatpak_deployment_file:file ioctl { 0x9409 };
-allow init { matonos_flatpak_data_file matonos_linux_shm_file }:dir mounton;
-allow init matonos_linux_shm_file:filesystem { mount relabelfrom relabelto };
 allow storaged sysfs_devices_block:file { read open getattr };
 # Secure Element's package-specific seapp rule uses stock app_data_file rights.
 # system_app_data_file is reserved to user=system by stock seapp assertions.
@@ -214,17 +123,8 @@ allow audioserver { appdomain_tmpfs system_server_tmpfs }:file { read write map 
 allow mediaswcodec system_server_tmpfs:file { read write map };
 allow system_server audioserver_tmpfs:file { read write map };
 
-# Zone B: the signed-ref puller may stage objects, never inspect app homes.
-neverallow matonos_flatpak_installer matonos_linux_data_file:{ dir file lnk_file sock_file } *;
 
-# Round 2: desktop payload runtime (zone B). Reads are limited to labelled
-# kernel metadata; setup/mounting stays outside the payload domain.
 allow matonos_system_bridge activity_task_service:service_manager find;
-type proc_matonos_sched_autogroup, fs_type, proc_type;
-# Hotplug observation only: no injection, ioctl, or net_admin capability.
-# Shared memory is non-executable. Per-UID directories and mount namespaces
-# select the app's objects; this coarse SELinux label alone is not that scope.
-# Downloads is a namespace-delegated subtree, as documented above.
 # Descriptor exchange for graphics and shared fences does not authorize
 # opening app homes or inspecting another process's memory/proc files.
 allow mediaserver audioserver_tmpfs:file { read write map };
@@ -241,11 +141,9 @@ allow { appdomain -isolated_app_all system_server surfaceflinger bootanim } sysf
 allow { appdomain -isolated_app_all system_server } udmabuf_device:chr_file { read write };
 allow { appdomain system_server surfaceflinger bootanim } sysfs_type:dir search;
 
-# Round 4: boot metadata and context-mounted POSIX shm.
+# Read-only boot metadata used by v3.
 type sysfs_matonos_ksm, fs_type, sysfs_type;
 allow system_server sysfs_matonos_ksm:file { open read };
-allow matonos_linux_shm_file self:filesystem associate;
-# Input-device uevent metadata uses the existing read-only input label.
 # DMI product name is presentation metadata, not a firmware control.
 type sysfs_matonos_product_name, fs_type, sysfs_type;
 allow untrusted_app_all sysfs_matonos_product_name:file { open read };
@@ -255,26 +153,13 @@ allow matonos_flatpak_installer matonos_flatpak_store_file:file { link ioctl };
 allowxperm matonos_flatpak_installer matonos_flatpak_store_file:file ioctl { 0x9409 };
 allow matonos_flatpak_installer matonos_flatpak_store_file:lnk_file { create getattr rename };
 allow matonos_linuxd matonos_flatpak_store_file:{ file lnk_file } link;
-allow matonos_linuxd matonos_flatpak_data_file:file ioctl;
-allowxperm matonos_linuxd matonos_flatpak_data_file:file ioctl { 0x9409 };
 allow matonos_linuxd matonos_flatpak_deployment_file:{ dir file } relabelfrom;
 allow matonos_linuxd matonos_linux_code_file:file link;
 allow matonos_linuxd matonos_linux_code_file:lnk_file { getattr read relabelto unlink };
-allow matonos_linuxd matonos_linux_user_root_file:dir remove_name;
-allow matonos_linuxd matonos_linux_data_file:dir ioctl;
-allowxperm matonos_linuxd matonos_linux_data_file:dir ioctl { 0x581f 0x5820 };
-allow matonos_linuxd cgroup_v2:file { getattr read };
-allow matonos_linuxd media_rw_data_file:lnk_file read;
 
 # v3 virtual mount setup uses memfds in the existing app domain.
 allow untrusted_app_all self:memfd_file { open setattr };
 
-# Flatpak/bwrap inspect the fixed APEX, read-only deployments and locks.
-# Configure loopback only inside the new network namespace.
-# Namespace setup reads only these two tunables. No generic proc file reads.
-type proc_matonos_namespace_limits, fs_type, proc_type;
-# nsfs handles are anonymous namespace inodes, not missing disk labels.
-type matonos_namespace_file, fs_type;
 
 # Wine/Proton ntsync: apps (and Linux layer v3 payloads inside them) may use
 # the NT sync device; ioctls limited to ntsync's 'N' 0x80-0x8d range.
@@ -283,12 +168,15 @@ allowxperm { appdomain -isolated_app_all } ntsync_device:chr_file ioctl { 0x4e80
 
 # v3-stub: ELF loading is in-process under the stub's stock app filter/domain.
 # Read and executable mmap only: no execute_no_trans, transitions or write grants.
-allow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file matonos_app_code_exec matonos_runtime_exec }:dir r_dir_perms;
-allow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file matonos_app_code_exec matonos_runtime_exec }:file { r_file_perms execute lock };
-allow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file matonos_app_code_exec matonos_runtime_exec }:lnk_file r_file_perms;
-allow untrusted_app_all matonos_linux_user_root_file:dir { getattr search };
+allow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file }:dir r_dir_perms;
+allow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file }:file { r_file_perms execute lock };
+allow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file }:lnk_file r_file_perms;
 allow untrusted_app_all matonos_flatpak_cli_exec:file { r_file_perms execute };
 
-# v3 stubs publish the per-app Xwayland display as a symlink in their own
-# runtime dir (stock media_rw_data_file, already create/unlink for files).
-allow untrusted_app_all media_rw_data_file:lnk_file { create unlink read getattr };
+
+# linux-app: ART/PM-style read-only access, no writes or execute_no_trans.
+allow init matonos_flatpak_deployment_file:dir { create_dir_perms relabelto };
+allow untrusted_app_all matonos_flatpak_deployment_file:file { map lock };
+neverallow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file }:dir { write add_name remove_name create rmdir setattr relabelfrom relabelto };
+neverallow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file }:{ file lnk_file } { write append create unlink rename setattr relabelfrom relabelto };
+neverallow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file }:file execute_no_trans;

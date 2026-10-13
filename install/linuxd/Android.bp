@@ -15,8 +15,6 @@ cc_binary {
         "FlatpakManager.c",
         "FlatpakPublish.c",
         "RuntimeRefs.c",
-        "UdevDatabase.c",
-        "SessionPads.c",
         "StubVerify.c",
         ":matonos-linuxd-aidl",
     ],

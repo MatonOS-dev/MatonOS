@@ -134,13 +134,3 @@ android_app_import {
 // The session broker is a JNI library loaded inside each app's own process
 // (lib/x86_64/libmatonos-dbus-broker.so in the APK). There is no standalone
 // /system_ext/bin broker; the per-app runtime never runs it as a process.
-
-// MatonOS Linux Runtimes: owns a UID for Flatpak SYSTEM installations.
-// Not privileged, not platform-signed. Its only purpose is a stable UID
-// that linuxd uses for FLATPAK_SYSTEM_DIR ownership.
-android_app_import {
-    name: "MatonOSLinuxRuntimes",
-    apk: "apps-built/LinuxRuntimes.apk",
-    system_ext_specific: true,
-    preprocessed: true,
-}

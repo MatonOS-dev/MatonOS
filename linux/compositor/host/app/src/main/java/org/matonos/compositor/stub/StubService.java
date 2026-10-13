@@ -7,7 +7,6 @@ import android.os.IBinder;
 import android.util.Log;
 
 import org.matonos.compositor.PerAppRuntime;
-import org.matonos.systembridge.ILinuxd;
 
 import java.io.File;
 
@@ -57,13 +56,14 @@ public final class StubService extends Service {
             } catch (Exception ignored) { }
         }
         if (runtime == null && ref != null) {
-            prepareRuntimeDirectory();
-            File directory = new File("/data/matonos/linux/tmp/" + android.os.Process.myUid());
+            File directory = new File(getDataDir(), "runtime").getAbsoluteFile();
             if (!directory.isDirectory() && !directory.mkdirs()) {
                 stopSelf();
                 return START_NOT_STICKY;
             }
             try {
+                directory = directory.getCanonicalFile();
+                android.system.Os.chmod(directory.getAbsolutePath(), 0700);
                 runtime = new PerAppRuntime(this, directory, ref);
                 sRuntime = runtime;
             } catch (Exception error) {
@@ -89,16 +89,4 @@ public final class StubService extends Service {
 
     @Override public IBinder onBind(Intent intent) { return null; }
 
-    /** linuxd creates our fixed runtime dir (<uid>) so no app can squat it. */
-    private void prepareRuntimeDirectory() {
-        try {
-            IBinder binder = (IBinder) Class.forName("android.os.ServiceManager")
-                    .getMethod("checkService", String.class)
-                    .invoke(null, "org.matonos.systembridge.ILinuxd/default");
-            ILinuxd linuxd = ILinuxd.Stub.asInterface(binder);
-            if (linuxd != null) linuxd.prepareRuntime(getPackageName());
-        } catch (Exception error) {
-            Log.w("MatonStub", "linuxd could not prepare the runtime directory", error);
-        }
-    }
 }
