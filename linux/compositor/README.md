@@ -1,6 +1,15 @@
 Current launch architecture: [v3 launch from the stub](V3-LAUNCH.md).
 The earlier v2 launch/domain notes below are historical; there is no v2 fallback.
 
+> **Architecture rule (user, 2026-09-28, restated 2026-10-08 and 2026-10-13):
+> there is NO shared/global compositor.** Each Linux app's stub process runs its
+> own compositor (`PerAppRuntime` → `NativeCompositor.nativeStart`), its own
+> Xwayland and bus. Cross-app features go through Android APIs (clipboard,
+> drag and drop, intents). Do not add a central Wayland display, session
+> service or compositor process. `CompositorService` (`:compositor`) is a
+> launch coordinator only and is being removed. Text below that describes a
+> service owning the Wayland display is historical.
+
 # MatonOS Wayland compositor v1 — implementation in progress
 
 This area contains a clean-room wlroots host and Android output bridge. Pinned
@@ -31,7 +40,7 @@ MatonOS is based on AOSP.
   pixels once with GLES before SurfaceControl presents that same allocation.
   If EGL import/upload fails, the output stays blank and the service remains
   alive.
-- The service owns the Wayland display in its `:compositor` process. Each XDG
+- (Historical, superseded: per-app compositor in the stub.) The service owned the Wayland display in its `:compositor` process. Each XDG
   toplevel gets its own wlroots scene and headless output; a Java callback
   starts a matching `WindowActivity` for new toplevels. A bundled Wayland SHM
   demo client connects over a socket under the app's private files directory.
