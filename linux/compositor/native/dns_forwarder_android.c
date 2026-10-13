@@ -19,7 +19,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define DNS_PORT 53
+#define DNS_PORT 5353
 #define DNS_RATE_CAPACITY 100.0
 #define DNS_RATE_PER_SECOND 50.0
 #define DNS_RESOLVER_TIMEOUT_MS 10000
@@ -263,13 +263,10 @@ static void *forwarder_main(void *unused) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_org_matonos_compositor_stub_DnsForwarder_nativeStart(JNIEnv *env, jclass clazz,
-                                                          jint passed_udp_fd, jint passed_tcp_fd) {
+Java_org_matonos_compositor_stub_DnsForwarder_nativeStart(JNIEnv *env, jclass clazz) {
     (void)clazz;
     pthread_mutex_lock(&state_lock);
     if (worker_started) {
-        close(passed_udp_fd);
-        close(passed_tcp_fd);
         char address[16], existing[32];
         dns_forwarder_address(service_uid, address);
         snprintf(existing, sizeof(existing), "%s:%d", address, service_port);
@@ -279,13 +276,17 @@ Java_org_matonos_compositor_stub_DnsForwarder_nativeStart(JNIEnv *env, jclass cl
     service_uid = (uint32_t)getuid();
     char address[16]; dns_forwarder_address(service_uid, address);
     if (inet_pton(AF_INET, address, &service_address) != 1) {
-        close(passed_udp_fd); close(passed_tcp_fd);
         pthread_mutex_unlock(&state_lock); return NULL;
     }
     service_port = DNS_PORT;
-    udp_fd = passed_udp_fd;
-    tcp_fd = passed_tcp_fd;
-    if (udp_fd < 0 || tcp_fd < 0) {
+    struct sockaddr_in bind_address = {.sin_family = AF_INET,
+        .sin_port = htons(DNS_PORT), .sin_addr = service_address};
+    udp_fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+    tcp_fd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (udp_fd < 0 || tcp_fd < 0 ||
+            bind(udp_fd, (struct sockaddr *)&bind_address, sizeof(bind_address)) != 0 ||
+            bind(tcp_fd, (struct sockaddr *)&bind_address, sizeof(bind_address)) != 0 ||
+            listen(tcp_fd, SOMAXCONN) != 0) {
         if (udp_fd >= 0) close(udp_fd);
         if (tcp_fd >= 0) close(tcp_fd);
         udp_fd = tcp_fd = -1; pthread_mutex_unlock(&state_lock); return NULL;

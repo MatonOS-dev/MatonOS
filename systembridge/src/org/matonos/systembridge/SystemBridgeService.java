@@ -343,26 +343,6 @@ public final class SystemBridgeService extends Service {
             finally{Binder.restoreCallingIdentity(identity);}
         }
 
-        @Override public ParcelFileDescriptor[] createDnsForwarderSockets(String address, int stubUid, String ref) {
-            String caller = enforceAuthorizedCaller("flatpak_launch", "createDnsForwarderSockets");
-            if (!"org.matonos.compositor".equals(caller) || stubUid < 10000 ||
-                    !flatpakStubManager.ownsStub(stubUid, ref))
-                throw new SecurityException("Only the compositor may bind DNS sockets for a verified stub");
-            String expected = String.format(Locale.ROOT, "127.%d.%d.%d",
-                    10 + ((stubUid >>> 16) & 0x3f), (stubUid >>> 8) & 0xff, stubUid & 0xff);
-            if (!expected.equals(address)) throw new SecurityException("DNS address does not match the stub UID");
-            long identity = Binder.clearCallingIdentity();
-            try {
-                ILinuxd daemon = ILinuxd.Stub.asInterface(ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default"));
-                if (daemon == null) throw new IllegalStateException("linuxd is unavailable");
-                return daemon.createDnsForwarderSockets(address, stubUid);
-            } catch (RemoteException error) {
-                throw new IllegalStateException("linuxd could not bind per-app DNS sockets", error);
-            } finally {
-                Binder.restoreCallingIdentity(identity);
-            }
-        }
-
         @Override public String getFlatpakStubCommits(int uid, String ref) {
             // linuxd runs as system; app callers must pass the existing scoped gate.
             if (Binder.getCallingUid() != android.os.Process.SYSTEM_UID)

@@ -4,28 +4,48 @@ Each generated app stub runs a native DNS forwarder under its own Android UID.
 The loopback address is `127.(10 + ((uid >> 16) & 0x3f)).((uid >> 8) & 0xff).(uid & 0xff)`.
 This maps into `127.10.0.0` through `127.73.255.255` and never overlaps
 `127.0.0.0/16`. The mapping preserves UID bits 0–21; tests include distinct
-multi-user UIDs. The stub always advertises `address:53`; there is no
-high-port fallback.
+multi-user UIDs. The resolver view advertises `address:53`; the stub binds its own UDP and TCP
+listeners at `address:<port>` (kernel-assigned, shared by UDP and TCP) before opening the host session. Binding either
+socket failing rejects session setup, and partial setup closes both sockets.
+No privileged socket, Binder FD relay or linuxd low-port capability is involved.
 
-## Privileged socket handoff
+## Stub ownership and loader translation
 
-`StubActivity` sends its UID-derived address through the authenticated
-`IEmbeddedHost.openSession` Binder call. The compositor verifies the signed
-stub, asks `SystemBridgeService` to have linuxd create and bind UDP and TCP
-sockets at that address on port 53, and returns the resulting
-`ParcelFileDescriptor`s in the same Binder response. Both the bridge and
-linuxd check the caller/UID and address formula before binding. linuxd has the
-low-port capability as an init service; the bridge relays the descriptors and
-retains no sockets. The stub native worker takes ownership of the received
-descriptors and only receives, sends, accepts and serves on those sockets; it
-never binds a port.
+The port is unprivileged and kernel-assigned: UDP binds port 0, TCP binds the
+same port (retrying with a new UDP port on EADDRINUSE). A fixed port such as
+5353 is unsafe because any app's wildcard bind of it would block the stub. The
+stub passes the port to the loader (`--dns-forwarder address:port`) at launch,
+so there is no discovery step.
+The kernel clamps the Java listener's requested maximum backlog to somaxconn.
+Sockets close when the stub process exits. The retained native forwarder
+implementation still binds a fixed port (not used); production stubs use Java.
 
-The authenticated `openSession` call carries the address to linuxd in the
-existing `getOwnedFlatpakLaunchSpec` request. The system bridge passes it as linuxd's
-`dnsServers` value, and linuxd's existing `MATON_FLATPAK_DNS` monitor writer
-places it in the app's `/etc/resolv.conf`. The static-apex resolver writer is
-unchanged. Because this resolver format has no port field, port 53 is required;
-failure to bind either socket fails session setup.
+The authenticated `openSession` call carries the logical `address:53` to the
+bridge's existing `getOwnedFlatpakLaunchSpec` request. The bridge validates the
+full UID-derived address and sends its address alone as linuxd's `dnsServers`.
+The existing `MATON_FLATPAK_DNS` monitor writer remains unchanged, as does the
+static-apex resolver writer. `/etc/resolv.conf` still says `nameserver address`.
+
+V3Launcher checks that address against its own UID, then passes
+`--dns-forwarder address:5353` to the resident loader. Only AF_INET destinations
+at that exact address and port 53 are rewritten, using private sockaddr copies:
+`connect`, explicit-destination `sendto`, `sendmsg` and every `sendmmsg` entry.
+Successful or in-progress translated connects are tracked so `getpeername`
+returns port 53 (including truncated buffers and duplicated descriptors).
+Direct connects to 5353 and unrelated addresses/ports retain native behavior.
+Configuration and descriptor tracking survive fork and resident exec.
+
+The stacked filter traps connect and getpeername; sendto is trapped only when
+its address pointer is non-null. BPF cannot read msg_name, so sendmsg/sendmmsg
+are always trapped and the handler checks their nested destinations. Other
+socket behavior stays native. glibc's connected resolver and musl's unconnected
+sendto style are supported. Explicit destinations in these four APIs have no
+untranslated case; other mechanisms such as io_uring remain unsupported.
+recvfrom/recvmsg source addresses expose the actual 5353 sender; getpeername
+is the supported logical-peer view. Descriptor transfers through SCM_RIGHTS,
+shared socket reconnects across processes, close_range without subsequent
+intercepted creation, and concurrent descriptor-table mutation retain the
+proxy's existing compatibility limitations. This is not a containment layer.
 
 ## Query attribution and forwarding
 
@@ -48,13 +68,11 @@ answer bytes.
 
 ## SELinux and runtime requirements
 
-linuxd's init service and SELinux domain grant low-port bind capability and
-DNS-port UDP/TCP socket binding. The forwarder app domain must be able to use
-`NETLINK_SOCK_DIAG` for inet_diag dumps and receive the passed sockets; validate
-the precise AVCs on device before adding any app-domain policy. No policy was
-added for the generated stub domains in this change. Binding, descriptor
-transfer, sock_diag visibility and resolver behavior still need device
-validation.
+linuxd no longer has NET_BIND_SERVICE or the DNS-port name_bind rule. The
+bridge/compositor/stub fd and socket grants for linuxd DNS sockets are removed.
+The app binds ordinary unprivileged IP sockets and needs NETLINK_SOCK_DIAG
+visibility for attribution. Validate these on a fresh enforcing image before
+adding any policy; no stock AOSP policy modification is introduced here.
 
 ## Host unit test
 
@@ -71,17 +89,38 @@ The test covers exact tuple UID checks, mocked UDP inet_diag DUMP attribution
 token-bucket behavior, TCP framing and UID-derived addresses for multiple
 Android users.
 
-## On-device validation plan
+## Proxy host tests
 
-1. Start a generated stub and confirm the privileged bridge binds both UDP and
-   TCP on its full-UID-derived address at port 53, then transfers both FDs.
-2. Resolve A/AAAA records from an unconnected UDP `sendto()` socket and a
-   connected socket. Confirm another UID receives no answer and differing
-   `SO_REUSEPORT` owners are dropped.
-3. Resolve an answer requiring TCP fallback; check the framing and answer bytes.
-4. Test Private DNS, VPN, network switching and per-UID network rules against
-   Android's resolver behavior.
-5. Confirm `/etc/resolv.conf` always names the per-app address, and verify
-   sockets close when the stub process exits and can be rebound on relaunch.
-6. Inspect SELinux AVCs for linuxd low-port binding and stub sock_diag;
-   exercise process death, activity recreation and multiple windows.
+```sh
+bash linux/compat-proxy/tests/run.sh
+python3 linux/compat-proxy/tests/dns-host.py
+bash linux/compat-proxy/build-android.sh
+python3 linux/compat-proxy/tests/lifetime.py /mnt/data/aosp/out/matonos/compat-proxy/libmatonos-v3-loader.so
+```
+
+The suite includes a production translation test with a mocked syscall backend
+(glibc-style connect and musl-style sendto, message arrays, peer reporting,
+unrelated endpoints and invalid configuration). dns-host.py runs actual glibc
+res_nquery UDP/TCP lookups and musl-style sendto against local DNS servers,
+plus message APIs, dup/peer reporting and native endpoint checks. It needs
+AF_INET socket permission; the round-8 sandbox denies socket() with EPERM, so
+these live host lookups were not run successfully there. This is a musl syscall
+pattern fixture, not a compiled musl resolver.
+
+## Fresh-image validation plan (coordinator)
+
+1. Launch a signed stub; verify that its UID owns UDP and TCP listeners on
+   its full-UID-derived address at 5353, and linuxd owns no port-53 listener.
+2. Check resolv.conf contains the address alone. Resolve A/AAAA with connected
+   UDP/TCP and unconnected sendto, including glibc and an actual musl runtime.
+3. Test sendmsg/sendmmsg explicit addresses, logical getpeername :53, unrelated
+   endpoints and TCP fallback. Another UID must receive no forwarded answer;
+   conflicting SO_REUSEPORT owners must be rejected.
+4. Compare Private DNS, VPN, default-network switching and per-UID network rules
+   with Android's resolver behavior. Collect sock_diag/socket AVCs in enforcing.
+5. Occupy either 5353 listener before launch and confirm session failure and
+   closure of any partially bound socket. Close/reopen, force-stop, activity
+   recreation and multiple windows must not leak sockets or process trees.
+
+No adb, VM, image or policy build is performed by this task. See the round-8
+result report for compile/test evidence and remaining integration checks.

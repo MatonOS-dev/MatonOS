@@ -2,7 +2,6 @@ package org.matonos.compositor.stub;
 
 import android.net.DnsResolver;
 import android.os.CancellationSignal;
-import android.os.ParcelFileDescriptor;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
@@ -20,7 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Per-stub-process DNS listener for the app's sandbox (glibc runtimes need a
- * plain resolv.conf server). linuxd binds the UDP and TCP sockets on the
+ * plain resolv.conf server). The stub binds UDP and TCP on a kernel-assigned port on the
  * stub's own 127.x address; queries are answered through netd as this stub's
  * UID (DnsResolver), so Private DNS, VPNs and firewall rules apply.
  *
@@ -43,25 +42,40 @@ final class DnsForwarder {
     private static double tokens = RATE_CAPACITY;
     private static long tokensAt = System.nanoTime();
 
-    static synchronized String acquire(ParcelFileDescriptor[] sockets) {
-        if (sockets == null || sockets.length != 2 || sockets[0] == null || sockets[1] == null) return null;
-        if (endpoint != null) {
-            closeQuietly(sockets[0]);
-            closeQuietly(sockets[1]);
-            return endpoint;
-        }
+    /** Kernel-assigned at bind: a fixed port (e.g. 5353) could be held by any app's wildcard bind. */
+    static int port;
+
+    static synchronized String acquire() {
+        if (endpoint != null) return endpoint;
         try {
-            udp = adopt(sockets[0]);
-            tcp = adopt(sockets[1]);
             uid = android.os.Process.myUid();
             String self = endpoint();
             address = (Inet4Address) InetAddress.getByName(self.substring(0, self.length() - 3));
+            // UDP picks a free port; TCP must share it. If another socket already
+            // holds that TCP port, start over with a new UDP port.
+            for (;;) {
+                udp = Os.socket(OsConstants.AF_INET, OsConstants.SOCK_DGRAM | OsConstants.SOCK_CLOEXEC, 0);
+                Os.bind(udp, address, 0);
+                port = ((java.net.InetSocketAddress) Os.getsockname(udp)).getPort();
+                tcp = Os.socket(OsConstants.AF_INET, OsConstants.SOCK_STREAM | OsConstants.SOCK_CLOEXEC, 0);
+                try {
+                    Os.bind(tcp, address, port);
+                    break;
+                } catch (android.system.ErrnoException busy) {
+                    closeQuietly(udp);
+                    closeQuietly(tcp);
+                    udp = tcp = null;
+                    if (busy.errno != OsConstants.EADDRINUSE) throw busy;
+                }
+            }
+            // The kernel clamps the backlog to its configured somaxconn.
+            Os.listen(tcp, Integer.MAX_VALUE);
             Thread worker = new Thread(DnsForwarder::serve, "maton-dns-forwarder");
             worker.setDaemon(true);
             worker.start();
             endpoint = self;
         } catch (Exception error) {
-            Log.e(TAG, "Cannot start the DNS forwarder", error);
+            Log.e(TAG, "Cannot bind the DNS forwarder", error);
             closeQuietly(udp);
             closeQuietly(tcp);
             udp = tcp = null;
@@ -73,12 +87,6 @@ final class DnsForwarder {
         int uid = android.os.Process.myUid();
         return String.format(java.util.Locale.ROOT, "127.%d.%d.%d:53",
                 10 + ((uid >>> 16) & 0x3f), (uid >>> 8) & 0xff, uid & 0xff);
-    }
-
-    private static FileDescriptor adopt(ParcelFileDescriptor socket) throws Exception {
-        FileDescriptor fd = Os.dup(socket.getFileDescriptor());
-        socket.close();
-        return fd;
     }
 
     private static void serve() {
@@ -188,8 +196,8 @@ final class DnsForwarder {
 
     /** Connected TCP flow: exact tuple. -1 when unknown. */
     private static int tcpOwner(Inet4Address source, int sourcePort) throws Exception {
-        for (DiagSocket s : dump(OsConstants.IPPROTO_TCP, source, sourcePort, address, 53))
-            if (s.localPort == sourcePort && s.remotePort == 53 &&
+        for (DiagSocket s : dump(OsConstants.IPPROTO_TCP, source, sourcePort, address, port))
+            if (s.localPort == sourcePort && s.remotePort == port &&
                     java.util.Arrays.equals(s.local, source.getAddress()) &&
                     java.util.Arrays.equals(s.remote, address.getAddress())) return s.uid;
         return -1;
@@ -202,7 +210,7 @@ final class DnsForwarder {
         java.util.List<DiagSocket> sockets = dump(OsConstants.IPPROTO_UDP, null, sourcePort, null, 0);
         int found = -1;
         for (DiagSocket s : sockets) {
-            if (s.localPort != sourcePort || s.remotePort != 53 || !java.util.Arrays.equals(s.remote, address.getAddress()) ||
+            if (s.localPort != sourcePort || s.remotePort != port || !java.util.Arrays.equals(s.remote, address.getAddress()) ||
                     !java.util.Arrays.equals(s.local, source.getAddress())) continue;
             if (found != -1 && found != s.uid) return -1;
             found = s.uid;
@@ -268,7 +276,6 @@ final class DnsForwarder {
     private static void closeQuietly(Object closeable) {
         try {
             if (closeable instanceof FileDescriptor) Os.close((FileDescriptor) closeable);
-            else if (closeable instanceof ParcelFileDescriptor) ((ParcelFileDescriptor) closeable).close();
         } catch (Exception ignored) { }
     }
 

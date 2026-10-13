@@ -47,6 +47,9 @@ final class V3Launcher {
         Files.write(resolv.toPath(), ("nameserver " + dns + "\n").getBytes(StandardCharsets.UTF_8));
         ArrayList<String> command = new ArrayList<>();
         command.add(loader.getAbsolutePath());
+        if (!DnsForwarder.endpoint().equals(dns + ":53") || DnsForwarder.acquire() == null)
+            throw new IllegalStateException("Per-app DNS forwarder is unavailable");
+        command.add("--dns-forwarder"); command.add(dns + ":" + DnsForwarder.port);
         command.add("--parent-pid"); command.add(Integer.toString(android.os.Process.myPid()));
         command.add("--map"); command.add(resolv.getAbsolutePath()); command.add("/etc/resolv.conf");
         File x11 = new File(runtime.directory(), "x11");

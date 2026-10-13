@@ -243,10 +243,9 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
                     if(destroyed)return;
                     if(runtime==null)throw new IllegalStateException("The app runtime did not become ready");
                     runtime.setWindowHost(StubActivity.this, window);
-                    android.os.ParcelFileDescriptor[] dnsSockets = new android.os.ParcelFileDescriptor[2];
-                    opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener,lifeline(),DnsForwarder.endpoint(),dnsSockets);
-                    if (DnsForwarder.acquire(dnsSockets) == null)
-                        throw new IllegalStateException("Privileged DNS sockets could not be activated");
+                    if (DnsForwarder.acquire() == null)
+                        throw new IllegalStateException("Per-app DNS sockets could not be bound");
+                    opened=IEmbeddedHost.Stub.asInterface(binder).openSession(ref,listener,lifeline(),DnsForwarder.endpoint());
                     final IEmbeddedSession active=opened;
                     boolean needsLaunch=window==0;
                     runOnUiThread(() -> {
