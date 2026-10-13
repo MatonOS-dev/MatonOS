@@ -15,6 +15,12 @@ import java.util.Map;
 
 /** One Linux process tree per stub UID, under the inherited app filter/domain. */
 final class V3Launcher {
+    private static final java.util.concurrent.ExecutorService SPAWNER =
+            java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+                Thread thread = new Thread(task, "v3-spawner");
+                thread.setDaemon(true);
+                return thread;
+            });
     private static Process process;
     private static Integer exit;
     private static String error;
@@ -113,7 +119,11 @@ final class V3Launcher {
         }
         builder.directory(home);
         File deployment=pinDeployment(current,uid%100000);
-        try {env.put("FLATPAK_USER_DIR",deployment.getAbsolutePath());process = builder.start();}
+        // PR_SET_PDEATHSIG (the loader's --parent-pid) fires when the *thread*
+        // that forked it exits, not the process. Activity launch threads end
+        // whenever a window closes, so fork from a thread that lives as long as
+        // this stub process.
+        try {env.put("FLATPAK_USER_DIR",deployment.getAbsolutePath());process = SPAWNER.submit(builder::start).get();}
         catch(Exception failure){deploymentLease.release();deploymentChannel.close();deploymentLease=null;deploymentChannel=null;throw failure;}
         final Process child = process;
         Log.i("MatonV3", "Started v3 loader for " + context.getPackageName());

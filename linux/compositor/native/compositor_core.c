@@ -49,6 +49,8 @@
 #include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <limits.h>
 #include "pointer_buttons.h"
 #include <wlr/types/wlr_pointer_constraints_v1.h>
 #include <wlr/types/wlr_relative_pointer_v1.h>
@@ -1129,6 +1131,15 @@ bool maton_core_xwayland_init(const char* socket_dir,const char* xwayland_path) 
   /* Only consulted from the Wayland thread; Xwayland sessions are created
    * after the server starts, so the environment is in place in time. */
   if(setenv("WLR_XWAYLAND_SOCKET_DIR",socket_dir,1))return false;
+  /* An app process's stderr goes nowhere; Xwayland reports fatal startup
+   * errors only there. Keep them in the app's runtime dir (<dir>/../xwayland.log). */
+  {
+    char log_path[PATH_MAX];
+    if(snprintf(log_path,sizeof(log_path),"%s/../xwayland.log",socket_dir)<(int)sizeof(log_path)){
+      int log_fd=open(log_path,O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC,0600);
+      if(log_fd>=0){dup2(log_fd,STDERR_FILENO);close(log_fd);}
+    }
+  }
   /* wlroots bakes the build-host Xwayland path from xwayland.pc into its
    * binary check and exec; WLR_XWAYLAND overrides both at runtime. */
   char binary[512];

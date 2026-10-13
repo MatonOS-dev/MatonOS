@@ -250,6 +250,13 @@ if patch --dry-run --batch --forward -p1 -d "$SRC/xwayland-24.1.13" < "$GLX_PATC
 elif ! patch --dry-run --batch --reverse -p1 -d "$SRC/xwayland-24.1.13" < "$GLX_PATCH" >/dev/null 2>&1; then
   die 'Xwayland EGL GLX patch neither applies nor is already applied'
 fi
+# Android apps' seccomp filter kills setgid/setuid: xkbcomp's Popen child.
+IDS_PATCH=$ROOT/xwayland-popen-ids.patch
+if patch --dry-run --batch --forward -p1 -d "$SRC/xwayland-24.1.13" < "$IDS_PATCH" >/dev/null 2>&1; then
+  patch --batch --forward -p1 -d "$SRC/xwayland-24.1.13" < "$IDS_PATCH"
+elif ! patch --dry-run --batch --reverse -p1 -d "$SRC/xwayland-24.1.13" < "$IDS_PATCH" >/dev/null 2>&1; then
+  die 'Xwayland Popen ids patch neither applies nor is already applied'
+fi
 configure_meson xwayland "$SRC/xwayland-24.1.13" \
   -Dglx=true -Dglamor=true -Dxv=false -Ddri3=true -Dmitshm=false \
   -Dsecure-rpc=false \

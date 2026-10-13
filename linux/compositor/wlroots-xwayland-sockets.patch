@@ -18,15 +18,16 @@ through a relay as a different user, and the socket is reachable only via
 the compositor's private directory, so filesystem access is the gate.
 --- a/xwayland/sockets.c
 +++ b/xwayland/sockets.c
-@@ -7,6 +7,7 @@
+@@ -7,6 +7,8 @@
  #include <stdint.h>
  #include <stdio.h>
  #include <stdlib.h>
++#include <limits.h>
 +#include <string.h>
  #include <sys/socket.h>
  #include <sys/stat.h>
  #include <sys/types.h>
-@@ -16,12 +17,29 @@
+@@ -16,12 +18,29 @@
  #include "sockets.h"
  #include "util/fd.h"
  
@@ -62,7 +63,7 @@ the compositor's private directory, so filesystem access is the gate.
  
  static int open_socket(struct sockaddr_un *addr, size_t path_size) {
  	int fd, rc;
-@@ -70,24 +88,25 @@
+@@ -70,24 +89,25 @@
  
  static bool check_socket_dir(void) {
  	struct stat buf;
@@ -93,12 +94,12 @@ the compositor's private directory, so filesystem access is the gate.
  			return false;
  		}
  	}
-@@ -97,34 +116,59 @@
+@@ -97,34 +117,59 @@
  static bool open_sockets(int socks[2], int display) {
  	struct sockaddr_un addr = { .sun_family = AF_UNIX };
  	size_t path_size;
 +	const char *dir = socket_dir();
-+	char socket_path[64];
++	char socket_path[sizeof(((struct sockaddr_un *)0)->sun_path)];
  
 -	if (mkdir(socket_dir, 0755) == 0) {
 +	if (mkdir(dir, 0755) == 0) {
@@ -166,10 +167,11 @@ the compositor's private directory, so filesystem access is the gate.
  		return false;
  	}
  
-@@ -133,25 +177,27 @@
+@@ -133,25 +178,27 @@
  
  void unlink_display_sockets(int display) {
- 	char sun_path[64];
+-	char sun_path[64];
++	char sun_path[PATH_MAX]; /* the dir override can be a long app data path */
 +	const char *dir = socket_dir();
  
 -	snprintf(sun_path, sizeof(sun_path), socket_fmt, display);
@@ -189,7 +191,8 @@ the compositor's private directory, so filesystem access is the gate.
  
  int open_display_sockets(int socks[2]) {
  	int lock_fd, display;
- 	char lock_name[64];
+-	char lock_name[64];
++	char lock_name[PATH_MAX];
 +	const char *dir = socket_dir();
  
  	for (display = 0; display <= 32; display++) {
