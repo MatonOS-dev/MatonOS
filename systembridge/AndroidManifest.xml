@@ -14,6 +14,8 @@
          bridge requests it so only the audited gatekeeper can bind the built-in provider. -->
     <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />
     <uses-permission android:name="android.permission.GRANT_RUNTIME_PERMISSIONS" />
+    <!-- v3: stop only a device-signed stub verified by FlatpakStubManager. -->
+    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.INJECT_EVENTS" />

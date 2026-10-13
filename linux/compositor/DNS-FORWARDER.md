@@ -21,7 +21,7 @@ descriptors and only receives, sends, accepts and serves on those sockets; it
 never binds a port.
 
 The authenticated `openSession` call carries the address to linuxd in the
-existing `launchOwnedFlatpak` request. The system bridge passes it as linuxd's
+existing `getOwnedFlatpakLaunchSpec` request. The system bridge passes it as linuxd's
 `dnsServers` value, and linuxd's existing `MATON_FLATPAK_DNS` monitor writer
 places it in the app's `/etc/resolv.conf`. The static-apex resolver writer is
 unchanged. Because this resolver format has no port field, port 53 is required;

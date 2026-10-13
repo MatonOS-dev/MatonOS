@@ -1,3 +1,6 @@
+Current launch architecture: [v3 launch from the stub](../../linux/compositor/V3-LAUNCH.md).
+The earlier v2 launch/domain notes below are historical; there is no v2 fallback.
+
 # Flatpak linuxd
 
 `matonos-linuxd` exposes the Flatpak manager to the system bridge through the

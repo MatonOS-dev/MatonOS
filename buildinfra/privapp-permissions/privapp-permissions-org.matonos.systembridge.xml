@@ -14,5 +14,7 @@
         <permission name="android.permission.INTERNAL_SYSTEM_WINDOW" />
         <permission name="android.permission.INSTALL_PACKAGES" />
         <permission name="android.permission.DELETE_PACKAGES" />
+        <!-- v3-stub: force-stop only a verified, device-signed Flatpak stub. -->
+        <permission name="android.permission.FORCE_STOP_PACKAGES" />
     </privapp-permissions>
 </permissions>

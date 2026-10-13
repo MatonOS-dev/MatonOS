@@ -1,3 +1,6 @@
+Current launch architecture: [v3 launch from the stub](V3-LAUNCH.md).
+The earlier v2 launch/domain notes below are historical; there is no v2 fallback.
+
 # MatonOS Wayland compositor v1 — implementation in progress
 
 This area contains a clean-room wlroots host and Android output bridge. Pinned

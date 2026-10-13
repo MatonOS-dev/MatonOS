@@ -258,14 +258,14 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
                         if (window!=0) { if(view==null)showWindow(window);else attachIfReady(); }
                     });
                     if (needsLaunch && !destroyed) {
-                        downloadsGrant.beforeLaunch(StubActivity.this, () -> foreground);
+                        // v2 privileged bind-fd grants cannot be used by the v3 stub loader.
                         if (destroyed) return;
-                        JSONObject result=new JSONObject(active.launch());
+                        JSONObject result=V3Launcher.launch(StubActivity.this, active);
                         if (!result.optBoolean("ok")) { message(result.optString("error","Application could not start"));return; }
                         message("Waiting for the application window…");
                         for(int i=0;i<30&&!destroyed&&window==0;i++) {
                             Thread.sleep(1000);
-                            JSONObject state=new JSONObject(active.getLaunchStatus());
+                            JSONObject state=V3Launcher.getLaunchStatus();
                             if (!state.optBoolean("ok")) { runOnUiThread(() -> {if(!destroyed)finish();});return; }
                         }
                         if(!destroyed&&window==0)message("Application is running, but no window has appeared.");
@@ -274,7 +274,7 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
                     // activities after the first window has closed.
                     while(!destroyed) {
                         Thread.sleep(1000);
-                        JSONObject state=new JSONObject(active.getLaunchStatus());
+                        JSONObject state=V3Launcher.getLaunchStatus();
                         if(!state.optBoolean("ok")) {runOnUiThread(() -> {if(!destroyed)finish();});break;}
                     }
                 } catch(Exception e) { failure("Cannot start application",e); }

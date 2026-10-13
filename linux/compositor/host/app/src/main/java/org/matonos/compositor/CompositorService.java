@@ -41,9 +41,14 @@ public final class CompositorService extends Service {
                     EmbeddedSession session = sessions.get(ref);
                     if (session != null && session.pid != pid) {
                         // A new process cannot adopt an old process's lifetime.
-                        String status=FlatpakLauncher.status(CompositorService.this,ref);
-                        if(new org.json.JSONObject(status).optBoolean("ok"))throw new IllegalStateException("Previous app process is still stopping");
-                        if(session.lifeline!=null)session.lifeline.close();
+                        if (session.uid != uid) throw new SecurityException("Session belongs to another UID");
+                        android.system.StructPollfd life = new android.system.StructPollfd();
+                        life.fd = session.lifeline.getFileDescriptor();
+                        life.events = (short)android.system.OsConstants.POLLIN;
+                        android.system.Os.poll(new android.system.StructPollfd[]{life}, 0);
+                        if ((life.revents & android.system.OsConstants.POLLHUP) == 0)
+                            throw new IllegalStateException("Previous app process is still stopping");
+                        session.closeResources();
                         sessions.remove(ref);session=null;
                     }
                     if (session == null) {
@@ -79,7 +84,6 @@ public final class CompositorService extends Service {
         final String dnsForwarder;
         final android.os.ParcelFileDescriptor[] dnsSockets;
         final android.os.RemoteCallbackList<IEmbeddedWindowListener> listeners = new android.os.RemoteCallbackList<>();
-        boolean launched;
         EmbeddedSession(int uid, String ref, String dnsForwarder, android.os.ParcelFileDescriptor[] dnsSockets) throws Exception {
             this.uid=uid;this.ref=ref;
             this.dnsForwarder=dnsForwarder;
@@ -121,21 +125,10 @@ public final class CompositorService extends Service {
             check();
             long identity=android.os.Binder.clearCallingIdentity();
             try {
-                if (launched) {
-                    String status=FlatpakLauncher.status(CompositorService.this,ref);
-                    if (new org.json.JSONObject(status).optBoolean("ok")) return status;
-                }
                 String reply=FlatpakLauncher.launch(CompositorService.this,ref,dnsForwarder,uid,pid,lifeline);
-                launched=new org.json.JSONObject(reply).optBoolean("ok");
                 return reply;
             } catch(Exception e) { return failure(e); }
             finally { android.os.Binder.restoreCallingIdentity(identity); }
-        }
-        public String getLaunchStatus() {
-            check();long identity=android.os.Binder.clearCallingIdentity();
-            try { return FlatpakLauncher.status(CompositorService.this,ref); }
-            catch(Exception e){return failure(e);}
-            finally{android.os.Binder.restoreCallingIdentity(identity);}
         }
         public void unregisterListener(IEmbeddedWindowListener listener){check();listeners.unregister(listener);}
 
