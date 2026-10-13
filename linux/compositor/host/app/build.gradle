@@ -33,7 +33,8 @@ def v3Root = file('../../../compat-proxy')
 def v3Output = System.getenv('MATON_V3_ANDROID_OUT') ?: "$aospRoot/out/matonos/compat-proxy"
 def v3Jni = new File(layout.buildDirectory.get().asFile, 'generated/v3Jni')
 def buildV3Loader = tasks.register('buildV3Loader', Exec) {
-    inputs.dir v3Root
+    // Sources only: build/ holds host test scaffolds (device nodes, symlinks).
+    inputs.files fileTree(v3Root) { exclude "build/**", "__pycache__/**" }
     outputs.file new File(v3Output, 'libmatonos-v3-loader.so')
     environment 'MATON_AOSP_ROOT', aospRoot
     environment 'MATON_V3_ANDROID_OUT', v3Output
