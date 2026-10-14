@@ -12,7 +12,10 @@ android_app {
     ],
     resource_dirs: ["res"],
     aidl: {
-        local_include_dirs: ["aidl", "aidl-store"],
+        local_include_dirs: [
+            "aidl",
+            "aidl-store",
+        ],
     },
     platform_apis: true,
     static_libs: [
