@@ -19,23 +19,20 @@ final class DnsForwarder {
     private static final String TAG = "MatonDnsForwarder";
     private static final int MAX_PACKET = 65535;
     private static final int RESOLVER_TIMEOUT_MS = 10000;
-    private static final double RATE_CAPACITY = 100, RATE_PER_SECOND = 50;
     private static String socketPath;
     private static FileDescriptor udp, tcp;
     private static int uid;
     private static android.net.LocalServerSocket udpServer, tcpServer;
     private static android.net.LocalSocket udpSocket, tcpSocket;
-    private static double tokens = RATE_CAPACITY;
-    private static long tokensAt = System.nanoTime();
     private static final java.util.concurrent.ExecutorService workers =
-            new java.util.concurrent.ThreadPoolExecutor(0, 64, 30, TimeUnit.SECONDS,
+            new java.util.concurrent.ThreadPoolExecutor(0, Integer.MAX_VALUE, 30, TimeUnit.SECONDS,
                     new java.util.concurrent.SynchronousQueue<>(), runnable -> {
                         Thread t = new Thread(runnable, "maton-dns-client"); t.setDaemon(true); return t;
                     });
 
     private static final java.util.concurrent.ExecutorService queries =
-            new java.util.concurrent.ThreadPoolExecutor(16, 16, 30, TimeUnit.SECONDS,
-                    new java.util.concurrent.ArrayBlockingQueue<>(128), runnable -> {
+            new java.util.concurrent.ThreadPoolExecutor(0, Integer.MAX_VALUE, 30, TimeUnit.SECONDS,
+                    new java.util.concurrent.SynchronousQueue<>(), runnable -> {
                         Thread t = new Thread(runnable, "maton-dns-query"); t.setDaemon(true); return t;
                     });
 
@@ -152,7 +149,7 @@ final class DnsForwarder {
                     query = java.util.Arrays.copyOf(buffer, n);
                 }
                 if (query == null) return;
-                if (query.length < 12 || !allowQuery()) { if (stream) return; else continue; }
+                if (query.length < 12) { if (stream) return; else continue; }
                 if (!stream) {
                     final byte[] packet = query;
                     try {
@@ -190,15 +187,6 @@ final class DnsForwarder {
             used += n;
         }
         return data;
-    }
-
-    private static synchronized boolean allowQuery() {
-        long now = System.nanoTime();
-        tokens = Math.min(RATE_CAPACITY, tokens + (now - tokensAt) / 1e9 * RATE_PER_SECOND);
-        tokensAt = now;
-        if (tokens < 1) return false;
-        tokens -= 1;
-        return true;
     }
 
     /** Through netd on the default network, as this stub's UID. */
