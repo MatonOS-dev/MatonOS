@@ -26,7 +26,9 @@ final class FlatpakRepo {
             int at=line.indexOf('=');
             if(!group || at<1 || line.startsWith("["))throw new IllegalArgumentException("Malformed repository file");
             String field=line.substring(0,at).trim(), value=line.substring(at+1).trim();
-            if(!java.util.Set.of("Title","Url","GPGKey","Homepage","Comment","Icon","Version").contains(field)
+            // Flatpak ignores keys it does not use (Description, DefaultBranch,
+            // NoEnumerate, CollectionID, Subset, ...); so do we. Names stay strict.
+            if(!field.matches("[A-Za-z][A-Za-z0-9-]{0,63}")
                     || values.put(field,value)!=null || value.chars().anyMatch(c->c<32 || c==127 || Character.getType(c)==Character.FORMAT || c==92))
                 throw new IllegalArgumentException("Invalid or duplicate repository field");
         }

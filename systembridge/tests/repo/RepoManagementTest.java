@@ -10,6 +10,10 @@ public final class RepoManagementTest {
     public static void main(String[] args) throws Exception {
         FlatpakRepo repo=new FlatpakRepo(file("Homepage=https://example.org/\nComment=Example\nIcon=https://example.org/icon.png\nVersion=1\n"));
         check(repo.host.equals("example.org"));check(repo.name.startsWith("repo-"));
+        // Real files (flathub-beta) carry keys we do not use; they are ignored.
+        new FlatpakRepo(file("Description=Beta builds\nDefaultBranch=stable\nNoEnumerate=false\n"));
+        reject(file("Description=a\nDescription=b\n"));
+        reject(file("Bad Key=x\n"));
         // Independent known input: v4 primary packet body 04 01 02 03 04 05.
         java.security.MessageDigest sha=java.security.MessageDigest.getInstance("SHA-1");
         String expected=java.util.HexFormat.of().withUpperCase().formatHex(sha.digest(new byte[]{(byte)0x99,0,6,4,1,2,3,4,5}));
