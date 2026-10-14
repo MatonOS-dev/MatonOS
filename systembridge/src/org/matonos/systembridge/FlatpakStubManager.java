@@ -326,7 +326,7 @@ final class FlatpakStubManager {
         }catch(Exception error){Log.w(TAG,"Cannot verify generated launcher",error);return false;}
     }
 
-    private String remoteFor(String pkg) {
+    String remoteFor(String pkg) {
         try {
             android.content.pm.ActivityInfo activity = context.getPackageManager().getActivityInfo(
                     new android.content.ComponentName(pkg, StubGenerator.HOST_ACTIVITY), PackageManager.GET_META_DATA

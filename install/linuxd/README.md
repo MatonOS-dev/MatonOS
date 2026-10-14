@@ -250,3 +250,87 @@ Fresh enforcing-image steps (coordinator/user only; no hot-patching):
 7. Launch both X11 and Wayland apps, verify runtime symlinks and sandbox DNS, then
    repeat on Ryzen/RX6600, Surface Pro 3 and HP ProDesk. No kernel changes or AOSP
    patches are needed. No adb/device execution was performed for this round.
+
+## Store API phase 1 (round 28)
+
+Bind explicitly to `org.matonos.systembridge.SystemBridgeService$LinuxAppStoreService`
+(action `org.matonos.systembridge.LINUX_APP_STORE`) and use `ILinuxAppStore`.
+The manifest and every Binder entry enforce the new
+`org.matonos.permission.MANAGE_LINUX_APPS` signature|privileged capability,
+independently of the general bridge target ACL. Installation uses an app ID,
+remote and the generic-PC default `app/<id>/x86_64/stable`. Inventory and updates
+are scoped to the caller's Android user. Updates resolve the existing full ref
+and verified stub's remote; no new APK is generated for that user.
+
+`LinuxAppInfo` contains appId, remote, installedCommit and availableCommit.
+`listInstalled` returns all installed entries with an empty availableCommit;
+`checkUpdates` returns only differing commits. Deployed Flatpak metadata supplies
+the installed commit, since the retained stub manifest deliberately stays unchanged.
+The bridge resolves each stub UID with PackageManager. linuxd checks recorded
+origin against the persistent remote pin and seeds an ephemeral FPINSTALL staging
+repository with linuxd's remote and trusted keyring. `flatpak remote-info --system
+--show-commit` runs through the fixed UID 2902 helper. Both GPG commit and summary
+verification must be configured; malformed commit output or query/network failures
+fail the query rather than reporting an empty update list. This is a commit query,
+not a download/deployment. Staging is reclaimed before returning.
+
+`updateApp` reuses the verified FPINSTALL deployment/final-binding pipeline.
+The existing stub stays installed, the numeric pointer changes atomically, and
+POSIX leases retain old versions and runtime references for running apps.
+`registerListener` forwards operation-scoped staging percent/message, verified
+handoff and completion to callbacks registered in the initiating user's scope.
+Unknown percentages are -1. Listener death is handled by RemoteCallbackList;
+completion releases operation bookkeeping. A daemon disconnect reports failure
+and requests inspection of inventory before retrying, because publication may
+already have succeeded. Listeners should register before starting operations;
+there is no completion replay or cancellation API in phase 1.
+
+`uninstallApp(..., false)` requests per-user package/data removal through the
+existing verified stub path. `allUsers=true` requires the caller's user to be an
+admin or the system user. All existing users' uninstall restrictions and affected
+stub identities are checked before submitting any PM deletion. PM removal remains
+asynchronous and multiple-user deletion is not an atomic transaction. Install and
+update enforce DISALLOW_INSTALL_APPS; uninstall enforces DISALLOW_UNINSTALL_APPS.
+
+Host verification: NDK r30/API 36 object compilation of manager, publisher and
+Binder shim, linked FlatpakStore helper; generated new Java AIDL and compiled
+service/manager/parcelable against existing platform jars; four JUnit policy
+checks; strict commit parser; 17 real C handoff scenarios using deterministic CLI
+doubles (including query errors, malformed remote commits, successful pointer
+replacement with a child process holding the old lease, and failed replacement
+preserving the current version). Existing deployment-store, failed-publication,
+operation-wait, system-wide inventory, runtime-ref, final-stub-once and dependency
+suites pass. These are host checks, not device evidence.
+
+Fresh-image steps for coordinator/user (no adb or image build performed here):
+
+1. Rebuild linuxd, the APEX `matonos-flatpak-store` helper and bridge together,
+   then run the policy/image label checks and boot the new enforcing image.
+   No Flatpak wrapper path/UID layout change is needed. Disable idle sleep in
+   a disposable VM. Do not replace system files on a running image.
+2. Run `MATON_ADB_SERIAL=127.0.0.1:5556 install/tools/test-flatpak.sh --install
+   app/<id>/x86_64/stable`, then `--check-updates`. Use a signed test remote with
+   an older installed commit and newer remote commit; an unchanged remote must
+   produce an empty updates list. `listInstalled` must still include the app.
+3. Start the app, record APK/PID/current deployment, and run `--update <ref>`.
+   Check staging UID/domain 2902/matonos_flatpak_installer, progress/handoff/finish,
+   unchanged APK/PID, new current pointer, and old leased deployment retained.
+   After exiting the old app, check lease-aware collection. Repeat with network
+   failure, rejected signature and failed publication: old pointer/stub must work.
+4. From a capability-holding test client bind the explicit store service, register
+   a listener, call every AIDL method, and verify its user's inventory/progress.
+   A client without MANAGE_LINUX_APPS must fail both binding and Binder calls;
+   SYSTEM_BRIDGE alone must confer no store permission. Observe no other user's
+   operation callbacks. Kill a listener and restart linuxd on disposable data to
+   check death cleanup/disconnect results and inspect inventory before retrying.
+5. Install the same app for two users. Non-admin allUsers uninstall must throw
+   SecurityException; admin/system-user caller succeeds. Set install/uninstall
+   restrictions for caller and target users, verify rejection before mutation,
+   remove restrictions and verify per-user removal preserves the other user;
+   all-users removal should remove every affected package/deployment eventually.
+6. Repeat signed-remote/update checks on Ryzen/RX6600, Surface Pro 3 and HP ProDesk.
+
+No policy lines, kernel configuration, AOSP projects or shared integration files
+changed. Coordinator preflight currently reports 18 missing imported prebuilts in
+this isolated checkout; other preflight checks pass. Device networking, enforcing
+helper execution and Android PM/listener lifecycle still require the steps above.

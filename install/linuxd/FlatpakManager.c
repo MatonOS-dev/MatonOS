@@ -15,6 +15,7 @@
 #include "DeploymentStore.h"
 #include "PendingDeployment.h"
 #include "RemotePin.h"
+#include "StoreUpdate.h"
 #include <sys/inotify.h>
 #include <errno.h>
 #include <dirent.h>
@@ -903,6 +904,39 @@ void flatpak_manager_call(const char* command, const char* ref,
     memset(result, 0, sizeof(*result));
     result->exit_code = 127;
     if (!command) { set_error(result, "unsupported Flatpak command"); return; }
+    if (!strcmp(command,"check_update") || !strcmp(command,"installed_commit")) {
+        if(!flatpak_manager_valid_ref(ref) || strncmp(ref,"app/",4) || app_uid<10000 ||
+                !flatpak_manager_installed_for_uid(ref,app_uid)) {set_error(result,"verified installed app required");return;}
+        if(pthread_mutex_trylock(&g_operation_mutex)) {set_error(result,"another operation is active");return;}
+        char user[512],installed[65],available[65],origin[129],error[512]={0};
+        maton_install_dir(user,sizeof(user),(unsigned)app_uid);
+        const char* args[]={"--user","info","--show-origin",ref};
+        ChildResult child=run_cli_in(args,4,0,MATON_RUNTIME_DIR,user);
+        int rc=child.status || !child.output;
+        if(!rc) {
+            child.output[strcspn(child.output,"\r\n")]=0;
+            if(strlen(child.output)>=sizeof(origin))rc=-1;
+            else snprintf(origin,sizeof(origin),"%s",child.output);
+        }
+        free(child.output);
+        if(!rc)rc=check_remote_pin(ref,origin,app_uid,0);
+        const char* info[]={"--user","info","--show-commit",ref};
+        if(!rc) {
+            child=run_cli_in(info,4,0,MATON_RUNTIME_DIR,user);
+            rc=child.status || store_parse_commit(child.output,installed,sizeof(installed));
+            free(child.output);
+        }
+        char operation[65];snprintf(operation,sizeof(operation),"check-%ld-%ld",(long)getpid(),(long)time(NULL));
+        if(!rc && !strcmp(command,"check_update"))rc=flatpak_available_commit(ref,origin,operation,available,sizeof(available),error,sizeof(error));
+        else available[0]=0;
+        if(rc)set_error(result,error[0]?error:"cannot read installed provenance/commit");
+        else {
+            result->output=malloc(512);
+            if(!result->output)set_error(result,"out of memory");
+            else {snprintf(result->output,512,available[0]?"%s\t%s\t%s":"%s\t%s",origin,installed,available);result->ok=1;result->exit_code=0;}
+        }
+        pthread_mutex_unlock(&g_operation_mutex);return;
+    }
     if (strcmp(command, "list_installed") == 0) {
         if (app_uid < 0 || app_uid > INT_MAX / 100000) { set_error(result, "valid Android user required"); return; }
         list_installed_refs(app_uid, result); return;

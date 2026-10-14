@@ -1,6 +1,7 @@
 #define _GNU_SOURCE
 #include "FlatpakPublish.h"
 #include "PendingDeployment.h"
+#include "StoreUpdate.h"
 
 #include <dirent.h>
 #include <grp.h>
@@ -1006,6 +1007,38 @@ static int app_id_from_ref(const char* ref, char* out, size_t size) {
     if (!len || len >= size) return -1;
     memcpy(out, ref + 4, len); out[len] = '\0';
     return 0;
+}
+
+/* A private, ephemeral installation supplies only the pinned remote/keyring.
+ * Network I/O runs through the same fixed FPINSTALL helper as downloads. */
+int flatpak_available_commit(const char* ref, const char* remote, const char* operation,
+        char* commit, unsigned long size, char* error, unsigned long error_size) {
+    char staging[PATH_MAX], repo[PATH_MAX], uid[32];
+    if (!ref || strncmp(ref,"app/",4) || !valid_remote(remote) ||
+            !valid_operation_id(operation) || size < 65) {
+        fail(error,error_size,"invalid update query");return -1;
+    }
+    if(create_staging(MATON_FPINSTALL_UID,operation,staging,sizeof(staging))) {
+        fail(error,error_size,"cannot create query staging");return -1;
+    }
+    if(snprintf(repo,sizeof(repo),"%s/repo",staging)>=(int)sizeof(repo)) {
+        (void)flatpak_remove_staging(MATON_FPINSTALL_UID,operation);
+        fail(error,error_size,"query path too long");return -1;
+    }
+    const char* init[]={"init","--mode=bare-user-only"};
+    int rc=run_ostree(repo,init,2,NULL,0);
+    if(!rc)rc=seed_remote(staging,remote);
+    if(!rc && !remote_verification_enabled(repo,remote))rc=-1;
+    if(!rc)rc=give_to_installer(staging,MATON_FPINSTALL_UID,remote);
+    snprintf(uid,sizeof(uid),"%d",MATON_FPINSTALL_UID);
+    char output[4096]={0};
+    char* args[]={(char*)MATONOS_FLATPAK_STAGE_HELPER,"check",staging,uid,
+        (char*)remote,(char*)ref,NULL};
+    if(!rc)rc=invoke_path(MATONOS_FLATPAK_STAGE_HELPER,staging,NULL,args,output,sizeof(output));
+    if(!rc)rc=store_parse_commit(output,commit,size);
+    if(flatpak_remove_staging(MATON_FPINSTALL_UID,operation))rc=-1;
+    if(rc)fail(error,error_size,"cannot query authenticated pinned remote commit");
+    return rc;
 }
 
 int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,

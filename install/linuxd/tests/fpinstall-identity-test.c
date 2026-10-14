@@ -11,6 +11,8 @@ static int test_lstat(const char* path,struct stat* st) {
 int main(void) {
     char* args[]={"store","stage",MATON_STAGING_ROOT "/2902/op","2902","flathub","org.example.App//stable"};
     assert(stage_args_valid(6,args));
+    args[1]="check";assert(stage_args_valid(6,args));
+    args[1]="update";assert(!stage_args_valid(6,args));args[1]="check";
     args[3]="10120";assert(!stage_args_valid(6,args));args[3]="2902";
     args[2]=MATON_STAGING_ROOT "/10120/op";assert(!stage_args_valid(6,args));
     args[2]=MATON_STAGING_ROOT "/2902/op/escape";assert(!stage_args_valid(6,args));

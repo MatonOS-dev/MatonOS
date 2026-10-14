@@ -20,6 +20,13 @@ repo=next((a[7:] for a in args if a.startswith('--repo=')),None)
 if 'init' in args:
     Path(repo).mkdir(parents=True,exist_ok=True);(Path(repo)/'config').write_text('[core]\n')
 elif 'get' in args and 'config' in args: print('true')
+elif args and args[0]=='check':
+    if scenario=='query-error': sys.exit(1)
+    print('malformed' if scenario=='query-malformed' else 'c'*64)
+elif '--show-origin' in args:
+    print('flathub')
+elif '--show-commit' in args:
+    print('a'*64)
 elif 'rev-parse' in args: print(('a' if 'app/' in args[-1] else 'b')*64)
 elif 'refs' in args and not any(a.startswith('--create=') for a in args):
     for ref in (app,runtime): print('flathub:'+ref)
@@ -56,6 +63,7 @@ elif '--show-metadata' in args:
     source.write_text(r'''
 #include "install/linuxd/FlatpakManager.c"
 #include <assert.h>
+#include <sys/wait.h>
 static const char* app="app/org.example.App/x86_64/stable";
 int stub_uid_has_package(int uid){(void)uid;return 1;}
 int stub_user_has_package(int uid){(void)uid;return 1;}
@@ -96,6 +104,33 @@ int main(int argc,char** argv) {
     call("bind_pending","op",10120,&r);if(!r.ok)fprintf(stderr,"bind error: %s\n",r.error);assert(r.ok);clear(&r);
     assert(!pending_install.operation[0]);char original[PATH_MAX];assert(realpath(pointer,original));
     assert(!access(original,F_OK));
+
+    // Store inventory uses deployed commits rather than the unchanged stub metadata.
+    flatpak_manager_call("installed_commit",app,0,NULL,NULL,NULL,NULL,NULL,10120,&r);
+    assert(r.ok && strstr(r.output,"flathub\taaaa"));clear(&r);
+    flatpak_manager_call("check_update",app,0,NULL,NULL,NULL,NULL,NULL,10120,&r);
+    if(!strcmp(scenario,"query-error") || !strcmp(scenario,"query-malformed")) {
+        assert(!r.ok);clear(&r);return 0;
+    }
+    assert(r.ok && strstr(r.output,"\tcccc"));clear(&r);
+    // A running process holds its old version lease during successful update.
+    int ready[2],release[2];assert(!pipe(ready)&&!pipe(release));
+    pid_t running=fork();assert(running>=0);
+    if(!running) {
+        char lease[PATH_MAX+8];snprintf(lease,sizeof(lease),"%s/.lease",original);
+        int fd=open(lease,O_RDONLY);assert(fd>=0);
+        struct flock lock={0};lock.l_type=F_RDLCK;lock.l_whence=SEEK_SET;
+        assert(!fcntl(fd,F_SETLK,&lock));assert(write(ready[1],"r",1)==1);
+        char byte;assert(read(release[0],&byte,1)==1);_exit(0);
+    }
+    char byte;assert(read(ready[0],&byte,1)==1);
+    call("deploy_pending","good-update",-1,&r);assert(r.ok);clear(&r);
+    call("bind_pending","good-update",10120,&r);assert(r.ok);clear(&r);
+    char updated[PATH_MAX];assert(realpath(pointer,updated)&&strcmp(updated,original));
+    assert(collect_deployments()==1 && !access(original,F_OK));
+    assert(write(release[1],"x",1)==1);int status;assert(waitpid(running,&status,0)==running && !status);
+    assert(!collect_deployments() && access(original,F_OK));
+    snprintf(original,sizeof(original),"%s",updated);
     // Update failure keeps the previous pointer and deployment.
     assert(!setenv("SCENARIO","signature",1));
     call("deploy_pending","update",-1,&r);assert(!r.ok);clear(&r);
@@ -106,9 +141,9 @@ int main(int argc,char** argv) {
 }
 ''')
     binary=work/'test'
-    subprocess.run(['cc','-Wall','-Wextra','-Werror','-Wno-format-truncation','-ffunction-sections','-fdata-sections','-Wl,--gc-sections','-pthread',f'-I{work}',f'-I{root}',f'-DMATON_LINUX_ROOT="{work}/store"','-DMATONOS_PUBLISH_HOST_TEST',str(source),str(root/'install/linuxd/FlatpakPublish.c'),str(root/'install/linuxd/RuntimeRefs.c'),'-o',str(binary)],check=True)
+    subprocess.run(['cc','-Wall','-Wextra','-Werror','-Wno-format-truncation','-ffunction-sections','-fdata-sections','-Wl,--gc-sections','-pthread',f'-I{work}',f'-I{root}',f'-DMATONOS_FLATPAK_STAGE_HELPER="{fake}"',f'-DMATON_LINUX_ROOT="{work}/store"','-DMATONOS_PUBLISH_HOST_TEST',str(source),str(root/'install/linuxd/FlatpakPublish.c'),str(root/'install/linuxd/RuntimeRefs.c'),'-o',str(binary)],check=True)
     import shutil
-    for scenario in ('stage','resolve','signature','deploy','sanitize-link','sanitize-relative','sanitize-device','sanitize-mode','sanitize-xattr','metadata','pm','bind','crash','bridge-crash','success'):
+    for scenario in ('stage','resolve','signature','deploy','sanitize-link','sanitize-relative','sanitize-device','sanitize-mode','sanitize-xattr','metadata','pm','bind','crash','bridge-crash','query-error','query-malformed','success'):
         env=dict(os.environ,SCENARIO=scenario,MATONOS_FLATPAK_CLI=str(fake),MATONOS_OSTREE_CLI=str(fake))
         subprocess.run([str(binary),scenario],env=env,check=True)
         shutil.rmtree(work/'store')

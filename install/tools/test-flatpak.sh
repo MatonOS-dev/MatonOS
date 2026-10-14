@@ -8,8 +8,8 @@ REF=${2:-}
 ANDROID_USER=${MATON_ANDROID_USER:-0}
 [[ $ANDROID_USER =~ ^[0-9]+$ ]] || { echo "Invalid Android user" >&2; exit 2; }
 [[ -x $ADB ]] || { echo "adb not found: $ADB" >&2; exit 2; }
-[[ $MODE == --list || ($MODE == --install && -n $REF) || ($MODE == --uninstall && -n $REF) ]] || {
-  echo "Usage: $0 --list | --install <app|runtime/ID/ARCH/BRANCH> | --uninstall <ref>" >&2; exit 2;
+[[ $MODE == --list || $MODE == --check-updates || (($MODE == --install || $MODE == --update) && -n $REF) || ($MODE == --uninstall && -n $REF) ]] || {
+  echo "Usage: $0 --list | --check-updates | --update <ref> | --install <app|runtime/ID/ARCH/BRANCH> | --uninstall <ref>" >&2; exit 2;
 }
 adb_cmd() { "$ADB" -s "$SERIAL" "$@" </dev/null; }
 bridge_call() {
@@ -58,6 +58,10 @@ adb_cmd shell setprop persist.vendor.maton.flatpak_test 1
 FLATPAK=/apex/com.matonos.flatpak/bin/matonos-flatpak
 adb_cmd shell su 1000 "$FLATPAK" flatpak --version
 adb_cmd shell su 1000 "$FLATPAK" flatpak --help >/dev/null
+if [[ $MODE == --check-updates ]]; then
+  bridge_call check_updates "{\"userId\":$ANDROID_USER}"
+  exit 0
+fi
 if [[ $MODE == --list ]]; then
   bridge_call list_installed "{\"userId\":$ANDROID_USER}"
   bridge_call list_remotes "{\"userId\":$ANDROID_USER}"
@@ -78,13 +82,13 @@ ok=(len(parts)==4 and parts[0] in ("app","runtime") and
 if not ok: raise SystemExit("invalid Flatpak ref")
 PY
 
-if [[ $MODE == --install ]]; then
+if [[ $MODE == --install || $MODE == --update ]]; then
   echo "Installed before:"
   list_installed
-  bridge_call add_flathub "{\"userId\":$ANDROID_USER}"
+  if [[ $MODE == --install ]]; then bridge_call add_flathub "{\"userId\":$ANDROID_USER}"; fi
   operation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
   payload=$(python3 -c 'import json,sys; print(json.dumps({"ref":sys.argv[1],"operationId":sys.argv[2],"userId":int(sys.argv[3])}))' "$REF" "$operation_id" "$ANDROID_USER")
-  result=$(bridge_call install "$payload")
+  result=$(bridge_call "${MODE#--}" "$payload")
   stub_package=$(python3 -c 'import json,re,sys; r=json.load(sys.stdin); assert r.get("ok") and r.get("accepted"), r; p=r["stubPackage"]; assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+",p), p; print(p)' <<<"$result")
   # Newer bridges echo the ID; older ones accept the caller-supplied ID.
   operation_id=$(python3 -c 'import json,re,sys; value=json.load(sys.stdin).get("operationId",sys.argv[1]); assert re.fullmatch(r"[A-Za-z0-9_-]{1,64}",value); print(value)' "$operation_id" <<<"$result")
