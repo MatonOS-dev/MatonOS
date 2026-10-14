@@ -6,10 +6,13 @@ android_app {
     srcs: [
         "src/**/*.java",
         "aidl/**/*.aidl",
+        // Store API: bridge-only (LinuxAppInfo is a bridge Java parcelable);
+        // the host app's Gradle build compiles only aidl/.
+        "aidl-store/**/*.aidl",
     ],
     resource_dirs: ["res"],
     aidl: {
-        local_include_dirs: ["aidl"],
+        local_include_dirs: ["aidl", "aidl-store"],
     },
     platform_apis: true,
     static_libs: [
