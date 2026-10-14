@@ -86,6 +86,10 @@ final class V3Launcher {
         command.add("--host-command");command.add(commandSocket.getAbsolutePath());
         command.add("--parent-pid"); command.add(Integer.toString(android.os.Process.myPid()));
         command.add("--map"); command.add(resolv.getAbsolutePath()); command.add("/etc/resolv.conf");
+        // On the host /etc is a symlink to /system/etc. The VFS walks that
+        // ancestor before selecting the leaf map. Flatpak's SessionHelper
+        // fallback tests this canonical host path, then binds it into the app.
+        command.add("--map"); command.add(resolv.getAbsolutePath()); command.add("/system/etc/resolv.conf");
         File x11 = new File(runtime.directory(), "x11");
         if (x11.isDirectory()) {
             command.add("--map"); command.add(x11.getAbsolutePath()); command.add("/tmp/.X11-unix");
