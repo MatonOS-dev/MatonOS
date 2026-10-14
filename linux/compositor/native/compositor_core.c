@@ -76,13 +76,16 @@ static void maton_wlr_log(enum wlr_log_importance importance,const char* fmt,va_
 static void trace_wsi(void* data,enum wl_protocol_logger_type direction,
                       const struct wl_protocol_logger_message* message) {
   unsigned* count=data;
-  if(*count>=512||!__android_log_is_loggable(ANDROID_LOG_DEBUG,"MatonWSI",ANDROID_LOG_INFO))return;
+  if(*count>=8192||!__android_log_is_loggable(ANDROID_LOG_DEBUG,"MatonWSI",ANDROID_LOG_INFO))return;
   const char* interface=wl_resource_get_class(message->resource);
   if(strcmp(interface,"wl_display")&&strcmp(interface,"wl_registry")&&
       strcmp(interface,"wl_callback")&&strcmp(interface,"wl_surface")&&
       strcmp(interface,"wl_shm")&&strcmp(interface,"wl_shm_pool")&&
       strcmp(interface,"wl_buffer")&&strncmp(interface,"xdg_",4)&&
       strncmp(interface,"zxdg_",5)&&strncmp(interface,"zwp_linux_",10))return;
+  /* Registry globals and shm/dmabuf format lists are long and fixed. */
+  if(!strcmp(message->message->name,"global")||!strcmp(message->message->name,"format")||
+      !strcmp(message->message->name,"modifier"))return;
   const char* signature=message->message->signature;
   while(*signature>='0'&&*signature<='9')signature++;
   if(*signature=='?')signature++;
@@ -101,7 +104,7 @@ static void trace_wsi(void* data,enum wl_protocol_logger_type direction,
       direction==WL_PROTOCOL_LOGGER_REQUEST?"request":"event",interface,
       wl_resource_get_id(message->resource),message->message->name,
       message->arguments_count,first);
-  if(++*count==512)__android_log_print(ANDROID_LOG_DEBUG,"MatonWSI","trace limit reached");
+  if(++*count==8192)__android_log_print(ANDROID_LOG_DEBUG,"MatonWSI","trace limit reached");
 }
 
 struct SocketSession {
