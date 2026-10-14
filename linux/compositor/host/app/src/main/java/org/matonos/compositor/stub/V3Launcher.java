@@ -78,9 +78,14 @@ final class V3Launcher {
         command.add(loader.getAbsolutePath());
         // adb (root): touch <cache>/v3-trace to log every trapped call.
         if (new File(cache, "v3-trace").exists()) command.add("--trace");
-        if (!DnsForwarder.endpoint().equals(dns + ":53") || DnsForwarder.acquire() == null)
-            throw new IllegalStateException("Per-app DNS forwarder is unavailable");
-        command.add("--dns-forwarder"); command.add(dns + ":" + DnsForwarder.port);
+        if (context.checkSelfPermission(android.Manifest.permission.INTERNET) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            String dnsSocket = DnsForwarder.acquire(runtime.directory());
+            if (!DnsForwarder.endpoint().equals(dns + ":53") || dnsSocket == null)
+                throw new IllegalStateException("Per-app DNS forwarder is unavailable");
+            command.add("--dns-forwarder"); command.add(dns + ":53");
+            command.add("--dns-socket"); command.add(dnsSocket);
+        }
         File commandSocket=new File(runtime.directory(),"host-command");
         if(commandSocket.exists()&&!commandSocket.delete())throw new java.io.IOException("Cannot remove stale command socket");
         command.add("--host-command");command.add(commandSocket.getAbsolutePath());
