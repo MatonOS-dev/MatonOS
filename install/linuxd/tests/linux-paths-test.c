@@ -16,6 +16,10 @@ int main(void) {
     assert(maton_staging_owner(two,sizeof(two),210120));
     assert(!maton_parse_staging_owner("/data/linux-app/staging/210120",&uid));
     assert(!maton_parse_staging_owner("/data/linux-app/staging/02902",&uid));
+    assert(maton_parse_pending_path("/data/linux-app/install/.pending-net.sourceforge.ExtremeTuxRacer-aZ09xy"));
+    assert(!maton_parse_pending_path("/data/linux-app/install/.pending-..-aZ09xy"));
+    assert(!maton_parse_pending_path("/data/linux-app/install/.pending-a/b-aZ09xy"));
+    assert(!maton_parse_pending_path("/data/linux-app/install/.pending-app-aZ09x"));
     assert(maton_install_dir(one,8,10120));
     puts("PASS shared app-id paths and FPINSTALL-owned staging");
 }

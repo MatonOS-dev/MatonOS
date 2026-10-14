@@ -195,3 +195,7 @@ allow matonos_flatpak_installer self:unix_stream_socket create_stream_socket_per
 unix_socket_connect(matonos_flatpak_installer, dnsproxyd, netd)
 neverallow matonos_flatpak_installer { matonos_flatpak_store_file matonos_flatpak_deployment_file matonos_linux_code_file }:dir { write add_name remove_name create rmdir setattr };
 neverallow matonos_flatpak_installer { matonos_flatpak_store_file matonos_flatpak_deployment_file matonos_linux_code_file }:{ file lnk_file } { write append create unlink rename setattr };
+# fpinstall: Flatpak's progress reader asks FIONREAD on linuxd's capture pipe.
+allow matonos_flatpak_installer matonos_linuxd:fifo_file ioctl;
+allowxperm matonos_flatpak_installer matonos_linuxd:fifo_file ioctl { 0x5413 };
+dontaudit matonos_linuxd matonos_flatpak_installer:process noatsecure;
