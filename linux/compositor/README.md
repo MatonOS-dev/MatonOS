@@ -25,3 +25,36 @@ out/pc-logs/agents/v2-retire-result.md. Fresh-image enforcing validation remains
 verify Wayland and X11 rendering, portals, audio, DNS, close/reopen and updates,
 and denial of another UID opening the app's sockets. Repeat on the supported
 PC test machines. SysV emulation and broad shared-folder access remain gaps.
+
+### Keys without scan codes (round 16)
+
+WindowActivity and StubActivity forward `KeyEvent.getScanCode()` unchanged
+through JNI. Positive scan codes are raw Linux evdev codes and retain their
+existing path. wlroots adds the XKB offset internally. When no scan code is
+available, `native/android_keymap.c` translates the framework keycode using
+an inverse of AOSP `frameworks/base/data/keyboards/Generic.kl`. The first
+numeric mapping in file order wins; duplicate choices are recorded in the
+generated file. HID usage mappings are excluded because they are not evdev
+codes. Unmapped events are dropped before focus or keyboard state changes,
+with one debug log per process; no numeric keycode offset fallback remains.
+
+Regenerate from the local AOSP checkout, then review the diff:
+
+```sh
+python3 linux/compositor/native/tools/generate_android_keymap.py /mnt/data/aosp > linux/compositor/native/android_keymap.c
+cc -std=c11 -Wall -Wextra -Werror linux/compositor/native/tests/android_keymap_test.c linux/compositor/native/android_keymap.c -o /tmp/android-keymap-test
+/tmp/android-keymap-test
+```
+
+Validation: standalone host test passed, all 240 mappings were checked against
+Generic.kl, and regeneration was byte-identical. `build-compositor.sh` passed
+(dependencies), then the native CMake target compiled and linked with NDK r30
+in a separate out/ directory. No APK/image build or device test was performed.
+
+After the coordinator builds a fresh image, on each supported PC launch a
+Linux text editor and verify physical keyboard letters, modifiers and arrows.
+Send scan-less DPAD_DOWN/UP/LEFT/RIGHT, ENTER and DEL events with
+`input keyevent`; verify cursor movement, newline and backspace. Check an
+unmapped keycode produces no key in the app, and IME-delivered KeyEvents use
+the same mapping. IME text commits that do not produce KeyEvents are outside
+this change. No shared-file or kernel changes are required.

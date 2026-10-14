@@ -5,6 +5,7 @@
 #include "android_output.h"
 #include "compositor_core.h"
 #include "us_keymap.h"
+#include "android_keymap.h"
 
 #include <android/log.h>
 #include <drm/drm_fourcc.h>
@@ -872,7 +873,16 @@ static void process_commands(void) {
     case CMD_ATTACH:if(w)maton_java_window_state(w->id,w->client_decorated?MATON_STATE_CLIENT_DECORATED:MATON_STATE_SERVER_DECORATED);monitor_cover(c->a,c->b);attach_output(c);break;
     case CMD_DETACH:if(w){w->activity=0;destroy_output(w);}break;
     case CMD_RESIZE:if(c->a>0&&c->b>0)monitor_cover(c->a,c->b);if(w&&c->a>0&&c->b>0){w->width=c->a;w->height=c->b;if(w->output){struct wlr_output_state s;wlr_output_state_init(&s);wlr_output_state_set_custom_mode(&s,c->a,c->b,60000);bool committed=wlr_output_commit_state(w->output,&s);wlr_output_state_finish(&s);if(committed){configure_window(w);wlr_output_schedule_frame(w->output);}}}break;
-    case CMD_KEY:if(server.seat&&server.keyboard_initialized){struct wlr_surface* focus=NULL;if(w&&w->toplevel&&w->toplevel->base->surface)focus=w->toplevel->base->surface;else if(w&&w->xsurface&&w->xsurface->surface)focus=w->xsurface->surface;if(focus&&server.seat->keyboard_state.focused_surface!=focus){wlr_seat_keyboard_notify_enter(server.seat,focus,NULL,0,&server.keyboard.modifiers);xwindow_activate(w);}struct wlr_keyboard_key_event e={.time_msec=(uint32_t)(c->time/1000000),.keycode=(uint32_t)(c->b>0?c->b:c->a+8),.update_state=true,.state=c->c==0?WL_KEYBOARD_KEY_STATE_PRESSED:WL_KEYBOARD_KEY_STATE_RELEASED};wlr_keyboard_notify_key(&server.keyboard,&e);wlr_seat_keyboard_notify_key(server.seat,e.time_msec,e.keycode,e.state);wlr_seat_keyboard_notify_modifiers(server.seat,&server.keyboard.modifiers);}break;
+    case CMD_KEY:if(server.seat&&server.keyboard_initialized){
+      /* Java getScanCode() is raw evdev; preserve the positive-scan path.
+       * Synthetic keys have no scan code and need Generic.kl's inverse. */
+      int keycode=c->b>0?c->b:maton_android_keycode_to_evdev(c->a);
+      if(keycode<0){
+        static bool logged_unknown_key=false;
+        if(!logged_unknown_key){wlr_log(WLR_DEBUG,"Dropping unmapped Android keycode %d (scan %d)",c->a,c->b);logged_unknown_key=true;}
+        break;
+      }
+      struct wlr_surface* focus=NULL;if(w&&w->toplevel&&w->toplevel->base->surface)focus=w->toplevel->base->surface;else if(w&&w->xsurface&&w->xsurface->surface)focus=w->xsurface->surface;if(focus&&server.seat->keyboard_state.focused_surface!=focus){wlr_seat_keyboard_notify_enter(server.seat,focus,NULL,0,&server.keyboard.modifiers);xwindow_activate(w);}struct wlr_keyboard_key_event e={.time_msec=(uint32_t)(c->time/1000000),.keycode=(uint32_t)keycode,.update_state=true,.state=c->c==0?WL_KEYBOARD_KEY_STATE_PRESSED:WL_KEYBOARD_KEY_STATE_RELEASED};wlr_keyboard_notify_key(&server.keyboard,&e);wlr_seat_keyboard_notify_key(server.seat,e.time_msec,e.keycode,e.state);wlr_seat_keyboard_notify_modifiers(server.seat,&server.keyboard.modifiers);}break;
     case CMD_CAPTURE_LOST:if(w)clear_window_pointer(w);break;
     case CMD_RELATIVE:if(w&&server.constraint&&server.pointer_window==w->id&&isfinite(c->x)&&isfinite(c->y)){
       double dx=c->x/window_fit(w).scale,dy=c->y/window_fit(w).scale;
