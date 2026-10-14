@@ -24,7 +24,7 @@ static ChildResult run_cli_in(const char* const* args,size_t count,int progress,
     assert(maton_parse_install_path(user,&appid));
     ChildResult result={.status=appid==10120?0:1,.output=strdup("")};return result;
 }
-''' +s[start:end]+r'''
+''' + 'static struct { char operation[65], ref[513], path[256]; } pending_install;\n' + s[start:end]+r'''
 int main(void){
     char system[256],one[256],two[256];const char* ref="app/org.example.App/x86_64/stable";
     assert(!app_install_roots(ref,10120,system,sizeof(system),one,sizeof(one)));

@@ -88,18 +88,7 @@ if [[ $MODE == --install ]]; then
   stub_package=$(python3 -c 'import json,re,sys; r=json.load(sys.stdin); assert r.get("ok") and r.get("accepted"), r; p=r["stubPackage"]; assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+",p), p; print(p)' <<<"$result")
   # Newer bridges echo the ID; older ones accept the caller-supplied ID.
   operation_id=$(python3 -c 'import json,re,sys; value=json.load(sys.stdin).get("operationId",sys.argv[1]); assert re.fullmatch(r"[A-Za-z0-9_-]{1,64}",value); print(value)' "$operation_id" <<<"$result")
-  # Stub creation is asynchronous. Resolve its INSTALL activity in this user.
-  component=
-  for ((attempt=0; attempt<300; attempt++)); do
-    resolved=$(adb_cmd shell cmd package resolve-activity --brief --user "$ANDROID_USER" \
-      -a org.matonos.linuxhost.INSTALL -p "$stub_package" | tr -d '\r')
-    component=$(printf '%s\n' "$resolved" | awk -v package="$stub_package" 'index($0, package "/") == 1 {print; exit}')
-    [[ -n $component ]] && break
-    sleep 2
-  done
-  [[ -n $component ]] || { echo "Timed out waiting for stub INSTALL activity: $stub_package" >&2; exit 1; }
-  adb_cmd shell am start --user "$ANDROID_USER" -n "$component" \
-    -a org.matonos.linuxhost.INSTALL --es org.matonos.linuxhost.OPERATION_ID "$operation_id"
+  # The bridge stages, verifies and installs the final APK; no INSTALL activity.
   wait_for_ref "$REF" yes "$operation_id"
   installed_uid=$(adb_cmd shell pm list packages -U --user "$ANDROID_USER" "$stub_package" | \
     tr -d '\r' | awk -v package="package:$stub_package" '$1 == package && $2 ~ /^uid:[0-9]+$/ {sub(/^uid:/,"",$2); print $2}')

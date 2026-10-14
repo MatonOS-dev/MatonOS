@@ -62,6 +62,7 @@ final class FlatpakStubManager {
     private String listArgs() throws Exception {
         return new JSONObject().put("userId", context.getUserId()).toString();
     }
+    private static final Set<String> installOperations = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
     private ILinuxd subscribedDaemon;
     private boolean removalReceiverRegistered;
@@ -78,18 +79,18 @@ final class FlatpakStubManager {
                             FlatpakStubManager owner = forUser(android.os.UserHandle.getUserId(result.getInt("uid")));
                             if (result.optBoolean("ok")) worker.execute(() -> {
                                 owner.showLauncher(ref);
-                                owner.reconcileCompletedInstall(ref);
+
                             });
                             else worker.execute(() -> owner.removeFailedStub(ref));
                         }
                     }
-                    refresh();
                 }
             }
             catch (Exception e) { Log.w(TAG, "Invalid Flatpak completion event", e); }
         }
     };
     private final java.util.Map<Integer, Runnable> afterInstall = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<Integer, Runnable> installFailure = new java.util.concurrent.ConcurrentHashMap<>();
     private final java.util.Map<Integer, Runnable> installCleanup = new java.util.concurrent.ConcurrentHashMap<>();
     private final Set<String> pending = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<String> permissionWork = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -101,12 +102,14 @@ final class FlatpakStubManager {
             worker.execute(() -> {
                 if (intent == null) return;
                 String pkg = intent.getStringExtra(PackageInstaller.EXTRA_PACKAGE_NAME);
-                pending.remove(pkg);
+                if (pkg != null) pending.remove(pkg);
                 int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
                 int sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1);
                 Runnable next = afterInstall.remove(sessionId);
                 Runnable cleanup = installCleanup.remove(sessionId);
+                Runnable failure = installFailure.remove(sessionId);
                 if (status == PackageInstaller.STATUS_SUCCESS && next != null) next.run();
+                if (status != PackageInstaller.STATUS_SUCCESS && failure != null) failure.run();
                 if (cleanup != null) cleanup.run();
                 if (status != PackageInstaller.STATUS_SUCCESS)
                     Log.e(TAG, "Stub package operation failed: " + intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE));
@@ -240,6 +243,14 @@ final class FlatpakStubManager {
         } catch (Exception error) { return false; }
     }
 
+    private boolean isGloballySignedStub(String pkg) {
+        try {
+            PackageInfo info = context.getPackageManager().getPackageInfo(pkg,
+                    PackageManager.GET_SIGNING_CERTIFICATES | PackageManager.MATCH_UNINSTALLED_PACKAGES);
+            return signedByDevice(info);
+        } catch (Exception absent) { return false; }
+    }
+
     /**
      * Returns the declared commit information from a verified stub's manifest.
      * Reads APP_COMMIT_META, RUNTIME_REF_META, and RUNTIME_COMMIT_META from
@@ -345,39 +356,6 @@ final class FlatpakStubManager {
         }
     }
 
-    private void reconcileCompletedInstall(String ref) {
-        try {
-            String pkg = packageFor(ref);
-            PackageInfo info = context.getPackageManager().getPackageInfo(pkg, PackageManager.GET_PERMISSIONS);
-            int uid = info.applicationInfo == null ? -1 : info.applicationInfo.uid;
-            if (uid < 10000 || !ownsStub(uid, ref)) return;
-            JSONObject metadata = new JSONObject(daemon().call("metadata", installArgs(ref).toString()));
-            if (!metadata.optBoolean("ok") || metadata.optBoolean("outputTruncated"))
-                throw new IllegalStateException("Cannot read installed Flatpak permissions");
-            Set<String> expected = new HashSet<>(StubGenerator.permissionsForMetadata(metadata.optString("output")));
-            Set<String> declared = new HashSet<>();
-            if (info.requestedPermissions != null) Collections.addAll(declared, info.requestedPermissions);
-            Set<String> current = new HashSet<>();
-            if (declared.contains(StubGenerator.GAME_CONTROLLERS)) current.add(StubGenerator.GAME_CONTROLLERS);
-            if (pending.contains(pkg)) return;
-            JSONObject entry = new JSONObject(daemon().call("desktop_entry", installArgs(ref).toString()));
-            if (!entry.optBoolean("ok") || entry.optBoolean("outputTruncated"))
-                throw new IllegalStateException("Cannot read installed Flatpak display name");
-            String name = StubGenerator.desktopDisplayName(entry.optString("output"));
-            String currentName = info.applicationInfo.loadLabel(context.getPackageManager()).toString();
-            if (expected.equals(current) && name.equals(currentName)) return;
-            String key = uid + ":" + ref;
-            if (!permissionWork.add(key)) return;
-            try { create(daemon(), ref, pkg, remoteFor(pkg), key); }
-            catch (Exception error) {
-                permissionWork.remove(key);
-                throw error;
-            }
-        } catch (Exception error) {
-            Log.e(TAG, "Cannot refresh stub after Flatpak install completed for " + ref, error);
-        }
-    }
-
     /** The Flatpak ref a generated stub declares in its own activity metadata. */
     private String declaredRef(String pkg) {
         try {
@@ -436,9 +414,6 @@ final class FlatpakStubManager {
                     PackageInfo installed = context.getPackageManager().getPackageInfo(pkg, 0);
                     if (installed.getLongVersionCode() >= StubGenerator.STUB_VERSION_CODE) {
                         showLauncher(ref); // covers a lost completion event
-                        if (installed.applicationInfo != null && ref.split("/")[1].equals(
-                                installed.applicationInfo.loadLabel(context.getPackageManager()).toString()))
-                            reconcileCompletedInstall(ref); // finish a placeholder after a lost event
                         continue;
                     }
                 }
@@ -447,10 +422,10 @@ final class FlatpakStubManager {
                 catch (Exception e) { Log.e(TAG, "Cannot create launcher for " + ref, e); }
             }
             for (PackageInfo pkg : context.getPackageManager().getInstalledPackages(0)) {
-                // A hidden stub (launcher never enabled) is waiting for "install me";
-                // only stubs whose Flatpak was installed and is now gone are removed.
-                if (FlatpakStubIdentity.isGeneratedStub(pkg.packageName) && !wanted.contains(pkg.packageName) &&
-                        launcherEnabled(pkg.packageName) && pending.add(pkg.packageName))
+                // No placeholder is valid anymore. A signed hidden stub with
+                // no binding is an interrupted final-PM handoff; remove it.
+                if (FlatpakStubIdentity.isGeneratedStub(pkg.packageName) && isOurSignedStub(pkg.packageName) &&
+                        !wanted.contains(pkg.packageName) && pending.add(pkg.packageName))
                     context.getPackageManager().getPackageInstaller().uninstall(pkg.packageName, resultSender);
             }
         } catch (Exception e) { Log.w(TAG, "Flatpak launcher reconciliation failed", e); }
@@ -550,45 +525,99 @@ final class FlatpakStubManager {
         } finally { desktop.delete(); apk.delete(); }
     }
 
-    /* The store installs an identity-only stub first; once PackageManager
-     * assigns its UID, stage and publish the Flatpak into that installation. */
+    /* Pull/verify/deploy precedes PM. Only deployment-local metadata reaches
+     * the generator, and the final stub is installed once. */
     String installAsync(String ref, org.json.JSONObject args) throws Exception {
         if (ref == null || ref.length() > 255 || !ref.matches("app/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+"))
             throw new IllegalArgumentException("Invalid application reference");
         final String remote = args.optString("remote", "flathub");
-        final String icon = args.optString("icon", null);
-        final String operationId = args.optString("operationId", "");
+        if (!remote.matches("[A-Za-z0-9._-]{1,128}")) throw new IllegalArgumentException("Invalid remote");
+        final String operationId = args.optString("operationId", "").isEmpty()
+                ? java.util.UUID.randomUUID().toString() : args.getString("operationId");
+        if (!operationId.matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("Invalid operation ID");
+        if (!installOperations.add(operationId)) throw new IllegalStateException("Operation ID already in use");
         worker.execute(() -> {
-            try { installStub(ref, icon, remote, operationId); }
-            catch (Exception error) { Log.e(TAG, "Flatpak install failed for " + ref, error); }
+            try { installStub(ref, remote, operationId); }
+            catch (Exception error) { failInstall(ref, remote, operationId, error); }
         });
-        return new JSONObject().put("ok", true).put("accepted", true).toString();
+        return new JSONObject().put("ok", true).put("accepted", true).put("operationId", operationId).toString();
     }
 
-    private void installStub(String ref, String icon, String remote, String operationId) throws Exception {
+    private JSONObject handoffArgs(String ref, String remote, String operation) throws Exception {
+        return new JSONObject().put("ref", ref).put("remote", remote).put("operationId", operation);
+    }
+
+    private JSONObject handoff(String command, JSONObject args) throws Exception {
+        JSONObject result = new JSONObject(daemon().call(command, args.toString()));
+        if (!result.optBoolean("ok") || result.optBoolean("outputTruncated"))
+            throw new IllegalStateException(result.optString("error", "Deployment handoff failed"));
+        return result;
+    }
+
+    private void failInstall(String ref, String remote, String operation, Exception error) {
+        installOperations.remove(operation);
+        Log.e(TAG, "Flatpak install failed for " + ref, error);
+        try { daemon().call("abort_pending", handoffArgs(ref, remote, operation).toString()); }
+        catch (Exception cleanup) { Log.e(TAG, "Deployment cleanup deferred", cleanup); }
+        try { daemon().call("install_failed", handoffArgs(ref, remote, operation)
+                .put("error", error.toString()).toString()); }
+        catch (Exception reporting) { Log.e(TAG, "Cannot report install failure", reporting); }
+    }
+
+    private void bindFinalStub(String ref, String remote, String operation, boolean newlyInstalled) {
+        try {
+            handoff("bind_pending", handoffArgs(ref, remote, operation)
+                    .put("uid", verifiedUid(ref)).put("packageName", packageFor(ref)));
+        } catch (Exception error) {
+            if (newlyInstalled) {
+                try { context.getPackageManager().getPackageInstaller().uninstall(packageFor(ref), resultSender); }
+                catch (Exception cleanup) { Log.e(TAG, "Cannot remove failed final stub", cleanup); }
+            }
+            failInstall(ref, remote, operation, error);
+            return;
+        }
+        // A committed binding survives a lost diagnostic reply. Reporting
+        // failure must never roll back a usable stub/deployment pair.
+        showLauncher(ref);
+        try { handoff("install_complete", handoffArgs(ref, remote, operation)); }
+        catch (Exception reporting) { Log.e(TAG, "Cannot report completed install", reporting); }
+        finally { installOperations.remove(operation); }
+    }
+
+    private void installStub(String ref, String remote, String operationId) throws Exception {
         String pkg = packageFor(ref);
+        // Reject a conflicting package before any network or deployment work.
+        try {
+            context.getPackageManager().getPackageInfo(pkg, 0);
+            if (!isOurSignedStub(pkg)) throw new SecurityException("Conflicting stub package");
+        } catch (PackageManager.NameNotFoundException absent) { }
+        handoff("deploy_pending", handoffArgs(ref, remote, operationId));
+        // Updating code never refreshes an existing APK or kills its process.
+        if (isOurSignedStub(pkg)) { bindFinalStub(ref, remote, operationId, false); return; }
+        // Another Android user may already own the globally installed APK.
+        // Enable that same package for this user instead of replacing it.
+        if (isGloballySignedStub(pkg)) {
+            int status = context.getPackageManager().installExistingPackage(pkg);
+            if (status != PackageManager.INSTALL_SUCCEEDED)
+                throw new IllegalStateException("Cannot install existing final stub for this user");
+            bindFinalStub(ref, remote, operationId, true); return;
+        }
+        String metadata = handoff("pending_metadata", handoffArgs(ref, remote, operationId)).getString("output");
+        String entry = handoff("pending_desktop", handoffArgs(ref, remote, operationId)).getString("output");
+        byte[] iconBytes = null;
+        try { iconBytes = iconFromBase64(handoff("pending_icon", handoffArgs(ref, remote, operationId)).optString("output")); }
+        catch (Exception absentIcon) { Log.i(TAG, "Using fallback icon for " + ref); }
+        if (iconBytes == null) iconBytes = fallbackIcon();
         File work = new File(context.getCacheDir(), "flatpak-stubs");
         if (!work.isDirectory() && !work.mkdirs()) throw new java.io.IOException("Cannot create stub scratch directory");
         File desktop = new File(work, pkg + ".desktop");
         File apk = new File(work, pkg + ".apk");
         try {
             try (FileOutputStream out = new FileOutputStream(desktop)) {
-                String appId = ref.split("/")[1];
-                out.write(("[Desktop Entry]\nType=Application\nName=" + appId + "\n").getBytes(StandardCharsets.UTF_8));
+                out.write(entry.getBytes(StandardCharsets.UTF_8));
             }
-            byte[] iconBytes = iconFromBase64(icon);
-            if (iconBytes == null) iconBytes = fallbackIcon();
-            java.util.List<String> declaredPermissions = Collections.emptyList();
-            try {
-                PackageInfo existing = context.getPackageManager().getPackageInfo(pkg,
-                        PackageManager.GET_SIGNING_CERTIFICATES | PackageManager.GET_PERMISSIONS);
-                if (signedByDevice(existing) && existing.requestedPermissions != null &&
-                        java.util.Arrays.asList(existing.requestedPermissions).contains(StubGenerator.GAME_CONTROLLERS))
-                    declaredPermissions = Collections.singletonList(StubGenerator.GAME_CONTROLLERS);
-            } catch (PackageManager.NameNotFoundException expected) { }
             StubGenerator.generate(work, ref, remote, desktop, iconBytes,
-                    declaredPermissions, pkg, apk,
-                    null, null);
+                    StubGenerator.permissionsForMetadata(metadata), pkg, apk, null, null);
             publishStubSigner(daemon());
             PackageInstaller installer = context.getPackageManager().getPackageInstaller();
             PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
@@ -601,11 +630,15 @@ final class FlatpakStubManager {
                     while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
                     session.fsync(output);
                 }
-                /* The store then starts the stub's "install me" activity;
-                 * the deploy runs under the UID PackageManager assigned. */
-                pending.add(pkg);
-                session.commit(resultSender);
-            } catch (Exception e) { pending.remove(pkg); installer.abandonSession(id); throw e; }
+                afterInstall.put(id, () -> bindFinalStub(ref, remote, operationId, true));
+                installCleanup.put(id, () -> pending.remove(pkg));
+                installFailure.put(id, () -> failInstall(ref, remote, operationId,
+                        new IllegalStateException("Final stub installation failed")));
+                pending.add(pkg); session.commit(resultSender);
+            } catch (Exception e) {
+                pending.remove(pkg); afterInstall.remove(id); installFailure.remove(id); installCleanup.remove(id);
+                installer.abandonSession(id); throw e;
+            }
         } finally { desktop.delete(); apk.delete(); }
     }
 

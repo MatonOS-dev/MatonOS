@@ -2,6 +2,8 @@
 #define MATONOS_FLATPAK_PUBLISH_H
 
 #include <stddef.h>
+/* config.fs: AID_VENDOR_MATONOS_FPINSTALL, never an application UID. */
+#define MATON_FPINSTALL_UID 2902
 #ifdef __cplusplus
 extern "C" {
 #endif

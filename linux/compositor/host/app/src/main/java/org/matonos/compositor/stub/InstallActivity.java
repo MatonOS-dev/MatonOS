@@ -8,12 +8,9 @@ import android.os.PowerManager;
 import android.util.Log;
 import org.matonos.systembridge.ILinuxd;
 
-/** "Install me": the store starts it right after creating the stub (and
- * again to resume an interrupted install). Any app may start it. The stub
- * sends linuxd only its package name; linuxd checks the package belongs to
- * this UID and is signed with the stub key, and reads the ref from it. The
- * foreground download service keeps this UID's network access until staging
- * is done, including when the user switches back to the store. */
+/** Compatibility action for an already installed, device-signed stub. New
+ * installs are owned by the bridge and create this APK after deployment.
+ * linuxd authenticates this package and uses FPINSTALL for network staging. */
 public class InstallActivity extends Activity {
     private static final String TAG = "MatonStubInstall";
     private static final String LINUXD = "org.matonos.systembridge.ILinuxd/default";

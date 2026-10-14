@@ -61,6 +61,7 @@ static int ensure_ref(RuntimeRefs* db, const char* ref) {
     }
     return 0;
 }
+int runtime_refs_note(RuntimeRefs* db,const char* ref) { return db?ensure_ref(db,ref):-1; }
 int runtime_refs_add(RuntimeRefs* db, const char* ref, int uid) {
     if (!db || !valid_uid(db, uid) || ensure_ref(db, ref)) return -1;
     size_t i;

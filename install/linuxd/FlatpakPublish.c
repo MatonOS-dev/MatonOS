@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "FlatpakPublish.h"
+#include "PendingDeployment.h"
 
 #include <dirent.h>
 #include <grp.h>
@@ -49,7 +50,7 @@ static int valid_commit(const char* value) {
 }
 
 static int valid_remote(const char* value) {
-    if (!value || !*value || strlen(value) > 128) return 0;
+    if (!value || !*value || value[0]=='-' || strlen(value) > 128) return 0;
     for (const unsigned char* p = (const unsigned char*)value; *p; ++p)
         if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
                     (*p >= '0' && *p <= '9') || *p == '_' || *p == '-' || *p == '.')) return 0;
@@ -138,8 +139,9 @@ static int seed_remote_from(const char* source, const char* staging, const char*
     return rc;
 }
 
-/* The repo skeleton linuxd created becomes the stub's, group system: mode
+/* The repo skeleton linuxd created becomes the installer's, group system: mode
  * before owner, since linuxd (no CAP_FOWNER) cannot chmod afterwards. */
+#ifndef MATONOS_PUBLISH_HOST_TEST
 static int hand_over_tree(int parent, const char* name, int uid) {
     struct stat st;
     if (fstatat(parent, name, &st, AT_SYMLINK_NOFOLLOW)) return -1;
@@ -161,7 +163,11 @@ static int hand_over_tree(int parent, const char* name, int uid) {
     return rc;
 }
 
+#endif
 static int give_to_installer(const char* staging, int uid, const char* remote) {
+#ifdef MATONOS_PUBLISH_HOST_TEST
+    (void)staging;(void)uid;(void)remote;return 0;
+#else
     static const char* const dirs[] = {"home", "cache", "tmp", "runtime"};
     char path[PATH_MAX];
     int dir = open(staging, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
@@ -178,12 +184,14 @@ static int give_to_installer(const char* staging, int uid, const char* remote) {
     if (!rc && (fchmod(dir, 02750) || fchown(dir, uid, AID_SYSTEM))) rc = -1;
     close(dir);
     return rc;
+#endif
 }
 
-/* Staging trees are written by the installing (stub) UID; linuxd has no
+/* Staging trees are written by the fixed installer UID; linuxd has no
  * DAC override, so it removes them in a child running as that UID. */
 static int remove_staging_as(int uid, const char* operation) {
-    if (uid < 10000 || uid % 100000 < 10000 || uid % 100000 > 19999 || !valid_operation_id(operation)) return -1;
+    if (uid != MATON_FPINSTALL_UID || !valid_operation_id(operation)) return -1;
+#ifndef MATONOS_PUBLISH_HOST_TEST
     pid_t child = fork();
     if (child < 0) return -1;
     if (child == 0) {
@@ -194,7 +202,7 @@ static int remove_staging_as(int uid, const char* operation) {
         if (snprintf(path + used, sizeof(path) - used, "/%s", operation) >= (int)(sizeof(path) - used)) _exit(1);
         int op = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
         if (op < 0) _exit(errno == ENOENT ? 0 : 1);
-        /* Empty the operation (the stub UID owns it and what it wrote). */
+        /* Empty the operation (FPINSTALL owns it and what it wrote). */
         DIR* dir = fdopendir(dup(op));
         int rc = dir ? 0 : 1;
         struct dirent* entry;
@@ -207,6 +215,7 @@ static int remove_staging_as(int uid, const char* operation) {
     }
     int status = 0;
     while (waitpid(child, &status, 0) < 0) if (errno != EINTR) return -1;
+    #endif
     /* linuxd owns staging/: remove the emptied operation and anything it
      * created itself before handing over. */
     char staging_path[96];
@@ -220,7 +229,7 @@ static int remove_staging_as(int uid, const char* operation) {
 }
 
 int flatpak_staging_dir(int uid, const char* operation, char* path, unsigned long size) {
-    if (uid < 10000 || uid % 100000 < 10000 || uid % 100000 > 19999 || !valid_operation_id(operation)) return -1;
+    if (uid != MATON_FPINSTALL_UID || !valid_operation_id(operation)) return -1;
     return snprintf(path, size, MATON_STAGING_ROOT "/%d/%s", uid, operation) < (int)size ? 0 : -1;
 }
 
@@ -229,45 +238,45 @@ int flatpak_remove_staging(int uid, const char* operation) {
 }
 
 int flatpak_cleanup_stale_staging(void) {
-    MatonPathScan scan;unsigned uid;int rc=0;
-    if(maton_scan_open(&scan,"staging"))return -1;
-    while(maton_scan_next(&scan,&uid)>0) {
-        char path[160];maton_staging_owner(path,sizeof(path),uid);
+    int rc=0;
+    unsigned uid=MATON_FPINSTALL_UID;
+    {
+        char path[160];snprintf(path,sizeof(path),MATON_STAGING_ROOT "/%u",uid);
         int app=open(path,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-        if(app<0)continue;
+        if(app<0)return errno==ENOENT?0:-1;
         int staging=dup(app);close(app);
-        if(staging<0)continue;
+        if(staging<0)return -1;
         DIR* ops=fdopendir(staging);
-        if(!ops){close(staging);rc=-1;break;}
+        if(!ops){close(staging);return -1;}
         struct dirent* e;
         while((e=readdir(ops))) {
             if(e->d_name[0]=='.')continue;
             if(remove_staging_as((int)uid,e->d_name)){rc=-1;break;}
         }
-        closedir(ops);if(rc)break;
+        closedir(ops);
     }
-    maton_scan_close(&scan);return rc;
+    return rc;
 }
 
 static int create_staging(int uid, const char* operation, char* path, size_t size) {
-    if (uid < 10000 || uid % 100000 < 10000 || uid % 100000 > 19999 || !valid_operation_id(operation)) return -1;
+    if (uid != MATON_FPINSTALL_UID || !valid_operation_id(operation)) return -1;
     if(maton_store_prepare())return -1;
     char install_root[160];
     snprintf(install_root,sizeof(install_root),"%s",MATON_STAGING_ROOT);
     int data = open(install_root, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
     if (data < 0) return -1;
     char owner[32]; snprintf(owner, sizeof(owner), "%d", uid);
-    int app = maton_storage_child(data,owner,"u:object_r:matonos_flatpak_store_file:s0",0711);
+    int app = maton_storage_child(data,owner,"u:object_r:matonos_flatpak_staging_file:s0",0711);
     close(data); if (app < 0) return -1;
-    /* The stub UID must traverse it (mkdirat's mode is masked by umask). */
+    /* FPINSTALL must traverse it (mkdirat's mode is masked by umask). */
     if (fchmod(app, 0711)) { close(app); return -1; }
-    /* apps/<uid> and staging/ stay linuxd's (system); each operation is
-     * built by linuxd and handed to the stub UID by hand_over_staging(). */
+    /* staging/2902 and staging/ stay linuxd's (system); each operation is
+     * built by linuxd and handed to FPINSTALL by give_to_installer(). */
     int staging = dup(app);
     close(app); if (staging < 0) return -1;
     struct stat st;
     if (fstat(staging, &st) || st.st_uid != AID_SYSTEM || fchmod(staging, 0711) ||
-            maton_storage_context("u:object_r:matonos_flatpak_store_file:s0") || mkdirat(staging, operation, 0700)) {
+            maton_storage_context("u:object_r:matonos_flatpak_staging_file:s0") || mkdirat(staging, operation, 0700)) {
         maton_storage_context(NULL);close(staging); return -1;
     }
     maton_storage_context(NULL);close(staging);
@@ -396,6 +405,14 @@ static int run_flatpak(const char* system_dir, const char* user_dir,
     }
     free(args);
     return rc;
+}
+
+static int run_flatpak_output(const char* system,const char* user,
+        const char* const* input,size_t count,char* output,size_t size) {
+    char** args=calloc(count+2,sizeof(char*));if(!args)return -1;
+    args[0]=(char*)"flatpak";
+    for(size_t i=0;i<count;i++)args[i+1]=(char*)input[i];
+    int rc=invoke("flatpak",system,user,args,output,size);free(args);return rc;
 }
 
 static int run_ostree(const char* repo, const char* const input[], size_t count,
@@ -557,6 +574,81 @@ static int transfer_and_verify(const char* staging, const char* target,
     return 0;
 }
 
+/* Inspect only verified checkouts, fd-relative and without following links.
+ * Reject unsafe authenticated metadata rather than rewriting signed objects. */
+static int sanitize_checkout(int dir, dev_t device, unsigned depth, int is_user, int in_files) {
+    DIR* entries=fdopendir(dup(dir));if(!entries)return -1;
+    struct dirent* e;int rc=0;
+    while(!rc && (e=readdir(entries))) {
+        if(!strcmp(e->d_name,".")||!strcmp(e->d_name,".."))continue;
+        struct stat st;
+        if(fstatat(dir,e->d_name,&st,AT_SYMLINK_NOFOLLOW)||st.st_dev!=device || (st.st_mode & 06000)) {rc=-1;break;}
+        if(S_ISLNK(st.st_mode)) {
+            char target[PATH_MAX];ssize_t n=readlinkat(dir,e->d_name,target,sizeof(target)-1);
+            if(n<=0 || n==(ssize_t)sizeof(target)-1){rc=-1;break;}
+            target[n]=0;
+            if(target[0]=='/') {
+                /* Flatpak files/ is /app or /usr inside the sandbox. Absolute
+                 * links in signed runtimes must never resolve against the
+                 * management host root. Rewrite the checkout link only;
+                 * authenticated repository objects stay byte-for-byte intact. */
+                const char* suffix=NULL;
+                if(!is_user && (!strncmp(target,"/usr/",5)||!strcmp(target,"/usr")))suffix=target+4;
+                else if(is_user && (!strncmp(target,"/app/",5)||!strcmp(target,"/app")))suffix=target+4;
+                else if(!is_user && (!strncmp(target,"/etc/",5) || !strcmp(target,"/etc") ||
+                        !strcmp(target,"/run/host/monitor/resolv.conf")))suffix=target;
+                if(!suffix){rc=-1;break;}
+                char confined[PATH_MAX];size_t used=0;
+                unsigned up=in_files?depth-1:depth;
+                for(unsigned i=0;i<up;i++) {memcpy(confined+used,"../",3);used+=3;}
+                if(snprintf(confined+used,sizeof(confined)-used,"%s%s",in_files?"":"files",in_files && suffix[0]=='/'?suffix+1:suffix)>=(int)(sizeof(confined)-used)) {rc=-1;break;}
+                /* Validate before changing the link. */
+                char check[PATH_MAX];snprintf(check,sizeof(check),"%s",confined);
+                int level=(int)depth;char* save=NULL;
+                for(char* part=strtok_r(check,"/",&save);part;part=strtok_r(NULL,"/",&save)) {
+                    if(!strcmp(part,"..")){if(--level<0){rc=-1;break;}}
+                    else if(strcmp(part,"."))level++;
+                }
+                if(rc)break;
+                if(maton_storage_context("u:object_r:matonos_flatpak_deployment_file:s0")){rc=-1;break;}
+                rc=unlinkat(dir,e->d_name,0) || symlinkat(confined,dir,e->d_name);
+                if(maton_storage_context(NULL))rc=-1;
+                if(rc)break;
+                snprintf(target,sizeof(target),"%s",confined);
+            }
+            int level=(int)depth;char* save=NULL;
+            for(char* part=strtok_r(target,"/",&save);part;part=strtok_r(NULL,"/",&save)) {
+                if(!strcmp(part,"..")){if(--level<0){rc=-1;break;}}
+                else if(strcmp(part,"."))level++;
+            }
+        } else if(S_ISREG(st.st_mode)||S_ISDIR(st.st_mode)) {
+            int fd=openat(dir,e->d_name,O_RDONLY|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK);
+            if(fd<0){rc=-1;break;}
+            char attrs[4096];ssize_t n=flistxattr(fd,attrs,sizeof(attrs));
+            if(n<0)rc=-1;
+            for(ssize_t off=0;!rc && off<n;) {
+                const char* attr=attrs+off;size_t length=strnlen(attr,(size_t)(n-off));
+                if(length==(size_t)(n-off) || strcmp(attr,"security.selinux"))rc=-1;
+                off+=(ssize_t)length+1;
+            }
+            if(!rc && S_ISDIR(st.st_mode))rc=depth>=128?-1:sanitize_checkout(fd,device,depth+1,is_user,in_files || (depth==0 && !strcmp(e->d_name,"files")));
+            close(fd);
+        } else rc=-1;
+    }
+    closedir(entries);return rc;
+}
+static int sanitize_deployed(const char* system,const char* user,const char* ref,int is_user) {
+    const char* args[]={is_user?"--user":"--system","info","--show-location",ref};
+    char path[PATH_MAX]={0},resolved[PATH_MAX];
+    if(run_flatpak_output(system,user,args,4,path,sizeof(path)))return -1;
+    path[strcspn(path,"\r\n")]=0;
+    const char* root=is_user?user:system;
+    if(!realpath(path,resolved)||strncmp(resolved,root,strlen(root))||resolved[strlen(root)]!='/')return -1;
+    int fd=open(resolved,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+    if(fd<0)return -1;
+    struct stat st;int rc=fstat(fd,&st)||sanitize_checkout(fd,st.st_dev,0,is_user,0);close(fd);return rc;
+}
+
 static int deploy_ref(const char* system_dir, const char* user_dir,
         const char* remote, const char* install_ref, int is_user) {
     const char* install_user[] = {"install", "--user", "--no-pull", "--noninteractive",
@@ -581,14 +673,14 @@ static int prepare_global_session_bus(const char* system_dir, const char* user_d
                 sizeof(user_override) / sizeof(user_override[0]));
 }
 
-/* Publishing takes the staging tree back from the stub UID (linuxd has
+/* Publishing takes the staging tree back from FPINSTALL (linuxd has
  * CAP_CHOWN): the stub can no longer change it, and linuxd can read the
  * config Flatpak rewrote and write the local refs it creates. */
 static int reclaim_tree(int parent, const char* name) {
     struct stat st;
     if (fstatat(parent, name, &st, AT_SYMLINK_NOFOLLOW)) return -1;
     if (fchownat(parent, name, AID_SYSTEM, AID_SYSTEM, AT_SYMLINK_NOFOLLOW)) return -1;
-    if (!S_ISDIR(st.st_mode)) return 0;
+    if (!S_ISDIR(st.st_mode)) return (S_ISREG(st.st_mode)||S_ISLNK(st.st_mode))?0:-1;
     int fd = openat(parent, name, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0) return -1;
     DIR* dir = fdopendir(dup(fd));
@@ -603,7 +695,7 @@ static int reclaim_tree(int parent, const char* name) {
     return rc;
 }
 
-/* The stub's --user installation needs the remote (and keyring) before
+/* The installer's --user installation needs the remote (and keyring) before
  * linuxd checks and publishes into it; copied from the runtime install. */
 /* ostree init inherits linuxd's restrictive umask; stubs read the
  * deployment, so match Flatpak's own modes (dirs 0755, files 0644). */
@@ -734,7 +826,7 @@ int flatpak_publish_tracked(const char* app_ref, const char* app_commit,
     }
 #ifndef MATONOS_PUBLISH_HOST_TEST
     unsigned app_id=0;
-    if(!maton_parse_install_path(user_dir,&app_id) || strcmp(system_dir,MATON_RUNTIME_DIR) || maton_store_prepare()) {
+    if((!maton_parse_install_path(user_dir,&app_id) && !pending_deployment_path(user_dir)) || strcmp(system_dir,MATON_RUNTIME_DIR) || maton_store_prepare()) {
         fail(error,error_size,"system-wide installation roots unavailable or inconsistent");return -1;
     }
 #endif
@@ -789,11 +881,11 @@ int flatpak_publish_tracked(const char* app_ref, const char* app_commit,
     if (prepare_global_session_bus(system_dir, user_dir)) {
         fail(error, error_size, "cannot set global Flatpak session-bus overrides"); return -1;
     }
-    /* flatpak_prepare staged the app transaction as the stub UID; the pinned
+    /* flatpak_prepare staged the app transaction as FPINSTALL; the pinned
      * commits are verified against that staging repository below. */
     if (compare_remote_commit(staging_repo, remote, runtime_ref, runtime_commit) ||
             compare_remote_commit(staging_repo, remote, app_ref, app_commit)) {
-        fail(error, error_size, "staged commit does not match the signed stub pin"); return -1;
+        fail(error, error_size, "staged commit does not match the resolved transaction pin"); return -1;
     }
     struct dependency_ref* refs = NULL;
     size_t count = 0;
@@ -824,7 +916,8 @@ int flatpak_publish_tracked(const char* app_ref, const char* app_commit,
             char install[512];
             if (order != phase) continue;
             if (make_install_ref(refs[i].ref, install, sizeof(install)) ||
-                    deploy_ref(system_dir, user_dir, remote, install, refs[i].user)) {
+                    deploy_ref(system_dir, user_dir, remote, install, refs[i].user) ||
+                    sanitize_deployed(system_dir,user_dir,refs[i].ref,refs[i].user)) {
                 fail(error, error_size, "Flatpak no-pull dependency deployment failed"); goto bad;
             }
         }
@@ -855,10 +948,11 @@ int flatpak_publish(const char* app_ref, const char* app_commit,
             remote, staging_dir, system_dir, user_dir, error, error_size, NULL, NULL, NULL);
 }
 
-/* ---- Stub-first prepare (flow B) ----------------------------------------
+/* ---- Installer staging (untrusted transport) ----------------------------------------
  * Stage the signed refs and read the app's /metadata and exported desktop
  * entry straight from the staged commit, so the bridge can create the stub
- * before anything is deployed. deploy then re-verifies the returned pins. */
+ * as transaction diagnostics only. These bytes are untrusted until publication;
+ * the bridge must read final metadata from the verified deployment. */
 
 static int resolve_ref_commit(const char* repo, const char* remote, const char* ref,
         char* out, size_t size) {

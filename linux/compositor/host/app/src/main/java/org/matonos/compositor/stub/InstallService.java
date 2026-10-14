@@ -8,8 +8,8 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.os.IBinder;
 
-/** Keeps this stub's UID eligible for network access while linuxd downloads
- * its signed Flatpak. No compositor or session bus starts during install. */
+/** Shows progress for compatibility self-update calls. Network staging uses
+ * the dedicated FPINSTALL identity; this service owns no install choices. */
 public final class InstallService extends Service {
     @Override public void onCreate() {
         super.onCreate();

@@ -41,6 +41,7 @@ ln -s "$STATIC" "$TMP/bin/flatpak"
 ln -s "$STATIC" "$TMP/bin/ostree"
 cc -DMATONOS_PUBLISH_HOST_TEST -Wall -Wextra -Werror \
   "$WORKTREE/install/linuxd/FlatpakPublish.c" \
+  "$WORKTREE/install/linuxd/RuntimeRefs.c" \
   "$WORKTREE/install/linuxd/tests/flatpak-publish-driver.c" \
   -o "$TMP/publish-driver"
 export MATONOS_FLATPAK_CLI="$TMP/bin/flatpak"

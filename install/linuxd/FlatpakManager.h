@@ -49,6 +49,11 @@ int flatpak_manager_prepare(const char* ref, const char* remote, int installer_u
         char* error, unsigned long error_size);
 int flatpak_manager_installed_for_uid(const char* ref, int uid);
 
+/* A replacement bridge identity means its old PM callbacks cannot return. */
+void flatpak_manager_abort_handoffs(void);
+void flatpak_manager_handoff(const char* command, const char* ref, const char* remote,
+        const char* operation, int uid, FlatpakResult* result);
+
 void flatpak_manager_result_clear(FlatpakResult* result);
 
 #ifdef __cplusplus

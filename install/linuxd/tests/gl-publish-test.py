@@ -29,7 +29,13 @@ if "install" in args and os.getenv("PUBLISH_DB_DIR"):
     assert 10120 in owners[os.environ["PUBLISH_NEW_REF"]]
 with open(os.environ["GL_TEST_LOG"], "a") as log:
     log.write(json.dumps({"args": args, "system": os.getenv("FLATPAK_SYSTEM_DIR")}) + "\\n")
-if "config" in args and "get" in args:
+if "--show-location" in args:
+    from pathlib import Path
+    root = os.environ["FLATPAK_USER_DIR" if "--user" in args else "FLATPAK_SYSTEM_DIR"]
+    location = Path(root)/("app" if "--user" in args else "runtime")/args[-1].replace("/", "_")
+    location.mkdir(parents=True, exist_ok=True)
+    print(location)
+elif "config" in args and "get" in args:
     print("true")
 elif "cat" in args:
     if os.getenv("GL_TEST_METADATA"):
@@ -185,7 +191,7 @@ for scenario in ("success", "other-owner", "deploy"):
         removed = [c["args"][-1] for c in calls if "uninstall" in c["args"]]
         if scenario == "success":
             assert old not in state and removed == [old]
-            assert "install" in calls[-2]["args"] and "uninstall" in calls[-1]["args"]
+            assert "--show-location" in calls[-2]["args"] and "uninstall" in calls[-1]["args"]
         elif scenario == "other-owner": assert state[old] == [10122] and not removed
         else: assert state[old] == [10120] and not removed
         print("PASS: publication update ownership", scenario)

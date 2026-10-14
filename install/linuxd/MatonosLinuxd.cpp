@@ -240,6 +240,7 @@ Json::Value EncodeResult(const FlatpakResult& result) {
 void PublishProgress(const std::string& text) {
     Json::Value event(Json::objectValue);
     event["line"] = text.substr(0, 2048);
+    if(!g_staging_operation.empty())event["operationId"]=g_staging_operation;
     for (size_t i = 0; i < text.size(); ++i) {
         if (text[i] != '%') continue;
         size_t begin = i;
@@ -254,6 +255,12 @@ void PublishProgress(const std::string& text) {
     }
     const std::string body = Encode(event);
     NotifyListeners(body);
+}
+
+void HandoffProgress(const char* text) {
+    const std::string previous=g_last_staging_progress;
+    StagingProgress(text);
+    if(previous != g_last_staging_progress)PublishProgress(text);
 }
 
 void PublishCompletion(const FlatpakResult& result) {
@@ -385,7 +392,7 @@ std::string SelfOperation(bool update, const std::string& package, const std::st
     Snapshot(operation_id,"staging");
     PublishProgress(std::string(update ? "update" : "install") + " started");
     std::vector<char> app_commit(65), runtime_ref(512), runtime_commit(65), metadata(16384), desktop(131072);
-    if (flatpak_manager_prepare(ref.c_str(), remote.c_str(), uid, operation_id.c_str(),
+    if (flatpak_manager_prepare(ref.c_str(), remote.c_str(), MATON_FPINSTALL_UID, operation_id.c_str(),
             app_commit.data(), app_commit.size(), runtime_ref.data(), runtime_ref.size(),
             runtime_commit.data(), runtime_commit.size(), metadata.data(), metadata.size(),
             desktop.data(), desktop.size(), error, sizeof(error)))
@@ -446,8 +453,15 @@ class LinuxdService final : public BnLinuxd {
     }
     android::binder::Status registerIdentity(const android::sp<ILinuxdIdentity>& identity) override {
         if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
-        std::lock_guard<std::mutex> lock(g_identity_mutex);
-        g_identity = identity;
+        bool replaced=false;
+        {
+            std::lock_guard<std::mutex> lock(g_identity_mutex);
+            replaced=g_identity && android::IInterface::asBinder(g_identity) != android::IInterface::asBinder(identity);
+            g_identity = identity;
+        }
+        // A new bridge process cannot receive the previous process's PM
+        // callbacks. Drop its unpublished handoff before reconciliation.
+        if(replaced)flatpak_manager_abort_handoffs();
         return android::binder::Status::ok();
     }
     android::binder::Status installSelf(const android::String16& packageName,
@@ -477,6 +491,50 @@ class LinuxdService final : public BnLinuxd {
             return android::binder::Status::ok();
         }
 
+        if (command == "deploy_pending" || command == "bind_pending" || command == "abort_pending" ||
+                command == "pending_metadata" || command == "pending_desktop" || command == "pending_icon" ||
+                command == "install_complete" || command == "install_failed") {
+            if (!OnlyKeys(request, {"ref", "remote", "operationId", "uid", "packageName", "error"}) ||
+                    !request["ref"].isString() || !request["operationId"].isString() ||
+                    !ValidName(request["operationId"].asString(), 64) ||
+                    HasEmbeddedNul(request["ref"].asString()) ||
+                    (request.isMember("remote") && (!request["remote"].isString() || HasEmbeddedNul(request["remote"].asString())))) {
+                reply(Encode(Error("invalid deployment handoff")));return android::binder::Status::ok();
+            }
+            const std::string ref=request["ref"].asString(), operation=request["operationId"].asString();
+            const std::string remote=request.get("remote","flathub").asString();
+            int uid=request.get("uid",-1).asInt();
+            if(command == "bind_pending") {
+                char verified_ref[1100], verified_remote[130], error[512];
+                if(!request["uid"].isInt() || !request["packageName"].isString() ||
+                        stub_verify_caller(uid,request["packageName"].asCString(),verified_ref,sizeof(verified_ref),
+                            verified_remote,sizeof(verified_remote),error,sizeof(error)) || ref != verified_ref || remote != verified_remote) {
+                    reply(Encode(Error("unverified final stub")));return android::binder::Status::ok();
+                }
+            }
+            if(command == "install_complete" || command == "install_failed") {
+                const bool ok=command == "install_complete";
+                const std::string error=ok ? "" : request.get("error","Install failed").asString();
+                Snapshot(operation,"complete",error);
+                Json::Value event;event["phase"]="complete";
+                event["result"]["ok"]=ok;event["result"]["operationId"]=operation;event["result"]["ref"]=ref;
+                if(!ok)event["result"]["error"]=error;
+                NotifyListeners(Encode(event));
+                Json::Value out;out["ok"]=true;reply(Encode(out));return android::binder::Status::ok();
+            }
+            if(command == "deploy_pending") {
+                g_staging_operation=operation;g_last_staging_progress.clear();
+                flatpak_publish_progress(HandoffProgress);Snapshot(operation,"staging");
+            }
+            FlatpakResult result{};
+            flatpak_manager_handoff(command.c_str(),ref.c_str(),remote.c_str(),operation.c_str(),uid,&result);
+            if(command == "deploy_pending") {
+                flatpak_publish_progress(nullptr);g_staging_operation.clear();
+                Snapshot(operation,result.ok ? "handoff" : "complete",result.error ? result.error : "");
+            }
+            reply(Encode(EncodeResult(result)));flatpak_manager_result_clear(&result);
+            return android::binder::Status::ok();
+        }
         if(command == "reconcile_deployments") {
             if(!OnlyKeys(request,{}))reply(Encode(Error("unexpected arguments")));
             else { flatpak_manager_reconcile_runtime_refs();Json::Value out;out["ok"]=true;reply(Encode(out)); }

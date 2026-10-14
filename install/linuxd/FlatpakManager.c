@@ -13,6 +13,7 @@
 #include "../../linux/flatpak/linux-paths.h"
 #include "LinuxStorage.h"
 #include "DeploymentStore.h"
+#include "PendingDeployment.h"
 #include "RemotePin.h"
 #include <sys/inotify.h>
 #include <errno.h>
@@ -34,6 +35,7 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <ctype.h>
 #include <unistd.h>
 
 extern char** environ;
@@ -157,7 +159,24 @@ void flatpak_manager_set_callbacks(FlatpakProgressCallback progress,
 
 
 
+/* One private handoff at a time; all accesses hold g_operation_mutex. */
+static struct {
+    char operation[65], ref[513], remote[129], path[512];
+    char** refs;
+    size_t count;
+} pending_install;
+
 void flatpak_manager_init(void) {
+    DIR* abandoned=opendir(MATON_INSTALL_ROOT);
+    if(abandoned) {
+        struct dirent* e;
+        while((e=readdir(abandoned))) {
+            char path[PATH_MAX];snprintf(path,sizeof(path),MATON_INSTALL_ROOT "/%s",e->d_name);
+            if(pending_deployment_path(path) && pending_deployment_discard(path))
+                fprintf(stderr,"linuxd: abandoned handoff cleanup deferred\n");
+        }
+        closedir(abandoned);
+    }
     /* Fixed management scratch only; app runtimes belong to the stubs. */
     if (maton_store_prepare()) fprintf(stderr, "linuxd: management storage unavailable\n");
 
@@ -179,7 +198,7 @@ static ChildResult run_cli_in(const char* const* args, size_t count, int progres
 int flatpak_manager_installed_for_uid(const char* ref, int uid) {
     if (!ref || strncmp(ref, "app/", 4) || !flatpak_manager_valid_ref(ref) ||
             !valid_install_uid(uid)) return 0;
-    char user_dir[256], system_dir[256];
+    char user_dir[512], system_dir[512];
     if (maton_install_dir(user_dir,sizeof(user_dir),(unsigned)uid)) return 0;
     snprintf(system_dir,sizeof(system_dir),"%s",MATON_RUNTIME_DIR);
     const char* args[] = {"--user", "info", ref};
@@ -191,6 +210,11 @@ int flatpak_manager_installed_for_uid(const char* ref, int uid) {
 
 static int app_install_roots(const char* ref, int app_uid, char* system_dir, size_t system_size,
         char* user_dir, size_t user_size) {
+    if(app_uid==-1 && pending_install.operation[0] && !strcmp(ref,pending_install.ref)) {
+        if(strlen(pending_install.path)>=user_size)return -1;
+        snprintf(system_dir,system_size,"%s",MATON_RUNTIME_DIR);
+        strcpy(user_dir,pending_install.path);return 0;
+    }
     if (!flatpak_manager_installed_for_uid(ref, app_uid)) return -1;
     snprintf(system_dir,system_size,"%s",MATON_RUNTIME_DIR);
     char pointer[PATH_MAX],resolved[PATH_MAX];unsigned appid;
@@ -334,7 +358,12 @@ static ChildResult run_cli_in(const char* const* args, size_t count, int progres
         snprintf(result.output, k_output_limit + 1, "cannot prepare Flatpak environment");
         return result;
     }
-    rc = posix_spawn(&child, k_flatpak, &actions, &attributes, argv, child_env);
+    const char* executable=k_flatpak;
+#ifdef MATONOS_PUBLISH_HOST_TEST
+    const char* override=getenv("MATONOS_FLATPAK_CLI");
+    if(override && *override)executable=override;
+#endif
+    rc = posix_spawn(&child, executable, &actions, &attributes, argv, child_env);
     flatpak_environment_free(child_env);
     free(argv);
     posix_spawn_file_actions_destroy(&actions);
@@ -473,6 +502,8 @@ static int collect_deployments(void);
 static int retained_refs(RuntimeRefs* db);
 void flatpak_manager_reconcile_runtime_refs(void) {
     pthread_mutex_lock(&g_operation_mutex);
+    /* Publication is private until PM binding; protect its dependencies. */
+    if(pending_install.operation[0]){pthread_mutex_unlock(&g_operation_mutex);return;}
     /* Keep all shared references until old versions can be collected. */
     int pending=collect_deployments();
     RefContext c={.system=MATON_RUNTIME_DIR};c.db=ref_open(&c);
@@ -500,11 +531,15 @@ static void* package_operation_thread(void* data) {
     FlatpakResult result;
     memset(&result, 0, sizeof(result));
     pthread_mutex_lock(&g_operation_mutex);
-    if (operation->uninstall) {
+    if (pending_install.operation[0]) {
+        result.exit_code=1;
+        result.error=strdup("A verified deployment is awaiting PackageManager binding");
+        if(operation->operation_id)flatpak_remove_staging(MATON_FPINSTALL_UID,operation->operation_id);
+    } else if (operation->uninstall) {
         result.ok=0;result.exit_code=1;
         result.error=strdup("Remove the stub package; deployment cleanup follows PackageManager removal for all users");
     } else {
-        char system_dir[256], user_dir[256], error[512] = {0};
+        char system_dir[512], user_dir[512], error[512] = {0};
         snprintf(system_dir,sizeof(system_dir),"%s",MATON_RUNTIME_DIR);
         user_dir[0]=0;
         publish_progress_line("Verifying pinned Flatpak commits and publishing runtime/app");
@@ -516,7 +551,7 @@ static void* package_operation_thread(void* data) {
         if(!rc)rc = deployment_create((unsigned)operation->app_uid,user_dir,sizeof(user_dir));
         refs.db = ref_open(&refs);
         refs.version=!rc?runtime_refs_open(user_dir,0):NULL;
-        if(!rc) rc = flatpak_staging_dir(operation->app_uid, operation->operation_id,
+        if(!rc) rc = flatpak_staging_dir(MATON_FPINSTALL_UID, operation->operation_id,
                 staging_dir, sizeof(staging_dir));
         if (rc) snprintf(error, sizeof(error), "%s", pin_rc == -2 ?
                 "Application is pinned to another remote" : pin_rc ?
@@ -526,7 +561,7 @@ static void* package_operation_thread(void* data) {
                 operation->runtime_ref, operation->runtime_commit, operation->remote,
                 staging_dir, system_dir, user_dir, error, sizeof(error), ref_record, ref_complete, &refs);
         runtime_refs_close(refs.db);runtime_refs_close(refs.version);
-        if (operation->operation_id) flatpak_remove_staging(operation->app_uid, operation->operation_id);
+        if (operation->operation_id) flatpak_remove_staging(MATON_FPINSTALL_UID, operation->operation_id);
         if(!rc && check_remote_pin(operation->ref,operation->remote,operation->app_uid,1)) {
             snprintf(error,sizeof(error),"cannot persist remote pin (application may belong to another remote)");rc=-1;
         }
@@ -699,7 +734,7 @@ static void read_desktop_entry(const char* ref, int app_uid, FlatpakResult* resu
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) != 0) {
         set_error(result, "valid installed application ref required"); return;
     }
-    char system_dir[256], user_dir[256];
+    char system_dir[512], user_dir[512];
     if (app_install_roots(ref, app_uid, system_dir, sizeof(system_dir), user_dir, sizeof(user_dir))) {
         set_error(result, "installed application deployment not found"); return;
     }
@@ -718,7 +753,7 @@ static void read_desktop_entry(const char* ref, int app_uid, FlatpakResult* resu
     if (length >= sizeof(app_id)) { free(child.output); set_error(result, "application ID too long"); return; }
     memcpy(app_id, ref + 4, length); app_id[length] = 0;
     /* The resolved deployment must stay inside this immutable version. */
-    char per_app[272];
+    char per_app[544];
     snprintf(per_app,sizeof(per_app),"%s/app/",user_dir);
     if (strncmp(child.output, per_app, strlen(per_app)) != 0 ||
             snprintf(path, sizeof(path), "%s/export/share/applications/%s.desktop", child.output, app_id) >= (int)sizeof(path)) {
@@ -749,7 +784,7 @@ static void read_exported_icon(const char* ref, int app_uid, FlatpakResult* resu
     if (!flatpak_manager_valid_ref(ref) || strncmp(ref,"app/",4) != 0) {
         set_error(result,"valid installed application ref required"); return;
     }
-    char system_dir[256], user_dir[256];
+    char system_dir[512], user_dir[512];
     if (app_install_roots(ref, app_uid, system_dir, sizeof(system_dir), user_dir, sizeof(user_dir))) {
         set_error(result,"installed application deployment not found"); return;
     }
@@ -759,7 +794,7 @@ static void read_exported_icon(const char* ref, int app_uid, FlatpakResult* resu
     if (!location.output || location.truncated) { free(location.output); set_error(result,"invalid deployment location"); return; }
     location.output[strcspn(location.output,"\r\n")] = 0;
     char root[4096];
-    char per_app[272];
+    char per_app[544];
     snprintf(per_app,sizeof(per_app),"%s/app/",user_dir);
     if (strncmp(location.output,per_app,strlen(per_app)) || !realpath(location.output,root) ||
             strncmp(root,per_app,strlen(per_app))) {
@@ -807,7 +842,7 @@ static void list_installed_refs(int user, FlatpakResult* result) {
         if(present<0){maton_scan_close(&apps);free(list);set_error(result,"PackageManager inventory unavailable");return;}
         if(!present)continue;
         long uid=scan_uid;
-        char user_dir[256], system_dir[256];
+        char user_dir[512], system_dir[512];
         maton_install_dir(user_dir, sizeof(user_dir), (unsigned)uid);
         snprintf(system_dir,sizeof(system_dir),"%s",MATON_RUNTIME_DIR);
         const char* args[] = {"--user", "list", "--app", "--columns=ref"};
@@ -840,7 +875,7 @@ int flatpak_manager_prepare(const char* ref, const char* remote, int installer_u
         char* desktop, unsigned long desktop_size,
         char* error, unsigned long error_size) {
     if (error && error_size) error[0] = '\0';
-    if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) || !valid_install_uid(installer_uid)) {
+    if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4) || installer_uid != MATON_FPINSTALL_UID) {
         if (error && error_size) snprintf(error, error_size, "valid application ref required");
         return -1;
     }
@@ -855,7 +890,7 @@ int flatpak_manager_prepare(const char* ref, const char* remote, int installer_u
         return -1;
     }
     return flatpak_prepare(ref, (remote && *remote) ? remote : "flathub",
-            installer_uid, operation_id, app_commit, app_commit_size,
+            MATON_FPINSTALL_UID, operation_id, app_commit, app_commit_size,
             runtime_ref, runtime_ref_size, runtime_commit, runtime_commit_size,
             metadata, metadata_size, desktop, desktop_size, error, error_size);
 }
@@ -913,7 +948,7 @@ void flatpak_manager_call(const char* command, const char* ref,
         if (!flatpak_manager_valid_ref(ref) || strncmp(ref, "app/", 4)) {
             set_error(result, "valid application ref required"); return;
         }
-        char system_dir[256], user_dir[256];
+        char system_dir[512], user_dir[512];
         if (app_install_roots(ref, app_uid, system_dir, sizeof(system_dir), user_dir, sizeof(user_dir))) {
             set_error(result, "installed application deployment not found"); return;
         }
@@ -936,4 +971,122 @@ void flatpak_manager_call(const char* command, const char* ref,
     } else {
         set_error(result, "unsupported Flatpak command");
     }
+}
+
+static void pending_clear(void) {
+    for(size_t i=0;i<pending_install.count;i++)free(pending_install.refs[i]);
+    free(pending_install.refs);memset(&pending_install,0,sizeof(pending_install));
+}
+static int pending_record(const char* ref,void* unused) {
+    (void)unused;
+    RuntimeRefs* db=runtime_refs_open(MATON_RUNTIME_DIR,0);
+    int rc=!db || runtime_refs_note(db,ref) || runtime_refs_save(db);
+    runtime_refs_close(db);return rc;
+}
+static void pending_prune(void) {
+    RefContext refs={.system=MATON_RUNTIME_DIR};
+    RuntimeRefs* db=ref_open(&refs);
+    if(!db || retained_refs(db) || runtime_refs_prune(db,ref_prune,&refs))
+        fprintf(stderr,"linuxd: failed handoff runtime cleanup deferred\n");
+    runtime_refs_close(db);
+}
+void flatpak_manager_abort_handoffs(void) {
+    pthread_mutex_lock(&g_operation_mutex);
+    if(pending_install.operation[0]) {
+        if(pending_deployment_discard(pending_install.path))
+            fprintf(stderr,"linuxd: interrupted bridge handoff cleanup deferred\n");
+        else {pending_clear();pending_prune();}
+    }
+    pthread_mutex_unlock(&g_operation_mutex);
+}
+static int pending_refs(const char* const* refs,size_t count,void* unused) {
+    (void)unused;
+    pending_install.refs=calloc(count?count:1,sizeof(char*));
+    if(!pending_install.refs)return -1;
+    for(size_t i=0;i<count;i++) {
+        pending_install.refs[i]=strdup(refs[i]);
+        if(!pending_install.refs[i])return -1;
+        pending_install.count++;
+    }
+    return 0;
+}
+/* Bridge-only, operation-scoped transport. No caller-supplied path, keyring,
+ * metadata or installer UID is accepted. No app pointer exists before bind. */
+void flatpak_manager_handoff(const char* command,const char* ref,const char* remote,
+        const char* operation,int uid,FlatpakResult* result) {
+    memset(result,0,sizeof(*result));result->exit_code=1;
+    if(!command || !flatpak_manager_valid_ref(ref) || strncmp(ref,"app/",4) ||
+       !operation || !*operation || strlen(operation)>64) {
+        set_error(result,"invalid deployment handoff");return;
+    }
+    for(const char* p=operation;*p;p++)if(!isalnum((unsigned char)*p)&&*p!='_'&&*p!='-') {
+        set_error(result,"invalid operation ID");return;
+    }
+    pthread_mutex_lock(&g_operation_mutex);
+    if(!strcmp(command,"deploy_pending")) {
+        if(pending_install.operation[0]){set_error(result,"Another deployment awaits binding");goto done;}
+        char staging[PATH_MAX],error[512]={0},app[65],runtime[513],commit[65],metadata[16384],desktop[131073];
+        if(!remote || !*remote || strlen(remote)>128){set_error(result,"invalid remote");goto done;}
+        snprintf(pending_install.operation,sizeof(pending_install.operation),"%s",operation);
+        snprintf(pending_install.ref,sizeof(pending_install.ref),"%s",ref);
+        snprintf(pending_install.remote,sizeof(pending_install.remote),"%s",remote);
+        int rc=flatpak_manager_prepare(ref,remote,MATON_FPINSTALL_UID,operation,
+                app,sizeof(app),runtime,sizeof(runtime),commit,sizeof(commit),
+                metadata,sizeof(metadata),desktop,sizeof(desktop),error,sizeof(error));
+        if(!rc)rc=pending_deployment_create(ref,pending_install.path,sizeof(pending_install.path));
+        if(!rc)rc=flatpak_staging_dir(MATON_FPINSTALL_UID,operation,staging,sizeof(staging));
+        if(!rc)rc=flatpak_publish_tracked(ref,app,runtime,commit,remote,staging,
+                MATON_RUNTIME_DIR,pending_install.path,error,sizeof(error),pending_record,pending_refs,NULL);
+        flatpak_remove_staging(MATON_FPINSTALL_UID,operation);
+        if(!rc)rc=check_remote_pin(ref,remote,-1,1);
+        if(rc) {
+            if(pending_install.path[0])pending_deployment_discard(pending_install.path);
+            pending_clear();pending_prune();set_error(result,error[0]?error:"verified deployment failed");goto done;
+        }
+        result->ok=1;result->exit_code=0;result->output=strdup("Verified deployment awaiting final stub");
+    } else {
+        if(strcmp(operation,pending_install.operation)||strcmp(ref,pending_install.ref)||
+                !remote||strcmp(remote,pending_install.remote)) {
+            set_error(result,"unknown deployment handoff");goto done;
+        }
+        if(!strcmp(command,"pending_metadata")) {
+            const char* args[]={"--user","info","--show-metadata",ref};
+            ChildResult child=run_cli_in(args,4,0,MATON_RUNTIME_DIR,pending_install.path);
+            result_from_child(result,&child);free(child.output);
+        } else if(!strcmp(command,"pending_desktop"))read_desktop_entry(ref,-1,result);
+        else if(!strcmp(command,"pending_icon"))read_exported_icon(ref,-1,result);
+        else if(!strcmp(command,"abort_pending")) {
+            if(pending_deployment_discard(pending_install.path))set_error(result,"handoff cleanup deferred");
+            else {pending_clear();pending_prune();result->ok=1;result->exit_code=0;}
+        } else if(!strcmp(command,"bind_pending")) {
+            if(!valid_install_uid(uid)){set_error(result,"invalid stub UID");goto done;}
+            char bound[256]={0};
+            int rc=deployment_create((unsigned)uid,bound,sizeof(bound));
+            if(!rc)rc=deployment_discard(bound);
+            if(!rc)rc=rename(pending_install.path,bound);
+            if(!rc)snprintf(pending_install.path,sizeof(pending_install.path),"%s",bound);
+            RuntimeRefs* version=!rc?runtime_refs_open(bound,0):NULL;
+            RuntimeRefs* shared=!rc?runtime_refs_open(MATON_RUNTIME_DIR,0):NULL;
+            int appid=(int)maton_app_id((unsigned)uid);
+            if(!rc)rc=!version || !shared;
+            for(size_t i=0;!rc && i<pending_install.count;i++)
+                rc=runtime_refs_add(version,pending_install.refs[i],appid) ||
+                        runtime_refs_add(shared,pending_install.refs[i],appid);
+            if(!rc)rc=runtime_refs_save(version) || runtime_refs_save(shared);
+            runtime_refs_close(version);runtime_refs_close(shared);
+            if(!rc && deployment_commit((unsigned)uid,bound)) {
+                char pointer[256],selected[PATH_MAX];
+                /* rename may have committed before directory fsync failed.
+                 * Finish binding if the selected version is ours; never
+                 * delete an already selected deployment or its final stub. */
+                rc=maton_install_dir(pointer,sizeof(pointer),(unsigned)uid) ||
+                        !realpath(pointer,selected) || strcmp(selected,bound);
+                if(!rc)fprintf(stderr,"linuxd: binding committed; directory fsync failed\n");
+            }
+            if(rc) {set_error(result,"cannot bind verified deployment");goto done;}
+            pending_clear();result->ok=1;result->exit_code=0;
+        } else set_error(result,"unsupported handoff command");
+    }
+done:
+    pthread_mutex_unlock(&g_operation_mutex);
 }

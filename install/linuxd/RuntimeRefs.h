@@ -10,6 +10,8 @@ typedef int (*RuntimeRefsLive)(int, void*);
 typedef int (*RuntimeRefsPrune)(const char*, int*, void*);
 /* Missing file is a valid empty database; invalid files fail closed. */
 RuntimeRefs* runtime_refs_open(const char* directory, unsigned user);
+/* Record a verified dependency as a GC candidate before deploying it. */
+int runtime_refs_note(RuntimeRefs*, const char* ref);
 int runtime_refs_add(RuntimeRefs*, const char* ref, int uid);
 /* Commit an exact set already protected by runtime_refs_add/save. */
 int runtime_refs_replace(RuntimeRefs*, int uid, const char* const* refs, size_t count);

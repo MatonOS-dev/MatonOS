@@ -10,7 +10,7 @@ wait=text[text.index('wait_for_ref()'):text.index('"$ADB" connect')]
 # Preserve production helper resolution without requiring adb or a device.
 wait=wait.replace('$(dirname "$0")',str(root/'install/tools'))
 with tempfile.TemporaryDirectory() as tmp:
-    for mode in ('slow','stalled','error','old-ref'):
+    for mode in ('slow','stalled','error','old-ref','handoff'):
         harness=Path(tmp)/'test.sh'
         harness.write_text('''set -Eeuo pipefail
 IDLE_MINUTES=2
@@ -21,6 +21,7 @@ adb_cmd() {
     local seq=$step phase=staging error=
     if [[ $MODE == stalled ]]; then seq=0; fi
     if [[ $MODE == error ]]; then error=',"error":"Nothing matches"'; fi
+    if [[ $MODE == handoff ]] && ((step>=10)); then phase=handoff; fi
     if ((step>=15)); then phase=complete; fi
     printf '{"op":{"phase":"%s","sequence":%s%s}}\\n' "$phase" "$seq" "$error"
 }
@@ -32,7 +33,7 @@ list_installed() {
 '''+wait+'''
 if wait_for_ref app/org.example.App/x86_64/stable yes op; then rc=0; else rc=$?; fi
 case "$MODE" in
-slow|old-ref) [[ $rc == 0 && $step == 15 ]];;
+slow|old-ref|handoff) [[ $rc == 0 && $step == 15 ]];;
 stalled) [[ $rc != 0 && $step == 2 ]];;
 error) [[ $rc != 0 && $step == 0 ]];;
 esac

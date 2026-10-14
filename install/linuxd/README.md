@@ -18,8 +18,8 @@ per-user stub HOME/cache/runtime data. See [storage](STORAGE-LAYOUT.md),
 fixed, system-owned mode-0700 `/data/linux-app/manager/{home,cache,run,tmp}`
 scratch directories. The pinned stub certificate is in
 `/data/linux-app/store/stub-signer.der`. No `/data/matonos/linux` tree remains.
-The staging helper enters the verified stub UID for network attribution:
-SETUID/SETGID remain for that job. CHOWN/FOWNER seal staged objects; SYS_ADMIN
+The staging helper enters fixed UID 2902 (`AID_VENDOR_MATONOS_FPINSTALL`):
+SETUID/SETGID remain only for that identity change. CHOWN/FOWNER seal staged objects; SYS_ADMIN
 and KILL capabilities and the uinput group are removed. Network policy remains
 for remote-add's HTTPS fetch. No app runtime or hardware proxy runs in linuxd.
 
@@ -93,8 +93,9 @@ Fresh enforcing-image check for the coordinator (no hot-patching):
 
 ### Round 12 phase 1: partial store groundwork (2026-10-14)
 
-This work does **not** complete the store API. The existing early-stub flow
-and completion refresh remain; there is no ILinuxAppStore service yet.
+This historical phase did **not** complete the store API. Round 27 below
+replaces its early-stub flow and completion refresh; no ILinuxAppStore service
+has been added in this install-ordering change.
 
 linuxd now checks a system-wide application-origin pin before staging and
 again under its publication mutex. After verified deployment, it persists the
@@ -121,14 +122,9 @@ pass. FlatpakManager.c passes NDK r30/API 36 syntax compilation with
 against existing framework/bridge jars and SDK 36; LinuxAppStorePolicyTest
 passes both JUnit tests. No image build or device test was performed.
 
-Remaining work: add the permission-protected AIDL API and correlated progress,
-update discovery/execution, admin-only all-users removal, and the dedicated
-sandboxed installer identity plus verified deployment handoff needed to install
-the final APK once. Currently FlatpakStore.c and FlatpakPublish.c accept only
-application-range staging UIDs, and deployment pointers are indexed by the
-stub's appId. Simply deleting the initial APK or its refresh does not implement
-the binding install ordering: it loses the staging identity or final metadata.
-The installer handoff must be implemented before changing this ordering.
+Remaining Store API work: add the permission-protected AIDL API and update
+management/admin-only all-users removal. The installer identity and final
+stub handoff are implemented by round 27 below.
 
 Device checks for the coordinator after a fresh image build (not run here):
 1. On a disposable user, install from a signed configured remote using the
@@ -146,6 +142,111 @@ Device checks for the coordinator after a fresh image build (not run here):
 5. Repeat on the Ryzen desktop, Surface Pro 3 and HP ProDesk when images are
    available. These changes have no hardware-specific behavior.
 
-No SELinux lines or kernel settings were changed. The existing test install
-flow is retained, including its known first-launch refresh race; do not treat
-this groundwork as a fix for that race.
+No SELinux lines or kernel settings were changed. These statements describe round 26 only. Round 27 changes policy and the
+install harness; see its verification limits below.
+
+
+### Round 27: FPINSTALL staging, verified deployment, final APK once
+
+New installs no longer need an application UID. The bridge schedules a
+`deploy_pending` operation; linuxd stages only as UID 2902, under
+`/data/linux-app/staging/2902/<operationId>`. Bionic Flatpak uses netd directly,
+with the inet group. Flatpak's own transaction pulls dependencies; linuxd
+publishes only the transaction's observed refs rather than resolving runtimes
+itself. Stage metadata is diagnostic/untrusted and never feeds stub generation.
+
+Under the publication mutex, linuxd imports with `pull-local --untrusted
+--gpg-verify` using its own configured remote/keyring, verifies checksums,
+seals objects, deploys into an unpublished `.pending-<FlatpakID>-XXXXXX`
+installation, sanitizes checkouts and persists the system-wide remote pin.
+Only then can the bridge request operation-scoped metadata, desktop text and
+PNG icon. Missing icons use the existing generated fallback. Unknown operations,
+refs and remote mismatches fail closed; arbitrary installation paths, signing
+keys and installer UIDs are not handoff inputs.
+
+Sanitization rejects setuid/setgid, devices/FIFOs, extra xattrs, filesystem
+crossings and escaping relative links. Standard runtime `/usr`, `/etc`,
+resolver `/run/host/monitor/resolv.conf` and application `/app` absolute links
+are replaced in the checkout with confined relative links. Repository objects
+are never rewritten. Relocated runtime `etc` retains its relative namespace
+references; other absolute targets fail closed. Real launch/DNS compatibility
+still needs the fresh-image check. The unpublished filename limits Flatpak IDs
+to 220 characters; oversized requests fail without installing an APK.
+
+The bridge generates the final label, permissions and icon from that verified
+deployment, and commits one PackageInstaller session. The launcher stays disabled
+until linuxd verifies the assigned UID against the live PM identity provider,
+renames the version into the normal numeric deployment family and atomically
+binds `install/<appId>` to it. Refcounts receive the real application ID only at
+binding. The private handoff protects runtime GC in the meantime; verified
+runtime refs are recorded as cleanup candidates before deployment.
+
+An existing signed stub receives a new deployment pointer without an APK
+replacement. An existing global package belonging to another Android user is
+installed for the target user with `installExistingPackage`, avoiding a global
+APK replacement. Completion no longer triggers label/permission refresh.
+Consequently, an update does not change an existing stub's label, icon or declared
+permissions; explicit future migration is needed for those changes. A changed
+branch/ref in an existing stub is rejected at binding rather than trusted blindly.
+
+Stage, verification, deployment, metadata/APK generation and PM rejection all
+abort the private deployment. Failed binding removes a newly installed stub;
+updates preserve the previous stub/pointer. A lost completion-report reply does
+not remove a successfully bound pair. If pointer rename committed but directory
+fsync fails, the selected pair is retained and the durability error is logged.
+Startup collects unpublished named versions as well as abandoned numeric versions.
+A replacement bridge identity aborts its previous unpublished PM handoff; bridge
+reconciliation removes signed hidden stubs with no binding (there is no valid
+placeholder anymore).
+Cleanup I/O/PM failures are logged for reconciliation rather than blocking boot.
+Daemon crash/restart between PM commit and UID binding, and real PM cancellation,
+remain device checks; the host doubles are not proof of crash atomicity across PM.
+
+Installer policy now has a dedicated staging file type. Its network domain can
+use netd DNS and HTTPS; it can search the store root but cannot write store,
+deployment or code files. linuxd can read/reclaim staging. The existing installer
+process transition is retained; no binder/API rights or new policy files were
+added for the downloader.
+
+Host verification (exact evidence in `out/pc-logs/agents/v3-fpinstall-result.md`):
+- `fpinstall-handoff-test.py`: real C worker with CLI doubles; staging/resolve,
+  signature/deploy, unsafe absolute/relative links, FIFO, modes/xattrs, metadata,
+  simulated PM rejection, binding, restart collection, success and failed update.
+- `final-stub-once-test.py`: production bridge methods with PM/generator doubles;
+  correct final metadata/permissions, all handoff failure points, one APK commit,
+  no APK commit on update and no completion refresh.
+- `fpinstall-signature-test.py`: real cached signed Calculator objects;
+  malformed signature, changed content checksum and incorrect linuxd keyring
+  rejected; replacing only the staging keyring cannot change trust.
+- Existing deployment, query, refcount, remote-pin, operation-wait and progress
+  regressions; NDK object/helper compilation and focused Java compilation.
+- Fast m4/checkpolicy/sepolicy-analyze/secilc replay against the last platform
+  policy, including neverallows and file_contexts. Coordinator policy/image
+  validation is still required after merge.
+
+Fresh enforcing-image steps (coordinator/user only; no hot-patching):
+1. Build linuxd, the Flatpak APEX helper, bridge, policy and image together. Run
+   the label checker. Boot fresh userdata; disable idle sleep. Use a disposable
+   target user and root-arm the existing harness.
+2. Run `install/tools/test-flatpak.sh --install app/org.gnome.Calculator/x86_64/stable`
+   (set `MATON_ADB_SERIAL`, `MATON_ANDROID_USER` as needed). It polls the operation
+   through staging/handoff/completion and no longer starts an INSTALL activity.
+   During download assert no `flatpak.org.gnome.Calculator` package/UID or numeric
+   pointer exists, and the pull has UID 2902 plus installer SELinux domain.
+3. Inspect final label, PNG and declared permissions against deployed signed
+   metadata. Launch immediately after visibility; check there is only one PM
+   APK install and no `stopPackageTimeout`/completion replacement.
+4. Repeat install/update while the app runs. Confirm its PID and APK stay the
+   same, the numeric pointer changes, and its lease keeps old code/runtime refs.
+   Test another Android user: the global APK must not be replaced.
+5. Test nonexistent refs, unsigned/incorrect-key commits, damaged staging content,
+   denied PM installation and interrupted publication/binding on disposable data.
+   Verify failure snapshots and no new stub or unpublished app version; a failed
+   update must preserve the prior working pair. Reboot/restart during the PM
+   handoff and inspect both hidden stubs and abandoned versions explicitly.
+6. Run `--uninstall` with the same ref. Confirm PM removes the user's stub, removes
+   its app data, and collection respects other users and live leases. Repeat
+   restriction and remote-pin conflict checks from round 26.
+7. Launch both X11 and Wayland apps, verify runtime symlinks and sandbox DNS, then
+   repeat on Ryzen/RX6600, Surface Pro 3 and HP ProDesk. No kernel changes or AOSP
+   patches are needed. No adb/device execution was performed for this round.

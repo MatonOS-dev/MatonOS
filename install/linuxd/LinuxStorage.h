@@ -32,7 +32,7 @@ static inline int maton_store_prepare(void) {
     if(fstat(root,&st)||st.st_uid!=1000){close(root);errno=EPERM;return -1;}
     const char* names[]={"install","runtime","staging","store"};
     for(size_t i=0;i<4;i++) {
-        int child=maton_storage_child(root,names[i],i>=2?"u:object_r:matonos_flatpak_store_file:s0":"u:object_r:matonos_flatpak_deployment_file:s0",i>=2?0711:0755);
+        int child=maton_storage_child(root,names[i],i==2?"u:object_r:matonos_flatpak_staging_file:s0":i==3?"u:object_r:matonos_flatpak_store_file:s0":"u:object_r:matonos_flatpak_deployment_file:s0",i>=2?0711:0755);
         if(child<0){close(root);return -1;}close(child);
     }
     int manager=maton_storage_child(root,"manager","u:object_r:matonos_flatpak_deployment_file:s0",0700);

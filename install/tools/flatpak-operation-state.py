@@ -11,7 +11,7 @@ try:
         if state.get('error'):
             raise ValueError(state['error'])
         phase = state['phase']
-        if phase not in ('staging', 'publishing', 'complete'):
+        if phase not in ('staging', 'publishing', 'handoff', 'complete'):
             raise ValueError('invalid operation phase')
         print(f"{phase}:{int(state['sequence'])}")
 except (ValueError, KeyError, TypeError) as error:

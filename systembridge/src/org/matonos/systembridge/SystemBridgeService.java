@@ -580,8 +580,7 @@ public final class SystemBridgeService extends Service {
                         try { result = owner.launch(args.getString("appId")); }
                         finally { Binder.restoreCallingIdentity(identity); }
                     } else if ("install".equals(command)) {
-                        /* Create the identity stub first; linuxd stages and
-                         * deploys only after PackageManager assigns its UID. */
+                        /* Verify and deploy before creating the final stub. */
                         if (!args.has("ref") || !(args.get("ref") instanceof String))
                             throw new IllegalArgumentException("An application reference is required");
                         result = owner.installAsync(args.getString("ref"), args);

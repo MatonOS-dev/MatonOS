@@ -73,6 +73,7 @@ allowxperm matonos_linuxd self:fifo_file ioctl { 0x5413 };
 # refs in the shared repository before linuxd verifies and publishes them.
 # Flatpak app data remains a non-executable data_file_type.
 # Shared staging repository, populated only by the installer helper.
+type matonos_flatpak_staging_file, file_type, data_file_type, core_data_file_type;
 type matonos_flatpak_store_file, file_type, data_file_type, core_data_file_type;
 type matonos_linux_code_file, file_type, data_file_type, core_data_file_type;
 
@@ -87,8 +88,8 @@ allow matonos_flatpak_installer matonos_flatpak_installer_exec:file entrypoint;
 allow matonos_flatpak_installer self:process { fork sigchld signal };
 allow matonos_flatpak_installer self:capability { setuid setgid };
 net_domain(matonos_flatpak_installer)
-allow matonos_flatpak_installer matonos_flatpak_store_file:dir { create_dir_perms r_dir_perms };
-allow matonos_flatpak_installer matonos_flatpak_store_file:file create_file_perms;
+allow matonos_flatpak_installer matonos_flatpak_staging_file:dir { create_dir_perms r_dir_perms };
+allow matonos_flatpak_installer matonos_flatpak_staging_file:file create_file_perms;
 allow matonos_flatpak_installer matonos_flatpak_cli_exec:file rx_file_perms;
 allow matonos_flatpak_installer matonos_linuxd:fd use;
 
@@ -149,9 +150,9 @@ type sysfs_matonos_product_name, fs_type, sysfs_type;
 allow untrusted_app_all sysfs_matonos_product_name:file { open read };
 
 # OSTree publication: hardlinks, symlinks and FICLONE on managed storage.
-allow matonos_flatpak_installer matonos_flatpak_store_file:file { link ioctl };
-allowxperm matonos_flatpak_installer matonos_flatpak_store_file:file ioctl { 0x9409 };
-allow matonos_flatpak_installer matonos_flatpak_store_file:lnk_file { create getattr rename };
+allow matonos_flatpak_installer matonos_flatpak_staging_file:file { link ioctl };
+allowxperm matonos_flatpak_installer matonos_flatpak_staging_file:file ioctl { 0x9409 };
+allow matonos_flatpak_installer matonos_flatpak_staging_file:lnk_file { create getattr rename };
 allow matonos_linuxd matonos_flatpak_store_file:{ file lnk_file } link;
 allow matonos_linuxd matonos_flatpak_deployment_file:{ dir file } relabelfrom;
 allow matonos_linuxd matonos_linux_code_file:file link;
@@ -183,3 +184,13 @@ neverallow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_cod
 
 # The installer helper reaches its staging dir under /data/linux-app.
 allow matonos_flatpak_installer matonos_flatpak_deployment_file:dir search;
+
+# fpinstall: the downloader may search the store, but mutates staging only.
+allow matonos_flatpak_installer matonos_flatpak_store_file:dir search;
+allow matonos_flatpak_installer matonos_flatpak_staging_file:lnk_file { read unlink };
+allow matonos_linuxd matonos_flatpak_staging_file:dir { create_dir_perms relabelfrom relabelto };
+allow matonos_linuxd matonos_flatpak_staging_file:{ file lnk_file } { create_file_perms relabelfrom relabelto };
+allow matonos_flatpak_installer self:unix_stream_socket create_stream_socket_perms;
+unix_socket_connect(matonos_flatpak_installer, dnsproxyd, netd)
+neverallow matonos_flatpak_installer { matonos_flatpak_store_file matonos_flatpak_deployment_file matonos_linux_code_file }:dir { write add_name remove_name create rmdir setattr };
+neverallow matonos_flatpak_installer { matonos_flatpak_store_file matonos_flatpak_deployment_file matonos_linux_code_file }:{ file lnk_file } { write append create unlink rename setattr };
