@@ -375,7 +375,11 @@ static int invoke_path_capture(const char* path, const char* system_dir, const c
     int status = 0;
     pid_t waited;
     do { waited = waitpid(child, &status, 0); } while (waited < 0 && errno == EINTR);
-    if (failed || waited < 0) return -1;
+    if (failed || waited < 0) {
+        fprintf(stderr, "%s: %s failed (%s)\n", path, waited < 0 ? "waitpid" : "output read", strerror(errno));
+        return -1;
+    }
+    if (WIFSIGNALED(status)) fprintf(stderr, "%s: killed by signal %d\n", path, WTERMSIG(status));
     return WIFEXITED(status) ? WEXITSTATUS(status) : 128;
 }
 
@@ -398,7 +402,7 @@ static int run_flatpak(const char* system_dir, const char* user_dir,
     for (size_t i = 0; i < count; ++i) args[i + 1] = (char*)input[i];
     char output[4096] = {0};
     int rc = invoke("flatpak", system_dir, user_dir, args, output, sizeof(output));
-    if (rc && output[0]) {
+    if (rc) {
         fprintf(stderr, "flatpak command failed (%d):", rc);
         for (size_t i = 1; i <= count; ++i) fprintf(stderr, " %s", args[i]);
         fprintf(stderr, "\n%s\n", output);

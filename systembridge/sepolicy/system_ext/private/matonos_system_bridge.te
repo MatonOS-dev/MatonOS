@@ -190,6 +190,7 @@ allow matonos_flatpak_installer matonos_flatpak_store_file:dir search;
 allow matonos_flatpak_installer matonos_flatpak_staging_file:lnk_file { read unlink };
 allow matonos_linuxd matonos_flatpak_staging_file:dir { create_dir_perms relabelfrom relabelto };
 allow matonos_linuxd matonos_flatpak_staging_file:{ file lnk_file } { create_file_perms relabelfrom relabelto };
+allow matonos_linuxd matonos_flatpak_staging_file:{ file lnk_file } link;
 allow matonos_flatpak_installer self:unix_stream_socket create_stream_socket_perms;
 unix_socket_connect(matonos_flatpak_installer, dnsproxyd, netd)
 neverallow matonos_flatpak_installer { matonos_flatpak_store_file matonos_flatpak_deployment_file matonos_linux_code_file }:dir { write add_name remove_name create rmdir setattr };
