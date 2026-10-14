@@ -14,6 +14,16 @@ with tempfile.TemporaryDirectory(prefix='linux-app-store-') as tmp:
     source.write_text(r'''
 #define _GNU_SOURCE
 #define MATONOS_PUBLISH_HOST_TEST
+#include "install/linuxd/LinuxStorage.h"
+#include <stdarg.h>
+static int fail_lease;
+static int test_open(const char* path,int flags,...) {
+    mode_t mode=0;
+    if(flags&O_CREAT){va_list args;va_start(args,flags);mode=(mode_t)va_arg(args,int);va_end(args);}
+    if(fail_lease && strstr(path,"/.lease")){errno=EIO;return -1;}
+    return openat(AT_FDCWD,path,flags,mode);
+}
+#define open test_open
 #include "install/linuxd/DeploymentStore.h"
 #include "install/linuxd/RuntimeRefs.h"
 #include <assert.h>
@@ -25,8 +35,28 @@ static int prune(const char* ref,int* extension,void* opaque){(void)ref;(void)op
 ''' +remove+collect+snapshot+r'''
 int main(void) {
     char old[PATH_MAX],next[PATH_MAX],pointer[PATH_MAX];
+    // A failure after mkdtemp must remove the partially created version.
+    fail_lease=1;assert(deployment_create(10120,old,sizeof(old)));
+    assert(access(old,F_OK));fail_lease=0;
+    // Startup collects interrupted creation (no lease) even if PM is unknown.
+    assert(!deployment_create(10120,old,sizeof(old)));
+    char lease_path[PATH_MAX+8];snprintf(lease_path,sizeof(lease_path),"%s/.lease",old);
+    assert(!unlink(lease_path));
+    int sentinel=open(MATON_LINUX_ROOT "/../sentinel",O_CREAT|O_WRONLY|O_EXCL,0600);assert(sentinel>=0);close(sentinel);
+    char nested[PATH_MAX+16];snprintf(nested,sizeof(nested),"%s/outside",old);
+    assert(!symlink(MATON_LINUX_ROOT "/../sentinel",nested));live=-1;
+    assert(!collect_deployments() && access(old,F_OK));
+    assert(!access(MATON_LINUX_ROOT "/../sentinel",F_OK));live=1;
+    // Exact six-character suffix only; never traverse a directory symlink.
+    assert(!mkdir(MATON_INSTALL_ROOT "/10120-short",0755));
+    assert(!symlink("/tmp",MATON_INSTALL_ROOT "/10120-ABC123"));
+    assert(collect_deployments());
+    assert(!access(MATON_INSTALL_ROOT "/10120-short",F_OK));
+    assert(!unlink(MATON_INSTALL_ROOT "/10120-ABC123"));
+    assert(!rmdir(MATON_INSTALL_ROOT "/10120-short"));
     assert(!deployment_create(10120,old,sizeof(old)));
     assert(!deployment_commit(10120,old));
+    assert(!deployment_discard(old) && !access(old,F_OK));
     const char* base="runtime/org.example.Old/x86_64/1";
     const char* updated="runtime/org.example.New/x86_64/2";
     RuntimeRefs* global=runtime_refs_open(MATON_RUNTIME_DIR,0);assert(global);

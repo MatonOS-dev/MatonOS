@@ -66,8 +66,11 @@ static int stage_flatpak_ref(int argc, char** argv) {
     if (setenv("MATON_FLATPAK_STAGING_DIR", argv[2], 1))
         return fail("cannot select staging installation: %s", strerror(errno));
     /* argv[0] selects the applet; the wrapper dispatches instead of symlinks. */
+    /* --assumeyes keeps unattended operation; the regular CLI emits progress.
+     * --noninteractive selects the quiet transaction and hides download progress. */
+    setenv("LC_ALL", "C", 1);
     char* const flatpak_argv[] = {"flatpak", "install", "--system",
-        "--no-deploy", "--noninteractive", "--assumeyes", argv[4], argv[5], NULL};
+        "--no-deploy", "--assumeyes", argv[4], argv[5], NULL};
     execv(MATONOS_FLATPAK_WRAPPER, flatpak_argv);
     return fail("cannot start static Flatpak staging pull: %s", strerror(errno));
 }

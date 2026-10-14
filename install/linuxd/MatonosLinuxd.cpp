@@ -97,6 +97,37 @@ struct SelfOperationState {
 std::condition_variable g_self_condition;
 std::map<std::string, std::shared_ptr<SelfOperationState>> g_self_operations;
 
+/* Root/shell-only diagnostic snapshots, bounded to the most recent operations. The
+ * test harness uses this because the bridge shell allowlist has no status RPC. */
+std::mutex g_snapshot_mutex;
+std::map<std::string, Json::Value> g_snapshots;
+thread_local std::string g_staging_operation;
+void Snapshot(const std::string& id, const char* phase, const std::string& error = "") {
+    if(id.empty())return;
+    std::lock_guard<std::mutex> lock(g_snapshot_mutex);
+    if(!g_snapshots.count(id) && g_snapshots.size()>=64) {
+        auto old=std::find_if(g_snapshots.begin(),g_snapshots.end(),[](const auto& entry){return entry.second["phase"]=="complete";});
+        if(old==g_snapshots.end())return;
+        g_snapshots.erase(old);
+    }
+    auto& state=g_snapshots[id];state["operationId"]=id;state["phase"]=phase;
+    state["sequence"]=state.get("sequence",0).asUInt64()+1;
+    if(!error.empty())state["error"]=error;
+    else state.removeMember("error");
+}
+thread_local std::string g_last_staging_progress;
+void StagingProgress(const char* text) {
+    std::string value=text;
+    // Flatpak redraws an unchanged bar with a changing average speed/ETA.
+    // Those redraws must not keep a stalled download alive indefinitely.
+    auto percent=value.find('%');
+    if(percent!=std::string::npos)value.resize(percent+1);
+    if(value!=g_last_staging_progress) {
+        g_last_staging_progress=value;
+        Snapshot(g_staging_operation,"staging");
+    }
+}
+
 class ListenerDeathRecipient final : public android::IBinder::DeathRecipient {
   public:
     void binderDied(const android::wp<android::IBinder>& who) override {
@@ -226,6 +257,8 @@ void PublishProgress(const std::string& text) {
 }
 
 void PublishCompletion(const FlatpakResult& result) {
+    if(result.operation_id)Snapshot(result.operation_id,"complete",result.ok ? "" :
+            (result.error ? result.error : "Flatpak publication failed"));
     Json::Value event(Json::objectValue);
     event["phase"] = "complete";
     event["result"] = EncodeResult(result);
@@ -284,6 +317,7 @@ bool ValidName(const std::string& value, size_t limit) {
 }
 
 void PublishSelfFailure(const std::string& operation_id, const std::string& ref, int uid, const std::string& error) {
+    Snapshot(operation_id,"complete",error);
     Json::Value event(Json::objectValue);
     event["phase"] = "complete";
     event["result"]["ok"] = false;
@@ -317,6 +351,7 @@ std::string SelfOperation(bool update, const std::string& package, const std::st
         return Encode(Error("stub declares an invalid ref or remote"));
     const bool installed = flatpak_manager_installed_for_uid(ref.c_str(), uid) != 0;
     if (!update && installed) {
+        Snapshot(operation_in,"complete");
         Json::Value out; out["ok"] = true; out["installed"] = true;
         return Encode(out);
     }
@@ -344,13 +379,21 @@ std::string SelfOperation(bool update, const std::string& package, const std::st
         PublishSelfFailure(operation_id, ref, uid, message);
         return Encode(Error(message));
     };
+    g_staging_operation=operation_id;
+    g_last_staging_progress.clear();
+    flatpak_publish_progress(StagingProgress);
+    Snapshot(operation_id,"staging");
     PublishProgress(std::string(update ? "update" : "install") + " started");
     std::vector<char> app_commit(65), runtime_ref(512), runtime_commit(65), metadata(16384), desktop(131072);
     if (flatpak_manager_prepare(ref.c_str(), remote.c_str(), uid, operation_id.c_str(),
             app_commit.data(), app_commit.size(), runtime_ref.data(), runtime_ref.size(),
             runtime_commit.data(), runtime_commit.size(), metadata.data(), metadata.size(),
             desktop.data(), desktop.size(), error, sizeof(error)))
-        return fail(error[0] ? error : "cannot prepare Flatpak install");
+        { flatpak_publish_progress(nullptr);g_staging_operation.clear();
+          return fail(error[0] ? error : "cannot prepare Flatpak install"); }
+    flatpak_publish_progress(nullptr);
+    g_staging_operation.clear();
+    Snapshot(operation_id,"publishing");
     FlatpakResult result{};
     flatpak_manager_call("install", ref.c_str(), 0, operation_id.c_str(), app_commit.data(),
             runtime_ref.data(), runtime_commit.data(), remote.c_str(), uid, &result);
@@ -385,6 +428,22 @@ bool HexDecode(const std::string& hex, std::vector<unsigned char>* out) {
 
 class LinuxdService final : public BnLinuxd {
   public:
+    android::status_t dump(int fd, const android::Vector<android::String16>&) override {
+        auto uid=android::IPCThreadState::self()->getCallingUid();
+        if(uid!=0 && uid!=2000)return android::PERMISSION_DENIED;
+        Json::Value states(Json::objectValue);
+        { std::lock_guard<std::mutex> lock(g_snapshot_mutex);
+          for(const auto& entry:g_snapshots)states[entry.first]=entry.second; }
+        std::string body=Encode(states)+"\n";
+        size_t offset=0;
+        while(offset<body.size()) {
+            ssize_t n=write(fd,body.data()+offset,body.size()-offset);
+            if(n<0 && errno==EINTR)continue;
+            if(n<=0)return android::UNKNOWN_ERROR;
+            offset+=static_cast<size_t>(n);
+        }
+        return android::OK;
+    }
     android::binder::Status registerIdentity(const android::sp<ILinuxdIdentity>& identity) override {
         if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         std::lock_guard<std::mutex> lock(g_identity_mutex);

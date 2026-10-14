@@ -20,17 +20,31 @@ bridge_call() {
   python3 -c 'import sys; s=sys.stdin.read(); k="result="; i=s.find(k); assert i>=0, s; value=s[i+len(k):].rsplit("}]",1)[0]; print(value)' <<<"$output"
 }
 list_installed() { bridge_call list_installed "{\"userId\":$ANDROID_USER}"; }
+# Minutes without operation output/state changes (also bounds ref visibility
+# after completion). There is no overall download deadline.
+IDLE_MINUTES=${MATON_FLATPAK_IDLE_MINUTES:-10}
+[[ $IDLE_MINUTES =~ ^[1-9][0-9]*$ ]] || { echo "Invalid MATON_FLATPAK_IDLE_MINUTES" >&2; exit 2; }
 wait_for_ref() {
-  local wanted=$1 present=$2 result
-  for ((attempt=0; attempt<300; attempt++)); do
+  local wanted=$1 present=$2 operation=${3:-} result state previous= last=$SECONDS
+  while :; do
+    if [[ -n $operation ]]; then
+      state=$(adb_cmd shell dumpsys org.matonos.systembridge.ILinuxd/default | tr -d '\r')
+      state=$(python3 "$(dirname "$0")/flatpak-operation-state.py" "$operation" <<<"$state") || return 1
+      if [[ $state != "$previous" ]]; then previous=$state; last=$SECONDS; fi
+    fi
     result=$(list_installed)
     if python3 -c 'import json,sys; ref,wanted=sys.argv[1],sys.argv[2]=="yes"; ref=ref.split("/",1)[1] if ref.startswith(("app/","runtime/")) else ref; text=json.load(sys.stdin).get("output",""); raise SystemExit(0 if ((ref in text)==wanted) else 1)' \
         "$wanted" "$present" <<<"$result"
-    then return 0; fi
+    then
+      # An old deployment may already match during an update.
+      if [[ -z $operation || $state == complete:* ]]; then return 0; fi
+    fi
+    if ((SECONDS-last >= IDLE_MINUTES*60)); then
+      echo "No progress for $IDLE_MINUTES minutes waiting for $present $wanted (operation $operation: $state)" >&2
+      return 1
+    fi
     sleep 2
   done
-  echo "Timed out waiting for ref state: $present $wanted" >&2
-  return 1
 }
 "$ADB" connect "$SERIAL" >/dev/null 2>&1 || true
 adb_cmd wait-for-device
@@ -72,6 +86,8 @@ if [[ $MODE == --install ]]; then
   payload=$(python3 -c 'import json,sys; print(json.dumps({"ref":sys.argv[1],"operationId":sys.argv[2],"userId":int(sys.argv[3])}))' "$REF" "$operation_id" "$ANDROID_USER")
   result=$(bridge_call install "$payload")
   stub_package=$(python3 -c 'import json,re,sys; r=json.load(sys.stdin); assert r.get("ok") and r.get("accepted"), r; p=r["stubPackage"]; assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+",p), p; print(p)' <<<"$result")
+  # Newer bridges echo the ID; older ones accept the caller-supplied ID.
+  operation_id=$(python3 -c 'import json,re,sys; value=json.load(sys.stdin).get("operationId",sys.argv[1]); assert re.fullmatch(r"[A-Za-z0-9_-]{1,64}",value); print(value)' "$operation_id" <<<"$result")
   # Stub creation is asynchronous. Resolve its INSTALL activity in this user.
   component=
   for ((attempt=0; attempt<300; attempt++)); do
@@ -84,7 +100,7 @@ if [[ $MODE == --install ]]; then
   [[ -n $component ]] || { echo "Timed out waiting for stub INSTALL activity: $stub_package" >&2; exit 1; }
   adb_cmd shell am start --user "$ANDROID_USER" -n "$component" \
     -a org.matonos.linuxhost.INSTALL --es org.matonos.linuxhost.OPERATION_ID "$operation_id"
-  wait_for_ref "$REF" yes
+  wait_for_ref "$REF" yes "$operation_id"
   installed_uid=$(adb_cmd shell pm list packages -U --user "$ANDROID_USER" "$stub_package" | \
     tr -d '\r' | awk -v package="package:$stub_package" '$1 == package && $2 ~ /^uid:[0-9]+$/ {sub(/^uid:/,"",$2); print $2}')
   [[ $installed_uid =~ ^[0-9]+$ ]] || { echo "Installed stub UID unavailable: $stub_package" >&2; exit 1; }
