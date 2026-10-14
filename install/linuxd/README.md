@@ -40,3 +40,53 @@ sockets, portals, audio and DNS. Repeat update/lease/multi-user removal checks
 from STORAGE-LAYOUT. Confirm another UID cannot open runtime sockets and no
 retired path or helper appears. Repeat on Ryzen/RX6600, Surface Pro 3 and
 HP ProDesk; no kernel change or hot-patching is required.
+
+Round 20 install failure recovery:
+
+`install/<appid>-<six alphanumeric characters>` is an immutable deployment
+version, not installer staging. Failed creation/publication removes an
+unpublished version immediately. Startup reconciliation also collects abandoned
+versions, including interrupted creation before `.lease` exists, without needing
+PackageManager to answer. Collection is fd-relative, never follows directory
+symlinks or crosses filesystems, and preserves the current pointer target and
+any version with a live shared lease. Only the exact mkdtemp name shape is swept;
+unrelated entries are left alone.
+
+`install/<appid>` is the atomic symlink committed after successful publication.
+A fresh failed install must not create it; a failed replacement keeps the prior
+successful deployment. Queries reject missing pointers and numeric directories
+before invoking Flatpak, so Flatpak cannot initialize a bogus numeric install.
+If the final commit rename has already succeeded but its directory fsync fails,
+the selected version is preserved: it may already be in use. This is reported
+as a commit failure, never handled by deleting a live target.
+
+The debug harness reads root/shell-only JSON from `dumpsys
+org.matonos.systembridge.ILinuxd/default`, keyed by operation ID. linuxd retains
+up to 64 recent operation snapshots, reports staging progress and terminal
+errors, and ignores progress redraws that change only speed/ETA. Staging uses
+`--assumeyes` rather than the quiet `--noninteractive` transaction so download
+progress is available. `MATON_FLATPAK_IDLE_MINUTES` (positive integer, default 10)
+controls inactivity rather than total install duration. Progress is the CLI's
+reported bar/percentage or a changed operation phase, so an extremely slow
+transfer that cannot advance the reported bar within that interval needs a
+larger setting. Snapshots are diagnostic, not a new privileged control API.
+
+Host regressions: `deployment-store-test.py`, `failed-publication-test.py`,
+`operation-wait-test.py` and `staging-progress-test.c` cover partial creation,
+failed publication, current/leased preservation, startup recovery, query safety,
+long advancing operations, stalled operations, fast errors and CLI output
+framing. Exact run results and existing suite blockers are recorded in
+`out/pc-logs/agents/v3-install-result.md`.
+
+Fresh enforcing-image check for the coordinator (no hot-patching):
+1. Install a nonexistent ref such as `app/org.codeberg.dnkl.foot/x86_64/stable`;
+   verify a quick operation error and no new pointer or random deployment.
+2. Interrupt publication, reboot, and verify only unselected/unleased versions
+   disappear. Repeat while another app version is leased and while PM is not
+   yet reachable. Verify a failed update preserves the working current version.
+3. Install a large Flathub app with a slow link. Confirm advancing snapshots
+   keep the harness waiting past ten minutes. Stall the link and confirm the
+   configured inactivity limit; repeat with a small limit for a quick check.
+4. Repeat failure/success/update on the Ryzen PC, Surface Pro 3 and HP ProDesk.
+   Inspect enforcing denials for the dump/progress path; no kernel changes or
+   shared-file changes are required by this source change.

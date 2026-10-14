@@ -257,7 +257,8 @@ static ChildResult run_cli_in(const char* const* args, size_t count, int progres
      * FLATPAK_USER_DIR itself, which blocks that link, so a query on an
      * app without a deployment just reports "not installed". */
     struct stat user_root;
-    if (user_dir && lstat(user_dir, &user_root) != 0) {
+    if (user_dir && (lstat(user_dir, &user_root) != 0 ||
+            (strrchr(user_dir,'/') && !strchr(strrchr(user_dir,'/'),'-') && !S_ISLNK(user_root.st_mode)))) {
         snprintf(result.output, k_output_limit + 1, "not installed");
         result.status = 1;
         return result;
@@ -502,6 +503,8 @@ static void* package_operation_thread(void* data) {
         if (!rc && deployment_commit((unsigned)operation->app_uid,user_dir)) {
             snprintf(error,sizeof(error),"cannot commit deployment pointer");rc=-1;
         }
+        if(rc && user_dir[0] && deployment_discard(user_dir))
+            fprintf(stderr,"linuxd: unpublished deployment cleanup deferred\n");
         result.ok = rc == 0;
         result.exit_code = rc == 0 ? 0 : 1;
         if (rc != 0) result.error = strdup(error[0] ? error : "Flatpak publish pipeline failed");
@@ -619,11 +622,12 @@ static int collect_deployments(void) {
     while((e=readdir(entries))) {
         char path[PATH_MAX];unsigned appid;
         snprintf(path,sizeof(path),"%s/%s",MATON_INSTALL_ROOT,e->d_name);
-        if(!strchr(e->d_name,'-') || !maton_parse_install_path(path,&appid))continue;
+        if(!deployment_version_name(e->d_name) || !maton_parse_install_path(path,&appid))continue;
         char pointer[32],target[NAME_MAX+1];snprintf(pointer,sizeof(pointer),"%u",appid);
         ssize_t n=readlinkat(parent,pointer,target,sizeof(target)-1);
         if(n>=0)target[n]=0;
         int current=n>=0 && !strcmp(target,e->d_name);
+        if(!current){if(deployment_discard(path))pending=1;continue;}
         int live=stub_uid_has_package((int)appid);
         if(live<0 || (current && live)){if(!current)pending=1;continue;}
         int dir=openat(parent,e->d_name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);

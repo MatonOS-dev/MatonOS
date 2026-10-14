@@ -6,6 +6,9 @@
 extern "C" {
 #endif
 
+/* Per-thread staging output observer; exec children never invoke it. */
+void flatpak_publish_progress(void (*callback)(const char*));
+
 /* Publish one signed app stub and its pinned runtime. */
 int flatpak_publish(const char* app_ref, const char* app_commit,
         const char* runtime_ref, const char* runtime_commit, const char* remote,

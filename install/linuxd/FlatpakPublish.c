@@ -22,6 +22,8 @@
 #define AID_SYSTEM 1000
 
 extern char** environ;
+static _Thread_local void (*progress_callback)(const char*);
+void flatpak_publish_progress(void (*callback)(const char*)) { progress_callback=callback; }
 
 #ifndef MATONOS_FLATPAK_CLI
 #define MATONOS_FLATPAK_CLI "/apex/com.matonos.flatpak/bin/flatpak-env-wrapper"
@@ -330,10 +332,18 @@ static int invoke_path_capture(const char* path, const char* system_dir, const c
     size_t used = 0;
     int failed = 0;
     if (full) { *full = calloc(1, 1); if (!*full) failed = 1; }
+    char progress[4096];size_t progress_used=0;
     char chunk[4096];
     for (;;) {
         ssize_t n = read(pipefd[0], chunk, sizeof(chunk));
         if (n > 0) {
+            if(progress_callback)for(ssize_t i=0;i<n;i++) {
+                if(chunk[i]=='\n'||chunk[i]=='\r'||progress_used==sizeof(progress)-1) {
+                    progress[progress_used]=0;
+                    if(progress_used)progress_callback(progress);
+                    progress_used=0;
+                } else progress[progress_used++]=chunk[i];
+            }
             if (full && !failed) {
                 if (memchr(chunk, 0, (size_t)n) || (size_t)n >= SIZE_MAX - used) failed = 1;
                 else {
@@ -351,6 +361,7 @@ static int invoke_path_capture(const char* path, const char* system_dir, const c
         } else if (n == 0) break;
         else if (errno != EINTR) { failed = 1; break; }
     }
+    if(progress_callback && progress_used){progress[progress_used]=0;progress_callback(progress);}
     close(pipefd[0]);
     int status = 0;
     pid_t waited;
