@@ -29,6 +29,7 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
     private final LocalSocket bound=new LocalSocket();
     private final LocalServerSocket server;
     private final File path;
+    private final HostCommandBackend commands;
     private final PortalBackend backend=new PortalBackend(this);
     private final byte[] secret=new byte[32];
     private final Set<Object> fileOwners=Collections.newSetFromMap(new IdentityHashMap<>());
@@ -37,6 +38,7 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
     private volatile PeerConnection connection;
     private volatile List<FileDescriptor> activeDescriptors=Collections.emptyList();
     JavaPortal(Context context,File directory,Consumer<Boolean> changed,Launcher launcher) throws Exception {
+        commands=new HostCommandBackend(new SandboxCommandSpawner(directory),message->{PeerConnection peer=connection;if(peer!=null)try{peer.send(message);}catch(IOException ignored){}});
         this.context=context;this.changed=changed;this.launcher=launcher;
         new java.security.SecureRandom().nextBytes(secret);
         path=new File(directory,"portal-backend");if(path.exists()&&!path.delete())throw new IOException("Stale portal socket");
@@ -66,6 +68,7 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
             }
         }catch(Exception e){if(!stopped)Log.w("MatonPortal","Backend disconnected",e);}
         finally {
+            commands.close();
             try {backend.close();}catch(Exception e){Log.w("MatonPortal","Hold release failed",e);}
             synchronized(fileOwners){for(Object o:fileOwners)PortalFiles.release(context,o);fileOwners.clear();}
             try {if(client!=null)client.close();}catch(Exception ignored){}
@@ -81,15 +84,17 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
     private final class Handler implements PeerConnection.Handler {
         @Override public List<Message> methodCall(Message call) {
             activeDescriptors=call.fds;
-            try {return backend.dispatch(call);}
+            try {return HostCommandBackend.PATH.equals(call.path)?commands.dispatch(call):backend.dispatch(call);}
             finally {activeDescriptors=Collections.emptyList();}
         }
+        @Override public void replied(Message call){commands.replied(call);}
         @Override public void signal(Message message) {
             if("org.matonos.PortalBackend".equals(message.iface)&&"ClientClosed".equals(message.member))
                 clientClosed(String.valueOf(message.body.get(0)));
         }
     }
     private void clientClosed(String closed){
+        commands.disconnected(closed);
         try{backend.disconnected(closed);}catch(Exception e){Log.w("MatonPortal","Caller cleanup failed",e);}
         synchronized(fileOwners){Iterator<Object> it=fileOwners.iterator();while(it.hasNext()){Object o=it.next();if(o.toString().equals(closed)){PortalFiles.release(context,o);it.remove();}}}
     }
@@ -156,7 +161,7 @@ final class JavaPortal implements AutoCloseable,PortalBackend.Platform {
         }catch(Exception e){if(fileOwner!=null){PortalFiles.revoke(context,uri);synchronized(fileOwners){fileOwners.remove(fileOwner);}}return false;}
     }
     @Override public void close() {
-        stopped=true;
+        stopped=true;commands.close();
         PeerConnection peer=connection;if(peer!=null)peer.close();
         try{server.close();}catch(Exception ignored){}
         try{bound.close();}catch(Exception ignored){}

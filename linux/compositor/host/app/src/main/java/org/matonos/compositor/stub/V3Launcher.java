@@ -81,6 +81,9 @@ final class V3Launcher {
         if (!DnsForwarder.endpoint().equals(dns + ":53") || DnsForwarder.acquire() == null)
             throw new IllegalStateException("Per-app DNS forwarder is unavailable");
         command.add("--dns-forwarder"); command.add(dns + ":" + DnsForwarder.port);
+        File commandSocket=new File(runtime.directory(),"host-command");
+        if(commandSocket.exists()&&!commandSocket.delete())throw new java.io.IOException("Cannot remove stale command socket");
+        command.add("--host-command");command.add(commandSocket.getAbsolutePath());
         command.add("--parent-pid"); command.add(Integer.toString(android.os.Process.myPid()));
         command.add("--map"); command.add(resolv.getAbsolutePath()); command.add("/etc/resolv.conf");
         File x11 = new File(runtime.directory(), "x11");
