@@ -939,12 +939,9 @@ static void handle_add_xwayland(int session,uid_t uid) {
     if(xw){
       xw->session=session;xw->uid=uid;
       xw->process_fd=-1;
-      struct wlr_xwayland_server_options options={.lazy=true,.enable_wm=true,
-          .force_xrandr_emulation=true};
-      struct wlr_xwayland_server* xs=wlr_xwayland_server_create(server.display,&options);
-      xw->xwayland=xs?wlr_xwayland_create_with_server(server.display,server.compositor,xs):NULL;
-      if(xw->xwayland)xw->xwayland->own_server=true;
-      else if(xs)wlr_xwayland_server_destroy(xs);
+      /* wlr_xwayland_create also creates the xwayland_shell_v1 global that
+       * xwm_create needs; rootless Xwayland emulates RandR modes by itself. */
+      xw->xwayland=wlr_xwayland_create(server.display,server.compositor,true);
       if(xw->xwayland){
         wlr_xwayland_set_seat(xw->xwayland,server.seat);
         xw->ready.notify=on_xwayland_ready;wl_signal_add(&xw->xwayland->events.ready,&xw->ready);
