@@ -140,8 +140,8 @@ class ListenerDeathRecipient final : public android::IBinder::DeathRecipient {
 };
 android::sp<ListenerDeathRecipient> g_listener_death = new ListenerDeathRecipient();
 
-bool Parse(const std::string& text, Json::Value* root) {
-    if (text.size() > kInputLimit) return false;
+bool Parse(const std::string& text, Json::Value* root, size_t limit=kInputLimit) {
+    if (text.size() > limit) return false;
     Json::CharReaderBuilder builder;
     builder["collectComments"] = false;
     std::string errors;
@@ -486,7 +486,7 @@ class LinuxdService final : public BnLinuxd {
             *aidl_return = android::String16(value.c_str());
         };
         Json::Value request;
-        if (!Parse(args.empty() ? "{}" : args, &request)) {
+        if (!Parse(args.empty() ? "{}" : args, &request, command=="install_repo"?128*1024:kInputLimit)) {
             reply(Encode(Error("arguments must be a JSON object")));
             return android::binder::Status::ok();
         }
@@ -646,6 +646,14 @@ class LinuxdService final : public BnLinuxd {
                 return android::binder::Status::ok();
             }
             app_uid = request["userId"].asInt();
+        } else if (command == "install_repo" || command == "remove_repo") {
+            if(!OnlyKeys(request,command=="install_repo" ? std::initializer_list<const char*>{"remote","file"} : std::initializer_list<const char*>{"remote"}) ||
+                    !request["remote"].isString() || HasEmbeddedNul(request["remote"].asString()) ||
+                    (command=="install_repo" && (!request["file"].isString() || request["file"].asString().size()>65536 || HasEmbeddedNul(request["file"].asString())))) {
+                reply(Encode(Error("Invalid repository request")));return android::binder::Status::ok();
+            }
+            remote_storage=request["remote"].asString();remote=remote_storage.c_str();
+            if(command=="install_repo"){ref_storage=request["file"].asString();ref=ref_storage.c_str();}
         } else if (command == "list_remotes" || command == "add_flathub") {
             if(!OnlyKeys(request,{})) {
                 reply(Encode(Error("unexpected arguments")));return android::binder::Status::ok();

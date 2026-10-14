@@ -334,3 +334,124 @@ No policy lines, kernel configuration, AOSP projects or shared integration files
 changed. Coordinator preflight currently reports 18 missing imported prebuilts in
 this isolated checkout; other preflight checks pass. Device networking, enforcing
 helper execution and Android PM/listener lifecycle still require the steps above.
+
+## Store API phase 2 (round 29): system-wide repositories
+
+`ILinuxAppStore` remains in `systembridge/aidl-store/`. New calls are
+`installRepo(byte[] flatpakrepoBytes)`, `removeRepo(String remoteName)` and
+`listRepos()` (the system-wide Flatpak details inventory as text). Register a
+live `IStoreListener` before either mutation; its Binder is the caller-death
+lifeline and receives `onFinished(operationId, ok, error)`. Both mutations
+return an operation ID. Only the bridge's non-exported confirmation activity
+can approve a production request. The dialog hides other apps' overlays and
+filters obscured confirmation touches. Denial, closing, 120-second timeout,
+or caller death before confirmation fails closed. A caller that dies between
+confirmation and worker execution is also rejected. Once an approved destructive
+operation has started, it finishes or reports its failure; it is not rolled back
+on later caller death.
+
+Every store Binder entry still requires `MANAGE_LINUX_APPS`. Repository changes
+also require an admin/system caller user and obey
+`DISALLOW_INSTALL_UNKNOWN_SOURCES_GLOBALLY`, including the armed root test path.
+Admin and restriction state is checked again immediately before mutation.
+Removal additionally checks every affected user's uninstall restriction and
+verified stub identity before requesting any deletion. The dialog lists app IDs
+and user IDs from every existing user's inventory. A changed inventory while
+consent is pending requires a fresh confirmation. PackageManager deletion is
+asynchronous and cannot provide an atomic all-users transaction: a failure can
+leave some apps removed, but linuxd keeps the remote/key/pins while any current
+app deployment still uses it. Retry after resolving the failure.
+
+The parser accepts at most 64 KiB of strict UTF-8 `.flatpakrepo` input, one
+`[Flatpak Repo]` group, Title, HTTPS Url, GPGKey and optional Homepage, Comment,
+Icon and Version fields. It rejects unsigned input, duplicate/unknown fields,
+malformed OpenPGP framing, credentials, fragments, query parameters and control
+or directional formatting characters. It displays the ASCII/punycode hostname
+and fingerprints of the actual primary public-key packets (v4 SHA-1, v5/v6
+SHA-256), never a hash of the key file. Optional metadata is retained; untrusted
+options and redirect/authentication configuration are not forwarded. Custom
+remote names are deterministic `repo-<24 uppercase SHA-256 hex characters of
+canonical URL>`, so callers discover them through `listRepos()`.
+
+linuxd independently validates the canonical signed HTTPS file and writes a
+mode-0600 temporary file inside the existing manager/tmp directory. Flatpak
+`remote-add --system --from` imports the GPG key into that remote's own keyring;
+linuxd verifies both persisted commit and summary verification flags before
+reporting success. Flatpak remote-add has no `--gpg-verify` option; verification
+is enabled by default and checked explicitly. A failed add is rolled back.
+Duplicate names or identical configured URLs are errors. Publication and remote
+mutations share linuxd's operation mutex, and changes are refused while an
+unpublished deployment awaits PM binding. The fixed shared runtime repo remains
+the trust root; there is no per-user remote configuration change. `installApp`
+accepts any configured remote through the existing verified staging/publication
+path and preserves application-origin pins.
+
+Removal uses the existing per-user stub uninstall path for all affected users,
+waits up to 120 seconds for PM absence, then runs deployment/runtime
+reconciliation. linuxd independently checks every current installation's origin
+before removing the remote and keyring and dropping only that remote's pins.
+Live immutable versions keep their normal leases. If a lease or cleanup failure
+retains a current pointer, removal fails with the remote retained; close the app
+and retry. `flathub` is protected in both the bridge and linuxd. Repository changes
+are not crash-atomic across PM, Flatpak and pin-file cleanup; interrupted removal
+must be inspected and retried. No new kernel or SELinux permissions are needed.
+No linuxd directory/UID/remote-config location changed, so the Flatpak wrapper
+and path helpers do not need a rebuild for this round.
+
+Host validation (no adb, image build or device execution):
+
+- `python3 install/linuxd/tests/repo-management-test.py`: production C commands,
+  unsigned/HTTP/duplicate rejection, verification checks, installed-app guard,
+  isolated key/pin cleanup and protected flathub, with CLI doubles.
+- `python3 install/linuxd/tests/repo-keyring-test.py`: actual cached host Flatpak
+  imports cached real public keys into isolated disabled fixture remotes,
+  verifies default GPG/summary flags and separate keyring removal. Offline only.
+- `bash systembridge/tests/repo/run.sh`: production parser/fingerprints,
+  malformed/oversized/unsigned/HTTP input, ASCII host, permission/admin policy,
+  global restriction mapping and one-shot confirm/deny/timeout/death races.
+- `python3 install/linuxd/tests/repo-confirmation-test.py`: extracted production
+  bridge decision methods with Binder/PM doubles, all-user uninstall ordering,
+  changed inventory/restriction/caller rejection and failed native removal.
+- `python3 install/linuxd/tests/repo-harness-test.py`: shell JSON/base64 and status
+  polling against a local executable double; never invokes real adb.
+- Existing FPINSTALL handoff, final-stub-once, real GPG/checksum, deployment and
+  shared-inventory regressions pass. NDK API-36 manager/publisher/shim object and
+  store-helper compilation plus focused Java/AIDL compilation pass. Preflight
+  has the existing 18 missing APK/native prebuilts in this isolated worktree.
+
+Fresh enforcing-image/device steps for the coordinator/user:
+
+1. Rebuild bridge/AIDL, linuxd and the image together, validate policy and labels,
+   and boot the new image. Disable VM idle sleep. Use disposable users and a
+   signed test repository; never replace files in a running image.
+2. From a permission-holding store client register a listener and call
+   `installRepo(Files.readAllBytes(repoFile))`. Verify the bridge-owned dialog's
+   title, punycode host and fingerprint against an independent OpenPGP tool.
+   Cancel, close, wait 120 seconds, and kill the caller in separate trials:
+   inventory and keyrings must not change. Confirm and wait for onFinished;
+   inspect the new global remote and both verification flags.
+3. Reject a caller lacking MANAGE_LINUX_APPS, a non-admin user, and an admin with
+   `no_install_unknown_sources_globally`; set the restriction again while a
+   dialog is open and confirm rejection. Repeat removal and affected-user
+   `no_uninstall_apps`. Confirm identical names/URLs, unsigned keys, HTTP,
+   malformed and oversized inputs fail with useful errors.
+4. Debug harness (auto-confirm is only in the root/live/debug armed provider):
+   `MATON_ADB_SERIAL=127.0.0.1:5556 install/tools/test-flatpak.sh --add-repo /path/test.flatpakrepo`.
+   Use `--list`/listRepos to find its `repo-...` name. Install an app using
+   `MATON_FLATPAK_REMOTE=repo-... .../test-flatpak.sh --install app/<id>/x86_64/stable`
+   or the production installApp API. Install it for two users. Attempt the same
+   app ID from another signed repo and verify the origin pin rejects it.
+5. Call removeRepo from the client: verify all affected app/user IDs in the
+   dialog, deny first, then confirm. Confirm every user's stub/data and current
+   deployment disappears before the remote/keyring and origin pins. Check
+   unrelated remotes/keyrings/pins are unchanged. Re-add the repository and
+   confirm intentionally removed apps are no longer pinned to the removed name.
+   The armed harness also supports `--remove-repo repo-...` and polls completion.
+6. Refuse flathub removal. Test a busy publication, changed inventory during
+   consent, failed PM removal and retained leases. The remote must remain on
+   failure; investigate partial PM removal before retrying. Interrupt/reboot
+   during deletion and inspect remote/key/pin state explicitly. Verify the
+   system UI and background launch permissions on the actual platform.
+7. Repeat on Ryzen/RX6600, Surface Pro 3 and HP ProDesk. This feature has no
+   hardware-specific behavior. Device UI, Binder death, PM deletion and enforcing
+   SELinux behavior remain unverified here; host doubles are not device evidence.

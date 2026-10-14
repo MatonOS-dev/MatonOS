@@ -504,6 +504,10 @@ static int remote_verification_enabled(const char* repo, const char* remote) {
     return 1;
 }
 
+int flatpak_remote_verified(const char* remote) {
+    return valid_remote(remote) && remote_verification_enabled(MATON_RUNTIME_DIR "/repo",remote);
+}
+
 static int create_local_ref(const char* repo, const char* remote, const char* ref) {
     char option[512], rev[1024];
     if (snprintf(option, sizeof(option), "--create=%s", ref) >= (int)sizeof(option) ||

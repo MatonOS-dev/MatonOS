@@ -896,6 +896,8 @@ int flatpak_manager_prepare(const char* ref, const char* remote, int installer_u
             metadata, metadata_size, desktop, desktop_size, error, error_size);
 }
 
+#include "RepoManagement.h"
+
 void flatpak_manager_call(const char* command, const char* ref,
         int delete_data, const char* operation_id, const char* app_commit,
         const char* runtime_ref, const char* runtime_commit, const char* remote,
@@ -904,6 +906,7 @@ void flatpak_manager_call(const char* command, const char* ref,
     memset(result, 0, sizeof(*result));
     result->exit_code = 127;
     if (!command) { set_error(result, "unsupported Flatpak command"); return; }
+    if (!strcmp(command,"install_repo") || !strcmp(command,"remove_repo")) {repo_manage(command,ref,remote,result);return;}
     if (!strcmp(command,"check_update") || !strcmp(command,"installed_commit")) {
         if(!flatpak_manager_valid_ref(ref) || strncmp(ref,"app/",4) || app_uid<10000 ||
                 !flatpak_manager_installed_for_uid(ref,app_uid)) {set_error(result,"verified installed app required");return;}

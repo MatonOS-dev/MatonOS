@@ -6,10 +6,11 @@ SERIAL=${MATON_ADB_SERIAL:-127.0.0.1:5562}
 MODE=${1:-}
 REF=${2:-}
 ANDROID_USER=${MATON_ANDROID_USER:-0}
+REMOTE=${MATON_FLATPAK_REMOTE:-flathub}
 [[ $ANDROID_USER =~ ^[0-9]+$ ]] || { echo "Invalid Android user" >&2; exit 2; }
 [[ -x $ADB ]] || { echo "adb not found: $ADB" >&2; exit 2; }
-[[ $MODE == --list || $MODE == --check-updates || (($MODE == --install || $MODE == --update) && -n $REF) || ($MODE == --uninstall && -n $REF) ]] || {
-  echo "Usage: $0 --list | --check-updates | --update <ref> | --install <app|runtime/ID/ARCH/BRANCH> | --uninstall <ref>" >&2; exit 2;
+[[ $MODE == --list || $MODE == --check-updates || (($MODE == --install || $MODE == --update) && -n $REF) || (($MODE == --uninstall || $MODE == --add-repo || $MODE == --remove-repo) && -n $REF) ]] || {
+  echo "Usage: $0 --list | --check-updates | --update <ref> | --install <app|runtime/ID/ARCH/BRANCH> | --uninstall <ref> | --add-repo <file> | --remove-repo <name>" >&2; exit 2;
 }
 adb_cmd() { "$ADB" -s "$SERIAL" "$@" </dev/null; }
 bridge_call() {
@@ -58,6 +59,38 @@ adb_cmd shell setprop persist.vendor.maton.flatpak_test 1
 FLATPAK=/apex/com.matonos.flatpak/bin/matonos-flatpak
 adb_cmd shell su 1000 "$FLATPAK" flatpak --version
 adb_cmd shell su 1000 "$FLATPAK" flatpak --help >/dev/null
+if [[ $MODE == --add-repo || $MODE == --remove-repo ]]; then
+  payload=$(python3 - "$MODE" "$REF" "$ANDROID_USER" <<'PYREPO'
+import base64,json,sys
+from pathlib import Path
+mode,arg,user=sys.argv[1:]
+data={"userId":int(user)}
+if mode=="--add-repo":
+    content=Path(arg).read_bytes()
+    if len(content)>65536: raise SystemExit("Repository file too large")
+    data["file_b64"]=base64.b64encode(content).decode()
+else: data["remote"]=arg
+print(json.dumps(data))
+PYREPO
+)
+  command=remove_repo
+  [[ $MODE != --add-repo ]] || command=install_repo
+  # Auto-confirm exists exclusively in the armed root live-debug provider.
+  result=$(bridge_call "$command" "$payload")
+  operation=$(python3 -c 'import json,sys; r=json.load(sys.stdin); assert r.get("ok"),r; print(r["operationId"])' <<<"$result")
+  deadline=$((SECONDS+180))
+  while :; do
+    result=$(bridge_call repo_status "{\"operationId\":\"$operation\"}")
+    if python3 -c 'import json,sys; r=json.load(sys.stdin); sys.exit(0 if r.get("complete") else 1)' <<<"$result"; then
+      printf '%s\n' "$result"
+      python3 -c 'import json,sys; r=json.load(sys.stdin); assert r.get("ok"),r' <<<"$result"
+      bridge_call list_remotes '{}'
+      exit 0
+    fi
+    ((SECONDS<deadline)) || { echo "Repository operation timed out" >&2; exit 1; }
+    sleep 1
+  done
+fi
 if [[ $MODE == --check-updates ]]; then
   bridge_call check_updates "{\"userId\":$ANDROID_USER}"
   exit 0
@@ -85,9 +118,9 @@ PY
 if [[ $MODE == --install || $MODE == --update ]]; then
   echo "Installed before:"
   list_installed
-  if [[ $MODE == --install ]]; then bridge_call add_flathub "{\"userId\":$ANDROID_USER}"; fi
+  if [[ $MODE == --install && $REMOTE == flathub ]]; then bridge_call add_flathub "{\"userId\":$ANDROID_USER}"; fi
   operation_id=$(python3 -c 'import uuid; print(uuid.uuid4())')
-  payload=$(python3 -c 'import json,sys; print(json.dumps({"ref":sys.argv[1],"operationId":sys.argv[2],"userId":int(sys.argv[3])}))' "$REF" "$operation_id" "$ANDROID_USER")
+  payload=$(python3 -c 'import json,sys; print(json.dumps({"ref":sys.argv[1],"operationId":sys.argv[2],"userId":int(sys.argv[3]),"remote":sys.argv[4]}))' "$REF" "$operation_id" "$ANDROID_USER" "$REMOTE")
   result=$(bridge_call "${MODE#--}" "$payload")
   stub_package=$(python3 -c 'import json,re,sys; r=json.load(sys.stdin); assert r.get("ok") and r.get("accepted"), r; p=r["stubPackage"]; assert re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)+",p), p; print(p)' <<<"$result")
   # Newer bridges echo the ID; older ones accept the caller-supplied ID.

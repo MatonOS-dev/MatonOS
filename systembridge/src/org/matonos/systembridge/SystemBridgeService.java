@@ -217,7 +217,133 @@ public final class SystemBridgeService extends Service {
             return operation;
         } catch(Exception error) {storeOperations.remove(operation);throw error;}
     }
+    private static final java.util.Map<String,String> repoResults=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<Integer,IStoreListener> repoCallers=new java.util.concurrent.ConcurrentHashMap<>();
+    static final java.util.Map<String,RepoRequest> repoRequests=new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ScheduledExecutorService repoWorker=java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
+    static SystemBridgeService repoBridge(){return activeService;}
+    static final class RepoRequest {
+        final String operation=java.util.UUID.randomUUID().toString();
+        final RepoDecision decision=new RepoDecision();
+        final int user;final String remote,message;final FlatpakRepo repo;final IStoreListener caller;
+        final boolean removing;final java.util.Map<Integer,java.util.Map<String,String>> apps;
+        android.os.IBinder.DeathRecipient death;
+        RepoRequest(int user,String remote,FlatpakRepo repo,IStoreListener caller,String message,
+                java.util.Map<Integer,java.util.Map<String,String>> apps) {
+            this.user=user;this.remote=remote;this.repo=repo;this.caller=caller;this.message=message;this.apps=apps;removing=repo==null;
+        }
+    }
+    private void enforceRepoUser(int user,String command) {
+        android.os.UserManager users=getSystemService(android.os.UserManager.class);
+        android.content.pm.UserInfo info=users==null?null:users.getUserInfo(user);
+        LinuxAppStorePolicy.enforce(true,true,user==UserHandle.USER_SYSTEM || (info!=null && info.isAdmin()));
+        enforceLinuxAppRestriction(user,command);
+    }
+    private java.util.Map<Integer,java.util.Map<String,String>> repoApps(String remote) throws Exception {
+        java.util.Map<Integer,java.util.Map<String,String>> apps=new java.util.HashMap<>();
+        for(android.content.pm.UserInfo info:getSystemService(android.os.UserManager.class).getUsers()) {
+            java.util.Map<String,String> refs=new java.util.HashMap<>();
+            for(LinuxAppInfo app:storeInventory(info.id,false))if(remote.equals(app.remote)) {
+                String ref=storeRef(info.id,app.appId);flatpakStubManager.forUser(info.id).verifiedUid(ref);
+                refs.put(app.appId,ref);
+            }
+            if(!refs.isEmpty()){enforceLinuxAppRestriction(info.id,"uninstall_app");apps.put(info.id,refs);}
+        }
+        return apps;
+    }
+    private String requestRepo(int user,FlatpakRepo repo,String remote,IStoreListener caller,boolean autoConfirm) throws Exception {
+        if(caller==null)throw new IllegalStateException("Register a live store listener before requesting repository confirmation");
+        if(remote==null || !remote.matches("[A-Za-z0-9_][A-Za-z0-9._-]{0,127}") || "flathub".equals(remote))
+            throw new IllegalArgumentException("Invalid or protected repository");
+        enforceRepoUser(user,repo==null?"remove_repo":"install_repo");
+        java.util.Map<Integer,java.util.Map<String,String>> apps=repo==null?repoApps(remote):java.util.Collections.emptyMap();
+        StringBuilder message=new StringBuilder();
+        if(repo!=null)message.append(repo.title).append("\n\nHost: ").append(repo.host).append("\nURL: ").append(repo.url)
+            .append("\n\nGPG fingerprint:\n").append(repo.fingerprint);
+        else {
+            message.append(remote).append("\n\nAll users' applications below will be uninstalled:\n");
+            for(java.util.Map.Entry<Integer,java.util.Map<String,String>> entry:apps.entrySet())
+                for(String id:entry.getValue().keySet())message.append("User ").append(entry.getKey()).append(": ").append(id).append('\n');
+            if(apps.isEmpty())message.append("No installed applications.\n");
+        }
+        RepoRequest request=new RepoRequest(user,remote,repo,caller,message.toString(),apps);
+        synchronized(repoRequests) {
+            if(!repoRequests.isEmpty())throw new IllegalStateException("Another repository confirmation or removal is pending");
+            repoRequests.put(request.operation,request);
+        }
+        request.death=()->decideRepo(request.operation,RepoDecision.State.CALLER_DIED);
+        try {
+            caller.asBinder().linkToDeath(request.death,0);
+            repoWorker.schedule(()->decideRepo(request.operation,RepoDecision.State.TIMED_OUT),120,java.util.concurrent.TimeUnit.SECONDS);
+            if(autoConfirm)decideRepo(request.operation,RepoDecision.State.CONFIRMED);
+            else startActivityAsUser(new Intent(this,RepoConfirmationActivity.class).putExtra("operation",request.operation)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),UserHandle.of(user));
+        } catch(Exception error){decideRepo(request.operation,RepoDecision.State.DENIED);throw error;}
+        return request.operation;
+    }
+    void decideRepo(String operation,RepoDecision.State state) {
+        RepoRequest request=repoRequests.get(operation);
+        if(request==null || !request.decision.finish(state))return;
+        if(state!=RepoDecision.State.CONFIRMED){finishRepo(request,false,"Repository confirmation: "+state);return;}
+        repoWorker.execute(()-> {
+            try {
+                if(!request.caller.asBinder().isBinderAlive())throw new SecurityException("Caller died before repository change");
+                enforceRepoUser(request.user,request.removing?"remove_repo":"install_repo");
+                if(request.removing) {
+                    if(!request.apps.equals(repoApps(request.remote)))throw new IllegalStateException("Repository applications changed; request confirmation again");
+                    for(java.util.Map.Entry<Integer,java.util.Map<String,String>> entry:request.apps.entrySet())
+                        for(String ref:entry.getValue().values())flatpakStubManager.forUser(entry.getKey()).uninstall(ref,true);
+                    long deadline=android.os.SystemClock.elapsedRealtime()+120000;
+                    for(;;) {
+                        boolean present=false;
+                        for(java.util.Map.Entry<Integer,java.util.Map<String,String>> entry:request.apps.entrySet())
+                            for(String ref:entry.getValue().values()) {
+                                try {
+                                    createContextAsUser(UserHandle.of(entry.getKey()),0).getPackageManager()
+                                        .getApplicationInfo(FlatpakStubIdentity.packageFor(ref),0);present=true;
+                                }catch(PackageManager.NameNotFoundException absent){}
+                            }
+                        if(!present)break;
+                        if(android.os.SystemClock.elapsedRealtime()>=deadline)throw new IllegalStateException("Package removal did not finish; repository retained");
+                        Thread.sleep(250);
+                    }
+                    storeReply("reconcile_deployments",new JSONObject());
+                    enforceRepoUser(request.user,"remove_repo");
+                    storeReply("remove_repo",new JSONObject().put("remote",request.remote));
+                } else storeReply("install_repo",new JSONObject().put("remote",request.remote).put("file",request.repo.canonical));
+                finishRepo(request,true,"");
+            }catch(Exception error){finishRepo(request,false,error.getMessage());}
+        });
+    }
+    private void finishRepo(RepoRequest request,boolean ok,String error) {
+        try {
+            if(repoResults.size()>=64)repoResults.clear();
+            repoResults.put(request.operation,new JSONObject().put("ok",ok).put("complete",true).put("error",error==null?"":error).toString());
+        }catch(Exception ignored){}
+        repoRequests.remove(request.operation,request);
+        if(request.death!=null)request.caller.asBinder().unlinkToDeath(request.death,0);
+        try{request.caller.onFinished(request.operation,ok,error==null?"Repository operation failed":error);}catch(RemoteException ignored){}
+    }
     private final ILinuxAppStore.Stub storeBinder=new ILinuxAppStore.Stub() {
+        @Override public String installRepo(byte[] bytes) {
+            int uid=Binder.getCallingUid(),user=enforceStore(true,"install_repo");long token=Binder.clearCallingIdentity();
+            try{FlatpakRepo repo=new FlatpakRepo(bytes);return requestRepo(user,repo,repo.name,repoCallers.get(uid),false);}
+            catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Repository request failed",e);}
+            finally{Binder.restoreCallingIdentity(token);}
+        }
+        @Override public String removeRepo(String remote) {
+            int uid=Binder.getCallingUid(),user=enforceStore(true,"remove_repo");long token=Binder.clearCallingIdentity();
+            try{return requestRepo(user,null,remote,repoCallers.get(uid),false);}
+            catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Repository request failed",e);}
+            finally{Binder.restoreCallingIdentity(token);}
+        }
+        @Override public String listRepos() {
+            enforceStore(false,"list_remotes");long token=Binder.clearCallingIdentity();
+            try{return storeReply("list_remotes",new JSONObject()).getString("output");}
+            catch(Exception e){throw new IllegalStateException("Repository inventory failed",e);}
+            finally{Binder.restoreCallingIdentity(token);}
+        }
+
         @Override public String installApp(String appId,String remote) {
             int user=enforceStore(false,"install_app");
             validateStoreAppId(appId);
@@ -265,6 +391,7 @@ public final class SystemBridgeService extends Service {
             finally {Binder.restoreCallingIdentity(token);}
         }
         @Override public void registerListener(IStoreListener listener) {
+            final int uid=Binder.getCallingUid();
             final int user=enforceStore(false,"list_installed");
             if(listener==null)throw new IllegalArgumentException("Listener required");
             long token=Binder.clearCallingIdentity();
@@ -273,6 +400,8 @@ public final class SystemBridgeService extends Service {
                 synchronized(storeListeners) {
                     if(storeListeners.getRegisteredCallbackCount()>=64)throw new IllegalStateException("Too many store listeners");
                     storeListeners.register(listener,Integer.valueOf(user));
+                    repoCallers.put(uid,listener);
+                    listener.asBinder().linkToDeath(()->repoCallers.remove(uid,listener),0);
                 }
             } catch(RemoteException e){throw new IllegalStateException("Subscribe failed",e);}
             finally {Binder.restoreCallingIdentity(token);}
@@ -917,6 +1046,8 @@ public final class SystemBridgeService extends Service {
     }
 
     @Override public void onDestroy() {
+        for(RepoRequest request:repoRequests.values())decideRepo(request.operation,RepoDecision.State.CALLER_DIED);
+        repoWorker.shutdownNow();repoCallers.clear();
         storeListeners.kill();
         if(storeSubscribedDaemon!=null)try{storeSubscribedDaemon.unsubscribe("progress",storeObserver);}catch(RemoteException ignored){}
         if (flatpakStubManager != null) flatpakStubManager.close();
@@ -1554,10 +1685,10 @@ public final class SystemBridgeService extends Service {
                             !"1".equals(android.os.SystemProperties.get("ro.boot.matonos.live")))
                         throw new SecurityException("flatpak test channel requires an armed live debug image and root");
                     if (!Set.of("stage", "list_installed", "list_remotes", "add_flathub", "install",
-                            "uninstall", "kill", "check_updates", "update").contains(arg))
+                            "uninstall", "kill", "check_updates", "update", "install_repo", "remove_repo", "repo_status").contains(arg))
                         throw new IllegalArgumentException("unsupported flatpak test command");
                     String encoded = extras == null ? null : extras.getString("payload_b64");
-                    if (encoded == null || encoded.length() > 90000)
+                    if (encoded == null || encoded.length() > (("install_repo".equals(arg))?180000:90000))
                         throw new IllegalArgumentException("Flatpak request payload is missing or too large");
                     String request = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
                     SystemBridgeService bridge = activeService;
@@ -1570,6 +1701,21 @@ public final class SystemBridgeService extends Service {
                             throw new IllegalArgumentException("A concrete Android user is required");
                         int user = requestedUser == null ? 0 : (Integer) requestedUser;
                         bridge.enforceLinuxAppRestriction(user, arg);
+                        if ("repo_status".equals(arg)) {
+                            String op=args.getString("operationId");String status=repoResults.get(op);
+                            if(status==null && !repoRequests.containsKey(op))throw new IllegalArgumentException("Unknown repository operation");
+                            result.putString("result",status==null?new JSONObject().put("ok",true).put("complete",false).toString():status);return result;
+                        }
+                        if ("install_repo".equals(arg) || "remove_repo".equals(arg)) {
+                            IStoreListener debug=new IStoreListener.Stub() {
+                                public void onProgress(String op,String state,int percent,String message){}
+                                public void onFinished(String op,boolean ok,String error){Log.i(TAG,"Debug repository "+op+" ok="+ok+" "+error);}
+                            };
+                            FlatpakRepo repo="install_repo".equals(arg)?new FlatpakRepo(Base64.getDecoder().decode(args.getString("file_b64"))):null;
+                            String op=bridge.requestRepo(user,repo,repo==null?args.getString("remote"):repo.name,debug,true);
+                            result.putString("result",new JSONObject().put("ok",true).put("accepted",true).put("operationId",op)
+                                .put("remote",repo==null?args.getString("remote"):repo.name).toString());return result;
+                        }
                         if ("check_updates".equals(arg)) {
                             LinuxAppInfo[] items=bridge.storeInventory(user,true);
                             org.json.JSONArray updates=new org.json.JSONArray();

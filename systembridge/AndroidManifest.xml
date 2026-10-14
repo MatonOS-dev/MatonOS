@@ -35,6 +35,8 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_ROUTING" />
     <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
     <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
+    <uses-permission android:name="android.permission.HIDE_NON_SYSTEM_OVERLAY_WINDOWS" />
+    <uses-permission android:name="android.permission.START_ACTIVITIES_FROM_BACKGROUND" />
     <uses-permission android:name="android.permission.SYSTEM_APPLICATION_OVERLAY" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.MANAGE_APP_OPS_MODES" />
@@ -74,6 +76,8 @@
                 <action android:name="android.intent.action.USER_SWITCHED" />
             </intent-filter>
         </receiver>
+        <activity android:name=".RepoConfirmationActivity" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@android:style/Theme.Material.Dialog.Alert" />
         <activity android:name=".SystemBridgeService$TrustedAppsActivity" android:exported="true">
             <intent-filter><action android:name="org.matonos.systembridge.TRUST_SETTINGS" /></intent-filter>
         </activity>
