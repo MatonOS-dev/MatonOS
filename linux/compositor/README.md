@@ -97,3 +97,34 @@ are gone; relaunch and check that a new display/socket works. Repeat closing
 one of two windows, minimize/restore and closing during Xwayland startup.
 On the Ryzen/RX6600 PC, Surface Pro 3 and ProDesk, repeat the same checks
 without changing game-specific settings or host device permissions.
+
+### Vulkan WSI handshake diagnostics (round 19)
+
+`MatonWSI` is an opt-in, capped (512 messages per compositor lifetime)
+server protocol trace. Enable `log.tag.MatonWSI=DEBUG` before opening a fresh
+stub process. It records client PID/fd, object/interface, request/event,
+argument count and first scalar/object ID; it omits strings and arrays.
+Look for xdg configure/ack, `wl_display.sync`/`wl_callback.done`, SHM pool
+and buffer creation, surface attach/commit, buffer release and frame done.
+
+Mesa 26.2.3's software Wayland WSI binds wl_shm, not linux-dmabuf/syncobj.
+Its first FIFO present starts ready; later FIFO presents wait for a frame
+callback. The compositor advertises SHM via the pixman renderer and does
+not advertise presentation-time, fifo, commit-timing or tearing-control.
+The Rio syscall trace alone does not prove where its first present waits;
+no presentation behavior change or Rio success is claimed for round 19.
+
+`native/tests/wsi-host.py --deps <pinned compositor build directory> --out
+<scratch under out/> [--proxy <linux-layer-v3>]` compiles a minimal host
+SHM/xdg peer and checks eight lavapipe FIFO presentations from the installed
+vkcube-wayland. This is a protocol/proxy smoke test, not a production
+wlroots rendering test. It uses the host Vulkan ICD, whose version may
+differ from the Flatpak runtime. Exit 77 means the sandbox denied
+wl_client_create; no presentation test ran. NDK compositor compilation
+and linking passed; host Vulkan testing was blocked by that restriction.
+
+Device test: rebuild through the coordinator, boot freshly, disable VM
+idle suspend, enable MatonWSI, then launch a fresh Rio stub and collect
+MatonWSI/MatonCompositor/MatonWLR/MatonV3. Check configure acknowledgement
+and each handshake milestone; then check ETR, close/reopen and resizing.
+No shared files, kernel or policy changes are required.
