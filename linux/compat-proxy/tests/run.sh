@@ -2,6 +2,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 ./build.sh
+cc -O2 -Wall -Wextra -Werror tests/arch-map.c -o build/arch-map
+build/arch-map
+if [[ ${1:-} == --i386-p2 ]]; then
+    bash tests/i386-p1.sh
+    exec bash tests/i386-dynamic.sh
+fi
+if [[ ${1:-} == --i386-p1 ]]; then
+    exec bash tests/i386-p1.sh
+fi
 for test in signals threads spawn binder; do
     cc -no-pie -O2 -Wall -Wextra -Werror -pthread "tests/$test.c" -o "build/$test"
     timeout 15 build/linux-layer-v3 --android-filter "$PWD/build/$test" >"build/$test.out" 2>"build/$test.log"
@@ -153,3 +162,11 @@ python3 tests/host-command-pair.py
 bash tests/sysvipc-host.sh
 
 python3 tests/host-command-threads.py
+
+bash tests/i386-p1.sh
+bash tests/i386-dynamic.sh
+
+bash tests/cross-exec.sh
+
+MATON_V3_ANDROID_OUT="$PWD/build/android-test" bash build-android.sh
+python3 tests/packaging.py

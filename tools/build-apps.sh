@@ -231,9 +231,9 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   cp "$apk" "$DEVICE_DIR/prebuilt/apps-built/$apk_name"
   cp "$apk" "$DEVICE_DIR/buildinfra/apps-built/$apk_name"
   if [[ $key_id == matonos-wayland-host ]]; then
-    unzip -p "$apk" lib/x86_64/libmatonos-v3-loader.so > "$DEVICE_DIR/buildinfra/apps-built/libmatonos-v3-loader.so"
-    chmod 0755 "$DEVICE_DIR/buildinfra/apps-built/libmatonos-v3-loader.so"
-    [[ -s $DEVICE_DIR/buildinfra/apps-built/libmatonos-v3-loader.so ]] || die "host APK has no v3 loader"
+    # x86_64 and i386 v3 loaders (both under lib/x86_64/), 0755, atomically.
+    bash "$DEVICE_DIR/linux/compat-proxy/extract-loaders.sh" \
+      "$apk" "$DEVICE_DIR/buildinfra/apps-built" || die "host APK lacks a v3 loader"
   fi
   if [[ $key_id == matonos-wayland-host ]]; then rm -rf "$normalized_dir"; normalized_dir=; fi
   info "Staged $DEVICE_DIR/prebuilt/apps-built/$apk_name (certificate SHA-256 $cert_sha)"
