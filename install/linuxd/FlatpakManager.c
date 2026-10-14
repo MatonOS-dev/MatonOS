@@ -13,6 +13,7 @@
 #include "../../linux/flatpak/linux-paths.h"
 #include "LinuxStorage.h"
 #include "DeploymentStore.h"
+#include "RemotePin.h"
 #include <sys/inotify.h>
 #include <errno.h>
 #include <dirent.h>
@@ -198,6 +199,28 @@ static int app_install_roots(const char* ref, int app_uid, char* system_dir, siz
        strlen(resolved)>=user_size)return -1;
     strcpy(user_dir,resolved);
     return 0;
+}
+
+/* Existing installations are migrated from Flatpak's recorded origin. Never
+ * bless a requested remote merely because the new metadata is absent. */
+static int check_remote_pin(const char* ref,const char* remote,int uid,int commit) {
+    if(maton_store_prepare())return -1;
+    int fd=open(MATON_LINUX_ROOT "/manager",O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
+    if(fd<0)return -1;
+    int rc=remote_pin_check(fd,ref,remote);
+    if(!rc && flatpak_manager_installed_for_uid(ref,uid)) {
+        char system[256],user[256];
+        if(app_install_roots(ref,uid,system,sizeof(system),user,sizeof(user)))rc=-1;
+        else {
+            const char* args[]={"--user","info","--show-origin",ref};
+            ChildResult child=run_cli_in(args,4,0,system,user);
+            if(child.status || child.truncated || !child.output)rc=-1;
+            else {child.output[strcspn(child.output,"\r\n")]=0;if(strcmp(child.output,remote))rc=-2;}
+            free(child.output);
+        }
+    }
+    if(!rc && commit)rc=remote_pin_commit(fd,ref,remote);
+    close(fd);return rc;
 }
 
 static void publish_progress_line(const char* line) {
@@ -488,18 +511,25 @@ static void* package_operation_thread(void* data) {
         /* The stub staged this operation into its own staging directory. */
         char staging_dir[160];
         RefContext refs = {.system = system_dir, .user = 0, .uid = (int)maton_app_id((unsigned)operation->app_uid)};
-        int rc = deployment_create((unsigned)operation->app_uid,user_dir,sizeof(user_dir));
+        int pin_rc = check_remote_pin(operation->ref,operation->remote,operation->app_uid,0);
+        int rc = pin_rc;
+        if(!rc)rc = deployment_create((unsigned)operation->app_uid,user_dir,sizeof(user_dir));
         refs.db = ref_open(&refs);
         refs.version=!rc?runtime_refs_open(user_dir,0):NULL;
         if(!rc) rc = flatpak_staging_dir(operation->app_uid, operation->operation_id,
                 staging_dir, sizeof(staging_dir));
-        if (rc) snprintf(error, sizeof(error), "invalid staging operation");
+        if (rc) snprintf(error, sizeof(error), "%s", pin_rc == -2 ?
+                "Application is pinned to another remote" : pin_rc ?
+                "Cannot read application remote pin" : "invalid staging operation");
         else if (!refs.db || !refs.version) { rc = -1; snprintf(error, sizeof(error), "runtime reference database unavailable"); }
         else rc = flatpak_publish_tracked(operation->ref, operation->app_commit,
                 operation->runtime_ref, operation->runtime_commit, operation->remote,
                 staging_dir, system_dir, user_dir, error, sizeof(error), ref_record, ref_complete, &refs);
         runtime_refs_close(refs.db);runtime_refs_close(refs.version);
         if (operation->operation_id) flatpak_remove_staging(operation->app_uid, operation->operation_id);
+        if(!rc && check_remote_pin(operation->ref,operation->remote,operation->app_uid,1)) {
+            snprintf(error,sizeof(error),"cannot persist remote pin (application may belong to another remote)");rc=-1;
+        }
         if (!rc && deployment_commit((unsigned)operation->app_uid,user_dir)) {
             snprintf(error,sizeof(error),"cannot commit deployment pointer");rc=-1;
         }
@@ -816,6 +846,12 @@ int flatpak_manager_prepare(const char* ref, const char* remote, int installer_u
     }
     if (!operation_id || !*operation_id || strlen(operation_id) > 64) {
         if (error && error_size) snprintf(error, error_size, "valid operation ID required");
+        return -1;
+    }
+    int pin=check_remote_pin(ref,(remote && *remote)?remote:"flathub",installer_uid,0);
+    if(pin) {
+        if(error && error_size)snprintf(error,error_size,"%s",pin==-2?
+                "Application is pinned to another remote":"Cannot read application remote pin");
         return -1;
     }
     return flatpak_prepare(ref, (remote && *remote) ? remote : "flathub",

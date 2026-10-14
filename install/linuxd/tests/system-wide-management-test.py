@@ -6,7 +6,7 @@ import tempfile
 root=Path(__file__).resolve().parents[3]
 s=(root/'install/linuxd/FlatpakManager.c').read_text()
 start=s.index('int flatpak_manager_installed_for_uid(')
-end=s.index('static void publish_progress_line(',start)
+end=s.index('/* Existing installations are migrated',start)
 with tempfile.TemporaryDirectory(prefix='linux-app-query-') as tmp:
     work=Path(tmp);store=work/'store';install=store/'install';install.mkdir(parents=True)
     (install/'10120-Ab09').mkdir();(install/'10120').symlink_to('10120-Ab09')

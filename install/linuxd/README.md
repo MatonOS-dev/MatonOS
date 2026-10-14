@@ -90,3 +90,62 @@ Fresh enforcing-image check for the coordinator (no hot-patching):
 4. Repeat failure/success/update on the Ryzen PC, Surface Pro 3 and HP ProDesk.
    Inspect enforcing denials for the dump/progress path; no kernel changes or
    shared-file changes are required by this source change.
+
+### Round 12 phase 1: partial store groundwork (2026-10-14)
+
+This work does **not** complete the store API. The existing early-stub flow
+and completion refresh remain; there is no ILinuxAppStore service yet.
+
+linuxd now checks a system-wide application-origin pin before staging and
+again under its publication mutex. After verified deployment, it persists the
+pin before switching the active deployment pointer. Metadata lives in
+`/data/linux-app/manager/<appId>` (private to linuxd); the file contains the
+remote name. Branch, architecture and Android user do not change the pin.
+An existing deployment's Flatpak origin is checked when upgrading from an
+image without these files. A conflicting remote fails closed. Pins survive
+uninstall: allowing an intentional provenance change needs an explicit future
+policy. A pin can also survive a failed final pointer switch; retry from the
+same remote is allowed. New metadata uses write/fsync/link/fsync so a crash
+cannot expose a partially written pin.
+
+The bridge's existing management and root debug-provider paths now enforce
+`DISALLOW_INSTALL_APPS` for install/update commands and
+`DISALLOW_UNINSTALL_APPS` for removal. Cross-user management checks both the
+calling and target users. The debug entry point still requires its existing
+root/live/debug arming and is otherwise unchanged.
+
+Host verification: remote-pin-test.c, system-wide-management-test.py,
+deployment-store-test.py, failed-publication-test.py and operation-wait-test.py
+pass. FlatpakManager.c passes NDK r30/API 36 syntax compilation with
+`-Wall -Wextra -Werror`. The modified bridge service passes focused javac
+against existing framework/bridge jars and SDK 36; LinuxAppStorePolicyTest
+passes both JUnit tests. No image build or device test was performed.
+
+Remaining work: add the permission-protected AIDL API and correlated progress,
+update discovery/execution, admin-only all-users removal, and the dedicated
+sandboxed installer identity plus verified deployment handoff needed to install
+the final APK once. Currently FlatpakStore.c and FlatpakPublish.c accept only
+application-range staging UIDs, and deployment pointers are indexed by the
+stub's appId. Simply deleting the initial APK or its refresh does not implement
+the binding install ordering: it loses the staging identity or final metadata.
+The installer handoff must be implemented before changing this ordering.
+
+Device checks for the coordinator after a fresh image build (not run here):
+1. On a disposable user, install from a signed configured remote using the
+   existing `install/tools/test-flatpak.sh` harness; confirm a private pin file
+   names that remote and the application launches.
+2. Attempt the same app ID from a second signed configured remote, including
+   another branch; expect an explicit remote-pin failure, unchanged deployment
+   pointer and unchanged first remote's app.
+3. Reboot and repeat the conflict, then remove and retry from the original
+   remote. Verify the pin persists across reboot/removal.
+4. Set `no_install_apps` for the target user; the armed root harness and normal
+   bridge install must both reject before scheduling work. Clear it and retry.
+   Repeat removal with `no_uninstall_apps`. Check cross-user calls cannot avoid
+   the caller's restriction by targeting another user.
+5. Repeat on the Ryzen desktop, Surface Pro 3 and HP ProDesk when images are
+   available. These changes have no hardware-specific behavior.
+
+No SELinux lines or kernel settings were changed. The existing test install
+flow is retained, including its known first-launch refresh race; do not treat
+this groundwork as a fix for that race.

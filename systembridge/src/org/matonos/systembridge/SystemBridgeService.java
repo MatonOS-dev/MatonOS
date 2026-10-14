@@ -565,6 +565,9 @@ public final class SystemBridgeService extends Service {
                         user = requestedUser;
                         args.remove("userId");
                     }
+                    // Check both caller and target before clearing the Binder identity.
+                    enforceLinuxAppRestriction(UserHandle.getUserId(Binder.getCallingUid()), command);
+                    enforceLinuxAppRestriction(user, command);
                     FlatpakStubManager owner = flatpakStubManager.forUser(user);
                     if (args.has("uid") || args.has("installerUid"))
                         throw new SecurityException("Installation identities are resolved by the bridge");
@@ -673,6 +676,18 @@ public final class SystemBridgeService extends Service {
             if (subscription != null) subscription.close();
         }
     };
+
+    private void enforceLinuxAppRestriction(int user, String command) {
+        String restriction = LinuxAppStorePolicy.restriction(command);
+        if (restriction == null) return;
+        android.os.UserManager users = getSystemService(android.os.UserManager.class);
+        if (users == null) throw new SecurityException("User restrictions unavailable");
+        long identity = Binder.clearCallingIdentity();
+        try {
+            if (users.hasUserRestriction(restriction, UserHandle.of(user)))
+                throw new SecurityException("Linux app operation blocked by " + restriction);
+        } finally { Binder.restoreCallingIdentity(identity); }
+    }
 
     @Override public IBinder onBind(Intent intent) {
         // Android enforces the service's SYSTEM_BRIDGE permission before bind.
@@ -1365,6 +1380,7 @@ public final class SystemBridgeService extends Service {
                         if (requestedUser != null && (!(requestedUser instanceof Integer) || (Integer) requestedUser < 0))
                             throw new IllegalArgumentException("A concrete Android user is required");
                         int user = requestedUser == null ? 0 : (Integer) requestedUser;
+                        bridge.enforceLinuxAppRestriction(user, arg);
                         if ("install".equals(arg)) {
                             args.remove("userId");
                             if (args.has("uid") || args.has("installerUid"))
