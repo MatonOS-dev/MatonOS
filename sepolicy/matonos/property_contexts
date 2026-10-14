@@ -8,3 +8,5 @@ vendor.mesa. u:object_r:vendor_maton_mesa_prop:s0 prefix
 
 # minigbm probes this option even when unset. Never grant vendor_default_prop.
 vendor.minigbm.debug u:object_r:vendor_maton_graphics_prop:s0 exact string
+# pc-gpu-detect snapshot: readable by every domain (apps: v3 proxy GPU sysfs).
+vendor.maton.graphics. u:object_r:vendor_maton_graphics_prop:s0 prefix
