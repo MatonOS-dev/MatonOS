@@ -23,7 +23,12 @@ public final class StubActivity extends Activity implements SurfaceHolder.Callba
      * an app start activities shortly after its own finished. */
     private static final long LAST_WINDOW_GRACE_MS = 10_000;
     private static final android.os.Handler MAIN = new android.os.Handler(android.os.Looper.getMainLooper());
-    private static final Runnable END_SESSION = () -> android.os.Process.killProcess(android.os.Process.myPid());
+    private static final Runnable END_SESSION = () -> {
+        // killProcess bypasses Service.onDestroy: explicitly close native
+        // runtime children before ending the per-app host.
+        org.matonos.compositor.runtime.NativeCompositor.nativeStop();
+        android.os.Process.killProcess(android.os.Process.myPid());
+    };
 
     /** Open an Android window for an app window that arrived while no
      * activity was hosting (e.g. after the app closed its last window). */

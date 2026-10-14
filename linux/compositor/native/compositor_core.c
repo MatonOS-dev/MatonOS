@@ -57,6 +57,7 @@
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/util/region.h>
 #include "window_fit.h"
+#include "xwayland_lifetime.h"
 
 extern void* maton_wayland_test_client(void*);
 
@@ -74,6 +75,8 @@ struct SocketSession {
   struct SocketSession* next;
 };
 struct XwaylandSession {
+  int process_fd;
+  pid_t process_pid;
   int session;
   uid_t uid;
   xcb_atom_t delete_window;
@@ -169,7 +172,10 @@ static struct MatonFit window_fit(struct Window* w) {
   return maton_fit(w->width,w->height,width,height);
 }
 static void configure_window(struct Window* w) {
-  if(maton_size_fixed(w->hints))return;
+  /* Xwayland activates RandR viewport emulation only when the X drawable
+   * matches the requested mode. Forcing a fullscreen 1280x720 drawable to
+   * 1600x900 disables that path and leaves the GL viewport in one corner. */
+  if(maton_size_fixed(w->hints)||(w->xsurface&&w->xsurface->fullscreen))return;
   int width=maton_size_clamp(w->width,w->hints.min_width,w->hints.max_width);
   int height=maton_size_clamp(w->height,w->hints.min_height,w->hints.max_height);
   if(w->toplevel&&w->toplevel->base->initialized)wlr_xdg_toplevel_set_size(w->toplevel,width,height);
@@ -739,7 +745,9 @@ static void on_xtrack_dissociate(struct wl_listener* l,void* data) {
 static void on_xtrack_configure(struct wl_listener* l,void* data) {
   struct XTrack* t=(struct XTrack*)((char*)l-offsetof(struct XTrack,configure));
   struct wlr_xwayland_surface_configure_event* ev=data;
-  if(!xtrack_window(t))wlr_xwayland_surface_configure(t->xs,ev->x,ev->y,ev->width,ev->height);
+  struct Window* w=xtrack_window(t);
+  if(!w||t->xs->fullscreen)wlr_xwayland_surface_configure(t->xs,ev->x,ev->y,ev->width,ev->height);
+  else configure_window(w);
 }
 static void on_xtrack_destroy(struct wl_listener* l,void* data) {
   (void)data;struct XTrack* t=(struct XTrack*)((char*)l-offsetof(struct XTrack,destroy));
@@ -776,6 +784,9 @@ static void on_xwayland_ready(struct wl_listener* l,void* data) {
   (void)data;struct XwaylandSession* xw=(struct XwaylandSession*)((char*)l-offsetof(struct XwaylandSession,ready));
   __android_log_print(ANDROID_LOG_INFO,"MatonCompositor","Session %d: Xwayland ready on %s",
       xw->session,xw->xwayland?xw->xwayland->display_name:"?");
+  if(xw->process_fd>=0)maton_xwayland_end(xw->process_fd,xw->process_pid);
+  char binary[512];snprintf(binary,sizeof(binary),"%s/Xwayland",server.xwayland_path);
+  xw->process_fd=maton_xwayland_pin(binary,&xw->process_pid);
   xwayland_apply_socket_mode(xw);
   /* Xwayland uses our private socket directory, not /tmp/.X11-unix. */
   int fd=socket(AF_UNIX,SOCK_STREAM|SOCK_CLOEXEC,0);
@@ -796,6 +807,11 @@ static void on_xwayland_ready(struct wl_listener* l,void* data) {
 }
 static void on_xwayland_destroy(struct wl_listener* l,void* data) {
   (void)data;struct XwaylandSession* xw=(struct XwaylandSession*)((char*)l-offsetof(struct XwaylandSession,destroy));
+  if(xw->process_fd<0){
+    char binary[512];snprintf(binary,sizeof(binary),"%s/Xwayland",server.xwayland_path);
+    xw->process_fd=maton_xwayland_pin(binary,&xw->process_pid);
+  }
+  maton_xwayland_end(xw->process_fd,xw->process_pid);
   wl_list_remove(&xw->ready.link);wl_list_remove(&xw->new_surface.link);wl_list_remove(&xw->destroy.link);
   struct XwaylandSession** p=&server.xwayland_sessions;
   while(*p&&*p!=xw)p=&(*p)->next;if(*p)*p=xw->next;
@@ -922,7 +938,13 @@ static void handle_add_xwayland(int session,uid_t uid) {
     struct XwaylandSession* xw=calloc(1,sizeof(*xw));
     if(xw){
       xw->session=session;xw->uid=uid;
-      xw->xwayland=wlr_xwayland_create(server.display,server.compositor,true);
+      xw->process_fd=-1;
+      struct wlr_xwayland_server_options options={.lazy=true,.enable_wm=true,
+          .force_xrandr_emulation=true};
+      struct wlr_xwayland_server* xs=wlr_xwayland_server_create(server.display,&options);
+      xw->xwayland=xs?wlr_xwayland_create_with_server(server.display,server.compositor,xs):NULL;
+      if(xw->xwayland)xw->xwayland->own_server=true;
+      else if(xs)wlr_xwayland_server_destroy(xs);
       if(xw->xwayland){
         wlr_xwayland_set_seat(xw->xwayland,server.seat);
         xw->ready.notify=on_xwayland_ready;wl_signal_add(&xw->xwayland->events.ready,&xw->ready);
@@ -1140,6 +1162,7 @@ bool maton_core_xwayland_init(const char* socket_dir,const char* xwayland_path) 
   strcpy(server.xwayland_path,xwayland_path);
   /* Only consulted from the Wayland thread; Xwayland sessions are created
    * after the server starts, so the environment is in place in time. */
+  if(prctl(PR_SET_CHILD_SUBREAPER,1,0,0,0)<0)return false;
   if(setenv("WLR_XWAYLAND_SOCKET_DIR",socket_dir,1))return false;
   /* An app process's stderr goes nowhere; Xwayland reports fatal startup
    * errors only there. Keep them in the app's runtime dir (<dir>/../xwayland.log). */
