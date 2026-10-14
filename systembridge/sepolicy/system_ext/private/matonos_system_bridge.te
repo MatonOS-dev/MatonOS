@@ -155,7 +155,7 @@ allow matonos_flatpak_installer matonos_flatpak_store_file:lnk_file { create get
 allow matonos_linuxd matonos_flatpak_store_file:{ file lnk_file } link;
 allow matonos_linuxd matonos_flatpak_deployment_file:{ dir file } relabelfrom;
 allow matonos_linuxd matonos_linux_code_file:file link;
-allow matonos_linuxd matonos_linux_code_file:lnk_file { getattr read relabelto unlink };
+allow matonos_linuxd matonos_linux_code_file:lnk_file { getattr read relabelto relabelfrom unlink };
 
 # v3 virtual mount setup uses memfds in the existing app domain.
 allow untrusted_app_all self:memfd_file { open setattr };
