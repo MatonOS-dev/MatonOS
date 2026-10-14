@@ -531,6 +531,11 @@ class LinuxdService final : public BnLinuxd {
             if(command == "deploy_pending") {
                 flatpak_publish_progress(nullptr);g_staging_operation.clear();
                 Snapshot(operation,result.ok ? "handoff" : "complete",result.error ? result.error : "");
+                if(result.ok) {
+                    Json::Value event;event["operationId"]=operation;event["phase"]="handoff";
+                    event["line"]="Verified deployment; binding existing or final stub";
+                    NotifyListeners(Encode(event));
+                }
             }
             reply(Encode(EncodeResult(result)));flatpak_manager_result_clear(&result);
             return android::binder::Status::ok();
@@ -596,10 +601,10 @@ class LinuxdService final : public BnLinuxd {
         int app_uid = -1;
         std::string operation_id_storage;
         const char* operation_id = nullptr;
-        if (command == "install" || command == "uninstall" || command == "installed_for_uid" || (command == "metadata" || command == "desktop_entry" || command == "icon")) {
+        if (command == "install" || command == "uninstall" || command == "installed_for_uid" || command == "check_update" || command == "installed_commit" || (command == "metadata" || command == "desktop_entry" || command == "icon")) {
             const bool uninstall = command == "uninstall";
             const bool install = command == "install";
-            const bool installed_for_uid = command == "installed_for_uid";
+            const bool installed_for_uid = command == "installed_for_uid" || command == "check_update" || command == "installed_commit";
             if (!(uninstall ? OnlyKeys(request, {"ref", "uid", "deleteData", "operationId"}) :
                     install ? OnlyKeys(request, {"ref", "operationId", "appCommit", "runtimeRef", "runtimeCommit", "remote", "uid"}) :
                     installed_for_uid ? OnlyKeys(request, {"ref", "uid"}) :

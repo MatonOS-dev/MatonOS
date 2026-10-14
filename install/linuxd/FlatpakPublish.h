@@ -36,6 +36,8 @@ int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
         char* desktop, unsigned long desktop_size,
         char* error, unsigned long error_size);
 
+int flatpak_available_commit(const char*, const char*, const char*, char*, unsigned long, char*, unsigned long);
+
 /* Remove abandoned installer staging operations during linuxd startup. */
 int flatpak_cleanup_stale_staging(void);
 

@@ -91,6 +91,194 @@ public final class SystemBridgeService extends Service {
         }
     }
 
+    /** The store capability is independent of the bridge's general target ACL. */
+    public static final class LinuxAppStoreService extends Service {
+        @Override public void onCreate() {
+            super.onCreate();startService(new Intent(this,SystemBridgeService.class));
+        }
+        @Override public IBinder onBind(Intent intent) {
+            SystemBridgeService bridge=activeService;
+            return bridge==null?null:bridge.storeBinder;
+        }
+    }
+    private final ConcurrentMap<String,Integer> storeOperations=new ConcurrentHashMap<>();
+    private final android.os.RemoteCallbackList<IStoreListener> storeListeners=new android.os.RemoteCallbackList<>();
+    private ILinuxd storeSubscribedDaemon;
+    private final ILinuxdListener storeObserver=new ILinuxdListener.Stub() {
+        @Override public void onEvent(String topic,String json) {
+            try {
+                JSONObject event=new JSONObject(json),result=event.optJSONObject("result");
+                String operation=result==null?event.optString("operationId"):result.optString("operationId");
+                Integer user=storeOperations.get(operation);if(user==null)return;
+                boolean complete="complete".equals(event.optString("phase"));
+                synchronized(storeListeners) {
+                    int count=storeListeners.beginBroadcast();
+                    try {
+                        for(int i=0;i<count;i++) {
+                            if(!user.equals(storeListeners.getBroadcastCookie(i)))continue;
+                            try {
+                                IStoreListener listener=storeListeners.getBroadcastItem(i);
+                                if(complete)listener.onFinished(operation,result!=null && result.optBoolean("ok"),result==null?"Missing result":result.optString("error"));
+                                else listener.onProgress(operation,event.optString("phase","staging"),event.optInt("percent",-1),event.optString("line"));
+                            }catch(RemoteException dead){Log.w(TAG,"Store listener died",dead);}
+                        }
+                    } finally {storeListeners.finishBroadcast();}
+                }
+                if(complete)storeOperations.remove(operation);
+            }catch(Exception error){Log.w(TAG,"Invalid store event",error);}
+        }
+    };
+    private synchronized void subscribeStore() throws RemoteException {
+        ILinuxd daemon=linuxdFor();if(daemon==null)throw new IllegalStateException("Flatpak service unavailable");
+        if(storeSubscribedDaemon!=null && storeSubscribedDaemon.asBinder().equals(daemon.asBinder()))return;
+        if(storeSubscribedDaemon!=null)try{storeSubscribedDaemon.unsubscribe("progress",storeObserver);}catch(RemoteException ignored){}
+        daemon.asBinder().linkToDeath(()-> {
+            synchronized(SystemBridgeService.this) {
+                if(storeSubscribedDaemon==null || !storeSubscribedDaemon.asBinder().equals(daemon.asBinder()))return;
+                storeSubscribedDaemon=null;
+                for(String operation:new java.util.ArrayList<>(storeOperations.keySet())) {
+                    try {
+                        JSONObject result=new JSONObject().put("operationId",operation).put("ok",false)
+                            .put("error","Flatpak service disconnected; inspect installed inventory before retrying");
+                        storeObserver.onEvent("progress",new JSONObject().put("phase","complete").put("result",result).toString());
+                    }catch(Exception error){Log.w(TAG,"Store disconnect notification failed",error);}
+                }
+            }
+        },0);
+        daemon.subscribe("progress",storeObserver);storeSubscribedDaemon=daemon;
+    }
+    private int enforceStore(boolean allUsers, String command) {
+        boolean granted=checkCallingPermission("org.matonos.permission.MANAGE_LINUX_APPS")==PackageManager.PERMISSION_GRANTED;
+        int user=UserHandle.getUserId(Binder.getCallingUid());
+        boolean admin=false;
+        if (granted && allUsers) {
+            long token=Binder.clearCallingIdentity();
+            try {
+                android.os.UserManager users=getSystemService(android.os.UserManager.class);
+                android.content.pm.UserInfo info=users==null?null:users.getUserInfo(user);
+                admin=user==UserHandle.USER_SYSTEM || (info!=null && info.isAdmin());
+            } finally { Binder.restoreCallingIdentity(token); }
+        }
+        Log.i(TAG,"Linux store call uid="+Binder.getCallingUid()+" user="+user+" command="+command+" allUsers="+allUsers+" permission="+granted+" admin="+admin);
+        LinuxAppStorePolicy.enforce(granted,allUsers,admin);
+        enforceLinuxAppRestriction(user,command);
+        return user;
+    }
+    private void validateStoreAppId(String appId) {
+        if(appId==null || !appId.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_-]*)+"))
+            throw new IllegalArgumentException("Invalid application ID");
+    }
+    private String storeRef(int user,String appId) throws Exception {
+        validateStoreAppId(appId);
+        JSONObject result=storeReply("list_installed",new JSONObject().put("userId",user));
+        String match=null;
+        for(String ref:result.optString("output").split("\\s+")) {
+            if(!ref.startsWith("app/"))ref="app/"+ref;
+            String[] parts=ref.split("/");
+            if(parts.length==4 && appId.equals(parts[1])) {
+                if(match!=null && !match.equals(ref))throw new IllegalStateException("Ambiguous installed ref");
+                match=ref;
+            }
+        }
+        if(match==null)throw new IllegalArgumentException("Application is not installed");
+        return match;
+    }
+    private JSONObject storeReply(String command,JSONObject args) throws Exception {
+        ILinuxd daemon=linuxdFor();
+        if(daemon==null)throw new IllegalStateException("Flatpak service unavailable");
+        JSONObject result=new JSONObject(daemon.call(command,args.toString()));
+        if(!result.optBoolean("ok"))throw new IllegalStateException(result.optString("error","Store operation failed"));
+        return result;
+    }
+    private LinuxAppInfo[] storeInventory(int user,boolean updates) throws Exception {
+        java.util.ArrayList<LinuxAppInfo> items=new java.util.ArrayList<>();
+        FlatpakStubManager owner=flatpakStubManager.forUser(user);
+        String output=storeReply("list_installed",new JSONObject().put("userId",user)).optString("output");
+        for(String ref:output.split("\\s+")) {
+            if(ref.isEmpty())continue;
+            if(!ref.startsWith("app/"))ref="app/"+ref;
+            String[] parts=ref.split("/");if(parts.length!=4)throw new IllegalStateException("Invalid installed ref");
+            int uid=owner.verifiedUid(ref);
+            JSONObject info=storeReply(updates?"check_update":"installed_commit",new JSONObject().put("ref",ref).put("uid",uid));
+            String[] fields=info.getString("output").split("\t",-1);
+            if(fields.length!=(updates?3:2))throw new IllegalStateException("Invalid commit query result");
+            if(!updates || !fields[1].equals(fields[2]))
+                items.add(new LinuxAppInfo(parts[1],fields[0],fields[1],updates?fields[2]:""));
+        }
+        return items.toArray(new LinuxAppInfo[0]);
+    }
+    private synchronized String storeInstall(int user,String ref,String remote) throws Exception {
+        subscribeStore();
+        String operation=java.util.UUID.randomUUID().toString();
+        if(storeOperations.size()>=64)throw new IllegalStateException("Too many pending store operations");
+        storeOperations.put(operation,user);
+        try {
+            flatpakStubManager.forUser(user).installAsync(ref,new JSONObject().put("remote",remote).put("operationId",operation));
+            return operation;
+        } catch(Exception error) {storeOperations.remove(operation);throw error;}
+    }
+    private final ILinuxAppStore.Stub storeBinder=new ILinuxAppStore.Stub() {
+        @Override public String installApp(String appId,String remote) {
+            int user=enforceStore(false,"install_app");
+            validateStoreAppId(appId);
+            if(remote==null || !remote.matches("[A-Za-z0-9._-]{1,128}") || remote.startsWith("-"))
+                throw new IllegalArgumentException("Invalid remote");
+            long token=Binder.clearCallingIdentity();
+            try { return storeInstall(user,"app/"+appId+"/x86_64/stable",remote); }
+            catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Install failed",e);}
+            finally {Binder.restoreCallingIdentity(token);}
+        }
+        @Override public String updateApp(String appId) {
+            int user=enforceStore(false,"update_app");long token=Binder.clearCallingIdentity();
+            try {
+                String ref=storeRef(user,appId);FlatpakStubManager owner=flatpakStubManager.forUser(user);
+                owner.verifiedUid(ref);
+                return storeInstall(user,ref,owner.remoteFor(FlatpakStubIdentity.packageFor(ref)));
+            } catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Update failed",e);}
+            finally {Binder.restoreCallingIdentity(token);}
+        }
+        @Override public LinuxAppInfo[] checkUpdates(){return inventory(true);}
+        @Override public LinuxAppInfo[] listInstalled(){return inventory(false);}
+        private LinuxAppInfo[] inventory(boolean updates) {
+            int user=enforceStore(false,"list_installed");long token=Binder.clearCallingIdentity();
+            try {return storeInventory(user,updates);}
+            catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Inventory failed",e);}
+            finally {Binder.restoreCallingIdentity(token);}
+        }
+        @Override public void uninstallApp(String appId,boolean allUsers) {
+            int user=enforceStore(allUsers,"uninstall_app");validateStoreAppId(appId);long token=Binder.clearCallingIdentity();
+            try {
+                java.util.ArrayList<Integer> targets=new java.util.ArrayList<>();
+                if(allUsers)for(android.content.pm.UserInfo info:getSystemService(android.os.UserManager.class).getUsers())targets.add(info.id);
+                else targets.add(user);
+                // Validate every target restriction and identity before requesting any deletion.
+                java.util.Map<Integer,String> refs=new java.util.HashMap<>();
+                for(int target:targets) {
+                    enforceLinuxAppRestriction(target,"uninstall_app");
+                    String ref;
+                    try {ref=storeRef(target,appId);}catch(IllegalArgumentException absent){if(allUsers)continue;throw absent;}
+                    flatpakStubManager.forUser(target).verifiedUid(ref);refs.put(target,ref);
+                }
+                for(java.util.Map.Entry<Integer,String> entry:refs.entrySet())
+                    flatpakStubManager.forUser(entry.getKey()).uninstall(entry.getValue(),true);
+            } catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Uninstall failed",e);}
+            finally {Binder.restoreCallingIdentity(token);}
+        }
+        @Override public void registerListener(IStoreListener listener) {
+            final int user=enforceStore(false,"list_installed");
+            if(listener==null)throw new IllegalArgumentException("Listener required");
+            long token=Binder.clearCallingIdentity();
+            try {
+                subscribeStore();
+                synchronized(storeListeners) {
+                    if(storeListeners.getRegisteredCallbackCount()>=64)throw new IllegalStateException("Too many store listeners");
+                    storeListeners.register(listener,Integer.valueOf(user));
+                }
+            } catch(RemoteException e){throw new IllegalStateException("Subscribe failed",e);}
+            finally {Binder.restoreCallingIdentity(token);}
+        }
+    };
+
     private final Map<Integer, GeometryGesture> linuxGestures = new java.util.HashMap<>();
     private boolean linuxWindowDenied(int uid, int taskId) {
         Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=invalid_state_or_unavailable");
@@ -729,6 +917,8 @@ public final class SystemBridgeService extends Service {
     }
 
     @Override public void onDestroy() {
+        storeListeners.kill();
+        if(storeSubscribedDaemon!=null)try{storeSubscribedDaemon.unsubscribe("progress",storeObserver);}catch(RemoteException ignored){}
         if (flatpakStubManager != null) flatpakStubManager.close();
         // sleep: stop the poller with the persistent bridge service.
         if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
@@ -1364,7 +1554,7 @@ public final class SystemBridgeService extends Service {
                             !"1".equals(android.os.SystemProperties.get("ro.boot.matonos.live")))
                         throw new SecurityException("flatpak test channel requires an armed live debug image and root");
                     if (!Set.of("stage", "list_installed", "list_remotes", "add_flathub", "install",
-                            "uninstall", "kill").contains(arg))
+                            "uninstall", "kill", "check_updates", "update").contains(arg))
                         throw new IllegalArgumentException("unsupported flatpak test command");
                     String encoded = extras == null ? null : extras.getString("payload_b64");
                     if (encoded == null || encoded.length() > 90000)
@@ -1380,6 +1570,23 @@ public final class SystemBridgeService extends Service {
                             throw new IllegalArgumentException("A concrete Android user is required");
                         int user = requestedUser == null ? 0 : (Integer) requestedUser;
                         bridge.enforceLinuxAppRestriction(user, arg);
+                        if ("check_updates".equals(arg)) {
+                            LinuxAppInfo[] items=bridge.storeInventory(user,true);
+                            org.json.JSONArray updates=new org.json.JSONArray();
+                            for(LinuxAppInfo item:items)updates.put(new JSONObject().put("appId",item.appId).put("remote",item.remote)
+                                .put("installedCommit",item.installedCommit).put("availableCommit",item.availableCommit));
+                            result.putString("result",new JSONObject().put("ok",true).put("updates",updates).toString());return result;
+                        }
+                        if ("update".equals(arg)) {
+                            bridge.enforceLinuxAppRestriction(user,"update_app");
+                            if(args.has("uid") || args.has("installerUid"))throw new SecurityException("Installation identities are resolved by the bridge");
+                            String ref=args.getString("ref");FlatpakStubManager owner=bridge.flatpakStubManager.forUser(user);
+                            owner.verifiedUid(ref);args.put("remote",owner.remoteFor(FlatpakStubIdentity.packageFor(ref)));
+                            args.remove("userId");
+                            JSONObject accepted=new JSONObject(owner.installAsync(ref,args));
+                            accepted.put("stubPackage",FlatpakStubIdentity.packageFor(ref));
+                            result.putString("result",accepted.toString());return result;
+                        }
                         if ("install".equals(arg)) {
                             args.remove("userId");
                             if (args.has("uid") || args.has("installerUid"))

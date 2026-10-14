@@ -40,7 +40,7 @@ static int fail(const char* fmt, ...) {
 }
 
 static int stage_args_valid(int argc, char** argv) {
-    if (argc != 6 || !argv || !argv[1] || strcmp(argv[1], "stage") || !argv[2] || !argv[3]) return 0;
+    if (argc != 6 || !argv || !argv[1] || (strcmp(argv[1], "stage") && strcmp(argv[1], "check")) || !argv[2] || !argv[3]) return 0;
     char* end = NULL; long uid = strtol(argv[3], &end, 10);
     char expected[PATH_MAX];
     if (!end || *end || uid != MATON_FPINSTALL_UID ||
@@ -71,7 +71,9 @@ static int stage_flatpak_ref(int argc, char** argv) {
     setenv("LC_ALL", "C", 1);
     char* const flatpak_argv[] = {"flatpak", "install", "--system",
         "--no-deploy", "--assumeyes", argv[4], argv[5], NULL};
-    execv(MATONOS_FLATPAK_WRAPPER, flatpak_argv);
+    char* const check_argv[] = {"flatpak", "remote-info", "--system",
+        "--show-commit", argv[4], argv[5], NULL};
+    execv(MATONOS_FLATPAK_WRAPPER, !strcmp(argv[1], "check") ? check_argv : flatpak_argv);
     return fail("cannot start static Flatpak staging pull: %s", strerror(errno));
 }
 
@@ -83,7 +85,7 @@ static int selftest(void) {
 
 int maton_store_main(int argc, char** argv) {
     if (argc < 2) return fail("usage: matonos-flatpak-store <stage|selftest> [args]");
-    if (!strcmp(argv[1], "stage")) return stage_flatpak_ref(argc, argv);
+    if (!(strcmp(argv[1], "stage") && strcmp(argv[1], "check"))) return stage_flatpak_ref(argc, argv);
     if (!strcmp(argv[1], "selftest"))
         return argc == 2 ? selftest() : fail("selftest takes no arguments");
     return fail("unknown command: %s", argv[1]);

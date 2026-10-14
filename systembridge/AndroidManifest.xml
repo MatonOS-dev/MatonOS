@@ -3,6 +3,8 @@
     <permission
         android:name="org.matonos.permission.SYSTEM_BRIDGE"
         android:protectionLevel="signature|privileged|development" />
+    <permission android:name="org.matonos.permission.MANAGE_LINUX_APPS"
+        android:protectionLevel="signature|privileged" />
     <!-- Controller access is granted at install time for now; stubs still
          declare it from Flatpak metadata and the bridge checks the grant. -->
     <permission
@@ -56,6 +58,11 @@
             <intent-filter>
                 <action android:name="org.matonos.systembridge.BIND" />
             </intent-filter>
+        </service>
+        <service android:name=".SystemBridgeService$LinuxAppStoreService"
+            android:exported="true" android:singleUser="true"
+            android:permission="org.matonos.permission.MANAGE_LINUX_APPS">
+            <intent-filter><action android:name="org.matonos.systembridge.LINUX_APP_STORE" /></intent-filter>
         </service>
         <!-- Stubs have only self-task capabilities, authenticated by device signature
              and task UID. Never grant them the general SYSTEM_BRIDGE permission. -->
