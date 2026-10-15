@@ -14,6 +14,26 @@ extern "C" {
 int flatpak_seal_staged_file(int directory, const char* component,
         char* error, unsigned long error_size);
 
+#define MATON_STAGED_DEPLOYMENTS_MAX 64
+#define MATON_STAGED_SUBPATHS_MAX 32
+struct FlatpakStagedDeployment {
+    char ref[512], commit[65];
+    size_t subpath_count;
+    char subpaths[MATON_STAGED_SUBPATHS_MAX][256];
+};
+struct FlatpakStagedManifest {
+    unsigned version;
+    char operation_id[65], app_ref[512], app_commit[65], remote[129];
+    size_t deployment_count;
+    struct FlatpakStagedDeployment deployments[MATON_STAGED_DEPLOYMENTS_MAX];
+};
+int flatpak_begin_staged_install(int uid,const char* operation,const char* remote,
+        char* error,unsigned long error_size);
+int flatpak_verify_publish_staged_tracked(const struct FlatpakStagedManifest*,
+        const char* staging,const char* system,const char* pending,
+        char* error,unsigned long error_size,int (*record)(const char*,void*),
+        int (*complete)(const char* const*,size_t,void*),void* context);
+
 /* Per-thread staging output observer; exec children never invoke it. */
 void flatpak_publish_progress(void (*callback)(const char*));
 
