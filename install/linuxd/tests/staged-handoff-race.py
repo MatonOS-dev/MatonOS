@@ -42,7 +42,7 @@ def main():
         control.write_bytes(b"sealed code\n")
         code, message = seal("control")
         if code in (errno.EOPNOTSUPP, errno.ENOTTY):
-            assert message == "fs-verity unsupported on /data"
+            assert message == "Cannot trust /data, expected fs feature 'fs-verity' isn't available"
             print("SKIP: real verity mapping regression: filesystem unsupported")
             return 1 if args.require_verity else 77
         assert code == 0, (code, message)
@@ -66,7 +66,7 @@ def main():
         with source.open("r+b") as writer:
             mapping = mmap.mmap(writer.fileno(), 0, access=mmap.ACCESS_WRITE)
         try:
-            os.chmod(source, 0o644)
+            os.chmod(source, 0o444)
             code, message = seal("payload", staging)
             assert code == errno.ETXTBSY, (code, message)
             assert message == "staged file still open for writing"

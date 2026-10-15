@@ -39,11 +39,13 @@ int main(void) {
     int file = openat(dir, "file", O_WRONLY | O_CREAT | O_EXCL, 0600);
     assert(file >= 0 && write(file, "hello", 5) == 5 && !close(file));
     struct stat st; assert(!fstat(dir, &st));
+    assert(!fchmodat(dir,"file",0444,0));
     const int failures[] = {EOPNOTSUPP, ENOTTY, ETXTBSY, EACCES, EPERM, EIO, ENOSPC};
     for (size_t i = 0; i < sizeof(failures)/sizeof(*failures); i++) {
         calls = 0; enable_error = failures[i];
         assert(maton_verity_openat(dir,"file",st.st_dev,getuid(),error,sizeof(error)) < 0);
         assert(errno == failures[i] && calls == 1);
+        struct stat mode;assert(!fstatat(dir,"file",&mode,0) && (mode.st_mode&0777)==0444);
         assert(!strcmp(error, maton_verity_error(failures[i])));
     }
     enable_error = 0; measure_error = EIO;
@@ -57,6 +59,7 @@ int main(void) {
         char content[5];
         assert(sealed >= 0 && (fcntl(sealed,F_GETFL) & O_ACCMODE) == O_RDONLY);
         assert(read(sealed,content,5) == 5 && !memcmp(content,"hello",5));
+        struct stat mode;assert(!fstat(sealed,&mode) && (mode.st_mode&0777)==0444);
         assert(!close(sealed));
     }
     calls = 0;

@@ -1,8 +1,10 @@
 # Compositor Flatpak installer
 
 Design for the 2026-10-15 decision. This document specifies the replacement;
-it does not mean the implementation has landed. The old UID-2902 path remains
-active until all replacement phases pass. No migration or v2 repair is planned. Add no GPLv3 dependency or per-app exception.
+it does not mean all phases have landed. Phase B now provides linuxd registration,
+verification and publication. Legacy inline install entry points fail closed
+until the phase-C compositor/bridge flow is connected; UID-2902 helper packaging
+remains for phase D. No migration or v2 repair is planned. Add no GPLv3 dependency or per-app exception.
 
 ## Ownership and protocol
 
@@ -18,8 +20,10 @@ Software Centre install/update (`FlatpakStubManager.installStub`) and stub
 self-update must enter this same flow. Neither entry point may retain an
 inline linuxd download/deploy fallback.
 
-Proposed calls use the existing bridge Flatpak dispatch and private `ILinuxd`
-transport; names below are new protocol names, not commands that already exist:
+Phase-B calls use the existing bridge Flatpak dispatch and private `ILinuxd`
+transport. `begin_staged_install`, `verify_staged_install` and
+`abort_staged_install` now exist on that private transport; the compositor
+service and bridge orchestration below remain phase-C work:
 
 1. Bridge authenticates the requesting store or signed stub using its existing
    capability checks, restrictions and per-device signing identity. It resolves
@@ -105,19 +109,47 @@ OSTree must still check its own content and metadata hashes. An existing seal
 is usable only after measuring and checking its hash algorithm and size.
 
 Any sealing failure rejects the entire transaction and collects staging.
-EOPNOTSUPP/ENOTTY reports "fs-verity unsupported on /data" (filesystem/build
-bug); ETXTBSY reports "staged file still open for writing" (producer retained
+EOPNOTSUPP/ENOTTY reports "Cannot trust /data, expected fs feature 'fs-verity' isn't available"
+(system integrity broken); ETXTBSY reports "staged file still open for writing" (producer retained
 a writer or writable mapping). Other errors fail closed. Neither copying nor
 an unsealed rename is an alternative. Directory entries and symlinks still
 need the independent owned/rebuilt namespace boundary; verity does not cover
 them. Never enable verity and then assume the directory tree is authenticated.
 
-Implementation status: `StagedVerity.h` and
-`flatpak_seal_staged_file()` provide only the per-file sealing primitive.
-They are **not yet called by a transaction verifier**. Registration, namespace
-capture, signed deployed-tree verification, sanitized extra-data, bookkeeping
-reconstruction, runtime merging and routing remain to be implemented. The
-legacy prepare/deploy path remains active; phase B is not complete.
+Phase B now implements registration and one active transaction, with explicit
+staging/verifying/pending/failed states and bounded replay protection. linuxd
+snapshots only the configured remote URL/key into its private trust repository
+at registration; producer repo configuration, keys, refs and lock paths are
+replaced before OSTree reads source objects. It rebuilds directories/symlinks,
+counts every source hardlink alias, takes inode ownership, strips untrusted
+xattrs and seals regular files before content verification. Aliases outside
+the captured installation and aliases crossing app/runtime ownership zones
+are rejected. Signed modes are preserved until exact comparison; unsigned
+extra-data modes are canonicalized only in the authenticated designated zone.
+
+A fresh trusted OSTree import checks real signatures/checksums and ref binding.
+The verifier compares every selected deployment against a trusted checkout,
+projects authenticated extension subpaths, validates runtime/extension metadata
+relationships, confines signed absolute links and unsigned symlink chains,
+and rejects special/setid files. It reconstructs Flatpak deploy GVariants,
+repositories and active/current links from verified inputs; it never runs
+Flatpak install/deploy/apply_extra. Runtime references are recorded before
+shared publication. Existing runtime reuse requires verity state attested by
+statx, signed-byte comparison and rebuilt-bookkeeping comparison; it adds no
+verity ioctl permissions on live code labels. Verified new regular payloads
+receive the established code labels before rename publication.
+
+`StagedVerity.h` temporarily adds owner write permission when needed for
+ENABLE_VERITY, whose FD remains read-only, then restores the original signed
+mode on success and failure. This happens only after linuxd owns the inode and
+namespace. It is not a writable content FD or a copying alternative.
+
+The old inline prepare/install/deploy_pending/self-install entry points now
+fail closed pending phase C. Existing pending metadata, lease and final bind
+methods remain; binding checks the verified stub and same Android user.
+Compositor worker cancellation/death handling and completion authentication
+through the bridge still belong to phase C. UID-2902 removal and compositor
+SELinux access remain phase D. Do not deploy B alone expecting normal installs.
 
 Both userdata fstabs request `fsverity`. Live /data is ram0 formatted by stock
 `system/fs/fs_mgr/fs_mgr_format.cpp`, not by make-live. Stock fs_mgr's ext4
@@ -130,8 +162,14 @@ The narrow phase-B ioctl grant is linuxd → staging:file, commands 0x6685 and
 of retained writer FDs/mappings using the same per-file primitive. Unsupported
 host filesystems return SKIP (77), or failure with `--require-verity`; they
 never count as a passing regression. `MATON_VERITY_TEST_DIR` selects a prepared
-verity-enabled filesystem. Syscall-contract tests use an explicit compile-time
-mock and make no filesystem or enforcing-policy success claim.
+verity-enabled filesystem. A standalone static initramfs regression (`staged-verity-vm.c`) also passes
+against the existing MatonOS kernel and a newly formatted ext4 `-O verity`
+disk, including a retained writable mapping with original mode 0444. It never
+uses the user's Android VM. Syscall-contract tests use an explicit compile-time
+mock; signed-tree/public-verifier tests use genuine OSTree signatures with
+explicitly mocked verity ioctls/statx bits. The separate manager harness runs
+real registry/pending/bind logic with mocked verifier calls. These tests do not
+claim a complete enforcing Android install through the future phase-C flow.
 
 After the private-input boundary:
 

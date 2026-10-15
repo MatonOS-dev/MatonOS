@@ -22,7 +22,7 @@
 
 static inline const char* maton_verity_error(int code) {
     if (code == EOPNOTSUPP || code == ENOTTY)
-        return "fs-verity unsupported on /data";
+        return "Cannot trust /data, expected fs feature 'fs-verity' isn't available";
     if (code == ETXTBSY)
         return "staged file still open for writing";
     return "cannot seal staged file with fs-verity";
@@ -42,6 +42,8 @@ static inline int maton_verity_openat(int dir, const char* name, dev_t device,
     }
     struct stat st, before;
     int fd = -1;
+    int changed_mode = 0;
+    mode_t original_mode = 0;
     int saved;
     if (fstatat(dir, name, &before, AT_SYMLINK_NOFOLLOW)) {
         saved = errno; goto bad;
@@ -56,6 +58,15 @@ static inline int maton_verity_openat(int dir, const char* name, dev_t device,
     if (!S_ISREG(st.st_mode) || st.st_dev != device || st.st_uid != owner ||
             st.st_ino != before.st_ino) {
         saved = EPERM; goto close_bad;
+    }
+    /* ENABLE_VERITY checks inode write permission even though its fd must
+     * be read-only. Capture has already revoked producer metadata control.
+     * Preserve authenticated modes such as 0444 across this temporary owner
+     * write bit; a retained writer/mapping still fails ETXTBSY. */
+    original_mode = st.st_mode & 07777;
+    if (!(original_mode & 0200)) {
+        if (fchmod(fd, original_mode | 0200)) { saved = errno; goto close_bad; }
+        changed_mode = 1;
     }
     struct fsverity_enable_arg enable = {0};
     enable.version = 1;
@@ -78,8 +89,10 @@ static inline int maton_verity_openat(int dir, const char* name, dev_t device,
     if (digest->digest_algorithm != FS_VERITY_HASH_ALG_SHA256 || digest->digest_size != 32) {
         saved = EINVAL; goto close_bad;
     }
+    if (changed_mode && fchmod(fd, original_mode)) { saved = errno; goto close_bad; }
     return fd;
 close_bad:
+    if (changed_mode) (void)fchmod(fd, original_mode);
     close(fd);
 bad:
     if (error && error_size) snprintf(error, error_size, "%s", maton_verity_error(saved));
