@@ -8,33 +8,35 @@ typeattribute matonos_linuxd coredomain, mlstrustedsubject;
 init_daemon_domain(matonos_linuxd)
 type matonos_linuxd_tmpfs, file_type;
 tmpfs_domain(matonos_linuxd)
-# App-findable coarse transport; linuxd authenticates the device-signed stub.
-# protected_service would forbid untrusted_app_all from finding this service.
-type matonos_linuxd_service, app_api_service, service_manager_type;
+
+# linuxd Binder is limited to the subsystem app and bridge reconciliation.
+type matonos_linuxd_service, service_manager_type;
 allow matonos_linuxd matonos_linuxd_service:service_manager add;
 allow matonos_system_bridge matonos_linuxd_service:service_manager find;
-# app_api_service supplies stock untrusted_app_all find; keep the target
-# explicit here to document the authenticated stub -> linuxd exception.
-allow untrusted_app_all matonos_linuxd_service:service_manager find;
-binder_call(untrusted_app_all, matonos_linuxd)
 # Coarse Binder transport only; bridge methods enforce stub identity and scope.
 binder_call(untrusted_app_all, matonos_system_bridge)
 neverallow { domain -matonos_linuxd } matonos_linuxd_service:service_manager add;
 binder_use(matonos_linuxd)
 binder_call(matonos_system_bridge, matonos_linuxd)
-# linuxd sends asynchronous operation progress back to the bridge.
-binder_call(matonos_linuxd, matonos_system_bridge)
+
+# Package-specific privileged app identity. A dedicated domain is necessary:
+# staging write access and linuxd Binder are unsafe to grant to every priv_app.
+type matonos_linux_app, domain;
+typeattribute matonos_linux_app coredomain;
+app_domain(matonos_linux_app)
+net_domain(matonos_linux_app)
+binder_call(matonos_linux_app, matonos_linuxd)
+allow matonos_linux_app matonos_linuxd_service:service_manager find;
+allow matonos_linux_app system_file:dir r_dir_perms;
+allow matonos_linux_app system_file:file r_file_perms;
+allow matonos_linux_app matonos_flatpak_cli_exec:file { execute execute_no_trans getattr map open read };
+allow matonos_linux_app matonos_flatpak_deployment_file:dir search;
 
 # linuxd executes fixed install/query helpers; app launches stay in the stub.
 allow matonos_linuxd system_file:dir r_dir_perms;
 allow matonos_linuxd system_file:file { execute execute_no_trans getattr map open read };
-allow matonos_linuxd matonos_flatpak_store_file:dir r_dir_perms;
-allow matonos_linuxd matonos_flatpak_store_file:file r_file_perms;
-allow matonos_linuxd self:capability { setuid setgid chown };
-allow matonos_linuxd self:capability fowner;
-# Management remote-add retrieves repository configuration over HTTPS.
+allow matonos_linuxd self:capability chown;
 allow matonos_linuxd self:process { fork sigchld signal };
-net_domain(matonos_linuxd)
 
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.
@@ -72,46 +74,23 @@ allowxperm matonos_linuxd self:fifo_file ioctl { 0x5413 };
 # downloads use the separate data label below. Flatpak itself stages signed
 # refs in the shared repository before linuxd verifies and publishes them.
 # Flatpak app data remains a non-executable data_file_type.
-# Shared staging repository, populated only by the installer helper.
+# Shared staging repository, populated by the subsystem app and taken over by linuxd.
 type matonos_flatpak_staging_file, file_type, data_file_type, core_data_file_type;
-type matonos_flatpak_store_file, file_type, data_file_type, core_data_file_type;
 type matonos_linux_code_file, file_type, data_file_type, core_data_file_type;
 
-# Staging helper, exec'd by linuxd. It runs only the Flatpak no-deploy pull.
-type matonos_flatpak_installer, domain;
-typeattribute matonos_flatpak_installer coredomain, mlstrustedsubject;
-type matonos_flatpak_installer_exec, exec_type, system_file_type, file_type;
-allow matonos_linuxd matonos_flatpak_installer_exec:file { execute execute_no_trans getattr open read map };
-type_transition matonos_linuxd matonos_flatpak_installer_exec:process matonos_flatpak_installer;
-allow matonos_linuxd matonos_flatpak_installer:process transition;
-allow matonos_flatpak_installer matonos_flatpak_installer_exec:file entrypoint;
-allow matonos_flatpak_installer self:process { fork sigchld signal };
-allow matonos_flatpak_installer self:capability { setuid setgid };
-net_domain(matonos_flatpak_installer)
-allow matonos_flatpak_installer matonos_flatpak_staging_file:dir { create_dir_perms r_dir_perms };
-allow matonos_flatpak_installer matonos_flatpak_staging_file:file create_file_perms;
-allow matonos_flatpak_installer matonos_flatpak_cli_exec:file rx_file_perms;
-allow matonos_flatpak_installer matonos_linuxd:fd use;
+# The app creates only a private per-UID child; linuxd later validates and
+# takes over that tree. The staging root uses a sticky write/traverse mode.
+allow matonos_linux_app matonos_flatpak_staging_file:dir { add_name create getattr open read remove_name rmdir search setattr write };
+allow matonos_linux_app matonos_flatpak_staging_file:{ file lnk_file } create_file_perms;
+type_transition matonos_linux_app matonos_flatpak_staging_file:dir matonos_flatpak_staging_file;
 
 # linux-app: only linuxd writes deployment metadata; stub data belongs to PM.
 allow matonos_linuxd self:process setfscreate;
 
 # Init creates the encrypted system DE root; no per-user roots or vold patch.
-allow { matonos_linuxd matonos_flatpak_installer } system_data_file:dir { getattr search };
+allow matonos_linuxd system_data_file:dir { getattr search };
 
 # Round 1: staging is installer-owned storage, never executable app-home data.
-allow matonos_linuxd matonos_flatpak_store_file:dir { create_dir_perms relabelfrom relabelto };
-allow matonos_linuxd matonos_flatpak_store_file:{ file lnk_file } { create_file_perms relabelfrom relabelto };
-allow matonos_flatpak_installer matonos_flatpak_installer_exec:file rx_file_perms;
-allow matonos_flatpak_installer system_file:file { execute execute_no_trans read open getattr map };
-allow matonos_flatpak_installer proc_modules:file r_file_perms;
-# Child output and isatty(TCGETS) on linuxd's inherited pipe.
-allow matonos_flatpak_installer matonos_linuxd:fifo_file { read write getattr ioctl };
-allowxperm matonos_flatpak_installer matonos_linuxd:fifo_file ioctl { 0x5401 };
-allow matonos_linuxd matonos_flatpak_installer:process { rlimitinh siginh };
-allow matonos_linuxd system_userdir_file:dir { read open watch };
-allow matonos_linuxd apk_data_file:dir r_dir_perms;
-allow matonos_linuxd apk_data_file:file r_file_perms;
 # OSTree hardlinks its own metadata/objects during publication.
 allow matonos_linuxd matonos_flatpak_deployment_file:file ioctl;
 allowxperm matonos_linuxd matonos_flatpak_deployment_file:file ioctl { 0x9409 };
@@ -150,10 +129,6 @@ type sysfs_matonos_product_name, fs_type, sysfs_type;
 allow untrusted_app_all sysfs_matonos_product_name:file { open read };
 
 # OSTree publication: hardlinks, symlinks and FICLONE on managed storage.
-allow matonos_flatpak_installer matonos_flatpak_staging_file:file { link ioctl };
-allowxperm matonos_flatpak_installer matonos_flatpak_staging_file:file ioctl { 0x9409 };
-allow matonos_flatpak_installer matonos_flatpak_staging_file:lnk_file { create getattr rename };
-allow matonos_linuxd matonos_flatpak_store_file:{ file lnk_file } link;
 allow matonos_linuxd matonos_flatpak_deployment_file:{ dir file } relabelfrom;
 allow matonos_linuxd matonos_linux_code_file:file link;
 allow matonos_linuxd matonos_linux_code_file:lnk_file { getattr read relabelto relabelfrom unlink };
@@ -182,28 +157,13 @@ neverallow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_cod
 neverallow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file }:{ file lnk_file } { write append create unlink rename setattr relabelfrom relabelto };
 neverallow untrusted_app_all { matonos_flatpak_deployment_file matonos_linux_code_file }:file execute_no_trans;
 
-# The installer helper reaches its staging dir under /data/linux-app.
-allow matonos_flatpak_installer matonos_flatpak_deployment_file:dir search;
-
-# fpinstall: the downloader may search the store, but mutates staging only.
-allow matonos_flatpak_installer matonos_flatpak_store_file:dir search;
-allow matonos_flatpak_installer matonos_flatpak_staging_file:lnk_file { read unlink };
+# linuxd takes over app-created staging after the authenticated request.
 allow matonos_linuxd matonos_flatpak_staging_file:dir { create_dir_perms relabelfrom relabelto };
 allow matonos_linuxd matonos_flatpak_staging_file:{ file lnk_file } { create_file_perms relabelfrom relabelto };
 allow matonos_linuxd matonos_flatpak_staging_file:{ file lnk_file } link;
-allow matonos_flatpak_installer self:unix_stream_socket create_stream_socket_perms;
-unix_socket_connect(matonos_flatpak_installer, dnsproxyd, netd)
-neverallow matonos_flatpak_installer { matonos_flatpak_store_file matonos_flatpak_deployment_file matonos_linux_code_file }:dir { write add_name remove_name create rmdir setattr };
-neverallow matonos_flatpak_installer { matonos_flatpak_store_file matonos_flatpak_deployment_file matonos_linux_code_file }:{ file lnk_file } { write append create unlink rename setattr };
-# fpinstall: Flatpak's progress reader asks FIONREAD on linuxd's capture pipe.
-allow matonos_flatpak_installer matonos_linuxd:fifo_file ioctl;
-allowxperm matonos_flatpak_installer matonos_linuxd:fifo_file ioctl { 0x5413 };
-dontaudit matonos_linuxd matonos_flatpak_installer:process noatsecure;
 
-# Installer phase B: verity seals untrusted regular staging files before any
-# content verification. Zone: staging only; no app/installer domain receives
-# these commands, and no generic ioctl range is granted. Phase D owns the
-# compositor's staging access and the rest of the publication policy.
+# Verity seals untrusted regular staging files before content verification.
+# Only linuxd receives these two ioctls, scoped to staging files.
 allow matonos_linuxd matonos_flatpak_staging_file:file ioctl;
 allowxperm matonos_linuxd matonos_flatpak_staging_file:file ioctl {
     FS_IOC_ENABLE_VERITY FS_IOC_MEASURE_VERITY
