@@ -87,7 +87,7 @@ int main(int argc, char **argv)
         cases = ['good', 'content', 'mode', 'mode-exec-preserved', 'mode-world-writable', 'directory-mode', 'type', 'missing', 'unexpected', 'metadata',
                  'metadata-type', 'path', 'hardlink', 'external-hardlink', 'setuid', 'fifo', 'socket',
                  'symlink-escape', 'symlink-chain', 'signed-link-target',
-                 'extra-good', 'extra-chain-good', 'extra-chain-escape', 'extra-absolute',
+                 'extra-good', 'extra-unreadable', 'extra-chain-good', 'extra-chain-escape', 'extra-absolute',
                  'extra-hardlink', 'extra-fifo', 'extra-setgid', 'unauthorized-extra']
         selected = os.environ.get('MATON_TREE_TEST_CASES')
         if selected:
@@ -107,7 +107,9 @@ int main(int argc, char **argv)
                 extra.chmod(0o777)
                 data = extra / 'payload'; data.write_bytes(b'unsigned extra output'); data.chmod(0o666)
                 os.setxattr(data, 'user.attacker', b'not trusted')
-                if name == 'extra-chain-good':
+                if name == 'extra-unreadable':
+                    data.chmod(0); extra.chmod(0)
+                elif name == 'extra-chain-good':
                     (extra / 'middle').symlink_to('payload'); (extra / 'first').symlink_to('middle')
                 elif name == 'extra-chain-escape':
                     (extra / 'first').symlink_to('middle/passwd'); (extra / 'middle').symlink_to('/etc')
@@ -144,10 +146,10 @@ int main(int argc, char **argv)
                 links[0].unlink(); links[0].symlink_to('attacker-target')
             result = subprocess.run([str(binary), str(source), str(target), str(expected), '1' if name.startswith('extra-') else '0'], text=True, capture_output=True)
             if held_socket: held_socket.close()
-            assert result.returncode == (0 if name in ('good', 'extra-good', 'extra-chain-good') else 1), (name, result.returncode, result.stderr)
-            if name in ('good', 'extra-good', 'extra-chain-good'):
+            assert result.returncode == (0 if name in ('good', 'extra-good', 'extra-unreadable', 'extra-chain-good') else 1), (name, result.returncode, result.stderr)
+            if name in ('good', 'extra-good', 'extra-unreadable', 'extra-chain-good'):
                 assert (target / payload).stat().st_ino == inode, 'capture copied signed file'
-            if name in ('extra-good', 'extra-chain-good'):
+            if name in ('extra-good', 'extra-unreadable', 'extra-chain-good'):
                 assert (target / 'files/extra').stat().st_mode & 0o7777 == 0o755
                 assert (target / 'files/extra/payload').stat().st_mode & 0o7777 == 0o644
                 assert 'user.attacker' not in os.listxattr(target / 'files/extra/payload')

@@ -67,12 +67,13 @@ static inline int maton_staged_capture_inner(struct maton_staged_inodes* all,int
             if(!item||item->links!=st.st_nlink){rc=-1;break;}
             item->seen++;
             if(fchownat(source,e->d_name,owner,owner,AT_SYMLINK_NOFOLLOW)||
+                    fchmodat(source,e->d_name,(st.st_mode&0777)|0600,0)||
                     renameat(source,e->d_name,destination,e->d_name)){rc=-1;break;}
             int fd=openat(destination,e->d_name,O_RDONLY|O_NOFOLLOW|O_CLOEXEC|O_NONBLOCK);
             struct stat now;
             if(fd<0){rc=-1;break;}
             if(fstat(fd,&now)||now.st_ino!=st.st_ino||now.st_dev!=device||now.st_nlink!=st.st_nlink||
-                    fchmod(fd,st.st_mode&0777))rc=-1;
+                    fchmod(fd,(st.st_mode&0777)|0600))rc=-1;
             char attrs[65536];ssize_t n=rc?-1:flistxattr(fd,attrs,sizeof(attrs));
             if(n<0)rc=-1;
             for(ssize_t i=0;!rc&&i<n;) {
@@ -84,7 +85,7 @@ static inline int maton_staged_capture_inner(struct maton_staged_inodes* all,int
             close(fd);
             if(!rc) {
                 fd=maton_verity_openat(destination,e->d_name,device,owner,error,size);
-                if(fd<0)rc=-1;else {rc=fsync(fd);close(fd);}
+                if(fd<0)rc=-1;else {rc=fchmod(fd,st.st_mode&0777)||fsync(fd);close(fd);}
             }
         } else if(S_ISLNK(st.st_mode)) {
             char text[4096];ssize_t n=readlinkat(source,e->d_name,text,sizeof(text)-1);
@@ -135,12 +136,12 @@ static inline int maton_staged_extra(int root,int dir,dev_t device,unsigned dept
             int fd=(int)syscall(SYS_openat2,root,path,&how,sizeof(how));
             if(fd<0)rc=-1;else close(fd);
         }else if(S_ISDIR(st.st_mode)){
+            if(fchmodat(dir,e->d_name,0755,0)){rc=-1;break;}
             int fd=openat(dir,e->d_name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
             if(fd<0)rc=-1;else{rc=fchmod(fd,0755)||maton_staged_extra(root,fd,device,depth+1,path,error,size);close(fd);}
         }else if(!S_ISREG(st.st_mode)||st.st_nlink!=1)rc=-1;
         else {
-            int fd=openat(dir,e->d_name,O_RDONLY|O_NOFOLLOW|O_CLOEXEC);
-            if(fd<0)rc=-1;else{rc=fchmod(fd,(st.st_mode&0111)?0755:0644);close(fd);}
+            rc=fchmodat(dir,e->d_name,(st.st_mode&0111)?0755:0644,0);
         }
     }
     closedir(entries);
@@ -174,6 +175,7 @@ static inline int maton_staged_compare_inner(int actual,int expected,dev_t actua
                 (!enable&&(a.st_uid!=1000||(!S_ISLNK(a.st_mode)&&(a.st_mode&0022))))){rc=-1;break;}
         if(allow_extra==2&&!strcmp(e->d_name,"extra")) {
             if(!S_ISDIR(a.st_mode)){rc=-1;break;}
+            if(fchmodat(actual,e->d_name,0755,0)){rc=-1;break;}
             int fd=openat(actual,e->d_name,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
             if(fd<0)rc=-1;else{rc=fchmod(fd,0755)||maton_staged_extra(fd,fd,actual_device,0,"",error,size);close(fd);}
             /* A signed extra/ subtree must still compare; unsigned children
