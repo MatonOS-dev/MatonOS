@@ -47,12 +47,15 @@ Done on the branch (all host-tested; I re-ran the suites myself):
 | loader file-backed maps + refusal fallback | e42df60, 494309e | done, suite passes |
 | 4c PackageInstaller sessions | 262c187 (planning + tests only) | **blocked on a decision** |
 
-## Open decision (ask the user first)
+## 4c decision
 
-Android requires splits' `versionCode` == base. Recommendation sent, not yet answered:
-**fixed `versionCode` + increasing `revisionCode`**, and move the **index into its own split** so updates are
-split-only (`setDontKillApp(true)`, app keeps running on old pinned APKs, switches on next launch). Base only changes
-when the stub itself changes. Brief to finish: `out/pc-logs/agents/pack-4c.md` + this decision.
+Android requires splits' `versionCode` == base.
+- **APPROVED by the user (2026-10-15 night): option A** — fixed `versionCode`, increasing `revisionCode`, inherit
+  unchanged splits (option B, bumping versionCode and rewriting every split, is rejected).
+- **Still to confirm with the user:** moving the **index into its own split** so updates are split-only
+  (`setDontKillApp(true)`, app keeps running on old pinned APKs, switches on next launch; base only changes when the
+  stub itself changes). Without it, every update restarts the app because the index lives in base.
+Brief to finish: `out/pc-logs/agents/pack-4c.md` + option A (+ index split if confirmed).
 
 ## Next, in order
 1. 4c with the decision above.
