@@ -49,12 +49,6 @@ final class FlatpakStubIdentity {
             signers[0]!=null&&expectedCertificate!=null&&expectedCertificate.length>0&&
             MessageDigest.isEqual(signers[0],expectedCertificate);
     }
-    /** Task ownership is independent of the stub's signer/ref authentication. */
-    static boolean ownsWindow(int callerUid, int callerUser, int activeUser, int taskUser,
-            int taskUid, int topUid, String activityName, boolean hasToken, boolean freeform) {
-        return callerUid >= 0 && callerUser == activeUser && taskUser == callerUser
-                && taskUid == callerUid && topUid == callerUid && hasToken && freeform
-                && "org.matonos.linux.stub.StubActivity".equals(activityName);
-    }
+
 
 }

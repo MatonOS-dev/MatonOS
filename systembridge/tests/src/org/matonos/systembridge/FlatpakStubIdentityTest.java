@@ -50,16 +50,6 @@ public final class FlatpakStubIdentityTest {
         assertFalse(FlatpakStubIdentity.refMatchesDeclared(null,REF));
         assertFalse(FlatpakStubIdentity.refMatchesDeclared(REF,null));
     }
-    @Test public void windowOwnershipIsSelfOnlyAndActiveUserOnly() {
-        String activity="org.matonos.linux.stub.StubActivity";
-        assertTrue(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210087,210087,activity,true,true));
-        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,0,2,210087,210087,activity,true,true));
-        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,0,210087,210087,activity,true,true));
-        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210088,210087,activity,true,true));
-        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210087,210088,activity,true,true));
-        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210087,210087,"other.Activity",true,true));
-        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210087,210087,activity,false,true));
-        assertFalse(FlatpakStubIdentity.ownsWindow(210087,2,2,2,210087,210087,activity,true,false));
-    }
+
 
 }

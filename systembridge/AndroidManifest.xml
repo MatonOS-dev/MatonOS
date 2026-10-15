@@ -66,10 +66,6 @@
             android:permission="org.matonos.permission.MANAGE_LINUX_APPS">
             <intent-filter><action android:name="org.matonos.systembridge.LINUX_APP_STORE" /></intent-filter>
         </service>
-        <!-- Stubs have only self-task capabilities, authenticated by device signature
-             and task UID. Never grant them the general SYSTEM_BRIDGE permission. -->
-        <service android:name=".SystemBridgeService$LinuxWindowService"
-            android:exported="true" android:singleUser="true" />
         <receiver android:name=".BridgeBootReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

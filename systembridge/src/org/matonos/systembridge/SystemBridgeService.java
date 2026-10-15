@@ -1,9 +1,7 @@
 package org.matonos.systembridge;
 
 import android.app.ActivityManager;
-import android.app.ActivityTaskManager;
 import android.app.AppOpsManager;
-import android.app.WindowConfiguration;
 import android.app.Service;
 import android.hardware.display.DisplayManager;
 import android.content.Context;
@@ -31,8 +29,6 @@ import android.graphics.Point;
 import android.graphics.Bitmap;
 import android.window.TaskSnapshot;
 import android.window.TaskSnapshotManager;
-import android.window.WindowContainerTransaction;
-import android.window.WindowOrganizer;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -78,18 +74,6 @@ public final class SystemBridgeService extends Service {
         @Override public void onDisplayRemoved(int displayId) { publishDisplayGeometry(); }
         @Override public void onDisplayChanged(int displayId) { publishDisplayGeometry(); }
     };
-
-    /** Separate binding: a stub gets these four self-only calls, never general trust. */
-    public static final class LinuxWindowService extends Service {
-        @Override public void onCreate() {
-            super.onCreate();
-            startService(new Intent(this, SystemBridgeService.class));
-        }
-        @Override public IBinder onBind(Intent intent) {
-            SystemBridgeService bridge = activeService;
-            return bridge == null ? null : bridge.linuxWindowBinder;
-        }
-    }
 
     /** The store capability is independent of the bridge's general target ACL. */
     public static final class LinuxAppStoreService extends Service {
@@ -420,176 +404,6 @@ public final class SystemBridgeService extends Service {
             finally {Binder.restoreCallingIdentity(token);}
         }
     };
-
-    private final Map<Integer, GeometryGesture> linuxGestures = new java.util.HashMap<>();
-    private boolean linuxWindowDenied(int uid, int taskId) {
-        Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=invalid_state_or_unavailable");
-        return false;
-    }
-
-    private final ILinuxWindowBridge.Stub linuxWindowBinder = new ILinuxWindowBridge.Stub() {
-        @Override public boolean beginGeometry(String ref, int taskId, int edges, IBinder lifetime) {
-            int uid = Binder.getCallingUid();
-            long identity = Binder.clearCallingIdentity();
-            try {
-                ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
-                if (!LinuxWindowBounds.validEdges(edges) || lifetime == null
-                        || !task.isVisible || !task.isFocused || (edges != 0 && !task.isResizeable)) return linuxWindowDenied(uid, taskId);
-                Display display = getSystemService(DisplayManager.class).getDisplay(task.displayId);
-                if (display == null) return linuxWindowDenied(uid, taskId);
-                Point size = new Point(); display.getRealSize(size);
-                if (size.x <= 0 || size.y <= 0) return linuxWindowDenied(uid, taskId);
-                android.graphics.Rect bounds = task.configuration.windowConfiguration.getBounds();
-                if (bounds.isEmpty()) return linuxWindowDenied(uid, taskId);
-                android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
-                display.getRealMetrics(metrics);
-                int defaultMin = Math.max(1, Math.round(task.defaultMinSize * metrics.density));
-                GeometryGesture gesture = new GeometryGesture(uid, taskId, ref, task.token, edges,
-                        new int[]{bounds.left, bounds.top, bounds.right, bounds.bottom},
-                        new int[]{0, 0, size.x, size.y},
-                        task.minWidth > 0 ? task.minWidth : defaultMin,
-                        task.minHeight > 0 ? task.minHeight : defaultMin, lifetime);
-                synchronized (linuxGestures) {
-                    GeometryGesture old = linuxGestures.remove(uid);
-                    if (old != null) old.close();
-                    try { lifetime.linkToDeath(gesture, 0); }
-                    catch (RemoteException error) { return linuxWindowDenied(uid, taskId); }
-                    linuxGestures.put(uid, gesture);
-                    geometryHandler.postDelayed(gesture::expire, 5000);
-                }
-                Log.i(TAG, "Linux geometry begin uid=" + uid + " task=" + taskId + " edges=" + edges);
-                return true;
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
-                throw error;
-            } finally { Binder.restoreCallingIdentity(identity); }
-        }
-        @Override public boolean updateGeometry(String ref, int taskId, float dx, float dy) {
-            int uid = Binder.getCallingUid();
-            long identity = Binder.clearCallingIdentity();
-            try {
-                ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
-                synchronized (linuxGestures) {
-                    GeometryGesture g = linuxGestures.get(uid);
-                    if (g == null || g.taskId != taskId || !g.ref.equals(ref)) return linuxWindowDenied(uid, taskId);
-                    if (!task.token.equals(g.token) || !task.isFocused || !task.isVisible
-                            || SystemClock.uptimeMillis() - g.lastUpdate > 5000
-                            || !Float.isFinite(dx) || !Float.isFinite(dy)
-                            || Math.abs(dx) > g.display[2] * 2f || Math.abs(dy) > g.display[3] * 2f) {
-                        linuxGestures.remove(uid); g.close(); return linuxWindowDenied(uid, taskId);
-                    }
-                    int[] b = LinuxWindowBounds.apply(g.start, g.display, g.edges,
-                            Math.round(dx), Math.round(dy), g.minWidth, g.minHeight);
-                    WindowContainerTransaction change = new WindowContainerTransaction()
-                            .setBounds(g.token, new android.graphics.Rect(b[0], b[1], b[2], b[3]));
-                    if (g.edges != 0) change.setDragResizing(g.token, true);
-                    new WindowOrganizer().applyTransaction(change);
-                    g.resizing = g.edges != 0;
-                    g.lastUpdate = SystemClock.uptimeMillis();
-                    Log.i(TAG, "Linux geometry update uid=" + uid + " task=" + taskId
-                            + " dx=" + dx + " dy=" + dy);
-                    return true;
-                }
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
-                throw error;
-            } finally { Binder.restoreCallingIdentity(identity); }
-        }
-        @Override public void endGeometry(String ref, int taskId) {
-            int uid = Binder.getCallingUid();
-            long identity = Binder.clearCallingIdentity();
-            try {
-                // Authenticate even end; a dead/destroyed task may no longer be enumerable.
-                if (!flatpakStubManager.ownsStub(uid, ref)) deny("linux geometry end", uid, "unverified stub");
-                synchronized (linuxGestures) {
-                    GeometryGesture g = linuxGestures.get(uid);
-                    if (g != null && g.taskId == taskId && g.ref.equals(ref)) {
-                        linuxGestures.remove(uid); g.close();
-                        Log.i(TAG, "Linux geometry end uid=" + uid + " task=" + taskId);
-                    } else if (g == null) {
-                        // A bridge process restart loses the lease map. The stub's
-                        // reconnect/end still clears its own task's resizing mode.
-                        try {
-                            ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
-                            new WindowOrganizer().applyTransaction(new WindowContainerTransaction()
-                                    .setDragResizing(task.token, false));
-                            Log.i(TAG, "Linux geometry recovery end uid=" + uid + " task=" + taskId);
-                        } catch (RuntimeException error) {
-                            Log.w(TAG, "Linux geometry recovery task unavailable=" + taskId, error);
-                        }
-                    }
-                }
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
-                throw error;
-            } finally { Binder.restoreCallingIdentity(identity); }
-        }
-    };
-
-    private ActivityManager.RunningTaskInfo ownedLinuxTask(int uid, String ref, int taskId) {
-        enforceNotBanned(uid, "linux window");
-        // The installer's per-device signer pre-approves this self-only
-        // capability. Never route stubs through the general permission/trust
-        // gate: they do not receive SYSTEM_BRIDGE or any daemon targets.
-        if (!flatpakStubManager.ownsStub(uid, ref)) deny("linux window", uid, "unverified stub");
-        int user = UserHandle.getUserId(uid);
-        if (user != ActivityManager.getCurrentUser()) deny("linux window", uid, "inactive user");
-        for (ActivityManager.RunningTaskInfo task : ActivityTaskManager.getInstance().getTasks(1000)) {
-            if (task.taskId != taskId) continue;
-            if (task.topActivityInfo != null && task.topActivityInfo.applicationInfo != null
-                    && FlatpakStubIdentity.ownsWindow(uid, user, ActivityManager.getCurrentUser(),
-                            task.userId, task.effectiveUid, task.topActivityInfo.applicationInfo.uid,
-                            task.topActivityInfo.name, task.token != null,
-                            task.getWindowingMode() == WindowConfiguration.WINDOWING_MODE_FREEFORM)) {
-                Log.i(TAG, "Authorized Linux window uid=" + uid + " task=" + taskId
-                        + " signer=stub scope=self-task");
-                return task;
-            }
-            break;
-        }
-        deny("linux window task=" + taskId, uid, "task is not the caller's freeform Linux window");
-        throw new AssertionError();
-    }
-
-    private final class GeometryGesture implements IBinder.DeathRecipient {
-        final int uid, taskId, edges, minWidth, minHeight;
-        final String ref;
-        final android.window.WindowContainerToken token;
-        final int[] start, display;
-        final IBinder lifetime;
-        boolean resizing;
-        long lastUpdate = SystemClock.uptimeMillis();
-        GeometryGesture(int uid, int taskId, String ref, android.window.WindowContainerToken token,
-                int edges, int[] start, int[] display, int minWidth, int minHeight, IBinder lifetime) {
-            this.uid=uid; this.taskId=taskId; this.ref=ref; this.token=token; this.edges=edges;
-            this.start=start; this.display=display; this.minWidth=minWidth; this.minHeight=minHeight;
-            this.lifetime=lifetime;
-        }
-        void close() {
-            lifetime.unlinkToDeath(this, 0);
-            if (!resizing) return;
-            resizing=false;
-            long identity = Binder.clearCallingIdentity();
-            try {
-                new WindowOrganizer().applyTransaction(new WindowContainerTransaction().setDragResizing(token, false));
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Linux resize cleanup unavailable task=" + taskId, error);
-            } finally { Binder.restoreCallingIdentity(identity); }
-        }
-        void expire() {
-            synchronized (linuxGestures) {
-                if (linuxGestures.get(uid) != this) return;
-                long remaining = 5000 - (SystemClock.uptimeMillis() - lastUpdate);
-                if (remaining > 0) geometryHandler.postDelayed(this::expire, remaining);
-                else { linuxGestures.remove(uid); close(); }
-            }
-        }
-        @Override public void binderDied() {
-            synchronized (linuxGestures) {
-                if (linuxGestures.get(uid) == this) { linuxGestures.remove(uid); close(); }
-            }
-        }
-    }
 
     /** Android owns the stub's whole process tree in v3; linuxd has no app PID. */
     private String stopOwnedFlatpak(FlatpakStubManager owner, String ref) throws Exception {
@@ -1048,10 +862,6 @@ public final class SystemBridgeService extends Service {
         if (navigationBarWindow != null) navigationBarWindow.close();
         if (geometryHandler != null) geometryHandler.removeCallbacksAndMessages(null);
         if (activeService == this) activeService = null;
-        synchronized (linuxGestures) {
-            for (GeometryGesture gesture : linuxGestures.values()) gesture.close();
-            linuxGestures.clear();
-        }
         super.onDestroy();
     }
 
