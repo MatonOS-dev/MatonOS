@@ -1492,6 +1492,17 @@ static int staged_existing_runtime(const char* system,const struct FlatpakStaged
     if(expected>=0)close(expected);
     close(actual);return rc;
 }
+/* Imported bare-user-only object modes are authenticated metadata. Make
+ * repository directories and generated controls readable without rewriting
+ * any object inode's signed permission bits (including unusual 0444/0711). */
+static int staged_repo_readable(const char* path,const struct stat* st,int type,struct FTW* walk) {
+    (void)walk;
+    if(type==FTW_SL)return 0;
+    if(type==FTW_D||type==FTW_DP)return chmod(path,0755);
+    if(!S_ISREG(st->st_mode))return -1;
+    if(strstr(path,"/objects/"))return 0;
+    return chmod(path,0644);
+}
 static int staged_target_repo(const char* target,const char* trusted_repo,const char* remote,
         const char* ref,const char* commit,int create) {
     char repo[PATH_MAX],remote_arg[160],create_arg[768];
@@ -1508,7 +1519,7 @@ static int staged_target_repo(const char* target,const char* trusted_repo,const 
     const char* pull[]={"pull-local","--untrusted","--gpg-verify",remote_arg,trusted_repo,commit};
     const char* refs[]={"refs","--force",create_arg,commit};
     return run_ostree(repo,pull,6,NULL,0)||run_ostree(repo,refs,4,NULL,0)||
-        nftw(repo,repo_world_readable,16,FTW_PHYS)||seal_object_files(repo);
+        nftw(repo,staged_repo_readable,16,FTW_PHYS)||seal_object_files(repo);
 }
 static int staged_activate_existing(const char* system,const struct FlatpakStagedDeployment* d) {
     int root=open(system,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);if(root<0)return -1;
