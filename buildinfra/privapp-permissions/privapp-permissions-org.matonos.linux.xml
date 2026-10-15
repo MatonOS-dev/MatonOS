@@ -2,5 +2,7 @@
 <permissions>
     <privapp-permissions package="org.matonos.linux">
         <permission name="org.matonos.permission.SYSTEM_BRIDGE" />
+        <permission name="android.permission.INSTALL_PACKAGES" />
+        <permission name="android.permission.DELETE_PACKAGES" />
     </privapp-permissions>
 </permissions>
