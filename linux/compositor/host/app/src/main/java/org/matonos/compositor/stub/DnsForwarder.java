@@ -85,6 +85,16 @@ final class DnsForwarder {
         } catch (Exception error) { closeQuietly(socket); throw error; }
     }
 
+    /** Releases the listener for this process, closing both sockets and the
+     *  per-client channels. A later {@link #acquire} binds a fresh forwarder,
+     *  so a host install never reuses another operation's deleted directory. */
+    static synchronized void release() {
+        if (udpServer != null) { try { udpServer.close(); } catch (Exception ignored) { } udpServer = null; }
+        if (tcpServer != null) { try { tcpServer.close(); } catch (Exception ignored) { } tcpServer = null; }
+        closeQuietly(udpSocket); closeQuietly(tcpSocket);
+        udpSocket = tcpSocket = null; udp = tcp = null; socketPath = null;
+    }
+
     static synchronized String endpoint() {
         int uid = android.os.Process.myUid();
         return String.format(java.util.Locale.ROOT, "127.%d.%d.%d:53",
@@ -97,8 +107,8 @@ final class DnsForwarder {
             try {
                 fds[0].revents = fds[1].revents = 0;
                 if (Os.poll(fds, -1) <= 0) continue;
-                if ((fds[0].revents & OsConstants.POLLIN) != 0) accept(udpServer, false);
-                if ((fds[1].revents & OsConstants.POLLIN) != 0) accept(tcpServer, true);
+                if (udpServer != null && (fds[0].revents & OsConstants.POLLIN) != 0) accept(udpServer, false);
+                if (tcpServer != null && (fds[1].revents & OsConstants.POLLIN) != 0) accept(tcpServer, true);
             } catch (ErrnoException error) {
                 if (error.errno != OsConstants.EINTR) { Log.e(TAG, "DNS forwarder stopped", error); return; }
             } catch (Exception error) {

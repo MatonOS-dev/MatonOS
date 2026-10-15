@@ -1,7 +1,6 @@
 package org.matonos.compositor.stub;
 
 import android.content.Context;
-import android.content.pm.ApplicationInfo;
 import android.util.Log;
 import org.json.JSONObject;
 import org.matonos.compositor.PerAppRuntime;
@@ -55,10 +54,7 @@ final class V3Launcher {
         String root="/data/linux-app";
         File current=new File(root+"/install/"+(uid%100000));
         // PackageManager follows signature-verified updates of the image host.
-        ApplicationInfo host = context.getPackageManager().getApplicationInfo("org.matonos.compositor", 0);
-        File loader = new File(host.nativeLibraryDir, "libmatonos-v3-loader.so");
-        if (!loader.isFile() || !loader.canExecute())
-            throw new IllegalStateException("Update the Linux host: v3 loader is missing");
+        File loader = LoaderCommand.loader(context);
         PerAppRuntime runtime = StubService.runtime();
         if (runtime == null) throw new IllegalStateException("Application runtime is unavailable");
         // Canonical paths: /data/user/0 is a symlink to /data/data, and Flatpak
@@ -70,31 +66,21 @@ final class V3Launcher {
             if (!directory.isDirectory() && !directory.mkdirs())
                 throw new java.io.IOException("Cannot create application directory " + directory);
         File resolv = new File(cache, "v3-resolv.conf");
-        String dns = DnsForwarder.endpoint().replaceFirst(":53$", "");
-        if (!dns.matches("127\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}"))
-            throw new IllegalArgumentException("Invalid per-app DNS endpoint");
-        Files.write(resolv.toPath(), ("nameserver " + dns + "\n").getBytes(StandardCharsets.UTF_8));
+        String dns = LoaderCommand.resolverAddress();
+        LoaderCommand.writeResolv(resolv, dns);
         ArrayList<String> command = new ArrayList<>();
         command.add(loader.getAbsolutePath());
         // adb (root): touch <cache>/v3-trace to log every trapped call.
         if (new File(cache, "v3-trace").exists()) command.add("--trace");
         if (context.checkSelfPermission(android.Manifest.permission.INTERNET) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            String dnsSocket = DnsForwarder.acquire(runtime.directory());
-            if (!DnsForwarder.endpoint().equals(dns + ":53") || dnsSocket == null)
-                throw new IllegalStateException("Per-app DNS forwarder is unavailable");
-            command.add("--dns-forwarder"); command.add(dns + ":53");
-            command.add("--dns-socket"); command.add(dnsSocket);
+            LoaderCommand.addDns(command, dns, runtime.directory());
         }
         File commandSocket=new File(runtime.directory(),"host-command");
         if(commandSocket.exists()&&!commandSocket.delete())throw new java.io.IOException("Cannot remove stale command socket");
         command.add("--host-command");command.add(commandSocket.getAbsolutePath());
         command.add("--parent-pid"); command.add(Integer.toString(android.os.Process.myPid()));
-        command.add("--map"); command.add(resolv.getAbsolutePath()); command.add("/etc/resolv.conf");
-        // On the host /etc is a symlink to /system/etc. The VFS walks that
-        // ancestor before selecting the leaf map. Flatpak's SessionHelper
-        // fallback tests this canonical host path, then binds it into the app.
-        command.add("--map"); command.add(resolv.getAbsolutePath()); command.add("/system/etc/resolv.conf");
+        LoaderCommand.addResolvMaps(command, resolv);
         File x11 = new File(runtime.directory(), "x11");
         if (x11.isDirectory()) {
             command.add("--map"); command.add(x11.getAbsolutePath()); command.add("/tmp/.X11-unix");
