@@ -30,6 +30,8 @@ import java.util.concurrent.TimeUnit;
 /** Reconciles installed Flatpaks with signed Android launcher packages. */
 final class FlatpakStubManager {
     private static final String TAG = "MatonFlatpakStubs";
+    /** linuxd's exact rejection when a staged file kept a writer open. */
+    private static final String MISBEHAVING = "warning, subsystem app is misbehaving.";
     private final Context context;
     private final java.util.Map<Integer, FlatpakStubManager> users = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -561,9 +563,29 @@ final class FlatpakStubManager {
         // failure already tried, so this also retries a deferred cleanup.
         try { daemon().call("abort_staged_install", new JSONObject().put("operationId", operation).toString()); }
         catch (Exception cleanup) { Log.e(TAG, "Deployment cleanup deferred", cleanup); }
+        // linuxd found a staging writer that outlived the worker: restart the
+        // compositor so the next attempt starts from a clean process. linuxd
+        // never kills an app itself.
+        if (misbehaved(error)) forceStopCompositor();
         try { daemon().call("install_failed", handoffArgs(ref, remote, operation)
                 .put("error", error.toString()).toString()); }
         catch (Exception reporting) { Log.e(TAG, "Cannot report install failure", reporting); }
+    }
+
+    /** True when any cause in the chain carries linuxd's misbehaviour error. */
+    private static boolean misbehaved(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause())
+            if (MISBEHAVING.equals(cause.getMessage())) return true;
+        return false;
+    }
+
+    private void forceStopCompositor() {
+        try {
+            android.app.ActivityManager manager = context.getSystemService(android.app.ActivityManager.class);
+            if (manager == null) { Log.w(TAG, "Cannot restart the compositor: ActivityManager unavailable"); return; }
+            manager.forceStopPackage(CompositorInstall.PACKAGE, context.getUserId());
+            Log.i(TAG, "Force-stopped the compositor after a retained staging writer");
+        } catch (Exception error) { Log.w(TAG, "Cannot force-stop the compositor", error); }
     }
 
     private void bindFinalStub(String ref, String remote, String operation, boolean newlyInstalled) {
