@@ -66,6 +66,9 @@ final class FlatpakStubManager {
     }
     private static final Set<String> installOperations = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor();
+    // Network installs must not hold up the bridge's 30-second reconciliation
+    // and package-removal work. Keep install serialization separate.
+    private final java.util.concurrent.ExecutorService installWorker = Executors.newSingleThreadExecutor();
     private ILinuxd subscribedDaemon;
     private boolean removalReceiverRegistered;
     private final ILinuxdListener listener = new ILinuxdListener.Stub() {
@@ -198,7 +201,7 @@ final class FlatpakStubManager {
         context.registerReceiverAsUser(removed,android.os.UserHandle.ALL,filter,null,null);
         removalReceiverRegistered=true;
     }
-    void close() { if(removalReceiverRegistered)context.unregisterReceiver(removed);worker.shutdownNow(); for (FlatpakStubManager user : users.values()) user.close(); }
+    void close() { if(removalReceiverRegistered)context.unregisterReceiver(removed);worker.shutdownNow();installWorker.shutdownNow(); for (FlatpakStubManager user : users.values()) user.close(); }
     void refresh() { worker.execute(this::reconcile); }
 
     String launch(String appId) throws Exception {
@@ -538,7 +541,7 @@ final class FlatpakStubManager {
                 ? java.util.UUID.randomUUID().toString() : args.getString("operationId");
         if (!operationId.matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("Invalid operation ID");
         if (!installOperations.add(operationId)) throw new IllegalStateException("Operation ID already in use");
-        worker.execute(() -> {
+        installWorker.execute(() -> {
             try { installStub(ref, remote, operationId); }
             catch (Exception error) { failInstall(ref, remote, operationId, error); }
         });
