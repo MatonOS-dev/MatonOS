@@ -24,7 +24,7 @@ static inline const char* maton_verity_error(int code) {
     if (code == EOPNOTSUPP || code == ENOTTY)
         return "Cannot trust /data, expected fs feature 'fs-verity' isn't available";
     if (code == ETXTBSY)
-        return "staged file still open for writing";
+        return "warning, subsystem app is misbehaving.";
     return "cannot seal staged file with fs-verity";
 }
 

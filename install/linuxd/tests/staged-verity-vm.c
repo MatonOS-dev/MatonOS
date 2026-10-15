@@ -16,13 +16,13 @@ static void regression(void) {
     assert(writer>=0 && write(writer,"verified code\n",14)==14);
     int sealed=maton_verity_openat(dir,"payload",st.st_dev,getuid(),error,sizeof(error));
     assert(sealed<0 && errno==ETXTBSY);
-    assert(!strcmp(error,"staged file still open for writing"));
+    assert(!strcmp(error,"warning, subsystem app is misbehaving."));
     char* mapping=mmap(NULL,14,PROT_READ|PROT_WRITE,MAP_SHARED,writer,0);
     assert(mapping!=MAP_FAILED);assert(!close(writer));
     assert(!fchmodat(dir,"payload",0444,0));
     sealed=maton_verity_openat(dir,"payload",st.st_dev,getuid(),error,sizeof(error));
     assert(sealed<0 && errno==ETXTBSY);
-    assert(!strcmp(error,"staged file still open for writing"));
+    assert(!strcmp(error,"warning, subsystem app is misbehaving."));
     struct stat absent;assert(fstatat(dir,"published",&absent,0)<0 && errno==ENOENT);
     memcpy(mapping,"modified code\n",14);assert(!msync(mapping,14,MS_SYNC));
     assert(!munmap(mapping,14));

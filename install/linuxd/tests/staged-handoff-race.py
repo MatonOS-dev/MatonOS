@@ -62,14 +62,14 @@ def main():
         with source.open("r+b"):
             code, message = seal("payload", staging)
             assert code == errno.ETXTBSY, (code, message)
-            assert message == "staged file still open for writing"
+            assert message == "warning, subsystem app is misbehaving."
         with source.open("r+b") as writer:
             mapping = mmap.mmap(writer.fileno(), 0, access=mmap.ACCESS_WRITE)
         try:
             os.chmod(source, 0o444)
             code, message = seal("payload", staging)
             assert code == errno.ETXTBSY, (code, message)
-            assert message == "staged file still open for writing"
+            assert message == "warning, subsystem app is misbehaving."
             # A failed immutable-input boundary must never reach rename.
             published = root / "published"
             if code == 0:
