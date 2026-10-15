@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include "FlatpakPublish.h"
+#include "StagedVerity.h"
 #include "PendingDeployment.h"
 #include "StoreUpdate.h"
 
@@ -1123,4 +1124,20 @@ int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
 bad:
     if (created) remove_staging_as(installer_uid, operation_id);
     return -1;
+}
+
+/* Phase B file primitive. The registered-operation verifier must supply a
+ * pinned, exclusively linuxd-owned directory, never a producer path. A seal
+ * alone is not a signed-deployment verification or publication permission. */
+int flatpak_seal_staged_file(int directory, const char* component,
+        char* error, unsigned long error_size) {
+    struct stat st;
+    if (fstat(directory, &st) || !S_ISDIR(st.st_mode) ||
+            st.st_uid != AID_SYSTEM || (st.st_mode & 0022)) {
+        fail(error, error_size, "staging directory is not exclusively linuxd-owned");
+        errno = EPERM;
+        return -1;
+    }
+    return maton_verity_openat(directory, component, st.st_dev, AID_SYSTEM,
+            error, error_size);
 }

@@ -8,6 +8,12 @@
 extern "C" {
 #endif
 
+/* Seal one regular file in a pinned, exclusively linuxd-owned directory.
+ * Return a measured read-only fd (caller closes), or -1 with an error. This
+ * primitive alone does not authenticate or publish a staged deployment. */
+int flatpak_seal_staged_file(int directory, const char* component,
+        char* error, unsigned long error_size);
+
 /* Per-thread staging output observer; exec children never invoke it. */
 void flatpak_publish_progress(void (*callback)(const char*));
 

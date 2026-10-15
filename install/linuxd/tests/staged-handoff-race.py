@@ -1,59 +1,89 @@
 #!/usr/bin/env python3
-"""Demonstrate why staged code needs a private/immutable verification input.
+"""Real fs-verity retained-writer regression against linuxd's seal primitive.
 
-This is a threat-model probe, not an installer implementation test. It uses
-only a temporary directory and the current UID. chmod/rename cannot revoke a
-MAP_SHARED writer; chown likewise does not invalidate an existing mapping.
-No Android installation or SELinux label is changed.
+Use MATON_VERITY_TEST_DIR on a verity-enabled filesystem. An unsupported
+filesystem is a SKIP (77), never a successful mapping regression. Pass
+--require-verity to make that condition a failure. No mount, Android install,
+or SELinux labels are changed. There is no private-copy alternative.
 """
-import hashlib
+import argparse
+import errno
 import mmap
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 
 
-def digest(path):
-    return hashlib.sha256(path.read_bytes()).digest()
-
-
 def main():
-    with tempfile.TemporaryDirectory(prefix="maton-staged-handoff-") as tmp:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--require-verity", action="store_true")
+    args = parser.parse_args()
+    with tempfile.TemporaryDirectory(prefix="maton-staged-handoff-",
+                                     dir=os.environ.get("MATON_VERITY_TEST_DIR")) as tmp:
         root = Path(tmp)
+        driver = root / "verity-driver"
+        subprocess.run([os.environ.get("CC", "cc"), "-Wall", "-Wextra", "-Werror",
+                        "-DMATONOS_PUBLISH_HOST_TEST", "-ffunction-sections",
+                        "-fdata-sections", "-Wl,--gc-sections",
+                        str(Path(__file__).with_name("staged-verity-driver.c")),
+                        str(Path(__file__).parents[1] / "FlatpakPublish.c"),
+                        "-o", str(driver)], check=True)
+
+        def seal(name, parent=root):
+            result = subprocess.run([str(driver), str(parent), name], check=True,
+                                    text=True, capture_output=True)
+            code, _, message = result.stdout.partition("\n")
+            return int(code), message.strip()
+
+        # Detect unsupported filesystems using an inode with no writers. Do
+        # not misreport EOPNOTSUPP as proof of retained-writer protection.
+        control = root / "control"
+        control.write_bytes(b"sealed code\n")
+        code, message = seal("control")
+        if code in (errno.EOPNOTSUPP, errno.ENOTTY):
+            assert message == "fs-verity unsupported on /data"
+            print("SKIP: real verity mapping regression: filesystem unsupported")
+            return 1 if args.require_verity else 77
+        assert code == 0, (code, message)
+        try:
+            control.open("r+b").close()
+        except OSError as exc:
+            assert exc.errno == errno.EPERM, exc
+        else:
+            raise AssertionError("sealed control reopened for writing")
+
         staging = root / "staging"
         staging.mkdir()
         source = staging / "payload"
-        original = b"verified code\n"
-        replaced = b"modified code\n"
-        assert len(original) == len(replaced)
-        source.write_bytes(original)
+        source.write_bytes(b"verified code\n")
+        # Exercise a writer fd independently, then a mapping whose original
+        # writable fd has been closed. Both must make sealing fail ETXTBSY.
+        with source.open("r+b"):
+            code, message = seal("payload", staging)
+            assert code == errno.ETXTBSY, (code, message)
+            assert message == "staged file still open for writing"
         with source.open("r+b") as writer:
-            with mmap.mmap(writer.fileno(), 0, access=mmap.ACCESS_WRITE) as mapping:
-                expected = digest(source)
-                # A producer can keep this mapping after reporting completion.
-                os.chmod(source, 0o444)
-                published = root / "published"
+            mapping = mmap.mmap(writer.fileno(), 0, access=mmap.ACCESS_WRITE)
+        try:
+            os.chmod(source, 0o444)
+            code, message = seal("payload", staging)
+            assert code == errno.ETXTBSY, (code, message)
+            assert message == "staged file still open for writing"
+            # A failed immutable-input boundary must never reach rename.
+            published = root / "published"
+            if code == 0:
                 staging.rename(published)
-                target = published / "payload"
-                assert digest(target) == expected
-                mapping[:] = replaced
-                mapping.flush()
-                assert digest(target) != expected
-                assert target.stat().st_mode & 0o777 == 0o444
-                print("CONFIRMED: writable mapping changes verified renamed file")
-
-                # A private inode breaks the producer's alias. Verification
-                # must happen on this copy, not before copying the source.
-                private = root / "private"
-                private.write_bytes(target.read_bytes())
-                private_expected = digest(private)
-                mapping[:] = original
-                mapping.flush()
-                assert digest(private) == private_expected
-                assert digest(target) != private_expected
-                assert private.stat().st_ino != target.stat().st_ino
-                print("PASS: private inode remains unchanged by producer mapping")
+            assert not published.exists()
+            mapping[:] = b"modified code\n"
+            mapping.flush()
+        finally:
+            mapping.close()
+        assert seal("payload", staging)[0] == 0
+        print("PASS: retained writer fd and mapping reject sealing; no publication")
+        print("PASS: seal succeeds after writer release; sealed control rejects writes")
+        return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
