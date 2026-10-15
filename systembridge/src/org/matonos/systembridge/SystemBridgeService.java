@@ -428,27 +428,6 @@ public final class SystemBridgeService extends Service {
     }
 
     private final ILinuxWindowBridge.Stub linuxWindowBinder = new ILinuxWindowBridge.Stub() {
-        @Override public boolean setClientDecorated(String ref, int taskId, boolean decorated) {
-            int uid = Binder.getCallingUid();
-            long identity = Binder.clearCallingIdentity();
-            try {
-                ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
-                // Reflection keeps this app usable on a stock framework. Hidden APIs
-                // are confined to the bridge; missing hook means a clean false result.
-                android.view.IWindowManager wm = android.view.WindowManagerGlobal.getWindowManagerService();
-                Object result = android.view.IWindowManager.class.getMethod(
-                        "setMatonosClientDecorated", int.class, int.class, boolean.class)
-                        .invoke(wm, task.taskId, uid, decorated);
-                Log.i(TAG, "Linux caption uid=" + uid + " task=" + taskId + " decorated=" + decorated + " accepted=" + result);
-                return Boolean.TRUE.equals(result);
-            } catch (ReflectiveOperationException error) {
-                Log.w(TAG, "Optional Linux caption framework hook unavailable", error);
-                return linuxWindowDenied(uid, taskId);
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
-                throw error;
-            } finally { Binder.restoreCallingIdentity(identity); }
-        }
         @Override public boolean beginGeometry(String ref, int taskId, int edges, IBinder lifetime) {
             int uid = Binder.getCallingUid();
             long identity = Binder.clearCallingIdentity();

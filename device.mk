@@ -188,8 +188,6 @@ PRODUCT_VENDOR_PROPERTIES += ro.logd.size=16M
 PRODUCT_SYSTEM_EXT_PROPERTIES += \
     sys.use_memfd=true
 
-# Optional self-task caption hook in the frameworks/base fork; default-off upstream.
-PRODUCT_SYSTEM_EXT_PROPERTIES += ro.matonos.client_decorations=true
 
 # Legacy charger/libsuspend must not become a second suspend policy on PCs.
 # The stock AIDL charger already returns false; pin the legacy HIDL default too.
