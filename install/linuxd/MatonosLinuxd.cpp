@@ -293,9 +293,16 @@ int PackageUid(const char* package) {
 }
 
 bool IsSubsystemCaller() {
-    android::IPCThreadState* state = android::IPCThreadState::self();
-    int uid=PackageUid("org.matonos.linux");
-    return uid>=0 && state->getCallingUid()==static_cast<uid_t>(uid);
+    const uid_t callingUid = android::IPCThreadState::self()->getCallingUid();
+    // PermissionController resolves the package's appId in user 0. Android
+    // assigns the same appId to that package for each user, so reconstruct the
+    // expected per-user UID from the Binder caller instead of authorizing only
+    // the primary user's subsystem process.
+    const int userId = static_cast<int>(callingUid / 100000);
+    const int baseUid = PackageUid("org.matonos.linux");
+    if (baseUid < 0 || userId < 0) return false;
+    const uid_t expectedUid = static_cast<uid_t>(userId * 100000 + baseUid % 100000);
+    return callingUid == expectedUid;
 }
 
 bool IsTrustedCaller() {
