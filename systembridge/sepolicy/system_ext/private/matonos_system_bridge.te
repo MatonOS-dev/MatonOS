@@ -199,3 +199,12 @@ neverallow matonos_flatpak_installer { matonos_flatpak_store_file matonos_flatpa
 allow matonos_flatpak_installer matonos_linuxd:fifo_file ioctl;
 allowxperm matonos_flatpak_installer matonos_linuxd:fifo_file ioctl { 0x5413 };
 dontaudit matonos_linuxd matonos_flatpak_installer:process noatsecure;
+
+# Installer phase B: verity seals untrusted regular staging files before any
+# content verification. Zone: staging only; no app/installer domain receives
+# these commands, and no generic ioctl range is granted. Phase D owns the
+# compositor's staging access and the rest of the publication policy.
+allow matonos_linuxd matonos_flatpak_staging_file:file ioctl;
+allowxperm matonos_linuxd matonos_flatpak_staging_file:file ioctl {
+    FS_IOC_ENABLE_VERITY FS_IOC_MEASURE_VERITY
+};

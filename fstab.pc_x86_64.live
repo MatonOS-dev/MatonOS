@@ -4,7 +4,9 @@
 # system/vendor/... come from the image's own `super` partition; the boot disk
 # is found via androidboot.boot_part_uuid. /data and /metadata are RAM disks
 # (brd, created by brd.rd_nr=2 on the cmdline) formatted fresh on every boot,
-# so nothing persists.
+# so nothing persists. fs_mgr formats ram0, then its fsverity mount precheck
+# enables the ext4 feature with tune2fs -O verity before mounting /data.
+# tools/make-live.sh does not format or contain a userdata filesystem.
 #
 # /metadata is not first_stage_mount here: nothing needs it that early (no
 # metadata encryption, no OTA snapshots) and the RAM disk nodes only need to
@@ -20,7 +22,7 @@ vendor             /vendor      erofs  ro                                  wait,
 odm                /odm         erofs  ro                                  wait,logical,first_stage_mount,slotselect
 
 /dev/block/ram1    /metadata    ext4   nodev,noatime,nosuid                wait,formattable
-/dev/block/ram0    /data        ext4   nodev,noatime,nosuid,errors=panic   latemount,wait,quota,formattable,reservedsize=64M,fileencryption=aes-256-xts:aes-256-cts:v2
+/dev/block/ram0    /data        ext4   nodev,noatime,nosuid,errors=panic   latemount,wait,quota,fsverity,formattable,reservedsize=64M,fileencryption=aes-256-xts:aes-256-cts:v2
 
 /dev/block/zram0   none         swap   defaults                            zramsize=50%
 

@@ -96,24 +96,42 @@ can deny subsequent write syscalls but must not be assumed to revoke an
 already writable mapping. Killing the worker is insufficient when the
 compositor itself is the untrusted output producer.
 
-Before checksumming, linuxd needs private input that the compositor cannot
-modify during or after verification. Two possible mechanisms need a decision:
+User decision (2026-10-15): seal every staged regular inode with fs-verity;
+there is **no copy fallback**. linuxd first takes exclusive ownership of the
+directory namespace, opens each regular file read-only, enables verity with
+SHA-256/4096-byte blocks, and measures the seal. It authenticates signed bytes
+through that sealed FD. The verity measurement is not the OSTree checksum:
+OSTree must still check its own content and metadata hashes. An existing seal
+is usable only after measuring and checking its hash algorithm and size.
 
-- Copy regular files into a linuxd-only operation tree, without preserving
-  untrusted hardlinks. Copy symlink text without following it. Verify the
-  private copy, then rename it into place on the same filesystem. Reconstruct
-  hardlink sharing only between independently verified trusted store objects.
-- Seal every staged regular inode using an enforcing immutable mechanism
-  before verification, and revoke all directory mutation before traversing.
-  fs-verity may provide the regular-file part, but requires filesystem feature
-  support, ioctl/policy integration, and fail-closed handling of existing
-  writable descriptors/mappings. CONFIG_FS_VERITY alone is not evidence the
-  live/installed userdata filesystem supports it. Directory and symlink races
-  still need a separate solution. No such handoff exists in the current code.
+Any sealing failure rejects the entire transaction and collects staging.
+EOPNOTSUPP/ENOTTY reports "fs-verity unsupported on /data" (filesystem/build
+bug); ETXTBSY reports "staged file still open for writing" (producer retained
+a writer or writable mapping). Other errors fail closed. Neither copying nor
+an unsealed rename is an alternative. Directory entries and symlinks still
+need the independent owned/rebuilt namespace boundary; verity does not cover
+them. Never enable verity and then assume the directory tree is authenticated.
 
-Do not silently implement direct rename + recursive chown as that boundary.
-The regression probe in `install/linuxd/tests/staged-handoff-race.py` makes the
-writable-mapping problem reproducible without modifying a real installation.
+Implementation status: `StagedVerity.h` and
+`flatpak_seal_staged_file()` provide only the per-file sealing primitive.
+They are **not yet called by a transaction verifier**. Registration, namespace
+capture, signed deployed-tree verification, sanitized extra-data, bookkeeping
+reconstruction, runtime merging and routing remain to be implemented. The
+legacy prepare/deploy path remains active; phase B is not complete.
+
+Both userdata fstabs request `fsverity`. Live /data is ram0 formatted by stock
+`system/fs/fs_mgr/fs_mgr_format.cpp`, not by make-live. Stock fs_mgr's ext4
+mount precheck (`tune_verity` in `fs_mgr.cpp`) then runs `tune2fs -O verity`
+before mounting. No AOSP formatter patch or make-live formatter exists here.
+The narrow phase-B ioctl grant is linuxd → staging:file, commands 0x6685 and
+0x6686 only; phase D still owns compositor access and the other policy zones.
+
+`install/linuxd/tests/staged-handoff-race.py` now tests actual verity rejection
+of retained writer FDs/mappings using the same per-file primitive. Unsupported
+host filesystems return SKIP (77), or failure with `--require-verity`; they
+never count as a passing regression. `MATON_VERITY_TEST_DIR` selects a prepared
+verity-enabled filesystem. Syscall-contract tests use an explicit compile-time
+mock and make no filesystem or enforcing-policy success claim.
 
 After the private-input boundary:
 
