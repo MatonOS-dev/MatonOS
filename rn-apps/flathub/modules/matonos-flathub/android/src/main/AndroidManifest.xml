@@ -3,8 +3,13 @@
   <uses-permission android:name="org.matonos.permission.INSTALL_LINUX_APPS" />
   <!-- Lets the store find generated Flatpak stubs' "install me" activities. -->
   <queries>
+    <package android:name="org.matonos.linux" />
     <intent>
       <action android:name="org.matonos.linuxhost.INSTALL" />
+    </intent>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
     </intent>
   </queries>
 </manifest>
