@@ -557,7 +557,9 @@ final class FlatpakStubManager {
     private void failInstall(String ref, String remote, String operation, Exception error) {
         installOperations.remove(operation);
         Log.e(TAG, "Flatpak install failed for " + ref, error);
-        try { daemon().call("abort_pending", handoffArgs(ref, remote, operation).toString()); }
+        // Collect the compositor's staging before anything else; a verify
+        // failure already tried, so this also retries a deferred cleanup.
+        try { daemon().call("abort_staged_install", new JSONObject().put("operationId", operation).toString()); }
         catch (Exception cleanup) { Log.e(TAG, "Deployment cleanup deferred", cleanup); }
         try { daemon().call("install_failed", handoffArgs(ref, remote, operation)
                 .put("error", error.toString()).toString()); }
@@ -591,7 +593,18 @@ final class FlatpakStubManager {
             context.getPackageManager().getPackageInfo(pkg, 0);
             if (!isOurSignedStub(pkg)) throw new SecurityException("Conflicting stub package");
         } catch (PackageManager.NameNotFoundException absent) { }
-        handoff("deploy_pending", handoffArgs(ref, remote, operationId));
+        // The bridge owns the transaction: it authorizes the compositor UID it
+        // resolved through PackageManager and lets linuxd create staging.
+        int compositorUid = CompositorInstall.uid(context);
+        handoff("begin_staged_install", handoffArgs(ref, remote, operationId)
+                .put("compositorUid", compositorUid));
+        // The compositor pulls, deploys and runs apply_extra at its own UID and
+        // returns the deployment manifest once its worker has closed staging.
+        String manifest = new CompositorInstall(context, compositorUid, operationId).run(ref, remote);
+        // linuxd verifies the staged deployments, publishes an unpublished
+        // version and serves the existing pending metadata/desktop/icon from it.
+        handoff("verify_staged_install", new JSONObject().put("operationId", operationId)
+                .put("manifest", new JSONObject(manifest)));
         // Updating code never refreshes an existing APK or kills its process.
         if (isOurSignedStub(pkg)) { bindFinalStub(ref, remote, operationId, false); return; }
         // Another Android user may already own the globally installed APK.

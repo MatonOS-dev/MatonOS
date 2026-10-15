@@ -128,6 +128,19 @@ public final class SystemBridgeService extends Service {
             }catch(Exception error){Log.w(TAG,"Invalid store event",error);}
         }
     };
+    /** Compositor progress for a store operation, reusing the store listeners. */
+    static void publishStoreProgress(String operationId,String phase,int percent,String line) {
+        SystemBridgeService bridge=activeService;
+        if(bridge==null)return;
+        bridge.publishStoreProgress(operationId,phase,percent,line);
+    }
+    private void publishStoreProgress(String operationId,String phase,int percent,String line) {
+        try {
+            storeObserver.onEvent("progress",new JSONObject().put("operationId",operationId)
+                    .put("phase",phase==null || phase.isEmpty()?"staging":phase)
+                    .put("percent",percent).put("line",line==null?"":line).toString());
+        }catch(Exception error){Log.w(TAG,"Cannot publish store progress",error);}
+    }
     private synchronized void subscribeStore() throws RemoteException {
         ILinuxd daemon=linuxdFor();if(daemon==null)throw new IllegalStateException("Flatpak service unavailable");
         if(storeSubscribedDaemon!=null && storeSubscribedDaemon.asBinder().equals(daemon.asBinder()))return;
