@@ -36,7 +36,7 @@ external camera feature. User explicitly accepted this behavior; no Camera2
 source or feature spoofing was changed. No VM/runtime validation was run.
 
 User requested removal of Calendar, Clock, Contacts, Messaging and Phone UI,
-hiding Maton Wayland, and bundling Android VLC from F-Droid. Removed the
+hiding Linux Subsystem, and bundling Android VLC from F-Droid. Removed the
 explicit Calendar/Contacts/DeskClock additions in apps/apps.mk. Added
 MatonSystemBridge module overrides for Calendar, Contacts, DeskClock,
 Dialer and messaging so inherited AOSP packages are also excluded.
@@ -79,7 +79,7 @@ Focused javac compilation passed for PerAppRuntime, StubActivity, StubService
 and WindowLifetime against SDK 36 plus existing generated host/AIDL classes.
 WindowLifetimeTest passed last-close, multiple-window, recreation and duplicate
 callback cases. No APK/image build or native/device close/reopen test claimed.
-Rebuild MatonWaylandHost/the image; no stub manifest regeneration is needed
+Rebuild MatonLinuxSubsystem/the image; no stub manifest regeneration is needed
 for this shared-library Java change. Verify Firefox and Brave close/reopen,
 multiwindow close, minimize/restore and absence of orphan payload processes.
 

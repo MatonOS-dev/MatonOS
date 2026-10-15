@@ -9,16 +9,31 @@ type NativeApi = {
   call(target: string, command: string, jsonArgs: string): Promise<CallResult>;
   subscribe(target: string, topic: string, subscriptionId: string): Promise<boolean>;
   unsubscribe(subscriptionId: string): Promise<boolean>;
+  addListener(name: "linuxAppStoreEvent", listener: (event: StoreEvent) => void): EventSubscription;
+  storeInstall(ref: string, operationId: string): Promise<boolean>;
+  storeUpdate(ref: string, operationId: string): Promise<boolean>;
+  storeUninstall(ref: string, operationId: string): Promise<boolean>;
+  storeListInstalled(): Promise<string>;
+  storeListRemotes(): Promise<string>;
   startStubInstall(ref: string, operationId: string | null): Promise<boolean>;
   startStubUpdate(ref: string, operationId: string | null): Promise<boolean>;
+  launchStub(appId: string): Promise<boolean>;
 };
+export type StoreEvent = { operationId: string; phase: string; percent?: number; bytesDone?: number; bytesTotal?: number; result?: { ok?: boolean; error?: string; output?: string; operationId?: string } };
 const Native = requireNativeModule<NativeApi>("MatonOSClient");
 let subscriptionIndex = 1;
 export const MatonOS = {
   checkStartup: (targets: string[], channels: string[] = []) => Native.checkStartup(targets, channels),
   startStubInstall: (ref: string, operationId?: string) => Native.startStubInstall(ref, operationId ?? null),
   startStubUpdate: (ref: string, operationId?: string) => Native.startStubUpdate(ref, operationId ?? null),
+  launchStub: (appId: string) => Native.launchStub(appId),
   call: (target: string, command: string, args: unknown = {}) => Native.call(target, command, JSON.stringify(args)),
+  storeInstall: (ref: string, operationId: string) => Native.storeInstall(ref, operationId),
+  storeUpdate: (ref: string, operationId: string) => Native.storeUpdate(ref, operationId),
+  storeUninstall: (ref: string, operationId: string) => Native.storeUninstall(ref, operationId),
+  storeListInstalled: () => Native.storeListInstalled(),
+  storeListRemotes: () => Native.storeListRemotes(),
+  addStoreListener: (listener: (event: StoreEvent) => void) => Native.addListener("linuxAppStoreEvent", listener),
   subscribe: (target: string, topic: string, listener: (event: MatonAreaEvent) => void) => {
     const id = `${target}:${topic}:${subscriptionIndex++}`;
     const subscription = Native.addListener("matonosAreaEvent", (event) => {

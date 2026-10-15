@@ -3,7 +3,6 @@ filegroup {
     srcs: [
         "aidl/org/matonos/systembridge/ILinuxd.aidl",
         "aidl/org/matonos/systembridge/ILinuxdListener.aidl",
-        "aidl/org/matonos/systembridge/ILinuxdIdentity.aidl",
     ],
     path: "aidl",
 }
@@ -15,7 +14,6 @@ cc_binary {
         "FlatpakManager.c",
         "FlatpakPublish.c",
         "RuntimeRefs.c",
-        "StubVerify.c",
         ":matonos-linuxd-aidl",
     ],
     shared_libs: [

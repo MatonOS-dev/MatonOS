@@ -3,8 +3,6 @@
     <permission
         android:name="org.matonos.permission.SYSTEM_BRIDGE"
         android:protectionLevel="signature|privileged|development" />
-    <permission android:name="org.matonos.permission.MANAGE_LINUX_APPS"
-        android:protectionLevel="signature|privileged" />
     <!-- Controller access is granted at install time for now; stubs still
          declare it from Flatpak metadata and the bridge checks the grant. -->
     <permission
@@ -16,8 +14,6 @@
          bridge requests it so only the audited gatekeeper can bind the built-in provider. -->
     <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />
     <uses-permission android:name="android.permission.GRANT_RUNTIME_PERMISSIONS" />
-    <!-- v3: stop only a device-signed stub verified by FlatpakStubManager. -->
-    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
@@ -44,10 +40,6 @@
     <uses-permission android:name="android.permission.REORDER_TASKS" />
     <uses-permission android:name="android.permission.REAL_GET_TASKS" />
     <uses-permission android:name="android.permission.REMOVE_TASKS" />
-    <uses-permission android:name="android.permission.INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.DELETE_PACKAGES" />
-    <!-- Shows a stub's launcher once its Flatpak is installed. -->
-    <uses-permission android:name="android.permission.CHANGE_COMPONENT_ENABLED_STATE" />
     <application
         android:label="MatonOS System Bridge"
         android:persistent="true"
@@ -61,23 +53,12 @@
                 <action android:name="org.matonos.systembridge.BIND" />
             </intent-filter>
         </service>
-        <service android:name=".SystemBridgeService$LinuxAppStoreService"
-            android:exported="true" android:singleUser="true"
-            android:permission="org.matonos.permission.MANAGE_LINUX_APPS">
-            <intent-filter><action android:name="org.matonos.systembridge.LINUX_APP_STORE" /></intent-filter>
-        </service>
-        <!-- Stubs have only self-task capabilities, authenticated by device signature
-             and task UID. Never grant them the general SYSTEM_BRIDGE permission. -->
-        <service android:name=".SystemBridgeService$LinuxWindowService"
-            android:exported="true" android:singleUser="true" />
         <receiver android:name=".BridgeBootReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.USER_SWITCHED" />
             </intent-filter>
         </receiver>
-        <activity android:name=".RepoConfirmationActivity" android:exported="false"
-            android:excludeFromRecents="true" android:theme="@android:style/Theme.Material.Dialog.Alert" />
         <activity android:name=".SystemBridgeService$TrustedAppsActivity" android:exported="true">
             <intent-filter><action android:name="org.matonos.systembridge.TRUST_SETTINGS" /></intent-filter>
         </activity>

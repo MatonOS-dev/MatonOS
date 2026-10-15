@@ -219,11 +219,6 @@ APPROVED_PATCHES = {
     # missing `return` after UNABLE_TO_OPEN_INTERFACE); stops a crash loop with
     # no controller.
     "hardware/interfaces/0001-bluetooth-hci-return-when-opens-fail.patch",
-    # 2026-10-11: user-approved ("keep it as patches for now"): bridge-only
-    # caption suppression for client-decorated Linux windows, gated by
-    # ro.matonos.client_decorations.
-    "frameworks/base/0004-wm-add-gated-bridge-only-per-task-client-decoration-.patch",
-    "frameworks/base/0005-wm-shell-suppress-caption-input-and-controls-for-gat.patch",
     # 2026-10-12: user-approved ("we can add it to the bionic lists"): app
     # seccomp allowlist gains futex_waitv/futex2, rseq and robust lists, which
     # bionic merely never listed (no blocklist entry) and Linux apps need.

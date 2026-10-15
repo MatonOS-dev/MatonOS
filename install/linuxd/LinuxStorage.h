@@ -25,14 +25,16 @@ static inline int maton_storage_child(int parent,const char* name,const char* la
     return fd;
 }
 /* Init owns the encrypted root. linuxd only prepares fixed children. */
-static inline int maton_store_prepare(void) {
+static inline int maton_storage_prepare(void) {
     int root=open(MATON_LINUX_ROOT,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
     if(root<0)return -1;
     struct stat st;
     if(fstat(root,&st)||st.st_uid!=1000){close(root);errno=EPERM;return -1;}
-    const char* names[]={"install","runtime","staging","store"};
-    for(size_t i=0;i<4;i++) {
-        int child=maton_storage_child(root,names[i],i==2?"u:object_r:matonos_flatpak_staging_file:s0":i==3?"u:object_r:matonos_flatpak_store_file:s0":"u:object_r:matonos_flatpak_deployment_file:s0",i>=2?0711:0755);
+    const char* names[]={"install","runtime","staging"};
+    for(size_t i=0;i<3;i++) {
+        /* Staging is sticky and write/traverse-only for the subsystem app,
+         * which creates its own UID child without listing other users. */
+        int child=maton_storage_child(root,names[i],i==2?"u:object_r:matonos_flatpak_staging_file:s0":"u:object_r:matonos_flatpak_deployment_file:s0",i==2?01733:0755);
         if(child<0){close(root);return -1;}close(child);
     }
     int manager=maton_storage_child(root,"manager","u:object_r:matonos_flatpak_deployment_file:s0",0700);

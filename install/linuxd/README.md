@@ -17,11 +17,11 @@ per-user stub HOME/cache/runtime data. See [storage](STORAGE-LAYOUT.md),
 `flatpak-env-wrapper` is management-only and rejects `run`. linuxd prepares
 fixed, system-owned mode-0700 `/data/linux-app/manager/{home,cache,run,tmp}`
 scratch directories. The pinned stub certificate is in
-`/data/linux-app/store/stub-signer.der`. No `/data/matonos/linux` tree remains.
-The staging helper enters fixed UID 2902 (`AID_VENDOR_MATONOS_FPINSTALL`):
-SETUID/SETGID remain only for that identity change. CHOWN/FOWNER seal staged objects; SYS_ADMIN
-and KILL capabilities and the uinput group are removed. Network policy remains
-for remote-add's HTTPS fetch. No app runtime or hardware proxy runs in linuxd.
+No legacy `/data/matonos/linux` tree or linuxd-owned store directory remains.
+The subsystem app creates its per-UID staging tree; linuxd takes ownership,
+relabels and verifies it before publication. linuxd has only CHOWN, needed to
+take over app-owned files. It has no set-ID, inet group, network access or
+staging-helper identity. No app runtime or hardware proxy runs in linuxd.
 
 Kept code: FlatpakManager/Publish/Store (management), RuntimeRefs and
 DeploymentStore (lease-aware collection), StubVerify (certificate + live PM
@@ -146,7 +146,11 @@ No SELinux lines or kernel settings were changed. These statements describe roun
 install harness; see its verification limits below.
 
 
-### Round 27: FPINSTALL staging, verified deployment, final APK once
+### Historical round 27: FPINSTALL staging, verified deployment, final APK once
+
+This architecture was replaced by the Phase D1 subsystem-owned install flow
+and Phase D2 policy described above. The fixed UID/helper and bridge-owned
+install sequence below are historical only.
 
 New installs no longer need an application UID. The bridge schedules a
 `deploy_pending` operation; linuxd stages only as UID 2902, under

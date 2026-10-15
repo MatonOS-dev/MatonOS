@@ -1,4 +1,7 @@
 user=_app seinfo=platform name=org.matonos.systembridge domain=matonos_system_bridge type=app_data_file levelFrom=all
+# Package-specific app domain is gated on priv-app placement; ordinary apps
+# cannot claim this package-name selector.
+user=_app isPrivApp=true name=org.matonos.linux domain=matonos_linux_app type=privapp_data_file levelFrom=user
 # Stock secure_element selector has no data type; installd otherwise leaves
 # com.android.se under generic system_data_file. Keep its domain/MLS identity.
 user=secure_element seinfo=platform name=com.android.se domain=secure_element type=app_data_file levelFrom=all

@@ -16,8 +16,7 @@ linuxd operations fail if the prepared root is unavailable.
   runtime/                          # shared Flatpak runtime/extension installation
     refs-0.json                     # global app-id reference-count database
     repo/objects/                   # verified code type
-  staging/<uid>/<operation>/         # temporary signed pull, as installing stub UID
-  store/                            # reserved installer storage
+  staging/<uid>/<operation>/         # temporary signed pull for the subsystem app
 ```
 
 `appid = uid % 100000`; an app installed for multiple users shares one code

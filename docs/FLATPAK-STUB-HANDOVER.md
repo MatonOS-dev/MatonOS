@@ -11,7 +11,7 @@ Updated: 2026-10-06 (evening). Read this before touching Flatpak installs.
    app stays hidden until its Flatpak is installed. The stub carries the full
    ref (app ID, arch, branch) and remote; Flatpak resolves runtime and deps.
 3. **Store** waits for the stub (`MatonOS.startStubInstall(ref)`, up to 60 s),
-   finds `org.matonos.compositor.stub.InstallActivity` by the
+   finds `org.matonos.linux.stub.InstallActivity` by the
    `org.matonos.linuxhost.INSTALL` action + `FLATPAK_REF` metadata, and starts
    it ("install me": unprivileged, no permission, idempotent).
 4. **InstallActivity** → compositor `stub InstallClient → bridge installSelf(ref)` → bridge

@@ -1,5 +1,5 @@
 <permissions>
     <privapp-permissions package="org.matonos.flathub">
-        <permission name="org.matonos.permission.SYSTEM_BRIDGE" />
+        <permission name="org.matonos.permission.INSTALL_LINUX_APPS" />
     </privapp-permissions>
 </permissions>

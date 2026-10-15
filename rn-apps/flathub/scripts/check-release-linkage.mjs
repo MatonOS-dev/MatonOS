@@ -23,7 +23,7 @@ if (Object.keys(lock.packages ?? {}).some((name) => name.includes("react-native-
   throw new Error("react-native-paper is locked transitively.");
 }
 const permissions = fs.readFileSync(path.join(root, "privapp-permissions-org.matonos.flathub.xml"), "utf8");
-if (!permissions.includes('package="org.matonos.flathub"') || !permissions.includes('name="org.matonos.permission.SYSTEM_BRIDGE"')) {
-  throw new Error("Flathub's privileged System Bridge permission is missing.");
+if (!permissions.includes('package="org.matonos.flathub"') || !permissions.includes('name="org.matonos.permission.INSTALL_LINUX_APPS"')) {
+  throw new Error("Flathub's privileged Linux app install permission is missing.");
 }
 console.log("Release linkage policy OK: Compose UI, registered bridge adapter, x86_64, and per-app signing.");

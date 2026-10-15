@@ -50,8 +50,8 @@ PRODUCT_COPY_FILES += \
 
 # ------------------------------------------------- Xwayland (compositor)
 # The Xwayland server and its X11 stack runtime libraries (built by
-# linux/compositor/build-xwayland.sh, staged by tools/stage-xwayland.sh).
-XWAYLAND_SYSTEM_EXT := device/maton/pc_x86_64/linux/compositor/prebuilt/system_ext
+# linux/subsystem/build-xwayland.sh, staged by tools/stage-xwayland.sh).
+XWAYLAND_SYSTEM_EXT := device/maton/pc_x86_64/linux/subsystem/prebuilt/system_ext
 XWAYLAND_FILES := \
     $(wildcard $(XWAYLAND_SYSTEM_EXT)/bin/*) \
     $(wildcard $(XWAYLAND_SYSTEM_EXT)/lib64/*.so) \
@@ -188,8 +188,6 @@ PRODUCT_VENDOR_PROPERTIES += ro.logd.size=16M
 PRODUCT_SYSTEM_EXT_PROPERTIES += \
     sys.use_memfd=true
 
-# Optional self-task caption hook in the frameworks/base fork; default-off upstream.
-PRODUCT_SYSTEM_EXT_PROPERTIES += ro.matonos.client_decorations=true
 
 # Legacy charger/libsuspend must not become a second suspend policy on PCs.
 # The stock AIDL charger already returns false; pin the legacy HIDL default too.

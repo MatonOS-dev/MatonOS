@@ -73,7 +73,7 @@ static int repo_has_apps(const char* remote) {
 }
 static void repo_manage(const char* command,const char* file,const char* remote,FlatpakResult* result) {
     if(!repo_name_valid(remote) || !strcmp(remote,"flathub")){set_error(result,"Invalid repository name or protected built-in flathub");return;}
-    if(maton_store_prepare()){set_error(result,"System store unavailable");return;}
+    if(maton_storage_prepare()){set_error(result,"Linux app storage unavailable");return;}
     if(pthread_mutex_trylock(&g_operation_mutex)){set_error(result,"A Flatpak operation is running; retry later");return;}
     if(pending_install.operation[0]){set_error(result,"A deployment awaits PackageManager binding");goto done;}
     if(!strcmp(command,"install_repo")) {

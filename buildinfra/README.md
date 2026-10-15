@@ -124,7 +124,7 @@ testing only; it is not an image package. Imported APKs are privileged on
 keys. Do not set `certificate: "PRESIGNED"`; Soong interprets that Make
 convention as a dependency on its PRESIGNED certificate file.
 
-MatonWaylandHost keeps `extractNativeLibs=true` for its APK-owned session
+MatonLinuxSubsystem keeps `extractNativeLibs=true` for its APK-owned session
 broker in app updates. `tools/build-apps.sh` stores its JNI libraries and dex,
 page-aligns the ZIP, and re-signs it with the persistent host key before
 staging. Use that staged APK for `adb install -r`; raw Gradle output has legacy

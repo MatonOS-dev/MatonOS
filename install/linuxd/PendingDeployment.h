@@ -30,7 +30,7 @@ static inline int pending_deployment_discard(const char* path) {
 }
 static inline int pending_deployment_create(const char* ref,char* path,size_t size) {
     char app[256];
-    if(remote_pin_name(ref,app,sizeof(app)) || strlen(app)>220 || maton_store_prepare())return -1;
+    if(remote_pin_name(ref,app,sizeof(app)) || strlen(app)>220 || maton_storage_prepare())return -1;
     int n=snprintf(path,size,MATON_INSTALL_ROOT "/.pending-%s-XXXXXX",app);
     if(n<0||(size_t)n>=size || maton_storage_context("u:object_r:matonos_flatpak_deployment_file:s0"))return -1;
     char* made=mkdtemp(path);int clear=maton_storage_context(NULL);

@@ -9,7 +9,7 @@ Xwayland, private JNI session bus, JavaPortal, audio sockets and DNS forwarder.
 linuxd owns installation, updates, store configuration, metadata and stub-signer
 verification. Shared immutable app versions and runtimes live in
 `/data/linux-app`; private HOME, cache and runtime sockets live in ordinary
-PackageManager-owned stub data. See [launch](compositor/V3-LAUNCH.md),
+PackageManager-owned stub data. See [launch](subsystem/V3-LAUNCH.md),
 [storage](../install/linuxd/STORAGE-LAYOUT.md) and [APEX](flatpak/APEX.md).
 
 The v2 privileged launch/sandbox layer failed on enforcing SELinux and was

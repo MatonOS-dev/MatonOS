@@ -4,7 +4,7 @@ import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgress
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { clickable, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import { getAppById, getAppDetails, getCollection, searchApps, type StoreApp } from "./FlathubApi";
-import { fetchIconBase64, getInstalledRefs, installApp, runApp, uninstallApp, type ProgressEvent } from "./FlatpakBridge";
+import { getInstalledRefs, installApp, runApp, uninstallApp } from "./FlatpakBridge";
 import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
 
 type Page = "browse" | "installed";
@@ -130,7 +130,7 @@ export default function App() {
   const [percent, setPercent] = useState<number | null>(null);
   const operationToken = useRef(0);
   const operationIdRef = useRef("");
-  const operationKindRef = useRef<"install" | "uninstall">("install");
+  const [operationKind, setOperationKind] = useState<"install" | "uninstall">("install");
   const installedIds = useMemo(() => new Set(installedRefs.map((ref) => ref.split("/")[1])), [installedRefs]);
 
   async function refreshInstalled() {
@@ -175,11 +175,10 @@ export default function App() {
     const token = ++operationToken.current;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     operationIdRef.current = operationId;
-    operationKindRef.current = "install";
+    setOperationKind("install");
     setBusyRef(app.ref); setProgress("Preparing installation…"); setPercent(null); setMessage("");
     try {
-      const icon = await fetchIconBase64(app.icon);
-      await installApp(app.ref, operationId, icon);
+      await installApp(app.ref, operationId);
       if (operationIdRef.current !== operationId) return;
       setProgress("Downloading and installing…");
       setTimeout(() => {
@@ -195,7 +194,7 @@ export default function App() {
     const token = ++operationToken.current;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     operationIdRef.current = operationId;
-    operationKindRef.current = "uninstall";
+    setOperationKind("uninstall");
     setBusyRef(selected.ref); setProgress("Preparing removal…"); setPercent(null); setMessage("");
     try {
       await uninstallApp(selected.ref, operationId);
@@ -214,9 +213,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
   useEffect(() => {
-    const subscription = MatonOS.subscribe("flatpak", "progress", (event) => {
-      let payload: ProgressEvent;
-      try { payload = JSON.parse(event.json) as ProgressEvent; } catch { return; }
+    const subscription = MatonOS.addStoreListener((payload) => {
       if (payload.phase === "complete") {
         if (!payload.result?.operationId || payload.result.operationId !== operationIdRef.current) return;
         operationToken.current++;
@@ -228,10 +225,10 @@ export default function App() {
         void refreshInstalled();
         return;
       }
-      if (!operationIdRef.current) return;
+      if (payload.operationId !== operationIdRef.current) return;
       const eventPercent = typeof payload.percent === "number" ? payload.percent : null;
       setPercent(eventPercent);
-      setProgress(`${payload.line || "Working…"}${eventPercent == null ? "" : ` ${eventPercent}%`}`);
+      setProgress(`${payload.phase || "Working…"}${eventPercent == null ? "" : ` ${eventPercent}%`}`);
     });
     return () => subscription.remove();
   }, []);
@@ -257,7 +254,7 @@ export default function App() {
   const renderApp = ({ item }: { item: StoreApp }) => (
     <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }} colorScheme="dark" seedColor="#79c75b">
       <AppTile app={item} installed={installedIds.has(item.id)} busy={Boolean(busyRef)}
-        busyLabel={busyRef === item.ref ? busyButtonLabel(operationKindRef.current) : ""}
+        busyLabel={busyRef === item.ref ? busyButtonLabel(operationKind) : ""}
         progress={busyRef === item.ref ? progress : ""} percent={busyRef === item.ref ? percent : null}
         onOpenDetails={openDetails}
         onInstall={(app) => void startInstall(app)} onLaunch={(app) => void launchApp(app)} />
@@ -269,7 +266,7 @@ export default function App() {
   if (selected) {
     const currentDetail = selected;
     content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(currentDetail.id)} busy={Boolean(busyRef)}
-      busyLabel={busyButtonLabel(operationKindRef.current)} progress={busyRef === currentDetail.ref ? progress : ""} percent={busyRef === currentDetail.ref ? percent : null}
+      busyLabel={busyButtonLabel(operationKind)} progress={busyRef === currentDetail.ref ? progress : ""} percent={busyRef === currentDetail.ref ? percent : null}
       onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} /></Host>;
   } else if (page === "installed") {
     content = <View style={{ flex: 1 }}>

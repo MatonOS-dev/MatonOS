@@ -2,41 +2,38 @@
 #define MATONOS_FLATPAK_PUBLISH_H
 
 #include <stddef.h>
-/* config.fs: AID_VENDOR_MATONOS_FPINSTALL, never an application UID. */
-#define MATON_FPINSTALL_UID 2902
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/* Seal one regular file in a pinned, exclusively linuxd-owned directory.
+ * Return a measured read-only fd (caller closes), or -1 with an error. This
+ * primitive alone does not authenticate or publish a staged deployment. */
+int flatpak_seal_staged_file(int directory, const char* component,
+        char* error, unsigned long error_size);
+
+#define MATON_STAGED_DEPLOYMENTS_MAX 64
+#define MATON_STAGED_SUBPATHS_MAX 32
+struct FlatpakStagedDeployment {
+    char ref[512], commit[65];
+    size_t subpath_count;
+    char subpaths[MATON_STAGED_SUBPATHS_MAX][256];
+};
+struct FlatpakStagedManifest {
+    unsigned version;
+    char operation_id[65], app_ref[512], app_commit[65], remote[129];
+    size_t deployment_count;
+    struct FlatpakStagedDeployment deployments[MATON_STAGED_DEPLOYMENTS_MAX];
+};
+int flatpak_begin_staged_install(int uid,const char* operation,const char* remote,
+        char* error,unsigned long error_size);
+int flatpak_verify_publish_staged_tracked(const struct FlatpakStagedManifest*,
+        const char* staging,const char* system,const char* pending,
+        char* error,unsigned long error_size,int (*record)(const char*,void*),
+        int (*complete)(const char* const*,size_t,void*),void* context);
+
 /* Per-thread staging output observer; exec children never invoke it. */
 void flatpak_publish_progress(void (*callback)(const char*));
-
-/* Publish one signed app stub and its pinned runtime. */
-int flatpak_publish(const char* app_ref, const char* app_commit,
-        const char* runtime_ref, const char* runtime_commit, const char* remote,
-        const char* staging_dir, const char* system_dir, const char* user_dir,
-        char* error, unsigned long error_size);
-
-/* Record every shared ref before deployment; complete the exact owner set
- * only after all deployments succeed. Caller holds operation lock. */
-int flatpak_publish_tracked(const char*, const char*, const char*, const char*,
-        const char*, const char*, const char*, const char*, char*, unsigned long,
-        int (*record)(const char*, void*),
-        int (*complete)(const char* const*, size_t, void*), void* context);
-
-/* Stage a signed app and its declared runtime, and return the resolved commit
- * pins plus the app's /metadata and exported desktop entry from the staged
- * commit. No deployment happens; deploy re-verifies the returned pins. */
-int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
-        const char* operation_id,
-        char* app_commit, unsigned long app_commit_size,
-        char* runtime_ref, unsigned long runtime_ref_size,
-        char* runtime_commit, unsigned long runtime_commit_size,
-        char* metadata, unsigned long metadata_size,
-        char* desktop, unsigned long desktop_size,
-        char* error, unsigned long error_size);
-
-int flatpak_available_commit(const char*, const char*, const char*, char*, unsigned long, char*, unsigned long);
 
 int flatpak_remote_verified(const char* remote);
 

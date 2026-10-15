@@ -1,9 +1,7 @@
 package org.matonos.systembridge;
 
 import android.app.ActivityManager;
-import android.app.ActivityTaskManager;
 import android.app.AppOpsManager;
-import android.app.WindowConfiguration;
 import android.app.Service;
 import android.hardware.display.DisplayManager;
 import android.content.Context;
@@ -31,8 +29,6 @@ import android.graphics.Point;
 import android.graphics.Bitmap;
 import android.window.TaskSnapshot;
 import android.window.TaskSnapshotManager;
-import android.window.WindowContainerTransaction;
-import android.window.WindowOrganizer;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -55,8 +51,6 @@ import java.util.concurrent.ConcurrentMap;
 
 import vendor.matonos.channel.IChannel;
 import vendor.matonos.channel.IChannelListener;
-import org.matonos.systembridge.ILinuxd;
-import org.matonos.systembridge.ILinuxdListener;
 
 public final class SystemBridgeService extends Service {
     private static final String TAG = "MatonSystemBridge";
@@ -65,11 +59,10 @@ public final class SystemBridgeService extends Service {
     private static volatile SystemBridgeService activeService;
     private volatile Set<String> allowedCerts;
     private volatile Set<String> targetCallers;
+    private LinuxdDeploymentReconciler flatpakStubManager;
     private android.os.Handler geometryHandler;
-    private FlatpakStubManager flatpakStubManager;
     private boolean geometryRetryPending;
     private final ConcurrentMap<String, Subscription> subscriptions = new ConcurrentHashMap<>();
-    private final ConcurrentMap<String, FlatpakSubscription> flatpakSubscriptions = new ConcurrentHashMap<>();
     private NavigationBarWindow navigationBarWindow;
     // sleep: forward Android's current suspend blockers to the sleep daemon.
     private AndroidWakeStateForwarder sleepWakeForwarder;
@@ -79,546 +72,7 @@ public final class SystemBridgeService extends Service {
         @Override public void onDisplayChanged(int displayId) { publishDisplayGeometry(); }
     };
 
-    /** Separate binding: a stub gets these four self-only calls, never general trust. */
-    public static final class LinuxWindowService extends Service {
-        @Override public void onCreate() {
-            super.onCreate();
-            startService(new Intent(this, SystemBridgeService.class));
-        }
-        @Override public IBinder onBind(Intent intent) {
-            SystemBridgeService bridge = activeService;
-            return bridge == null ? null : bridge.linuxWindowBinder;
-        }
-    }
-
-    /** The store capability is independent of the bridge's general target ACL. */
-    public static final class LinuxAppStoreService extends Service {
-        @Override public void onCreate() {
-            super.onCreate();startService(new Intent(this,SystemBridgeService.class));
-        }
-        @Override public IBinder onBind(Intent intent) {
-            SystemBridgeService bridge=activeService;
-            return bridge==null?null:bridge.storeBinder;
-        }
-    }
-    private final ConcurrentMap<String,Integer> storeOperations=new ConcurrentHashMap<>();
-    private final android.os.RemoteCallbackList<IStoreListener> storeListeners=new android.os.RemoteCallbackList<>();
-    private ILinuxd storeSubscribedDaemon;
-    private final ILinuxdListener storeObserver=new ILinuxdListener.Stub() {
-        @Override public void onEvent(String topic,String json) {
-            try {
-                JSONObject event=new JSONObject(json),result=event.optJSONObject("result");
-                String operation=result==null?event.optString("operationId"):result.optString("operationId");
-                Integer user=storeOperations.get(operation);if(user==null)return;
-                boolean complete="complete".equals(event.optString("phase"));
-                synchronized(storeListeners) {
-                    int count=storeListeners.beginBroadcast();
-                    try {
-                        for(int i=0;i<count;i++) {
-                            if(!user.equals(storeListeners.getBroadcastCookie(i)))continue;
-                            try {
-                                IStoreListener listener=storeListeners.getBroadcastItem(i);
-                                if(complete)listener.onFinished(operation,result!=null && result.optBoolean("ok"),result==null?"Missing result":result.optString("error"));
-                                else listener.onProgress(operation,event.optString("phase","staging"),event.optInt("percent",-1),event.optString("line"));
-                            }catch(RemoteException dead){Log.w(TAG,"Store listener died",dead);}
-                        }
-                    } finally {storeListeners.finishBroadcast();}
-                }
-                if(complete)storeOperations.remove(operation);
-            }catch(Exception error){Log.w(TAG,"Invalid store event",error);}
-        }
-    };
-    private synchronized void subscribeStore() throws RemoteException {
-        ILinuxd daemon=linuxdFor();if(daemon==null)throw new IllegalStateException("Flatpak service unavailable");
-        if(storeSubscribedDaemon!=null && storeSubscribedDaemon.asBinder().equals(daemon.asBinder()))return;
-        if(storeSubscribedDaemon!=null)try{storeSubscribedDaemon.unsubscribe("progress",storeObserver);}catch(RemoteException ignored){}
-        daemon.asBinder().linkToDeath(()-> {
-            synchronized(SystemBridgeService.this) {
-                if(storeSubscribedDaemon==null || !storeSubscribedDaemon.asBinder().equals(daemon.asBinder()))return;
-                storeSubscribedDaemon=null;
-                for(String operation:new java.util.ArrayList<>(storeOperations.keySet())) {
-                    try {
-                        JSONObject result=new JSONObject().put("operationId",operation).put("ok",false)
-                            .put("error","Flatpak service disconnected; inspect installed inventory before retrying");
-                        storeObserver.onEvent("progress",new JSONObject().put("phase","complete").put("result",result).toString());
-                    }catch(Exception error){Log.w(TAG,"Store disconnect notification failed",error);}
-                }
-            }
-        },0);
-        daemon.subscribe("progress",storeObserver);storeSubscribedDaemon=daemon;
-    }
-    private int enforceStore(boolean allUsers, String command) {
-        boolean granted=checkCallingPermission("org.matonos.permission.MANAGE_LINUX_APPS")==PackageManager.PERMISSION_GRANTED;
-        int user=UserHandle.getUserId(Binder.getCallingUid());
-        boolean admin=false;
-        if (granted && allUsers) {
-            long token=Binder.clearCallingIdentity();
-            try {
-                android.os.UserManager users=getSystemService(android.os.UserManager.class);
-                android.content.pm.UserInfo info=users==null?null:users.getUserInfo(user);
-                admin=user==UserHandle.USER_SYSTEM || (info!=null && info.isAdmin());
-            } finally { Binder.restoreCallingIdentity(token); }
-        }
-        Log.i(TAG,"Linux store call uid="+Binder.getCallingUid()+" user="+user+" command="+command+" allUsers="+allUsers+" permission="+granted+" admin="+admin);
-        LinuxAppStorePolicy.enforce(granted,allUsers,admin);
-        enforceLinuxAppRestriction(user,command);
-        return user;
-    }
-    private void validateStoreAppId(String appId) {
-        if(appId==null || !appId.matches("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_-]*)+"))
-            throw new IllegalArgumentException("Invalid application ID");
-    }
-    private String storeRef(int user,String appId) throws Exception {
-        validateStoreAppId(appId);
-        JSONObject result=storeReply("list_installed",new JSONObject().put("userId",user));
-        String match=null;
-        for(String ref:result.optString("output").split("\\s+")) {
-            if(!ref.startsWith("app/"))ref="app/"+ref;
-            String[] parts=ref.split("/");
-            if(parts.length==4 && appId.equals(parts[1])) {
-                if(match!=null && !match.equals(ref))throw new IllegalStateException("Ambiguous installed ref");
-                match=ref;
-            }
-        }
-        if(match==null)throw new IllegalArgumentException("Application is not installed");
-        return match;
-    }
-    private JSONObject storeReply(String command,JSONObject args) throws Exception {
-        ILinuxd daemon=linuxdFor();
-        if(daemon==null)throw new IllegalStateException("Flatpak service unavailable");
-        JSONObject result=new JSONObject(daemon.call(command,args.toString()));
-        if(!result.optBoolean("ok"))throw new IllegalStateException(result.optString("error","Store operation failed"));
-        return result;
-    }
-    private LinuxAppInfo[] storeInventory(int user,boolean updates) throws Exception {
-        java.util.ArrayList<LinuxAppInfo> items=new java.util.ArrayList<>();
-        FlatpakStubManager owner=flatpakStubManager.forUser(user);
-        String output=storeReply("list_installed",new JSONObject().put("userId",user)).optString("output");
-        for(String ref:output.split("\\s+")) {
-            if(ref.isEmpty())continue;
-            if(!ref.startsWith("app/"))ref="app/"+ref;
-            String[] parts=ref.split("/");if(parts.length!=4)throw new IllegalStateException("Invalid installed ref");
-            int uid=owner.verifiedUid(ref);
-            JSONObject info=storeReply(updates?"check_update":"installed_commit",new JSONObject().put("ref",ref).put("uid",uid));
-            String[] fields=info.getString("output").split("\t",-1);
-            if(fields.length!=(updates?3:2))throw new IllegalStateException("Invalid commit query result");
-            if(!updates || !fields[1].equals(fields[2]))
-                items.add(new LinuxAppInfo(parts[1],fields[0],fields[1],updates?fields[2]:""));
-        }
-        return items.toArray(new LinuxAppInfo[0]);
-    }
-    private synchronized String storeInstall(int user,String ref,String remote) throws Exception {
-        subscribeStore();
-        String operation=java.util.UUID.randomUUID().toString();
-        if(storeOperations.size()>=64)throw new IllegalStateException("Too many pending store operations");
-        storeOperations.put(operation,user);
-        try {
-            flatpakStubManager.forUser(user).installAsync(ref,new JSONObject().put("remote",remote).put("operationId",operation));
-            return operation;
-        } catch(Exception error) {storeOperations.remove(operation);throw error;}
-    }
-    private static final java.util.Map<String,String> repoResults=new java.util.concurrent.ConcurrentHashMap<>();
-    private final java.util.Map<Integer,IStoreListener> repoCallers=new java.util.concurrent.ConcurrentHashMap<>();
-    static final java.util.Map<String,RepoRequest> repoRequests=new java.util.concurrent.ConcurrentHashMap<>();
-    private final java.util.concurrent.ScheduledExecutorService repoWorker=java.util.concurrent.Executors.newSingleThreadScheduledExecutor();
-    static SystemBridgeService repoBridge(){return activeService;}
-    static final class RepoRequest {
-        final String operation=java.util.UUID.randomUUID().toString();
-        final RepoDecision decision=new RepoDecision();
-        final int user;final String remote,message;final FlatpakRepo repo;final IStoreListener caller;
-        final boolean removing;final java.util.Map<Integer,java.util.Map<String,String>> apps;
-        android.os.IBinder.DeathRecipient death;
-        RepoRequest(int user,String remote,FlatpakRepo repo,IStoreListener caller,String message,
-                java.util.Map<Integer,java.util.Map<String,String>> apps) {
-            this.user=user;this.remote=remote;this.repo=repo;this.caller=caller;this.message=message;this.apps=apps;removing=repo==null;
-        }
-    }
-    private void enforceRepoUser(int user,String command) {
-        android.os.UserManager users=getSystemService(android.os.UserManager.class);
-        android.content.pm.UserInfo info=users==null?null:users.getUserInfo(user);
-        LinuxAppStorePolicy.enforce(true,true,user==UserHandle.USER_SYSTEM || (info!=null && info.isAdmin()));
-        enforceLinuxAppRestriction(user,command);
-    }
-    private java.util.Map<Integer,java.util.Map<String,String>> repoApps(String remote) throws Exception {
-        java.util.Map<Integer,java.util.Map<String,String>> apps=new java.util.HashMap<>();
-        for(android.content.pm.UserInfo info:getSystemService(android.os.UserManager.class).getUsers()) {
-            java.util.Map<String,String> refs=new java.util.HashMap<>();
-            for(LinuxAppInfo app:storeInventory(info.id,false))if(remote.equals(app.remote)) {
-                String ref=storeRef(info.id,app.appId);flatpakStubManager.forUser(info.id).verifiedUid(ref);
-                refs.put(app.appId,ref);
-            }
-            if(!refs.isEmpty()){enforceLinuxAppRestriction(info.id,"uninstall_app");apps.put(info.id,refs);}
-        }
-        return apps;
-    }
-    private String requestRepo(int user,FlatpakRepo repo,String remote,IStoreListener caller,boolean autoConfirm) throws Exception {
-        if(caller==null)throw new IllegalStateException("Register a live store listener before requesting repository confirmation");
-        if(remote==null || !remote.matches("[A-Za-z0-9_][A-Za-z0-9._-]{0,127}") || "flathub".equals(remote))
-            throw new IllegalArgumentException("Invalid or protected repository");
-        enforceRepoUser(user,repo==null?"remove_repo":"install_repo");
-        java.util.Map<Integer,java.util.Map<String,String>> apps=repo==null?repoApps(remote):java.util.Collections.emptyMap();
-        StringBuilder message=new StringBuilder();
-        if(repo!=null)message.append(repo.title).append("\n\nHost: ").append(repo.host).append("\nURL: ").append(repo.url)
-            .append("\n\nGPG fingerprint:\n").append(repo.fingerprint);
-        else {
-            message.append(remote).append("\n\nAll users' applications below will be uninstalled:\n");
-            for(java.util.Map.Entry<Integer,java.util.Map<String,String>> entry:apps.entrySet())
-                for(String id:entry.getValue().keySet())message.append("User ").append(entry.getKey()).append(": ").append(id).append('\n');
-            if(apps.isEmpty())message.append("No installed applications.\n");
-        }
-        RepoRequest request=new RepoRequest(user,remote,repo,caller,message.toString(),apps);
-        synchronized(repoRequests) {
-            if(!repoRequests.isEmpty())throw new IllegalStateException("Another repository confirmation or removal is pending");
-            repoRequests.put(request.operation,request);
-        }
-        request.death=()->decideRepo(request.operation,RepoDecision.State.CALLER_DIED);
-        try {
-            caller.asBinder().linkToDeath(request.death,0);
-            repoWorker.schedule(()->decideRepo(request.operation,RepoDecision.State.TIMED_OUT),120,java.util.concurrent.TimeUnit.SECONDS);
-            if(autoConfirm)decideRepo(request.operation,RepoDecision.State.CONFIRMED);
-            else startActivityAsUser(new Intent(this,RepoConfirmationActivity.class).putExtra("operation",request.operation)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),UserHandle.of(user));
-        } catch(Exception error){decideRepo(request.operation,RepoDecision.State.DENIED);throw error;}
-        return request.operation;
-    }
-    void decideRepo(String operation,RepoDecision.State state) {
-        RepoRequest request=repoRequests.get(operation);
-        if(request==null || !request.decision.finish(state))return;
-        if(state!=RepoDecision.State.CONFIRMED){finishRepo(request,false,"Repository confirmation: "+state);return;}
-        repoWorker.execute(()-> {
-            try {
-                if(!request.caller.asBinder().isBinderAlive())throw new SecurityException("Caller died before repository change");
-                enforceRepoUser(request.user,request.removing?"remove_repo":"install_repo");
-                if(request.removing) {
-                    if(!request.apps.equals(repoApps(request.remote)))throw new IllegalStateException("Repository applications changed; request confirmation again");
-                    for(java.util.Map.Entry<Integer,java.util.Map<String,String>> entry:request.apps.entrySet())
-                        for(String ref:entry.getValue().values())flatpakStubManager.forUser(entry.getKey()).uninstall(ref,true);
-                    long deadline=android.os.SystemClock.elapsedRealtime()+120000;
-                    for(;;) {
-                        boolean present=false;
-                        for(java.util.Map.Entry<Integer,java.util.Map<String,String>> entry:request.apps.entrySet())
-                            for(String ref:entry.getValue().values()) {
-                                try {
-                                    createContextAsUser(UserHandle.of(entry.getKey()),0).getPackageManager()
-                                        .getApplicationInfo(FlatpakStubIdentity.packageFor(ref),0);present=true;
-                                }catch(PackageManager.NameNotFoundException absent){}
-                            }
-                        if(!present)break;
-                        if(android.os.SystemClock.elapsedRealtime()>=deadline)throw new IllegalStateException("Package removal did not finish; repository retained");
-                        Thread.sleep(250);
-                    }
-                    storeReply("reconcile_deployments",new JSONObject());
-                    enforceRepoUser(request.user,"remove_repo");
-                    storeReply("remove_repo",new JSONObject().put("remote",request.remote));
-                } else storeReply("install_repo",new JSONObject().put("remote",request.remote).put("file",request.repo.canonical));
-                finishRepo(request,true,"");
-            }catch(Exception error){finishRepo(request,false,error.getMessage());}
-        });
-    }
-    private void finishRepo(RepoRequest request,boolean ok,String error) {
-        try {
-            if(repoResults.size()>=64)repoResults.clear();
-            repoResults.put(request.operation,new JSONObject().put("ok",ok).put("complete",true).put("error",error==null?"":error).toString());
-        }catch(Exception ignored){}
-        repoRequests.remove(request.operation,request);
-        if(request.death!=null)request.caller.asBinder().unlinkToDeath(request.death,0);
-        try{request.caller.onFinished(request.operation,ok,error==null?"Repository operation failed":error);}catch(RemoteException ignored){}
-    }
-    private final ILinuxAppStore.Stub storeBinder=new ILinuxAppStore.Stub() {
-        @Override public String installRepo(byte[] bytes) {
-            int uid=Binder.getCallingUid(),user=enforceStore(true,"install_repo");long token=Binder.clearCallingIdentity();
-            try{FlatpakRepo repo=new FlatpakRepo(bytes);return requestRepo(user,repo,repo.name,repoCallers.get(uid),false);}
-            catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Repository request failed",e);}
-            finally{Binder.restoreCallingIdentity(token);}
-        }
-        @Override public String removeRepo(String remote) {
-            int uid=Binder.getCallingUid(),user=enforceStore(true,"remove_repo");long token=Binder.clearCallingIdentity();
-            try{return requestRepo(user,null,remote,repoCallers.get(uid),false);}
-            catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Repository request failed",e);}
-            finally{Binder.restoreCallingIdentity(token);}
-        }
-        @Override public String listRepos() {
-            enforceStore(false,"list_remotes");long token=Binder.clearCallingIdentity();
-            try{return storeReply("list_remotes",new JSONObject()).getString("output");}
-            catch(Exception e){throw new IllegalStateException("Repository inventory failed",e);}
-            finally{Binder.restoreCallingIdentity(token);}
-        }
-
-        @Override public String installApp(String appId,String remote) {
-            int user=enforceStore(false,"install_app");
-            validateStoreAppId(appId);
-            if(remote==null || !remote.matches("[A-Za-z0-9._-]{1,128}") || remote.startsWith("-"))
-                throw new IllegalArgumentException("Invalid remote");
-            long token=Binder.clearCallingIdentity();
-            try { return storeInstall(user,"app/"+appId+"/x86_64/stable",remote); }
-            catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Install failed",e);}
-            finally {Binder.restoreCallingIdentity(token);}
-        }
-        @Override public String updateApp(String appId) {
-            int user=enforceStore(false,"update_app");long token=Binder.clearCallingIdentity();
-            try {
-                String ref=storeRef(user,appId);FlatpakStubManager owner=flatpakStubManager.forUser(user);
-                owner.verifiedUid(ref);
-                return storeInstall(user,ref,owner.remoteFor(FlatpakStubIdentity.packageFor(ref)));
-            } catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Update failed",e);}
-            finally {Binder.restoreCallingIdentity(token);}
-        }
-        @Override public LinuxAppInfo[] checkUpdates(){return inventory(true);}
-        @Override public LinuxAppInfo[] listInstalled(){return inventory(false);}
-        private LinuxAppInfo[] inventory(boolean updates) {
-            int user=enforceStore(false,"list_installed");long token=Binder.clearCallingIdentity();
-            try {return storeInventory(user,updates);}
-            catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Inventory failed",e);}
-            finally {Binder.restoreCallingIdentity(token);}
-        }
-        @Override public void uninstallApp(String appId,boolean allUsers) {
-            int user=enforceStore(allUsers,"uninstall_app");validateStoreAppId(appId);long token=Binder.clearCallingIdentity();
-            try {
-                java.util.ArrayList<Integer> targets=new java.util.ArrayList<>();
-                if(allUsers)for(android.content.pm.UserInfo info:getSystemService(android.os.UserManager.class).getUsers())targets.add(info.id);
-                else targets.add(user);
-                // Validate every target restriction and identity before requesting any deletion.
-                java.util.Map<Integer,String> refs=new java.util.HashMap<>();
-                for(int target:targets) {
-                    enforceLinuxAppRestriction(target,"uninstall_app");
-                    String ref;
-                    try {ref=storeRef(target,appId);}catch(IllegalArgumentException absent){if(allUsers)continue;throw absent;}
-                    flatpakStubManager.forUser(target).verifiedUid(ref);refs.put(target,ref);
-                }
-                for(java.util.Map.Entry<Integer,String> entry:refs.entrySet())
-                    flatpakStubManager.forUser(entry.getKey()).uninstall(entry.getValue(),true);
-            } catch(SecurityException e){throw e;}catch(Exception e){throw new IllegalStateException("Uninstall failed",e);}
-            finally {Binder.restoreCallingIdentity(token);}
-        }
-        @Override public void registerListener(IStoreListener listener) {
-            final int uid=Binder.getCallingUid();
-            final int user=enforceStore(false,"list_installed");
-            if(listener==null)throw new IllegalArgumentException("Listener required");
-            long token=Binder.clearCallingIdentity();
-            try {
-                subscribeStore();
-                synchronized(storeListeners) {
-                    if(storeListeners.getRegisteredCallbackCount()>=64)throw new IllegalStateException("Too many store listeners");
-                    storeListeners.register(listener,Integer.valueOf(user));
-                    repoCallers.put(uid,listener);
-                    listener.asBinder().linkToDeath(()->repoCallers.remove(uid,listener),0);
-                }
-            } catch(RemoteException e){throw new IllegalStateException("Subscribe failed",e);}
-            finally {Binder.restoreCallingIdentity(token);}
-        }
-    };
-
-    private final Map<Integer, GeometryGesture> linuxGestures = new java.util.HashMap<>();
-    private boolean linuxWindowDenied(int uid, int taskId) {
-        Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=invalid_state_or_unavailable");
-        return false;
-    }
-
-    private final ILinuxWindowBridge.Stub linuxWindowBinder = new ILinuxWindowBridge.Stub() {
-        @Override public boolean setClientDecorated(String ref, int taskId, boolean decorated) {
-            int uid = Binder.getCallingUid();
-            long identity = Binder.clearCallingIdentity();
-            try {
-                ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
-                // Reflection keeps this app usable on a stock framework. Hidden APIs
-                // are confined to the bridge; missing hook means a clean false result.
-                android.view.IWindowManager wm = android.view.WindowManagerGlobal.getWindowManagerService();
-                Object result = android.view.IWindowManager.class.getMethod(
-                        "setMatonosClientDecorated", int.class, int.class, boolean.class)
-                        .invoke(wm, task.taskId, uid, decorated);
-                Log.i(TAG, "Linux caption uid=" + uid + " task=" + taskId + " decorated=" + decorated + " accepted=" + result);
-                return Boolean.TRUE.equals(result);
-            } catch (ReflectiveOperationException error) {
-                Log.w(TAG, "Optional Linux caption framework hook unavailable", error);
-                return linuxWindowDenied(uid, taskId);
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
-                throw error;
-            } finally { Binder.restoreCallingIdentity(identity); }
-        }
-        @Override public boolean beginGeometry(String ref, int taskId, int edges, IBinder lifetime) {
-            int uid = Binder.getCallingUid();
-            long identity = Binder.clearCallingIdentity();
-            try {
-                ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
-                if (!LinuxWindowBounds.validEdges(edges) || lifetime == null
-                        || !task.isVisible || !task.isFocused || (edges != 0 && !task.isResizeable)) return linuxWindowDenied(uid, taskId);
-                Display display = getSystemService(DisplayManager.class).getDisplay(task.displayId);
-                if (display == null) return linuxWindowDenied(uid, taskId);
-                Point size = new Point(); display.getRealSize(size);
-                if (size.x <= 0 || size.y <= 0) return linuxWindowDenied(uid, taskId);
-                android.graphics.Rect bounds = task.configuration.windowConfiguration.getBounds();
-                if (bounds.isEmpty()) return linuxWindowDenied(uid, taskId);
-                android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
-                display.getRealMetrics(metrics);
-                int defaultMin = Math.max(1, Math.round(task.defaultMinSize * metrics.density));
-                GeometryGesture gesture = new GeometryGesture(uid, taskId, ref, task.token, edges,
-                        new int[]{bounds.left, bounds.top, bounds.right, bounds.bottom},
-                        new int[]{0, 0, size.x, size.y},
-                        task.minWidth > 0 ? task.minWidth : defaultMin,
-                        task.minHeight > 0 ? task.minHeight : defaultMin, lifetime);
-                synchronized (linuxGestures) {
-                    GeometryGesture old = linuxGestures.remove(uid);
-                    if (old != null) old.close();
-                    try { lifetime.linkToDeath(gesture, 0); }
-                    catch (RemoteException error) { return linuxWindowDenied(uid, taskId); }
-                    linuxGestures.put(uid, gesture);
-                    geometryHandler.postDelayed(gesture::expire, 5000);
-                }
-                Log.i(TAG, "Linux geometry begin uid=" + uid + " task=" + taskId + " edges=" + edges);
-                return true;
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
-                throw error;
-            } finally { Binder.restoreCallingIdentity(identity); }
-        }
-        @Override public boolean updateGeometry(String ref, int taskId, float dx, float dy) {
-            int uid = Binder.getCallingUid();
-            long identity = Binder.clearCallingIdentity();
-            try {
-                ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
-                synchronized (linuxGestures) {
-                    GeometryGesture g = linuxGestures.get(uid);
-                    if (g == null || g.taskId != taskId || !g.ref.equals(ref)) return linuxWindowDenied(uid, taskId);
-                    if (!task.token.equals(g.token) || !task.isFocused || !task.isVisible
-                            || SystemClock.uptimeMillis() - g.lastUpdate > 5000
-                            || !Float.isFinite(dx) || !Float.isFinite(dy)
-                            || Math.abs(dx) > g.display[2] * 2f || Math.abs(dy) > g.display[3] * 2f) {
-                        linuxGestures.remove(uid); g.close(); return linuxWindowDenied(uid, taskId);
-                    }
-                    int[] b = LinuxWindowBounds.apply(g.start, g.display, g.edges,
-                            Math.round(dx), Math.round(dy), g.minWidth, g.minHeight);
-                    WindowContainerTransaction change = new WindowContainerTransaction()
-                            .setBounds(g.token, new android.graphics.Rect(b[0], b[1], b[2], b[3]));
-                    if (g.edges != 0) change.setDragResizing(g.token, true);
-                    new WindowOrganizer().applyTransaction(change);
-                    g.resizing = g.edges != 0;
-                    g.lastUpdate = SystemClock.uptimeMillis();
-                    Log.i(TAG, "Linux geometry update uid=" + uid + " task=" + taskId
-                            + " dx=" + dx + " dy=" + dy);
-                    return true;
-                }
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
-                throw error;
-            } finally { Binder.restoreCallingIdentity(identity); }
-        }
-        @Override public void endGeometry(String ref, int taskId) {
-            int uid = Binder.getCallingUid();
-            long identity = Binder.clearCallingIdentity();
-            try {
-                // Authenticate even end; a dead/destroyed task may no longer be enumerable.
-                if (!flatpakStubManager.ownsStub(uid, ref)) deny("linux geometry end", uid, "unverified stub");
-                synchronized (linuxGestures) {
-                    GeometryGesture g = linuxGestures.get(uid);
-                    if (g != null && g.taskId == taskId && g.ref.equals(ref)) {
-                        linuxGestures.remove(uid); g.close();
-                        Log.i(TAG, "Linux geometry end uid=" + uid + " task=" + taskId);
-                    } else if (g == null) {
-                        // A bridge process restart loses the lease map. The stub's
-                        // reconnect/end still clears its own task's resizing mode.
-                        try {
-                            ActivityManager.RunningTaskInfo task = ownedLinuxTask(uid, ref, taskId);
-                            new WindowOrganizer().applyTransaction(new WindowContainerTransaction()
-                                    .setDragResizing(task.token, false));
-                            Log.i(TAG, "Linux geometry recovery end uid=" + uid + " task=" + taskId);
-                        } catch (RuntimeException error) {
-                            Log.w(TAG, "Linux geometry recovery task unavailable=" + taskId, error);
-                        }
-                    }
-                }
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Linux window denied uid=" + uid + " task=" + taskId + " reason=" + error);
-                throw error;
-            } finally { Binder.restoreCallingIdentity(identity); }
-        }
-    };
-
-    private ActivityManager.RunningTaskInfo ownedLinuxTask(int uid, String ref, int taskId) {
-        enforceNotBanned(uid, "linux window");
-        // The installer's per-device signer pre-approves this self-only
-        // capability. Never route stubs through the general permission/trust
-        // gate: they do not receive SYSTEM_BRIDGE or any daemon targets.
-        if (!flatpakStubManager.ownsStub(uid, ref)) deny("linux window", uid, "unverified stub");
-        int user = UserHandle.getUserId(uid);
-        if (user != ActivityManager.getCurrentUser()) deny("linux window", uid, "inactive user");
-        for (ActivityManager.RunningTaskInfo task : ActivityTaskManager.getInstance().getTasks(1000)) {
-            if (task.taskId != taskId) continue;
-            if (task.topActivityInfo != null && task.topActivityInfo.applicationInfo != null
-                    && FlatpakStubIdentity.ownsWindow(uid, user, ActivityManager.getCurrentUser(),
-                            task.userId, task.effectiveUid, task.topActivityInfo.applicationInfo.uid,
-                            task.topActivityInfo.name, task.token != null,
-                            task.getWindowingMode() == WindowConfiguration.WINDOWING_MODE_FREEFORM)) {
-                Log.i(TAG, "Authorized Linux window uid=" + uid + " task=" + taskId
-                        + " signer=stub scope=self-task");
-                return task;
-            }
-            break;
-        }
-        deny("linux window task=" + taskId, uid, "task is not the caller's freeform Linux window");
-        throw new AssertionError();
-    }
-
-    private final class GeometryGesture implements IBinder.DeathRecipient {
-        final int uid, taskId, edges, minWidth, minHeight;
-        final String ref;
-        final android.window.WindowContainerToken token;
-        final int[] start, display;
-        final IBinder lifetime;
-        boolean resizing;
-        long lastUpdate = SystemClock.uptimeMillis();
-        GeometryGesture(int uid, int taskId, String ref, android.window.WindowContainerToken token,
-                int edges, int[] start, int[] display, int minWidth, int minHeight, IBinder lifetime) {
-            this.uid=uid; this.taskId=taskId; this.ref=ref; this.token=token; this.edges=edges;
-            this.start=start; this.display=display; this.minWidth=minWidth; this.minHeight=minHeight;
-            this.lifetime=lifetime;
-        }
-        void close() {
-            lifetime.unlinkToDeath(this, 0);
-            if (!resizing) return;
-            resizing=false;
-            long identity = Binder.clearCallingIdentity();
-            try {
-                new WindowOrganizer().applyTransaction(new WindowContainerTransaction().setDragResizing(token, false));
-            } catch (RuntimeException error) {
-                Log.w(TAG, "Linux resize cleanup unavailable task=" + taskId, error);
-            } finally { Binder.restoreCallingIdentity(identity); }
-        }
-        void expire() {
-            synchronized (linuxGestures) {
-                if (linuxGestures.get(uid) != this) return;
-                long remaining = 5000 - (SystemClock.uptimeMillis() - lastUpdate);
-                if (remaining > 0) geometryHandler.postDelayed(this::expire, remaining);
-                else { linuxGestures.remove(uid); close(); }
-            }
-        }
-        @Override public void binderDied() {
-            synchronized (linuxGestures) {
-                if (linuxGestures.get(uid) == this) { linuxGestures.remove(uid); close(); }
-            }
-        }
-    }
-
-    /** Android owns the stub's whole process tree in v3; linuxd has no app PID. */
-    private String stopOwnedFlatpak(FlatpakStubManager owner, String ref) throws Exception {
-        int uid = owner.verifiedUid(ref);
-        android.app.ActivityManager.getService().forceStopPackage(
-                FlatpakStubIdentity.packageFor(ref), UserHandle.getUserId(uid));
-        return new JSONObject().put("ok", true).put("exitCode", 0).toString();
-    }
-
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
-        @Override public String getFlatpakStubCommits(int uid, String ref) {
-            // linuxd runs as system; app callers must pass the existing scoped gate.
-            if (Binder.getCallingUid() != android.os.Process.SYSTEM_UID)
-                enforceAuthorizedCaller("flatpak_launch", "getFlatpakStubCommits");
-            else Log.i(TAG, "Authorized action=getFlatpakStubCommits caller=system stubUid=" + uid);
-            long identity = Binder.clearCallingIdentity();
-            try { return flatpakStubManager.stubCommits(uid, ref); }
-            catch (Exception error) { throw new IllegalStateException("Cannot resolve stub commits", error); }
-            finally { Binder.restoreCallingIdentity(identity); }
-        }
-
         @Override public int getBridgeApiVersion() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiVersion");
             return 8;
@@ -864,72 +318,11 @@ public final class SystemBridgeService extends Service {
                 JSONObject args = new JSONObject(jsonArgs == null ? "{}" : jsonArgs);
                 if (args.toString().length() > 64 * 1024)
                     throw new IllegalArgumentException("channel arguments too large");
-                if ("input".equals(target) && "set_absolute_pointer_mode".equals(command)) {
+                if ("input".equals(target) && "set_absolute_pointer_mode".equals(command))
                     return setAbsolutePointerMode(UserHandle.USER_CURRENT).toString();
-                }
-                String result;
-                if ("flatpak".equals(target)) {
-                    int user = UserHandle.getUserId(Binder.getCallingUid());
-                    if (args.has("userId")) {
-                        Object requested = args.get("userId");
-                        if (!(requested instanceof Integer) || (Integer) requested < 0)
-                            throw new IllegalArgumentException("A concrete Android user is required");
-                        int requestedUser = (Integer) requested;
-                        if (requestedUser != user &&
-                                checkCallingPermission(android.Manifest.permission.INTERACT_ACROSS_USERS) != PackageManager.PERMISSION_GRANTED &&
-                                checkCallingPermission(android.Manifest.permission.INTERACT_ACROSS_USERS_FULL) != PackageManager.PERMISSION_GRANTED)
-                            throw new SecurityException("Cross-user Flatpak management requires cross-user permission");
-                        user = requestedUser;
-                        args.remove("userId");
-                    }
-                    // Check both caller and target before clearing the Binder identity.
-                    enforceLinuxAppRestriction(UserHandle.getUserId(Binder.getCallingUid()), command);
-                    enforceLinuxAppRestriction(user, command);
-                    FlatpakStubManager owner = flatpakStubManager.forUser(user);
-                    if (args.has("uid") || args.has("installerUid"))
-                        throw new SecurityException("Installation identities are resolved by the bridge");
-                    ILinuxd service = linuxdFor();
-                    if (service == null) throw new IllegalStateException("Flatpak service is unavailable");
-                    if ("launch_stub".equals(command)) {
-                        if (args.length() != 1 || !args.has("appId") || !(args.get("appId") instanceof String))
-                            throw new IllegalArgumentException("An application ID is required");
-                        long identity = Binder.clearCallingIdentity();
-                        try { result = owner.launch(args.getString("appId")); }
-                        finally { Binder.restoreCallingIdentity(identity); }
-                    } else if ("install".equals(command)) {
-                        /* Verify and deploy before creating the final stub. */
-                        if (!args.has("ref") || !(args.get("ref") instanceof String))
-                            throw new IllegalArgumentException("An application reference is required");
-                        result = owner.installAsync(args.getString("ref"), args);
-                    } else if ("uninstall".equals(command)) {
-                        long identity=Binder.clearCallingIdentity();
-                        try {result=owner.uninstall(args.getString("ref"),args.optBoolean("deleteData",false));}
-                        finally{Binder.restoreCallingIdentity(identity);}
-                    } else if ("kill".equals(command)) {
-                        long identity = Binder.clearCallingIdentity();
-                        try { result = stopOwnedFlatpak(owner, args.getString("ref")); }
-                        finally { Binder.restoreCallingIdentity(identity); }
-                    } else {
-                        if ("metadata".equals(command) || "desktop_entry".equals(command) || "icon".equals(command) ||
-                                "uninstall".equals(command) || "installed_for_uid".equals(command)) {
-                            long identity = Binder.clearCallingIdentity();
-                            int uid;
-                            try {
-                                uid = owner.verifiedUid(args.getString("ref"));
-                            } finally { Binder.restoreCallingIdentity(identity); }
-                            args.put("uid", uid);
-                        } else if ("list_installed".equals(command)) {
-                            args.put("userId", user);
-                        } else if (!("add_flathub".equals(command) || "list_remotes".equals(command))) {
-                            throw new IllegalArgumentException("Unsupported Flatpak management command");
-                        }
-                        result = service.call(command, args.toString());
-                    }
-                } else {
-                    IChannel channel = channelFor(target);
-                    if (channel == null) throw new IllegalStateException("channel instance unavailable: " + target);
-                    result = channel.call(command, args.toString());
-                }
+                IChannel channel = channelFor(target);
+                if (channel == null) throw new IllegalStateException("channel instance unavailable: " + target);
+                String result = channel.call(command, args.toString());
                 if (result == null || result.length() > 64 * 1024)
                     throw new IllegalStateException("invalid channel result");
                 org.json.JSONTokener parsed = new org.json.JSONTokener(result);
@@ -948,29 +341,14 @@ public final class SystemBridgeService extends Service {
             validateName(topic, "topic");
             if (listener == null) throw new IllegalArgumentException("listener is required");
             String key = subscriptionKey(listener.asBinder(), target, topic);
-            if ("flatpak".equals(target)) {
-                if (flatpakSubscriptions.containsKey(key)) return;
-                ILinuxd service = linuxdFor();
-                if (service == null) throw new IllegalStateException("Flatpak service is unavailable");
-                FlatpakSubscription subscription = new FlatpakSubscription(key, topic, listener, service);
-                FlatpakSubscription previous = flatpakSubscriptions.putIfAbsent(key, subscription);
-                if (previous != null) return;
-                try { service.subscribe(topic, subscription.serviceListener); }
-                catch (RemoteException e) {
-                    flatpakSubscriptions.remove(key, subscription);
-                    throw new IllegalStateException("Flatpak subscribe failed", e);
-                }
-                return;
-            }
             if (subscriptions.containsKey(key)) return;
             IChannel channel = channelFor(target);
             if (channel == null) throw new IllegalStateException("channel instance unavailable: " + target);
             Subscription subscription = new Subscription(key, target, topic, listener, channel);
             Subscription previous = subscriptions.putIfAbsent(key, subscription);
             if (previous != null) return;
-            try {
-                channel.subscribe(topic, subscription.channelListener);
-            } catch (Exception e) {
+            try { channel.subscribe(topic, subscription.channelListener); }
+            catch (Exception e) {
                 subscriptions.remove(key, subscription);
                 Log.e(TAG, "Cannot subscribe to " + target + "/" + topic, e);
                 throw new IllegalStateException("Channel subscription failed", e);
@@ -982,28 +360,14 @@ public final class SystemBridgeService extends Service {
             validateName(target, "target");
             validateName(topic, "topic");
             if (listener == null) return;
-            String key = subscriptionKey(listener.asBinder(), target, topic);
-            if ("flatpak".equals(target)) {
-                FlatpakSubscription subscription = flatpakSubscriptions.remove(key);
-                if (subscription != null) subscription.close();
-                return;
-            }
-            Subscription subscription = subscriptions.remove(key);
+            Subscription subscription = subscriptions.remove(subscriptionKey(listener.asBinder(), target, topic));
             if (subscription != null) subscription.close();
         }
     };
 
-    private void enforceLinuxAppRestriction(int user, String command) {
-        String restriction = LinuxAppStorePolicy.restriction(command);
-        if (restriction == null) return;
-        android.os.UserManager users = getSystemService(android.os.UserManager.class);
-        if (users == null) throw new SecurityException("User restrictions unavailable");
-        long identity = Binder.clearCallingIdentity();
-        try {
-            if (users.hasUserRestriction(restriction, UserHandle.of(user)))
-                throw new SecurityException("Linux app operation blocked by " + restriction);
-        } finally { Binder.restoreCallingIdentity(identity); }
-    }
+    };
+
+
 
     @Override public IBinder onBind(Intent intent) {
         // Android enforces the service's SYSTEM_BRIDGE permission before bind.
@@ -1019,7 +383,7 @@ public final class SystemBridgeService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         activeService = this;
-        flatpakStubManager = new FlatpakStubManager(this);
+        flatpakStubManager = new LinuxdDeploymentReconciler(this);
         flatpakStubManager.start();
         // sleep: poll off the main thread; failed power inspection keeps sleep blocked.
         sleepWakeForwarder = new AndroidWakeStateForwarder(this);
@@ -1046,20 +410,12 @@ public final class SystemBridgeService extends Service {
     }
 
     @Override public void onDestroy() {
-        for(RepoRequest request:repoRequests.values())decideRepo(request.operation,RepoDecision.State.CALLER_DIED);
-        repoWorker.shutdownNow();repoCallers.clear();
-        storeListeners.kill();
-        if(storeSubscribedDaemon!=null)try{storeSubscribedDaemon.unsubscribe("progress",storeObserver);}catch(RemoteException ignored){}
         if (flatpakStubManager != null) flatpakStubManager.close();
         // sleep: stop the poller with the persistent bridge service.
         if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
         if (navigationBarWindow != null) navigationBarWindow.close();
         if (geometryHandler != null) geometryHandler.removeCallbacksAndMessages(null);
         if (activeService == this) activeService = null;
-        synchronized (linuxGestures) {
-            for (GeometryGesture gesture : linuxGestures.values()) gesture.close();
-            linuxGestures.clear();
-        }
         super.onDestroy();
     }
 
@@ -1417,7 +773,7 @@ public final class SystemBridgeService extends Service {
 
     private static Set<String> knownTargets() {
         return new HashSet<>(java.util.Arrays.asList("launcher", "input", "sleep", "wifi",
-                "audio", "camera", "install", "addons", "flatpak", "flatpak_launch", "status", "nav.back", "nav.home", "nav.recents"));
+                "audio", "camera", "install", "addons", "status", "nav.back", "nav.home", "nav.recents"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {
@@ -1677,91 +1033,7 @@ public final class SystemBridgeService extends Service {
                         result.putString("result", channel.call(arg, request));
                     } catch (RemoteException e) {
                         throw new IllegalStateException("addons service call failed", e);
-                    }
-                } else if ("flatpak_test_call".equals(method)) {
-                    // Root-only live debug harness. Production callers use the normal flatpak ACL.
-                    if (uid != 0 || !Build.IS_DEBUGGABLE ||
-                            !"1".equals(android.os.SystemProperties.get("persist.vendor.maton.flatpak_test")) ||
-                            !"1".equals(android.os.SystemProperties.get("ro.boot.matonos.live")))
-                        throw new SecurityException("flatpak test channel requires an armed live debug image and root");
-                    if (!Set.of("stage", "list_installed", "list_remotes", "add_flathub", "install",
-                            "uninstall", "kill", "check_updates", "update", "install_repo", "remove_repo", "repo_status").contains(arg))
-                        throw new IllegalArgumentException("unsupported flatpak test command");
-                    String encoded = extras == null ? null : extras.getString("payload_b64");
-                    if (encoded == null || encoded.length() > (("install_repo".equals(arg))?180000:90000))
-                        throw new IllegalArgumentException("Flatpak request payload is missing or too large");
-                    String request = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
-                    SystemBridgeService bridge = activeService;
-                    ILinuxd linuxd = bridge == null ? null : bridge.linuxdFor();
-                    if (linuxd == null) throw new IllegalStateException("Flatpak service is unavailable");
-                    try {
-                        JSONObject args = new JSONObject(request);
-                        Object requestedUser = args.opt("userId");
-                        if (requestedUser != null && (!(requestedUser instanceof Integer) || (Integer) requestedUser < 0))
-                            throw new IllegalArgumentException("A concrete Android user is required");
-                        int user = requestedUser == null ? 0 : (Integer) requestedUser;
-                        bridge.enforceLinuxAppRestriction(user, arg);
-                        if ("repo_status".equals(arg)) {
-                            String op=args.getString("operationId");String status=repoResults.get(op);
-                            if(status==null && !repoRequests.containsKey(op))throw new IllegalArgumentException("Unknown repository operation");
-                            result.putString("result",status==null?new JSONObject().put("ok",true).put("complete",false).toString():status);return result;
-                        }
-                        if ("install_repo".equals(arg) || "remove_repo".equals(arg)) {
-                            IStoreListener debug=new IStoreListener.Stub() {
-                                public void onProgress(String op,String state,int percent,String message){}
-                                public void onFinished(String op,boolean ok,String error){Log.i(TAG,"Debug repository "+op+" ok="+ok+" "+error);}
-                            };
-                            FlatpakRepo repo="install_repo".equals(arg)?new FlatpakRepo(Base64.getDecoder().decode(args.getString("file_b64"))):null;
-                            String op=bridge.requestRepo(user,repo,repo==null?args.getString("remote"):repo.name,debug,true);
-                            result.putString("result",new JSONObject().put("ok",true).put("accepted",true).put("operationId",op)
-                                .put("remote",repo==null?args.getString("remote"):repo.name).toString());return result;
-                        }
-                        if ("check_updates".equals(arg)) {
-                            LinuxAppInfo[] items=bridge.storeInventory(user,true);
-                            org.json.JSONArray updates=new org.json.JSONArray();
-                            for(LinuxAppInfo item:items)updates.put(new JSONObject().put("appId",item.appId).put("remote",item.remote)
-                                .put("installedCommit",item.installedCommit).put("availableCommit",item.availableCommit));
-                            result.putString("result",new JSONObject().put("ok",true).put("updates",updates).toString());return result;
-                        }
-                        if ("update".equals(arg)) {
-                            bridge.enforceLinuxAppRestriction(user,"update_app");
-                            if(args.has("uid") || args.has("installerUid"))throw new SecurityException("Installation identities are resolved by the bridge");
-                            String ref=args.getString("ref");FlatpakStubManager owner=bridge.flatpakStubManager.forUser(user);
-                            owner.verifiedUid(ref);args.put("remote",owner.remoteFor(FlatpakStubIdentity.packageFor(ref)));
-                            args.remove("userId");
-                            JSONObject accepted=new JSONObject(owner.installAsync(ref,args));
-                            accepted.put("stubPackage",FlatpakStubIdentity.packageFor(ref));
-                            result.putString("result",accepted.toString());return result;
-                        }
-                        if ("install".equals(arg)) {
-                            args.remove("userId");
-                            if (args.has("uid") || args.has("installerUid"))
-                                throw new SecurityException("Installation identities are resolved by the bridge");
-                            String ref = args.getString("ref");
-                            JSONObject accepted = new JSONObject(bridge.flatpakStubManager.forUser(user).installAsync(ref, args));
-                            accepted.put("stubPackage", FlatpakStubIdentity.packageFor(ref));
-                            result.putString("result", accepted.toString());
-                            return result;
-                        }
-                        if ("kill".equals(arg)) {
-                            result.putString("result", bridge.stopOwnedFlatpak(bridge.flatpakStubManager.forUser(user), args.getString("ref")));
-                            return result;
-                        }
-                        if ("uninstall".equals(arg)) {
-                            args.remove("userId");
-                            args.put("uid", bridge.flatpakStubManager.forUser(user).verifiedUid(args.getString("ref")));
-                        } else if ("list_installed".equals(arg)) {
-                            args.put("userId", user);
-                        } else if ("list_remotes".equals(arg) || "add_flathub".equals(arg)) {
-                            args.remove("userId");
-                        }
-                        result.putString("result", "uninstall".equals(arg)
-                                ? bridge.flatpakStubManager.forUser(user).uninstall(args.getString("ref"),args.optBoolean("deleteData",false))
-                                : linuxd.call(arg, args.toString()));
-                    } catch (Exception e) {
-                        throw new IllegalStateException("Flatpak service call failed", e);
-                    }
-                } else throw new IllegalArgumentException("unknown bridge shell method");
+                    else throw new IllegalArgumentException("unknown bridge shell method");
                 return result;
             } catch (RuntimeException e) {
                 Log.w(TAG, "Bridge trust provider request failed method=" + method
@@ -1912,42 +1184,8 @@ public final class SystemBridgeService extends Service {
         return IChannel.Stub.asInterface(service);
     }
 
-    private ILinuxd linuxdFor() {
-        IBinder service = ServiceManager.checkService("org.matonos.systembridge.ILinuxd/default");
-        return ILinuxd.Stub.asInterface(service);
-    }
-
     private boolean channelAvailable(String target) {
-        return "flatpak".equals(target) ? linuxdFor() != null : channelFor(target) != null;
-    }
-
-    private final class FlatpakSubscription {
-        final String key;
-        final String topic;
-        final IMatonosListener appListener;
-        final ILinuxd service;
-        final ILinuxdListener serviceListener;
-        FlatpakSubscription(String key, String topic, IMatonosListener appListener, ILinuxd service) {
-            this.key = key;
-            this.topic = topic;
-            this.appListener = appListener;
-            this.service = service;
-            this.serviceListener = new ILinuxdListener.Stub() {
-                @Override public void onEvent(String eventTopic, String json) {
-                    if (!topic.equals(eventTopic) || json == null || json.length() > 64 * 1024) return;
-                    try { appListener.onEvent("flatpak", eventTopic, json); }
-                    catch (RemoteException e) {
-                        Log.w(TAG, "Flatpak listener died for " + topic, e);
-                        close();
-                    }
-                }
-            };
-        }
-        void close() {
-            flatpakSubscriptions.remove(key, this);
-            try { service.unsubscribe(topic, serviceListener); }
-            catch (RemoteException e) { Log.w(TAG, "Flatpak unsubscribe failed", e); }
-        }
+        return channelFor(target) != null;
     }
 
     private final class Subscription {

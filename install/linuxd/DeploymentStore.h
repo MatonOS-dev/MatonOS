@@ -54,7 +54,7 @@ static inline int deployment_discard(const char* path) {
     close(fd);close(parent);return rc;
 }
 static inline int deployment_create(unsigned uid,char* path,size_t size) {
-    if(!maton_path_uid_valid(uid) || maton_store_prepare())return -1;
+    if(!maton_path_uid_valid(uid) || maton_storage_prepare())return -1;
     int n=snprintf(path,size,MATON_INSTALL_ROOT "/%u-XXXXXX",maton_app_id(uid));
     if(n<0||(size_t)n>=size)return -1;
     if(maton_storage_context("u:object_r:matonos_flatpak_deployment_file:s0"))return -1;
