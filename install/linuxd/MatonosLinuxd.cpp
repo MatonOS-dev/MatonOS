@@ -106,17 +106,6 @@ std::vector<android::sp<ILinuxdListener>> g_progress_listeners;
 std::mutex g_event_mutex;
 std::condition_variable g_event_condition;
 std::deque<std::string> g_events;
-/* Self installs/updates in flight: stub UIDs and per-operation completion state. */
-std::mutex g_self_mutex;
-std::set<int> g_self_busy;
-struct SelfOperationState {
-    int uid;
-    std::string ref;
-    bool complete = false;
-    std::string result;
-};
-std::condition_variable g_self_condition;
-std::map<std::string, std::shared_ptr<SelfOperationState>> g_self_operations;
 
 /* Root/shell-only diagnostic snapshots, bounded to the most recent operations. The
  * test harness uses this because the bridge shell allowlist has no status RPC. */
@@ -292,34 +281,28 @@ void PublishCompletion(const FlatpakResult& result) {
     Json::Value event(Json::objectValue);
     event["phase"] = "complete";
     event["result"] = EncodeResult(result);
-    if (result.operation_id) {
-        /* Self-started operations name their ref so the bridge can show the launcher. */
-        std::lock_guard<std::mutex> guard(g_self_mutex);
-        auto operation = g_self_operations.find(result.operation_id);
-        if (operation != g_self_operations.end()) {
-            event["result"]["ref"] = operation->second->ref;
-            event["result"]["uid"] = operation->second->uid;
-            g_self_busy.erase(operation->second->uid);
-            operation->second->result = Encode(event["result"]);
-            operation->second->complete = true;
-            g_self_operations.erase(operation);
-            g_self_condition.notify_all();
-        }
-    }
     const std::string body = Encode(event);
     NotifyListeners(body);
+}
+
+int PackageUid(const char* package) {
+    android::sp<android::IPermissionController> permissions =
+            android::interface_cast<android::IPermissionController>(
+                    android::defaultServiceManager()->checkService(android::String16("permission")));
+    return permissions ? permissions->getPackageUid(android::String16(package), 0) : -1;
+}
+
+bool IsSubsystemCaller() {
+    android::IPCThreadState* state = android::IPCThreadState::self();
+    int uid=PackageUid("org.matonos.linux");
+    return uid>=0 && state->getCallingUid()==static_cast<uid_t>(uid);
 }
 
 bool IsTrustedCaller() {
     android::IPCThreadState* state = android::IPCThreadState::self();
     if (!android::PermissionCache::checkPermission(android::String16("org.matonos.permission.SYSTEM_BRIDGE"),
             state->getCallingPid(), state->getCallingUid())) return false;
-    // All operations must pass through the bridge's certificate/target gate.
-    android::sp<android::IPermissionController> permissions =
-            android::interface_cast<android::IPermissionController>(
-                    android::defaultServiceManager()->checkService(android::String16("permission")));
-    int bridgeUid = permissions ? permissions->getPackageUid(
-            android::String16("org.matonos.systembridge"), 0) : -1;
+    int bridgeUid = PackageUid("org.matonos.systembridge");
     return bridgeUid >= 0 && state->getCallingUid() == static_cast<uid_t>(bridgeUid);
 }
 
@@ -397,36 +380,6 @@ bool StagedManifest(const Json::Value& value,FlatpakStagedManifest* out) {
 }
 
 
-/*
- * "install me" / "update me", called by the generated stub itself with its
- * package name. The UID comes from binder and must own that package, which
- * must be signed with the per-device stub key; ref and remote come from its
- * manifest.
- * Until the bridge compositor worker lands, new work fails closed here.
- */
-std::string SelfOperation(bool update, const std::string& package, const std::string& operation_in) {
-    const int uid = static_cast<int>(android::IPCThreadState::self()->getCallingUid());
-    if (!operation_in.empty() && !ValidName(operation_in, 64)) return Encode(Error("invalid operation ID"));
-    char error[512] = {0}, ref_buffer[1100], remote_buffer[130];
-    if (stub_verify_caller(uid, package.c_str(), ref_buffer, sizeof(ref_buffer),
-            remote_buffer, sizeof(remote_buffer), error, sizeof(error))) {
-        fprintf(stderr, "matonos-linuxd: rejected self install from uid %d: %s\n", uid, error);
-        return Encode(Error(error));
-    }
-    const std::string ref = ref_buffer;
-    const std::string remote = remote_buffer[0] ? std::string(remote_buffer) : std::string("flathub");
-    if (!flatpak_manager_valid_ref(ref.c_str()) || ref.compare(0, 4, "app/") != 0 || !ValidName(remote, 64))
-        return Encode(Error("stub declares an invalid ref or remote"));
-    const bool installed = flatpak_manager_installed_for_uid(ref.c_str(), uid) != 0;
-    if (!update && installed) {
-        Snapshot(operation_in,"complete");
-        Json::Value out; out["ok"] = true; out["installed"] = true;
-        return Encode(out);
-    }
-    if (update && !installed) return Encode(Error("not installed"));
-    return Encode(Error("Compositor installer required; self install awaits bridge routing"));
-}
-
 bool HexDecode(const std::string& hex, std::vector<unsigned char>* out) {
     if (hex.empty() || hex.size() % 2 || hex.size() > 16384) return false;
     out->clear();
@@ -483,23 +436,15 @@ class LinuxdService final : public BnLinuxd {
         {std::lock_guard<std::mutex> lock(g_identity_mutex);g_identity=identity;}
         return android::binder::Status::ok();
     }
-    android::binder::Status installSelf(const android::String16& packageName,
-            const android::String16& operationId, android::String16* aidl_return) override {
-        *aidl_return = android::String16(SelfOperation(false, ToUtf8(packageName), ToUtf8(operationId)).c_str());
-        return android::binder::Status::ok();
-    }
-
-    android::binder::Status updateSelf(const android::String16& packageName,
-            const android::String16& operationId, android::String16* aidl_return) override {
-        *aidl_return = android::String16(SelfOperation(true, ToUtf8(packageName), ToUtf8(operationId)).c_str());
-        return android::binder::Status::ok();
-    }
-
     android::binder::Status call(const android::String16& command16,
                                  const android::String16& args16,
                                  android::String16* aidl_return) override {
-        if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         const std::string command = ToUtf8(command16);
+        const bool subsystemHandoff = command=="begin_staged_install" || command=="verify_staged_install" ||
+                command=="abort_staged_install" || command=="pending_metadata" || command=="pending_desktop" ||
+                command=="pending_icon" || command=="bind_pending" || command=="install_complete" || command=="install_failed";
+        if (!(subsystemHandoff ? IsSubsystemCaller() : IsTrustedCaller()))
+            return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         const std::string args = ToUtf8(args16);
         auto reply = [aidl_return](const std::string& value) {
             *aidl_return = android::String16(value.c_str());
