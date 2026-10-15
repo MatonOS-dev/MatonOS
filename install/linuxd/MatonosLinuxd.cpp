@@ -76,6 +76,20 @@ extern "C" int stub_identity_query(const char* command, int uid, const char* pac
     return value["value"].asInt();
 }
 
+/* The bridge owns every staged authorization. Its death invalidates all
+ * unpublished handoffs; cleanup waits for any active verification to finish. */
+class IdentityDeathRecipient final : public android::IBinder::DeathRecipient {
+  public:
+    void binderDied(const android::wp<android::IBinder>& who) override {
+        std::lock_guard<std::mutex> lock(g_identity_mutex);
+        if(g_identity && android::IInterface::asBinder(g_identity).get()==who.unsafe_get()) {
+            g_identity.clear();
+            flatpak_manager_abort_handoffs();
+        }
+    }
+};
+android::sp<IdentityDeathRecipient> g_identity_death = new IdentityDeathRecipient();
+
 namespace {
 constexpr char kInstance[] = "org.matonos.systembridge.ILinuxd/default";
 constexpr size_t kInputLimit = 64 * 1024;
@@ -124,7 +138,7 @@ void StagingProgress(const char* text) {
     if(percent!=std::string::npos)value.resize(percent+1);
     if(value!=g_last_staging_progress) {
         g_last_staging_progress=value;
-        Snapshot(g_staging_operation,"staging");
+        Snapshot(g_staging_operation,"verifying");
     }
 }
 
@@ -144,6 +158,8 @@ bool Parse(const std::string& text, Json::Value* root, size_t limit=kInputLimit)
     if (text.size() > limit) return false;
     Json::CharReaderBuilder builder;
     builder["collectComments"] = false;
+    builder["rejectDupKeys"] = true;
+    builder["failIfExtra"] = true;
     std::string errors;
     std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
     return reader->parse(text.data(), text.data() + text.size(), root, &errors) && root->isObject();
@@ -323,25 +339,59 @@ bool ValidName(const std::string& value, size_t limit) {
     return true;
 }
 
-void PublishSelfFailure(const std::string& operation_id, const std::string& ref, int uid, const std::string& error) {
-    Snapshot(operation_id,"complete",error);
-    Json::Value event(Json::objectValue);
-    event["phase"] = "complete";
-    event["result"]["ok"] = false;
-    event["result"]["error"] = error;
-    event["result"]["operationId"] = operation_id;
-    event["result"]["ref"] = ref;
-    event["result"]["uid"] = uid;
-    NotifyListeners(Encode(event));
+template<size_t N> bool ManifestString(const Json::Value& value,char (&out)[N]) {
+    if(!value.isString())return false;
+    const std::string text=value.asString();
+    if(text.empty() || text.size()>=N || HasEmbeddedNul(text))return false;
+    memcpy(out,text.c_str(),text.size()+1);return true;
 }
+bool ManifestCommit(const Json::Value& value,char (&out)[65]) {
+    if(!ManifestString(value,out) || strlen(out)!=64)return false;
+    for(const char* p=out;*p;p++)if(!(*p>='0' && *p<='9') && !(*p>='a' && *p<='f'))return false;
+    return true;
+}
+bool StagedManifest(const Json::Value& value,FlatpakStagedManifest* out) {
+    if(!value.isObject() || !OnlyKeys(value,{"version","operationId","appRef","appCommit","remote","deployments"}) ||
+            !value["version"].isInt() || value["version"].asInt()!=1 ||
+            !ManifestString(value["operationId"],out->operation_id) || !ValidName(out->operation_id,64) ||
+            !ManifestString(value["appRef"],out->app_ref) || !flatpak_manager_valid_ref(out->app_ref) ||
+            strncmp(out->app_ref,"app/",4) || !ManifestCommit(value["appCommit"],out->app_commit) ||
+            !ManifestString(value["remote"],out->remote) ||
+            !value["deployments"].isArray() || value["deployments"].empty() || value["deployments"].size()>64)return false;
+    out->version=1;out->deployment_count=value["deployments"].size();
+    std::set<std::string> refs;
+    for(Json::ArrayIndex i=0;i<value["deployments"].size();i++) {
+        const auto& d=value["deployments"][i];auto& target=out->deployments[i];
+        if(!d.isObject() || !OnlyKeys(d,{"ref","commit","subpaths"}) ||
+                !ManifestString(d["ref"],target.ref) || !flatpak_manager_valid_ref(target.ref) ||
+                !refs.insert(target.ref).second || !ManifestCommit(d["commit"],target.commit) ||
+                !d["subpaths"].isArray() || d["subpaths"].size()>32)return false;
+        target.subpath_count=d["subpaths"].size();
+        std::set<std::string> paths;
+        for(Json::ArrayIndex j=0;j<d["subpaths"].size();j++) {
+            if(!ManifestString(d["subpaths"][j],target.subpaths[j]))return false;
+            std::string path=target.subpaths[j];
+            if(path[0]=='/' || path.back()=='/' || !paths.insert(path).second)return false;
+            size_t start=0;
+            do {
+                size_t end=path.find('/',start);
+                std::string part=path.substr(start,end==std::string::npos?end:end-start);
+                if(part.empty() || part=="." || part=="..")return false;
+                if(end==std::string::npos)break;
+                start=end+1;
+            }while(true);
+        }
+    }
+    return true;
+}
+
 
 /*
  * "install me" / "update me", called by the generated stub itself with its
  * package name. The UID comes from binder and must own that package, which
  * must be signed with the per-device stub key; ref and remote come from its
  * manifest.
- * Staging (the network part) runs in this call, as the stub UID, while the
- * stub's activity is in the foreground; publishing continues asynchronously.
+ * Until the bridge compositor worker lands, new work fails closed here.
  */
 std::string SelfOperation(bool update, const std::string& package, const std::string& operation_in) {
     const int uid = static_cast<int>(android::IPCThreadState::self()->getCallingUid());
@@ -363,57 +413,7 @@ std::string SelfOperation(bool update, const std::string& package, const std::st
         return Encode(out);
     }
     if (update && !installed) return Encode(Error("not installed"));
-    const std::string operation_id = !operation_in.empty() ? operation_in :
-            std::string(update ? "update-" : "install-") + std::to_string(uid) + "-" + std::to_string(time(nullptr));
-    auto operation = std::make_shared<SelfOperationState>();
-    operation->uid = uid;
-    operation->ref = ref;
-    {
-        std::lock_guard<std::mutex> guard(g_self_mutex);
-        if (g_self_operations.count(operation_id)) return Encode(Error("operation ID already in use"));
-        if (!g_self_busy.insert(uid).second) {
-            Json::Value out; out["ok"] = true; out["accepted"] = true; out["running"] = true;
-            return Encode(out);
-        }
-        g_self_operations[operation_id] = operation;
-    }
-    auto fail = [&](const std::string& message) {
-        {
-            std::lock_guard<std::mutex> guard(g_self_mutex);
-            g_self_busy.erase(uid);
-            g_self_operations.erase(operation_id);
-        }
-        PublishSelfFailure(operation_id, ref, uid, message);
-        return Encode(Error(message));
-    };
-    g_staging_operation=operation_id;
-    g_last_staging_progress.clear();
-    flatpak_publish_progress(StagingProgress);
-    Snapshot(operation_id,"staging");
-    PublishProgress(std::string(update ? "update" : "install") + " started");
-    std::vector<char> app_commit(65), runtime_ref(512), runtime_commit(65), metadata(16384), desktop(131072);
-    if (flatpak_manager_prepare(ref.c_str(), remote.c_str(), MATON_FPINSTALL_UID, operation_id.c_str(),
-            app_commit.data(), app_commit.size(), runtime_ref.data(), runtime_ref.size(),
-            runtime_commit.data(), runtime_commit.size(), metadata.data(), metadata.size(),
-            desktop.data(), desktop.size(), error, sizeof(error)))
-        { flatpak_publish_progress(nullptr);g_staging_operation.clear();
-          return fail(error[0] ? error : "cannot prepare Flatpak install"); }
-    flatpak_publish_progress(nullptr);
-    g_staging_operation.clear();
-    Snapshot(operation_id,"publishing");
-    FlatpakResult result{};
-    flatpak_manager_call("install", ref.c_str(), 0, operation_id.c_str(), app_commit.data(),
-            runtime_ref.data(), runtime_commit.data(), remote.c_str(), uid, &result);
-    const bool accepted = result.ok && result.accepted;
-    const std::string message = result.error ? result.error : "Flatpak install was rejected";
-    flatpak_manager_result_clear(&result);
-    if (!accepted) return fail(message);
-    // The stub owns the foreground service and wake lock. Keep its Binder
-    // call alive through download AND asynchronous deployment, including
-    // failure/cancellation, rather than releasing them on "accepted".
-    std::unique_lock<std::mutex> lock(g_self_mutex);
-    g_self_condition.wait(lock, [&] { return operation->complete; });
-    return operation->result;
+    return Encode(Error("Compositor installer required; self install awaits bridge routing"));
 }
 
 bool HexDecode(const std::string& hex, std::vector<unsigned char>* out) {
@@ -453,15 +453,19 @@ class LinuxdService final : public BnLinuxd {
     }
     android::binder::Status registerIdentity(const android::sp<ILinuxdIdentity>& identity) override {
         if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
-        bool replaced=false;
+        if(!identity)return android::binder::Status::fromExceptionCode(android::binder::Status::EX_ILLEGAL_ARGUMENT);
         {
             std::lock_guard<std::mutex> lock(g_identity_mutex);
-            replaced=g_identity && android::IInterface::asBinder(g_identity) != android::IInterface::asBinder(identity);
-            g_identity = identity;
+            auto next=android::IInterface::asBinder(identity);
+            const bool replaced=g_identity && android::IInterface::asBinder(g_identity)!=next;
+            if(replaced) {
+                android::IInterface::asBinder(g_identity)->unlinkToDeath(g_identity_death);
+                flatpak_manager_abort_handoffs();
+            }
+            if(next->linkToDeath(g_identity_death)!=android::OK)
+                return android::binder::Status::fromExceptionCode(android::binder::Status::EX_ILLEGAL_STATE);
+            g_identity=identity;
         }
-        // A new bridge process cannot receive the previous process's PM
-        // callbacks. Drop its unpublished handoff before reconciliation.
-        if(replaced)flatpak_manager_abort_handoffs();
         return android::binder::Status::ok();
     }
     android::binder::Status installSelf(const android::String16& packageName,
@@ -491,7 +495,45 @@ class LinuxdService final : public BnLinuxd {
             return android::binder::Status::ok();
         }
 
-        if (command == "deploy_pending" || command == "bind_pending" || command == "abort_pending" ||
+        if(command=="begin_staged_install" || command=="verify_staged_install" || command=="abort_staged_install") {
+            const bool begin=command=="begin_staged_install",verify=command=="verify_staged_install";
+            if(!OnlyKeys(request,begin?std::initializer_list<const char*>{"operationId","ref","remote","compositorUid"}:
+                    verify?std::initializer_list<const char*>{"operationId","manifest"}:std::initializer_list<const char*>{"operationId"}) ||
+                    !request["operationId"].isString() || !ValidName(request["operationId"].asString(),64)) {
+                reply(Encode(Error("invalid staged operation")));return android::binder::Status::ok();
+            }
+            std::string ref,remote;int uid=-1;
+            if(begin) {
+                if(!request["ref"].isString() || HasEmbeddedNul(request["ref"].asString()) ||
+                        !request["remote"].isString() || HasEmbeddedNul(request["remote"].asString()) ||
+                        !request["compositorUid"].isInt()) {
+                    reply(Encode(Error("invalid staged authorization")));return android::binder::Status::ok();
+                }
+                ref=request["ref"].asString();remote=request["remote"].asString();uid=request["compositorUid"].asInt();
+            }
+            /* Bounded heap storage; the inherited channel frame limit applies. */
+            std::unique_ptr<FlatpakStagedManifest> manifest;
+            if(verify) {
+                manifest=std::make_unique<FlatpakStagedManifest>();
+                if(!StagedManifest(request["manifest"],manifest.get()) || request["operationId"].asString()!=manifest->operation_id) {
+                    reply(Encode(Error("invalid staged manifest")));return android::binder::Status::ok();
+                }
+            }
+            FlatpakResult result{};
+            if(verify) {
+                g_staging_operation=request["operationId"].asString();g_last_staging_progress.clear();
+                flatpak_publish_progress(HandoffProgress);Snapshot(g_staging_operation,"verifying");
+            }
+            flatpak_manager_staged(command.c_str(),request["operationId"].asCString(),ref.c_str(),remote.c_str(),uid,manifest.get(),&result);
+            if(verify) {
+                flatpak_publish_progress(nullptr);
+                Snapshot(g_staging_operation,result.ok?"handoff":"complete",result.error?result.error:"");
+                g_staging_operation.clear();
+            }
+            reply(Encode(EncodeResult(result)));flatpak_manager_result_clear(&result);
+            return android::binder::Status::ok();
+        }
+        if (command == "bind_pending" || command == "abort_pending" ||
                 command == "pending_metadata" || command == "pending_desktop" || command == "pending_icon" ||
                 command == "install_complete" || command == "install_failed") {
             if (!OnlyKeys(request, {"ref", "remote", "operationId", "uid", "packageName", "error"}) ||
@@ -503,6 +545,9 @@ class LinuxdService final : public BnLinuxd {
             }
             const std::string ref=request["ref"].asString(), operation=request["operationId"].asString();
             const std::string remote=request.get("remote","flathub").asString();
+            if(request.isMember("uid") && !request["uid"].isInt()) {
+                reply(Encode(Error("invalid stub UID")));return android::binder::Status::ok();
+            }
             int uid=request.get("uid",-1).asInt();
             if(command == "bind_pending") {
                 char verified_ref[1100], verified_remote[130], error[512];
@@ -514,6 +559,9 @@ class LinuxdService final : public BnLinuxd {
             }
             if(command == "install_complete" || command == "install_failed") {
                 const bool ok=command == "install_complete";
+                if(ok && flatpak_manager_complete_handoff(operation.c_str())) {
+                    reply(Encode(Error("operation has not completed binding")));return android::binder::Status::ok();
+                }
                 const std::string error=ok ? "" : request.get("error","Install failed").asString();
                 Snapshot(operation,"complete",error);
                 Json::Value event;event["phase"]="complete";
@@ -522,21 +570,10 @@ class LinuxdService final : public BnLinuxd {
                 NotifyListeners(Encode(event));
                 Json::Value out;out["ok"]=true;reply(Encode(out));return android::binder::Status::ok();
             }
-            if(command == "deploy_pending") {
-                g_staging_operation=operation;g_last_staging_progress.clear();
-                flatpak_publish_progress(HandoffProgress);Snapshot(operation,"staging");
-            }
+
             FlatpakResult result{};
             flatpak_manager_handoff(command.c_str(),ref.c_str(),remote.c_str(),operation.c_str(),uid,&result);
-            if(command == "deploy_pending") {
-                flatpak_publish_progress(nullptr);g_staging_operation.clear();
-                Snapshot(operation,result.ok ? "handoff" : "complete",result.error ? result.error : "");
-                if(result.ok) {
-                    Json::Value event;event["operationId"]=operation;event["phase"]="handoff";
-                    event["line"]="Verified deployment; binding existing or final stub";
-                    NotifyListeners(Encode(event));
-                }
-            }
+
             reply(Encode(EncodeResult(result)));flatpak_manager_result_clear(&result);
             return android::binder::Status::ok();
         }
@@ -558,36 +595,8 @@ class LinuxdService final : public BnLinuxd {
             reply(Encode(out));
             return android::binder::Status::ok();
         }
-        if (command == "stage") {
-            /* Stage only after the stub exists: the pull runs as the stub UID
-             * (installerUid), so its network use and DNS are the stub's. */
-            if (!OnlyKeys(request, {"ref", "remote", "installerUid", "operationId"}) || !request["ref"].isString() ||
-                    !request["installerUid"].isInt() || !request["operationId"].isString() ||
-                    HasEmbeddedNul(request["ref"].asString()) ||
-                    (request.isMember("remote") && (!request["remote"].isString() ||
-                            HasEmbeddedNul(request["remote"].asString())))) {
-                reply(Encode(Error("a Flatpak ref is required")));
-                return android::binder::Status::ok();
-            }
-            const std::string ref = request["ref"].asString();
-            const std::string remote = request.isMember("remote") ? request["remote"].asString() : std::string("flathub");
-            std::vector<char> app_commit(65), runtime_ref(512), runtime_commit(65), metadata(16384), desktop(131072), error(512);
-            if (flatpak_manager_prepare(ref.c_str(), remote.c_str(), request["installerUid"].asInt(),
-                    request["operationId"].asCString(),
-                    app_commit.data(), app_commit.size(), runtime_ref.data(), runtime_ref.size(),
-                    runtime_commit.data(), runtime_commit.size(), metadata.data(), metadata.size(),
-                    desktop.data(), desktop.size(), error.data(), error.size())) {
-                reply(Encode(Error(error[0] ? error.data() : "cannot prepare Flatpak install")));
-                return android::binder::Status::ok();
-            }
-            Json::Value out; out["ok"] = true;
-            out["ref"] = ref;
-            out["appCommit"] = app_commit.data();
-            out["runtimeRef"] = runtime_ref.data();
-            out["runtimeCommit"] = runtime_commit.data();
-            out["metadata"] = metadata.data();
-            out["desktopEntry"] = desktop.data();
-            reply(Encode(out));
+        if(command=="stage" || command=="install" || command=="deploy_pending") {
+            reply(Encode(Error("Compositor installer required; legacy install disabled")));
             return android::binder::Status::ok();
         }
         std::string ref_storage;
@@ -740,7 +749,6 @@ int main() {
     /* init sends service stdio to /dev/null, so route stderr to logcat. */
     RedirectStderrToLog();
     /* Leftovers from a killed install; never block startup on them. */
-    if (flatpak_cleanup_stale_staging()) fprintf(stderr, "matonos-linuxd: stale staging cleanup incomplete\n");
     flatpak_manager_init();
     flatpak_manager_reconcile_runtime_refs();
     flatpak_manager_set_callbacks(OnProgress, OnComplete, nullptr);

@@ -36,9 +36,13 @@ void flatpak_manager_call(const char* command, const char* ref,
         const char* runtime_ref, const char* runtime_commit, const char* remote,
         int app_uid, FlatpakResult* result);
 
-/* Stage a signed app from its configured remote, as the installing UID (the
- * stub), into /data/linux-app/staging/<uid>/<operation>, before
- * publishing it into that stub UID's Flatpak installation. */
+struct FlatpakStagedManifest;
+/* Private bridge transport; compositor UID is resolved by the bridge from PM. */
+void flatpak_manager_staged(const char* command, const char* operation,
+        const char* ref, const char* remote, int compositor_uid,
+        const struct FlatpakStagedManifest* manifest, FlatpakResult* result);
+
+/* Disabled legacy staging ABI; never performs network or deployment work. */
 int flatpak_manager_prepare(const char* ref, const char* remote, int installer_uid,
         const char* operation_id,
         char* app_commit, unsigned long app_commit_size,
@@ -51,6 +55,8 @@ int flatpak_manager_installed_for_uid(const char* ref, int uid);
 
 /* A replacement bridge identity means its old PM callbacks cannot return. */
 void flatpak_manager_abort_handoffs(void);
+/* Consume a successful binding exactly once before install_complete. */
+int flatpak_manager_complete_handoff(const char* operation);
 void flatpak_manager_handoff(const char* command, const char* ref, const char* remote,
         const char* operation, int uid, FlatpakResult* result);
 
