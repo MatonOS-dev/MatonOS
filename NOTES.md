@@ -1141,6 +1141,21 @@ Apps stay ordinary SDK apps, so the standard Android dev tools apply.
 
 Features given up until they can be done without patching AOSP (user rule).
 Each entry: what, why no non-patch way, what it would need.
+- **Flatpak extra-data extraction as fixed installer UID 2902 (2026-10-15).**
+  The proposed native bubblewrap helper cannot run the extractor in a confined
+  non-app SELinux domain with the current stock policy: `private/domain.te`
+  forbids non-app domains executing `data_file_type` files, including our
+  deployment/code labels. Changing UID alone leaves linuxd's privileged
+  domain; giving the downloader deployment writes also violates its existing
+  neverallows. The historical `data_exec_exempt_domain` exception described
+  in AGENTS.md is absent from the checked-out platform policy and this v3
+  device policy. Keep this feature deferred under the zero-patches rule.
+  Revisit with an extraction worker using the v3 in-process loader at the
+  fixed installer identity and a reviewed confinement design, or explicit
+  authorization for a platform policy exception. Neither approach is
+  implemented. Ownership must be reclaimed before Flatpak canonicalizes
+  modes: when run as system, it passes uid/gid = -1 and restores no owners.
+  Investigation: `docs/FLATPAK-EXTRA-DATA.md`.
 - **Input: Android listing only the virtual keyboard/pointer.** matonos-inputd
   grabs physical keyboards/pointers (EVIOCGRAB) and re-emits them through
   stable uinput devices, but stock EventHub still lists the (now inert)
