@@ -9,26 +9,14 @@ extern "C" {
 
 typedef struct FlatpakResult {
     int ok;
-    int accepted;
     int exit_code;
     int output_truncated;
-    int has_pid;
-    long pid;
     char* output;
     char* error;
-    int has_unused_cleanup;
-    int unused_cleanup_ok;
-    int unused_cleanup_exit_code;
-    char* operation_id;
 } FlatpakResult;
-
-typedef void (*FlatpakProgressCallback)(const char* line, void* context);
-typedef void (*FlatpakCompleteCallback)(const FlatpakResult* result, void* context);
 
 void flatpak_manager_init(void);
 void flatpak_manager_reconcile_runtime_refs(void);
-void flatpak_manager_set_callbacks(FlatpakProgressCallback progress,
-        FlatpakCompleteCallback complete, void* context);
 int flatpak_manager_valid_ref(const char* value);
 int flatpak_manager_valid_app_id(const char* value);
 void flatpak_manager_call(const char* command, const char* ref,
@@ -42,19 +30,8 @@ void flatpak_manager_staged(const char* command, const char* operation,
         const char* ref, const char* remote, int compositor_uid,
         const struct FlatpakStagedManifest* manifest, FlatpakResult* result);
 
-/* Disabled legacy staging ABI; never performs network or deployment work. */
-int flatpak_manager_prepare(const char* ref, const char* remote, int installer_uid,
-        const char* operation_id,
-        char* app_commit, unsigned long app_commit_size,
-        char* runtime_ref, unsigned long runtime_ref_size,
-        char* runtime_commit, unsigned long runtime_commit_size,
-        char* metadata, unsigned long metadata_size,
-        char* desktop, unsigned long desktop_size,
-        char* error, unsigned long error_size);
 int flatpak_manager_installed_for_uid(const char* ref, int uid);
 
-/* A replacement bridge identity means its old PM callbacks cannot return. */
-void flatpak_manager_abort_handoffs(void);
 /* Consume a successful binding exactly once before install_complete. */
 int flatpak_manager_complete_handoff(const char* operation,const char* ref,const char* remote);
 void flatpak_manager_handoff(const char* command, const char* ref, const char* remote,
