@@ -36,9 +36,6 @@ void flatpak_publish_progress(void (*callback)(const char*)) { progress_callback
 #ifndef MATONOS_OSTREE_CLI
 #define MATONOS_OSTREE_CLI "/apex/com.matonos.flatpak/bin/matonos-flatpak"
 #endif
-#ifndef MATONOS_FLATPAK_STAGE_HELPER
-#define MATONOS_FLATPAK_STAGE_HELPER "/apex/com.matonos.flatpak/bin/matonos-flatpak-store"
-#endif
 
 static void fail(char* error, unsigned long size, const char* message) {
     if (error && size) snprintf(error, size, "%s", message);
@@ -167,127 +164,16 @@ static int hand_over_tree(int parent, const char* name, int uid) {
     return rc;
 }
 
-static int give_to_installer(const char* staging, int uid, const char* remote) {
-#ifdef MATONOS_PUBLISH_HOST_TEST
-    (void)staging;(void)uid;(void)remote;return 0;
-#else
-    static const char* const dirs[] = {"home", "cache", "tmp", "runtime"};
-    char path[PATH_MAX];
-    int dir = open(staging, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-    if (dir < 0) return -1;
-    int rc = 0;
-    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]) && !rc; ++i) {
-        if (mkdirat(dir, dirs[i], 0700) && errno != EEXIST) rc = -1;
-        else if (fchownat(dir, dirs[i], uid, uid, AT_SYMLINK_NOFOLLOW)) rc = -1;
-    }
-    /* linuxd reads repo (publish) through group system. */
-    (void)path; (void)remote;
-    if (!rc && hand_over_tree(dir, "repo", uid)) rc = -1;
-    /* Last: the operation itself (the store helper requires the stub to own it). */
-    if (!rc && (fchmod(dir, 02750) || fchown(dir, uid, AID_SYSTEM))) rc = -1;
-    close(dir);
-    return rc;
-#endif
-}
-
-/* Staging trees are written by the fixed installer UID; linuxd has no
- * DAC override, so it removes them in a child running as that UID. */
-static int remove_staging_as(int uid, const char* operation) {
-    if ((uid != MATON_FPINSTALL_UID && !(uid >= 10000 && uid % 100000 >= 10000)) || !valid_operation_id(operation)) return -1;
-#ifndef MATONOS_PUBLISH_HOST_TEST
-    pid_t child = fork();
-    if (child < 0) return -1;
-    if (child == 0) {
-        char path[192];
-        snprintf(path, sizeof(path), MATON_STAGING_ROOT "/%d", uid);
-        if (setgroups(0, NULL) || setresgid(uid, uid, uid) || setresuid(uid, uid, uid)) _exit(1);
-        size_t used = strlen(path);
-        if (snprintf(path + used, sizeof(path) - used, "/%s", operation) >= (int)(sizeof(path) - used)) _exit(1);
-        int op = open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-        if (op < 0) _exit(errno == ENOENT ? 0 : 1);
-        /* Empty the operation (FPINSTALL owns it and what it wrote). */
-        DIR* dir = fdopendir(dup(op));
-        int rc = dir ? 0 : 1;
-        struct dirent* entry;
-        while (dir && (entry = readdir(dir))) {
-            if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
-            if (remove_tree_at(op, entry->d_name) && errno != ENOENT && errno != EACCES) rc = 1;
-        }
-        if (dir) closedir(dir);
-        _exit(rc);
-    }
-    int status = 0;
-    while (waitpid(child, &status, 0) < 0) if (errno != EINTR) return -1;
-    #endif
-    /* linuxd owns staging/: remove the emptied operation and anything it
-     * created itself before handing over. */
-    char staging_path[96];
-    snprintf(staging_path, sizeof(staging_path), MATON_STAGING_ROOT "/%d", uid);
-    int staging = open(staging_path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-    if (staging < 0) return errno == ENOENT ? 0 : -1;
-    int rc = remove_tree_at(staging, operation) && errno != ENOENT ? -1 : 0;
-    close(staging);
-    if(!rc && rmdir(staging_path) && errno!=ENOTEMPTY && errno!=ENOENT)rc=-1;
-    return rc;
-}
-
-int flatpak_staging_dir(int uid, const char* operation, char* path, unsigned long size) {
-    if ((uid != MATON_FPINSTALL_UID && !(uid >= 10000 && uid % 100000 >= 10000)) || !valid_operation_id(operation)) return -1;
-    return snprintf(path, size, MATON_STAGING_ROOT "/%d/%s", uid, operation) < (int)size ? 0 : -1;
-}
-
 static int remove_registered_staging(int uid,const char* operation);
-int flatpak_remove_staging(int uid, const char* operation) {
-    return uid==MATON_FPINSTALL_UID?remove_staging_as(uid, operation):remove_registered_staging(uid,operation);
-}
-
-static int cleanup_registered_staging(void);
-int flatpak_cleanup_stale_staging(void) {
-    if(cleanup_registered_staging())return -1;
-    int rc=0;
-    unsigned uid=MATON_FPINSTALL_UID;
-    {
-        char path[160];snprintf(path,sizeof(path),MATON_STAGING_ROOT "/%u",uid);
-        int app=open(path,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-        if(app<0)return errno==ENOENT?0:-1;
-        int staging=dup(app);close(app);
-        if(staging<0)return -1;
-        DIR* ops=fdopendir(staging);
-        if(!ops){close(staging);return -1;}
-        struct dirent* e;
-        while((e=readdir(ops))) {
-            if(e->d_name[0]=='.')continue;
-            if(remove_staging_as((int)uid,e->d_name)){rc=-1;break;}
-        }
-        closedir(ops);
-    }
-    return rc;
-}
-
-static int create_staging(int uid, const char* operation, char* path, size_t size) {
-    if ((uid != MATON_FPINSTALL_UID && !(uid >= 10000 && uid % 100000 >= 10000)) || !valid_operation_id(operation)) return -1;
-    if(maton_store_prepare())return -1;
-    char install_root[160];
-    snprintf(install_root,sizeof(install_root),"%s",MATON_STAGING_ROOT);
-    int data = open(install_root, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-    if (data < 0) return -1;
-    char owner[32]; snprintf(owner, sizeof(owner), "%d", uid);
-    int app = maton_storage_child(data,owner,"u:object_r:matonos_flatpak_staging_file:s0",0711);
-    close(data); if (app < 0) return -1;
-    /* FPINSTALL must traverse it (mkdirat's mode is masked by umask). */
-    if (fchmod(app, 0711)) { close(app); return -1; }
-    /* staging/2902 and staging/ stay linuxd's (system); each operation is
-     * built by linuxd and handed to FPINSTALL by give_to_installer(). */
-    int staging = dup(app);
-    close(app); if (staging < 0) return -1;
-    struct stat st;
-    if (fstat(staging, &st) || st.st_uid != AID_SYSTEM || fchmod(staging, 0711) ||
-            maton_storage_context("u:object_r:matonos_flatpak_staging_file:s0") || mkdirat(staging, operation, 0700)) {
-        maton_storage_context(NULL);close(staging); return -1;
-    }
-    maton_storage_context(NULL);close(staging);
+int flatpak_staging_dir(int uid, const char* operation, char* path, unsigned long size) {
+    if (uid < 10000 || uid % 100000 < 10000 || uid % 100000 > 19999 || !valid_operation_id(operation)) return -1;
     return snprintf(path, size, MATON_STAGING_ROOT "/%d/%s", uid, operation) < (int)size ? 0 : -1;
 }
+int flatpak_remove_staging(int uid, const char* operation) {
+    return remove_registered_staging(uid, operation);
+}
+static int cleanup_registered_staging(void);
+int flatpak_cleanup_stale_staging(void) { return cleanup_registered_staging(); }
 
 static const char* tool_path(const char* applet) {
     const char* override = getenv(applet[0] == 'f' ? "MATONOS_FLATPAK_CLI" : "MATONOS_OSTREE_CLI");
@@ -455,33 +341,6 @@ static int make_install_ref(const char* ref, char* out, size_t size) {
     if (!first || !second || !third || strchr(third + 1, '/')) return -1;
     size_t id = (size_t)(second - first - 1);
     return snprintf(out, size, "%.*s//%s", (int)id, first + 1, third + 1) < (int)size ? 0 : -1;
-}
-
-static int stage_ref(const char* staging, int uid, const char* remote, const char* install_ref,
-        char* error, unsigned long error_size) {
-#ifdef MATONOS_PUBLISH_HOST_TEST
-    (void)uid; (void)error; (void)error_size;
-    const char* args[] = {"install", "--system", "--no-deploy", "--noninteractive",
-        "--assumeyes", remote, install_ref};
-    return run_flatpak(staging, NULL, args, sizeof(args) / sizeof(args[0]));
-#else
-    char uid_arg[32]; snprintf(uid_arg, sizeof(uid_arg), "%d", uid);
-    char* args[] = {(char*)MATONOS_FLATPAK_STAGE_HELPER, "stage", (char*)staging,
-        uid_arg, (char*)remote, (char*)install_ref, NULL};
-    char output[4096] = {0};
-    fprintf(stderr, "installer staging: %s stage %s %s %s %s\n",
-            MATONOS_FLATPAK_STAGE_HELPER, staging, uid_arg, remote, install_ref);
-    int rc = invoke_path(MATONOS_FLATPAK_STAGE_HELPER, NULL, NULL, args, output, sizeof(output));
-    if (rc) {
-        /* Surface the helper's own message: it is the only place the real
-         * cause (GPG/summary/network/ostree) is reported, and logcat does not
-         * capture this daemon's stderr. */
-        for (char* p = output; *p; ++p) if (*p == '\n' || *p == '\r') *p = ' ';
-        fprintf(stderr, "installer staging failed (%d): %s\n", rc, output);
-        fail(error, error_size, output[0] ? output : "installer staging helper failed with no output");
-    }
-    return rc;
-#endif
 }
 
 static int compare_remote_commit(const char* staging_repo, const char* remote,
@@ -739,8 +598,6 @@ struct dependency_ref {
 };
 static int resolve_ref_commit(const char* repo, const char* remote, const char* ref,
         char* out, size_t size);
-static int read_commit_file(const char* repo, const char* commit, const char* path,
-        char* out, size_t size);
 static int app_id_from_ref(const char* ref, char* out, size_t size);
 
 /* A single ref uses the existing 512-byte protocol representation. */
@@ -895,8 +752,8 @@ int flatpak_publish_tracked(const char* app_ref, const char* app_commit,
     if (prepare_global_session_bus(system_dir, user_dir)) {
         fail(error, error_size, "cannot set global Flatpak session-bus overrides"); return -1;
     }
-    /* flatpak_prepare staged the app transaction as FPINSTALL; the pinned
-     * commits are verified against that staging repository below. */
+    /* The subsystem staged the app transaction; verify its pinned commits
+     * against that staging repository before publishing. */
     if (compare_remote_commit(staging_repo, remote, runtime_ref, runtime_commit) ||
             compare_remote_commit(staging_repo, remote, app_ref, app_commit)) {
         fail(error, error_size, "staged commit does not match the resolved transaction pin"); return -1;
@@ -978,13 +835,6 @@ static int resolve_ref_commit(const char* repo, const char* remote, const char* 
     return strlen(out) == 64 ? 0 : -1;
 }
 
-static int read_commit_file(const char* repo, const char* commit, const char* path,
-        char* out, size_t size) {
-    if (size) out[0] = '\0';
-    const char* args[] = {"cat", commit, path};
-    return run_ostree(repo, args, 3, out, size);
-}
-
 static int metadata_runtime_ref(const char* metadata, char* out, size_t size) {
     const char* section = strstr(metadata ? metadata : "", "[Application]");
     if (!section) return -1;
@@ -1016,118 +866,6 @@ static int app_id_from_ref(const char* ref, char* out, size_t size) {
     if (!len || len >= size) return -1;
     memcpy(out, ref + 4, len); out[len] = '\0';
     return 0;
-}
-
-/* A private, ephemeral installation supplies only the pinned remote/keyring.
- * Network I/O runs through the same fixed FPINSTALL helper as downloads. */
-int flatpak_available_commit(const char* ref, const char* remote, const char* operation,
-        char* commit, unsigned long size, char* error, unsigned long error_size) {
-    char staging[PATH_MAX], repo[PATH_MAX], uid[32];
-    if (!ref || strncmp(ref,"app/",4) || !valid_remote(remote) ||
-            !valid_operation_id(operation) || size < 65) {
-        fail(error,error_size,"invalid update query");return -1;
-    }
-    if(create_staging(MATON_FPINSTALL_UID,operation,staging,sizeof(staging))) {
-        fail(error,error_size,"cannot create query staging");return -1;
-    }
-    if(snprintf(repo,sizeof(repo),"%s/repo",staging)>=(int)sizeof(repo)) {
-        (void)flatpak_remove_staging(MATON_FPINSTALL_UID,operation);
-        fail(error,error_size,"query path too long");return -1;
-    }
-    const char* init[]={"init","--mode=bare-user-only"};
-    int rc=run_ostree(repo,init,2,NULL,0);
-    if(!rc)rc=seed_remote(staging,remote);
-    if(!rc && !remote_verification_enabled(repo,remote))rc=-1;
-    if(!rc)rc=give_to_installer(staging,MATON_FPINSTALL_UID,remote);
-    snprintf(uid,sizeof(uid),"%d",MATON_FPINSTALL_UID);
-    char output[4096]={0};
-    char* args[]={(char*)MATONOS_FLATPAK_STAGE_HELPER,"check",staging,uid,
-        (char*)remote,(char*)ref,NULL};
-    if(!rc)rc=invoke_path(MATONOS_FLATPAK_STAGE_HELPER,staging,NULL,args,output,sizeof(output));
-    if(!rc)rc=store_parse_commit(output,commit,size);
-    if(flatpak_remove_staging(MATON_FPINSTALL_UID,operation))rc=-1;
-    if(rc)fail(error,error_size,"cannot query authenticated pinned remote commit");
-    return rc;
-}
-
-int flatpak_prepare(const char* app_ref, const char* remote, int installer_uid,
-        const char* operation_id,
-        char* app_commit, unsigned long app_commit_size,
-        char* runtime_ref_out, unsigned long runtime_ref_size,
-        char* runtime_commit, unsigned long runtime_commit_size,
-        char* metadata, unsigned long metadata_size,
-        char* desktop, unsigned long desktop_size,
-        char* error, unsigned long error_size) {
-    char staging_dir[PATH_MAX], staging_repo[PATH_MAX], app_install[512];
-    int created = 0;
-    char runtime_ref[512] = {0}, app_id[256];
-    if (!app_ref || !remote || !operation_id || !app_commit || !runtime_ref_out ||
-            !runtime_commit || !metadata || !desktop || !*remote ||
-            strncmp(app_ref, "app/", 4) || !valid_remote(remote) ||
-            !valid_operation_id(operation_id)) {
-        fail(error, error_size, "invalid prepare request"); return -1;
-    }
-    if (create_staging(installer_uid, operation_id, staging_dir, sizeof(staging_dir))) {
-        fail(error, error_size, "cannot create installer staging directory"); return -1;
-    }
-    created = 1;
-    if (snprintf(staging_repo, sizeof(staging_repo), "%s/repo", staging_dir) >= (int)sizeof(staging_repo)) {
-        fail(error, error_size, "staging path too long"); goto bad;
-    }
-    {
-        /* A real repository (Flatpak only opens an existing one), created
-         * while linuxd still owns the operation. */
-        const char* init_args[] = {"init", "--mode=bare-user-only"};
-        if (run_ostree(staging_repo, init_args, 2, NULL, 0)) {
-            fail(error, error_size, "cannot create staging repository"); goto bad;
-        }
-    }
-    if (seed_remote(staging_dir, remote)) {
-        fail(error, error_size, "runtime remote configuration or trusted keyring is missing"); goto bad;
-    }
-    if (!remote_verification_enabled(staging_repo, remote)) {
-        fail(error, error_size, "remote GPG verification and summary verification must both be enabled"); goto bad;
-    }
-    /* Configure complete locales before the transaction selects related refs. */
-    const char* languages[] = {"config", "--system", "--set", "languages", "*"};
-    if (run_flatpak(staging_dir, NULL, languages, 5)) {
-        fail(error, error_size, "cannot set complete staging locale configuration"); goto bad;
-    }
-    /* The staging pull runs as the installer UID: hand it the repo and the
-     * seeded remote, and give it private home/cache/tmp/runtime dirs (the
-     * wrapper points HOME, TMPDIR and Flatpak's caches here). */
-    if (give_to_installer(staging_dir, installer_uid, remote)) {
-        fail(error, error_size, "cannot prepare installer-owned staging files"); goto bad;
-    }
-    if (make_install_ref(app_ref, app_install, sizeof(app_install)) ||
-            app_id_from_ref(app_ref, app_id, sizeof(app_id))) {
-        fail(error, error_size, "invalid application ref"); goto bad;
-    }
-    if (stage_ref(staging_dir, installer_uid, remote, app_install, error, error_size)) goto bad;
-    if (resolve_ref_commit(staging_repo, remote, app_ref, app_commit, app_commit_size)) {
-        fail(error, error_size, "cannot resolve staged application commit"); goto bad;
-    }
-    metadata[0] = '\0';
-    if (read_commit_file(staging_repo, app_commit, "/metadata", metadata, metadata_size)) {
-        fail(error, error_size, "cannot read staged application metadata"); goto bad;
-    }
-    if (metadata_runtime_ref(metadata, runtime_ref, sizeof(runtime_ref))) {
-        fail(error, error_size, "staged application declares no runtime"); goto bad;
-    }
-    if (resolve_ref_commit(staging_repo, remote, runtime_ref, runtime_commit, runtime_commit_size)) {
-        fail(error, error_size, "cannot resolve staged runtime commit"); goto bad;
-    }
-    snprintf(runtime_ref_out, runtime_ref_size, "%s", runtime_ref);
-    char desktop_path[512];
-    desktop[0] = '\0';
-    if (snprintf(desktop_path, sizeof(desktop_path),
-            "/export/share/applications/%s.desktop", app_id) < (int)sizeof(desktop_path))
-        (void)read_commit_file(staging_repo, app_commit, desktop_path, desktop, desktop_size);
-    if (error && error_size) error[0] = '\0';
-    return 0;
-bad:
-    if (created) remove_staging_as(installer_uid, operation_id);
-    return -1;
 }
 
 /* Phase B file primitive. The registered-operation verifier must supply a
