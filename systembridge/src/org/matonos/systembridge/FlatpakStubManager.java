@@ -237,7 +237,7 @@ final class FlatpakStubManager {
             PackageManager manager = context.getPackageManager();
             PackageInfo info = manager.getPackageInfo(pkg, PackageManager.GET_SIGNING_CERTIFICATES);
             if (info.signingInfo == null) return false;
-            byte[] expected = StubGenerator.getExistingSigningCertificate();
+            byte[] expected = installedStubCertificate(pkg);
             for (android.content.pm.Signature signature : info.signingInfo.getApkContentsSigners())
                 if (expected != null && java.security.MessageDigest.isEqual(signature.toByteArray(), expected))
                     return true;
@@ -292,7 +292,7 @@ final class FlatpakStubManager {
 
     private boolean signedByDevice(PackageInfo info) throws Exception {
         if (info == null || info.signingInfo == null || info.signingInfo.hasMultipleSigners()) return false;
-        byte[] cert = StubGenerator.getExistingSigningCertificate();
+        byte[] cert = installedStubCertificate(info.packageName);
         android.content.pm.Signature[] signers = info.signingInfo.getApkContentsSigners();
         return cert != null && signers.length == 1 && MessageDigest.isEqual(cert, signers[0].toByteArray());
     }
@@ -324,7 +324,7 @@ final class FlatpakStubManager {
             byte[][] signers=new byte[signatures.length][];
             for(int i=0;i<signatures.length;i++)signers[i]=signatures[i].toByteArray();
             return FlatpakStubIdentity.matches(uid,info.applicationInfo.uid,packages,
-                pkg,signers,StubGenerator.getExistingSigningCertificate());
+                pkg,signers,installedStubCertificate(pkg));
         }catch(Exception error){Log.w(TAG,"Cannot verify generated launcher",error);return false;}
     }
 
@@ -688,7 +688,7 @@ final class FlatpakStubManager {
     /** Legacy signer handoff; current linuxd uses the live identity provider. */
     private void publishStubSigner(ILinuxd daemon) {
         try {
-            byte[] certificate = StubGenerator.getExistingSigningCertificate();
+            byte[] certificate = installedStubCertificate(null);
             if (certificate == null) return;
             StringBuilder hex = new StringBuilder(certificate.length * 2);
             for (byte b : certificate) hex.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
@@ -696,6 +696,31 @@ final class FlatpakStubManager {
                     new JSONObject().put("certificate", hex.toString()).toString()));
             if (!stored.optBoolean("ok")) Log.w(TAG, "linuxd refused the stub certificate: " + stored.optString("error"));
         } catch (Exception error) { Log.w(TAG, "Cannot hand the stub certificate to linuxd", error); }
+    }
+
+    /** Read the device-local stub signer from PackageManager; the bridge never owns its key. */
+    private byte[] installedStubCertificate(String preferredPackage) {
+        try {
+            PackageManager pm=context.getPackageManager();
+            if(preferredPackage!=null) {
+                PackageInfo candidate=pm.getPackageInfo(preferredPackage,PackageManager.GET_SIGNING_CERTIFICATES);
+                String ref=declaredRef(preferredPackage);
+                if(FlatpakStubIdentity.isGeneratedStub(preferredPackage)&&ref!=null&&preferredPackage.equals(packageFor(ref))&&candidate.signingInfo!=null&&!candidate.signingInfo.hasMultipleSigners()) {
+                    android.content.pm.Signature[] signers=candidate.signingInfo.getApkContentsSigners();
+                    if(signers.length==1)return signers[0].toByteArray();
+                }
+            }
+            for(PackageInfo candidate:pm.getInstalledPackages(PackageManager.GET_SIGNING_CERTIFICATES)) {
+                String pkg=candidate.packageName;
+                if(!FlatpakStubIdentity.isGeneratedStub(pkg)||candidate.signingInfo==null||candidate.signingInfo.hasMultipleSigners())continue;
+                String ref=declaredRef(pkg);
+                if(ref!=null&&pkg.equals(packageFor(ref))) {
+                    android.content.pm.Signature[] signers=candidate.signingInfo.getApkContentsSigners();
+                    if(signers.length==1)return signers[0].toByteArray();
+                }
+            }
+        } catch(Exception error) { Log.w(TAG,"Cannot read an installed stub signer",error); }
+        return null;
     }
 
     private ILinuxd daemon() throws Exception {
