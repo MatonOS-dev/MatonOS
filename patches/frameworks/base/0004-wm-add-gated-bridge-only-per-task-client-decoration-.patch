@@ -96,7 +96,7 @@ index ef60ace..cd588cd 100644
 +                "ro.matonos.client_decorations", false)
 +                && mMatonosClientDecorationUid == effectiveUid && top != null
 +                && top.getUid() == effectiveUid
-+                && "org.matonos.compositor.stub.StubActivity".equals(top.info.name);
++                && "org.matonos.linux.stub.StubActivity".equals(top.info.name);
          info.displayId = getDisplayId();
          info.displayAreaFeatureId = tda != null ? tda.mFeatureId : FEATURE_UNDEFINED;
          final Intent baseIntent = getBaseIntent();
@@ -137,7 +137,7 @@ index b50c541..3cbf6a5 100644
 +                final ActivityRecord top = task == null ? null : task.getTopNonFinishingActivity();
 +                if (task == null || top == null || task.effectiveUid != ownerUid
 +                        || top.getUid() != ownerUid || !task.inFreeformWindowingMode()
-+                        || !"org.matonos.compositor.stub.StubActivity".equals(top.info.name)) {
++                        || !"org.matonos.linux.stub.StubActivity".equals(top.info.name)) {
 +                    return false;
 +                }
 +                task.mMatonosClientDecorationUid = decorated ? ownerUid : -1;

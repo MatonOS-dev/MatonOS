@@ -8,7 +8,7 @@ remains for phase D. No migration or v2 repair is planned. Add no GPLv3 dependen
 
 ## Ownership and protocol
 
-The compositor (`org.matonos.compositor`) performs Flatpak pull, deployment,
+The compositor (`org.matonos.linux`) performs Flatpak pull, deployment,
 and `apply_extra` at its PackageManager-assigned app UID. It uses the image or
 same-signer updated host's v3 loader, `matonos-app-flatpak` and
 `matonos-app-bwrap`. It never runs as system, UID 2902, or linuxd's domain.
@@ -233,8 +233,8 @@ leased versions or a pointer that was committed before a final fsync error.
 | B | `install/linuxd/FlatpakManager.{c,h}`, `MatonosLinuxd.cpp`: route pending and self-install entry points; operation identity/state; no linuxd download/deploy fallback. |
 | B | `install/linuxd/{PendingDeployment,DeploymentStore,RuntimeRefs,LinuxStorage}.h` and `RuntimeRefs.c`: retain leases, atomic binding, trusted runtime ownership and cleanup. |
 | B | `install/linuxd/tests/`: real signed-commit fixtures and malicious deployed-tree tests; writable-FD/mapping, path substitution and hardlink tests. |
-| C | `linux/compositor/host/app/src/main/java/org/matonos/compositor/`: installer service/worker in Java; share loader command construction and DNS lifecycle with `stub/V3Launcher.java` and `stub/DnsForwarder.java` without depending on `StubService.runtime()`. |
-| C | `linux/compositor/host/app/src/main/AndroidManifest.xml`: installer endpoint, network/foreground permissions. |
+| C | `linux/subsystem/host/app/src/main/java/org/matonos/linux/`: installer service/worker in Java; share loader command construction and DNS lifecycle with `stub/V3Launcher.java` and `stub/DnsForwarder.java` without depending on `StubService.runtime()`. |
+| C | `linux/subsystem/host/app/src/main/AndroidManifest.xml`: installer endpoint, network/foreground permissions. |
 | C | `systembridge/src/org/matonos/systembridge/FlatpakStubManager.java` and bridge dispatch: authenticate/bind compositor, transaction completion and existing store/stub entry points. |
 | D | `linux/flatpak/linux-paths.h`, `install/linuxd/FlatpakStore.c`, `linux/flatpak/flatpak-env-wrapper.c`, `config.fs` and helper packaging: remove fixed UID/stage only after the replacement works; keep unrelated helper commands. |
 | D | `systembridge/sepolicy/system_ext/private/matonos_system_bridge.te` and its existing public types/file contexts: grant only the compositor staging zone and linuxd verify/publish zone; coordinator validates `selinux_policy`. |

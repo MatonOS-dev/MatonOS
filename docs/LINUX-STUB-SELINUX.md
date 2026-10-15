@@ -16,5 +16,5 @@ access and process leases. Explicit neverallows deny app mutation and
 execute_no_trans. The compat-proxy loader blocks Binder ioctls for Linux
 payloads; the Java parent retains Binder for authenticated platform work.
 See [storage](../install/linuxd/STORAGE-LAYOUT.md) and
-[launch](../linux/compositor/V3-LAUNCH.md). Fresh enforcing-image validation is
+[launch](../linux/subsystem/V3-LAUNCH.md). Fresh enforcing-image validation is
 pending; no new exception should be added to compensate for an unused v2 path.

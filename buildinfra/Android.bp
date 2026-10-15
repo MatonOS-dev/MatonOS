@@ -94,8 +94,8 @@ prebuilt_etc {
 }
 
 prebuilt_etc {
-    name: "privapp-permissions-org.matonos.compositor",
-    src: "privapp-permissions/privapp-permissions-org.matonos.compositor.xml",
+    name: "privapp-permissions-org.matonos.linux",
+    src: "privapp-permissions/privapp-permissions-org.matonos.linux.xml",
     sub_dir: "permissions",
     system_ext_specific: true,
 }
@@ -109,22 +109,22 @@ prebuilt_etc {
 
 // compositor: v4 Wayland compositor host app (Java). Its native libraries
 // (wlroots, wayland, pixman, xkbcommon, libdrm, libmaton_compositor) are
-// packaged inside the APK by linux/compositor/build-compositor.sh + Gradle.
+// packaged inside the APK by linux/subsystem/build-compositor.sh + Gradle.
 android_app_import {
-    name: "MatonWaylandHost",
+    name: "MatonLinuxSubsystem",
     privileged: true,
     required: [
-        "privapp-permissions-org.matonos.compositor",
+        "privapp-permissions-org.matonos.linux",
     ],
-    apk: "apps-built/MatonWaylandHost.apk",
+    apk: "apps-built/MatonLinuxSubsystem.apk",
     system_ext_specific: true,
     preprocessed: true,
     // build-apps.sh stores and aligns JNI/dex before signing. System apps do
     // not get PM extraction; JNI loads from the APK.
     //
     // WARNING: generated Flatpak stubs load the host through
-    // org.matonos.compositor.stub.StubLoader, which hard-codes this module's
-    // install path (/system_ext/priv-app/MatonWaylandHost/MatonWaylandHost.apk)
+    // org.matonos.linux.stub.StubLoader, which hard-codes this module's
+    // install path (/system_ext/priv-app/MatonLinuxSubsystem/MatonLinuxSubsystem.apk)
     // and the stored, uncompressed JNI layout (apk!/lib/<abi>). Renaming the
     // module, changing its partition, dropping `privileged` or compressing the
     // JNI libraries silently disables StubLoader; update StubLoader.SYSTEM_APK

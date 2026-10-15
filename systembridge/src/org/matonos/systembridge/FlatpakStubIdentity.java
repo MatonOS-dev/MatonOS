@@ -54,7 +54,7 @@ final class FlatpakStubIdentity {
             int taskUid, int topUid, String activityName, boolean hasToken, boolean freeform) {
         return callerUid >= 0 && callerUser == activeUser && taskUser == callerUser
                 && taskUid == callerUid && topUid == callerUid && hasToken && freeform
-                && "org.matonos.compositor.stub.StubActivity".equals(activityName);
+                && "org.matonos.linux.stub.StubActivity".equals(activityName);
     }
 
 }

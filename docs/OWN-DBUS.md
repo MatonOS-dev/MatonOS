@@ -16,9 +16,9 @@ or alternate portal implementation is shipped.
 The bus and portal sockets are private under `<stub dataDir>/runtime` (0700).
 Closing the stub process closes the runtime; linuxd manages installations only.
 See [runtime](PER-APP-RUNTIME.md) and
-[launch](../linux/compositor/V3-LAUNCH.md).
+[launch](../linux/subsystem/V3-LAUNCH.md).
 
-Host verification: `linux/compositor/host/test-portals.sh OUTPUT_DIRECTORY`
+Host verification: `linux/subsystem/host/test-portals.sh OUTPUT_DIRECTORY`
 checks codec validation, peer connections and portal policy. The retained
 broker Makefile's `check-inhibit`, `check-portal-wire` and
 `check-policy-wildcard` targets exercise C/Java forwarding, descriptor passing,

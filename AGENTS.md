@@ -293,14 +293,14 @@ everything from the verified stub identity (UID + per-device signature),
 its installed manifest and its granted Android permissions.
 
 Stub code loading (user, 2026-10-10): generated stubs keep `<uses-library
-org.matonos.linuxhost>` but name `org.matonos.compositor.stub.StubLoader` as
+org.matonos.linuxhost>` but name `org.matonos.linux.stub.StubLoader` as
 their `appComponentFactory`. It swaps the platform's shared-library loader
 (always the image copy) for one over the installed host APK, so compositor
 updates reach stubs on their next launch; running apps are never killed on a
 host update. Trust comes from the platform: only the image path or an
-installed update of `org.matonos.compositor` (same signature, enforced by
+installed update of `org.matonos.linux` (same signature, enforced by
 PackageManager) is accepted, so there is no extra certificate check.
-**Keep in sync:** `StubLoader.SYSTEM_APK` hard-codes the `MatonWaylandHost`
+**Keep in sync:** `StubLoader.SYSTEM_APK` hard-codes the `MatonLinuxSubsystem`
 install path (`buildinfra/Android.bp`), and the loader expects stored,
 uncompressed JNI libraries (`apk!/lib/<abi>`). Renaming or moving that module
 or compressing its JNI libraries silently disables StubLoader. StubLoader

@@ -488,7 +488,7 @@ Feature work continues, but in this shape from now on.
   count), proot (slow, weaker).
 - **Split the Linux-app layer into its own repository (user, 2026-10-03;
   long-term, sooner if the provenance audit finds GPL-derived code).** Moves:
-  linux/compositor (native, host APK, xwayland-egl), linux/dbus-broker, the
+  linux/subsystem (native, host APK, xwayland-egl), linux/dbus-broker, the
   stub generator, later PipeWire and the Java portals. Stays in MatonOS:
   linuxd + the Flatpak build + sepolicy + System Bridge (the "Flatpak host
   service"). Contract between them: the System Bridge AIDL and the minimum
@@ -817,7 +817,7 @@ Feature work continues, but in this shape from now on.
     add bus features as real apps need them. Superseded below: dbus-daemon.
      IMPLEMENTATION CORRECTION (user, 2026-10-07): the runtime must be a PER-APP
      service, never the shared system `CompositorService`. Each stub's own
-     service (`org.matonos.compositor.stub.StubService`, currently a no-op)
+     service (`org.matonos.linux.stub.StubService`, currently a no-op)
      hosts the Wayland compositor core, the mini-broker and the portal IN the
      app's process/UID; the compositor app remains only the shared runtime
      library plus a thin privileged bridge for launch/DNS/Surface. A privileged
@@ -876,7 +876,7 @@ Feature work continues, but in this shape from now on.
     - portal.Trash -> MediaStore trash. portal.Account -> name/picture.
     - org.freedesktop.login1 -> read-only PrepareForSleep signals only.
     Stubs are config files; the host is an updatable library (user,
-    2026-09-29). org.matonos.compositor (preinstalled system app, updatable
+    2026-09-29). org.matonos.linux (preinstalled system app, updatable
     from the MatonOS repo like WebView) declares a DYNAMIC shared library
     (<library android:name="org.matonos.linuxhost"/>; only system apps may,
     and updated system apps keep it). A stub APK is only: manifest (label,
@@ -1540,7 +1540,7 @@ selector failure. Assess SOF firmware/topology separately if needed.
   when Android reports no camera hardware (accepted by user, 2026-10-09).
   Calendar, Clock, Contacts, Messaging and Dialer UI apps are excluded
   (user, 2026-10-09); their providers and required telephony services remain.
-  Maton Wayland is hidden from the launcher but remains the Linux runtime.
+  Linux Subsystem is hidden from the launcher but remains the Linux runtime.
   GPLv3 Fossify and Open Camera APKs are
   excluded so users can build and install their own versions. This AOSP
   checkout has no stock Calculator or Notes module. See the

@@ -141,19 +141,19 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
 
   stamp=$DEVICE_DIR/prebuilt/apps-built/.$key_id.inputs
   extra_inputs=()
-  if [[ $key_id == matonos-wayland-host ]]; then
-    extra_inputs+=("$DEVICE_DIR/linux/compositor/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker" "$DEVICE_DIR/linux/pipewire" "$DEVICE_DIR/linux/compat-proxy")
+  if [[ $key_id == matonos-linux-subsystem ]]; then
+    extra_inputs+=("$DEVICE_DIR/linux/subsystem/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker" "$DEVICE_DIR/linux/pipewire" "$DEVICE_DIR/linux/compat-proxy")
   fi
   # The broker records the image Flatpak build version. Rebuild the APK when
   # that generated input changes, even when app sources are unchanged.
   flatpak_version_hash=
-  if [[ $key_id == matonos-wayland-host ]]; then
+  if [[ $key_id == matonos-linux-subsystem ]]; then
     flatpak_config=${MATON_FLATPAK_BUILD_CONFIG:-${MATON_FLATPAK_NDK:-$AOSP/out/matonos/flatpak-ndk}/flatpak/build/config.h}
     [[ -s $flatpak_config ]] || die "image Flatpak build config missing: $flatpak_config"
     flatpak_version_hash=$(sha256sum "$flatpak_config" | cut -d' ' -f1)
   fi
   fingerprint=$(inputs_hash "$project" "$DEVICE_DIR/rn-apps/rn-common" "$DEVICE_DIR/buildinfra/client" "${extra_inputs[@]}")-$cert_sha-$flatpak_version_hash
-  if [[ $key_id == matonos-wayland-host ]]; then
+  if [[ $key_id == matonos-linux-subsystem ]]; then
     fingerprint+=-$(sha256sum "$DEVICE_DIR/tools/prepare-host-apk.py" | cut -d' ' -f1)
   fi
   if [[ ${MATON_APPS_FORCE:-0} != 1 && -s $stamp && $(cat "$stamp") == "$fingerprint" &&
@@ -207,7 +207,7 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
     [[ -s $permission_xml ]] || die "Expo project did not generate its privileged permission XML: $key_id"
     install -D -m 0644 "$permission_xml" "$DEVICE_DIR/buildinfra/privapp-permissions/privapp-permissions-org.matonos.$app_id.xml"
   fi
-  if [[ $key_id == matonos-wayland-host ]]; then
+  if [[ $key_id == matonos-linux-subsystem ]]; then
     # Legacy packaging requests PM extraction for executable APK-owned code in
     # updates. Store JNI as well so the system copy can dlopen from the APK.
     # Rewriting a ZIP invalidates its signature: align, then sign with the same
@@ -230,12 +230,12 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   [[ -n $apk_cert && $apk_cert == "$cert_sha" ]] || die "APK signer does not match persistent key for $key_id"
   cp "$apk" "$DEVICE_DIR/prebuilt/apps-built/$apk_name"
   cp "$apk" "$DEVICE_DIR/buildinfra/apps-built/$apk_name"
-  if [[ $key_id == matonos-wayland-host ]]; then
+  if [[ $key_id == matonos-linux-subsystem ]]; then
     # x86_64 and i386 v3 loaders (both under lib/x86_64/), 0755, atomically.
     bash "$DEVICE_DIR/linux/compat-proxy/extract-loaders.sh" \
       "$apk" "$DEVICE_DIR/buildinfra/apps-built" || die "host APK lacks a v3 loader"
   fi
-  if [[ $key_id == matonos-wayland-host ]]; then rm -rf "$normalized_dir"; normalized_dir=; fi
+  if [[ $key_id == matonos-linux-subsystem ]]; then rm -rf "$normalized_dir"; normalized_dir=; fi
   info "Staged $DEVICE_DIR/prebuilt/apps-built/$apk_name (certificate SHA-256 $cert_sha)"
   printf '%s\n' "$fingerprint" > "$stamp"
 done < "$APP_LIST"

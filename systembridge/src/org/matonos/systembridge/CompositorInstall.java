@@ -21,7 +21,7 @@ import java.util.concurrent.CountDownLatch;
  */
 final class CompositorInstall {
     private static final String TAG = "MatonFlatpakStubs";
-    static final String PACKAGE = "org.matonos.compositor";
+    static final String PACKAGE = "org.matonos.linux";
     private static final String SERVICE = PACKAGE + ".stub.CompositorInstallService";
 
     private final Context context;

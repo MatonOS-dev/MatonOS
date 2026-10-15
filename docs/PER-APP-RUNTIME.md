@@ -12,7 +12,7 @@ authority; its descriptor registry stays with the portal. The host package is
 only a shared library plus its own demo/support UI, under stock priv_app policy.
 Install/update operations retain the authenticated bridge/linuxd path.
 
-See [v3 launch](../linux/compositor/V3-LAUNCH.md) for details and pending enforcing
+See [v3 launch](../linux/subsystem/V3-LAUNCH.md) for details and pending enforcing
 image validation. The old staged service-split RFC is superseded.
 
 StubService creates `<dataDir>/runtime` mode 0700 itself. linuxd manages no
