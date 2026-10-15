@@ -174,6 +174,7 @@ static struct {
  * further registrations after the journal fills. Restart removes all staging. */
 static char g_staged_ids[4096][65];
 static unsigned char g_staged_bound[4096];
+static char g_staged_refs[4096][513],g_staged_remotes[4096][129];
 static size_t g_staged_id_count;
 static int g_staging_ready;
 
@@ -1033,6 +1034,7 @@ static void pending_prune(void) {
 void flatpak_manager_abort_handoffs(void) {
     pthread_mutex_lock(&g_operation_mutex);
     if(pending_install.operation[0]) {
+        pending_install.state=HANDOFF_FAILED;
         int rc=0;
         if(pending_install.compositor_uid)rc=flatpak_remove_staging(pending_install.compositor_uid,pending_install.operation);
         if(pending_install.path[0] && pending_deployment_discard(pending_install.path))rc=-1;
@@ -1150,15 +1152,18 @@ void flatpak_manager_staged(const char* command,const char* operation,
         if(check_remote_pin(ref,remote,-1,0) || !flatpak_remote_verified(remote)) {
             set_error(result,"configured remote or application pin is invalid");goto done;
         }
-        if(flatpak_begin_staged_install(compositor_uid,operation,remote,error,sizeof(error))) {
-            flatpak_remove_staging(compositor_uid,operation);
-            set_error(result,error[0]?error:"cannot create staged transaction");goto done;
-        }
         snprintf(pending_install.operation,sizeof(pending_install.operation),"%s",operation);
         snprintf(pending_install.ref,sizeof(pending_install.ref),"%s",ref);
         snprintf(pending_install.remote,sizeof(pending_install.remote),"%s",remote);
         pending_install.compositor_uid=compositor_uid;
         pending_install.state=HANDOFF_STAGING;
+        strcpy(g_staged_refs[g_staged_id_count-1],ref);
+        strcpy(g_staged_remotes[g_staged_id_count-1],remote);
+        if(flatpak_begin_staged_install(compositor_uid,operation,remote,error,sizeof(error))) {
+            if(flatpak_remove_staging(compositor_uid,operation))pending_install.state=HANDOFF_FAILED;
+            else pending_clear();
+            set_error(result,error[0]?error:"cannot create staged transaction");goto done;
+        }
         result->ok=1;result->exit_code=0;goto done;
     }
     if(strcmp(operation,pending_install.operation)) {set_error(result,"unknown staged operation");goto done;}
@@ -1201,11 +1206,12 @@ done:
     pthread_mutex_unlock(&g_operation_mutex);
 }
 
-int flatpak_manager_complete_handoff(const char* operation) {
+int flatpak_manager_complete_handoff(const char* operation,const char* ref,const char* remote) {
     int rc=-1;
     pthread_mutex_lock(&g_operation_mutex);
     for(size_t i=0;operation && i<g_staged_id_count;i++)
-        if(!strcmp(g_staged_ids[i],operation) && g_staged_bound[i]==1) {
+        if(ref && remote && !strcmp(g_staged_ids[i],operation) && g_staged_bound[i]==1 &&
+                !strcmp(g_staged_refs[i],ref) && !strcmp(g_staged_remotes[i],remote)) {
             g_staged_bound[i]=2;rc=0;break;
         }
     pthread_mutex_unlock(&g_operation_mutex);return rc;

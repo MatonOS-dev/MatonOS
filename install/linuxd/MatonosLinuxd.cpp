@@ -46,6 +46,9 @@ using org::matonos::systembridge::ILinuxdListener;
 using org::matonos::systembridge::ILinuxdIdentity;
 
 static std::mutex g_identity_mutex;
+/* Never hold g_identity_mutex while waiting for a store mutation: existing
+ * GC can ask the identity provider while holding the store lock. */
+static std::mutex g_identity_lifecycle_mutex;
 static android::sp<ILinuxdIdentity> g_identity;
 extern "C" int stub_identity_query(const char* command, int uid, const char* package,
         char* ref, size_t ref_size, char* remote, size_t remote_size) {
@@ -81,11 +84,15 @@ extern "C" int stub_identity_query(const char* command, int uid, const char* pac
 class IdentityDeathRecipient final : public android::IBinder::DeathRecipient {
   public:
     void binderDied(const android::wp<android::IBinder>& who) override {
-        std::lock_guard<std::mutex> lock(g_identity_mutex);
-        if(g_identity && android::IInterface::asBinder(g_identity).get()==who.unsafe_get()) {
-            g_identity.clear();
-            flatpak_manager_abort_handoffs();
+        std::lock_guard<std::mutex> lifecycle(g_identity_lifecycle_mutex);
+        bool lost=false;
+        {
+            std::lock_guard<std::mutex> lock(g_identity_mutex);
+            if(g_identity && android::IInterface::asBinder(g_identity).get()==who.unsafe_get()) {
+                g_identity.clear();lost=true;
+            }
         }
+        if(lost)flatpak_manager_abort_handoffs();
     }
 };
 android::sp<IdentityDeathRecipient> g_identity_death = new IdentityDeathRecipient();
@@ -352,6 +359,7 @@ bool ManifestCommit(const Json::Value& value,char (&out)[65]) {
 }
 bool StagedManifest(const Json::Value& value,FlatpakStagedManifest* out) {
     if(!value.isObject() || !OnlyKeys(value,{"version","operationId","appRef","appCommit","remote","deployments"}) ||
+            (value["version"].type()!=Json::intValue && value["version"].type()!=Json::uintValue) ||
             !value["version"].isInt() || value["version"].asInt()!=1 ||
             !ManifestString(value["operationId"],out->operation_id) || !ValidName(out->operation_id,64) ||
             !ManifestString(value["appRef"],out->app_ref) || !flatpak_manager_valid_ref(out->app_ref) ||
@@ -371,8 +379,11 @@ bool StagedManifest(const Json::Value& value,FlatpakStagedManifest* out) {
         for(Json::ArrayIndex j=0;j<d["subpaths"].size();j++) {
             if(!ManifestString(d["subpaths"][j],target.subpaths[j]))return false;
             std::string path=target.subpaths[j];
-            if(path[0]=='/' || path.back()=='/' || !paths.insert(path).second)return false;
-            size_t start=0;
+            if(path=="/" || path.back()=='/')return false;
+            /* Stock Flatpak locale subpaths use /en. The leading slash is
+             * relative to this deployment, never a caller filesystem path. */
+            size_t start=path[0]=='/'?1:0;
+            if(!paths.insert(path.substr(start)).second)return false;
             do {
                 size_t end=path.find('/',start);
                 std::string part=path.substr(start,end==std::string::npos?end:end-start);
@@ -454,18 +465,22 @@ class LinuxdService final : public BnLinuxd {
     android::binder::Status registerIdentity(const android::sp<ILinuxdIdentity>& identity) override {
         if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         if(!identity)return android::binder::Status::fromExceptionCode(android::binder::Status::EX_ILLEGAL_ARGUMENT);
+        std::lock_guard<std::mutex> lifecycle(g_identity_lifecycle_mutex);
+        android::sp<ILinuxdIdentity> previous;
+        auto next=android::IInterface::asBinder(identity);
         {
             std::lock_guard<std::mutex> lock(g_identity_mutex);
-            auto next=android::IInterface::asBinder(identity);
-            const bool replaced=g_identity && android::IInterface::asBinder(g_identity)!=next;
-            if(replaced) {
-                android::IInterface::asBinder(g_identity)->unlinkToDeath(g_identity_death);
-                flatpak_manager_abort_handoffs();
-            }
-            if(next->linkToDeath(g_identity_death)!=android::OK)
-                return android::binder::Status::fromExceptionCode(android::binder::Status::EX_ILLEGAL_STATE);
-            g_identity=identity;
+            previous=g_identity;
+            if(previous && android::IInterface::asBinder(previous)==next)return android::binder::Status::ok();
+            g_identity.clear();
         }
+        if(previous) {
+            android::IInterface::asBinder(previous)->unlinkToDeath(g_identity_death);
+            flatpak_manager_abort_handoffs();
+        }
+        if(next->linkToDeath(g_identity_death)!=android::OK)
+            return android::binder::Status::fromExceptionCode(android::binder::Status::EX_ILLEGAL_STATE);
+        {std::lock_guard<std::mutex> lock(g_identity_mutex);g_identity=identity;}
         return android::binder::Status::ok();
     }
     android::binder::Status installSelf(const android::String16& packageName,
@@ -519,6 +534,10 @@ class LinuxdService final : public BnLinuxd {
                     reply(Encode(Error("invalid staged manifest")));return android::binder::Status::ok();
                 }
             }
+            std::unique_lock<std::mutex> lifecycle(g_identity_lifecycle_mutex,std::try_to_lock);
+            if(!lifecycle.owns_lock()){reply(Encode(Error("another handoff is active")));return android::binder::Status::ok();}
+            {std::lock_guard<std::mutex> lock(g_identity_mutex);
+             if(!g_identity){reply(Encode(Error("bridge identity provider unavailable")));return android::binder::Status::ok();}}
             FlatpakResult result{};
             if(verify) {
                 g_staging_operation=request["operationId"].asString();g_last_staging_progress.clear();
@@ -536,10 +555,16 @@ class LinuxdService final : public BnLinuxd {
         if (command == "bind_pending" || command == "abort_pending" ||
                 command == "pending_metadata" || command == "pending_desktop" || command == "pending_icon" ||
                 command == "install_complete" || command == "install_failed") {
+            std::unique_lock<std::mutex> lifecycle(g_identity_lifecycle_mutex,std::try_to_lock);
+            if(!lifecycle.owns_lock()){reply(Encode(Error("another handoff is active")));return android::binder::Status::ok();}
+            {std::lock_guard<std::mutex> lock(g_identity_mutex);
+             if(!g_identity){reply(Encode(Error("bridge identity provider unavailable")));return android::binder::Status::ok();}}
             if (!OnlyKeys(request, {"ref", "remote", "operationId", "uid", "packageName", "error"}) ||
                     !request["ref"].isString() || !request["operationId"].isString() ||
                     !ValidName(request["operationId"].asString(), 64) ||
                     HasEmbeddedNul(request["ref"].asString()) ||
+                    (request.isMember("packageName") && (!request["packageName"].isString() || HasEmbeddedNul(request["packageName"].asString()))) ||
+                    (request.isMember("error") && (!request["error"].isString() || HasEmbeddedNul(request["error"].asString()))) ||
                     (request.isMember("remote") && (!request["remote"].isString() || HasEmbeddedNul(request["remote"].asString())))) {
                 reply(Encode(Error("invalid deployment handoff")));return android::binder::Status::ok();
             }
@@ -559,7 +584,7 @@ class LinuxdService final : public BnLinuxd {
             }
             if(command == "install_complete" || command == "install_failed") {
                 const bool ok=command == "install_complete";
-                if(ok && flatpak_manager_complete_handoff(operation.c_str())) {
+                if(ok && flatpak_manager_complete_handoff(operation.c_str(),ref.c_str(),remote.c_str())) {
                     reply(Encode(Error("operation has not completed binding")));return android::binder::Status::ok();
                 }
                 const std::string error=ok ? "" : request.get("error","Install failed").asString();
