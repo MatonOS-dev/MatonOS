@@ -84,7 +84,7 @@ int main(int argc, char **argv)
         flags = ['-fsanitize=address,undefined', '-fno-omit-frame-pointer'] if os.environ.get('MATON_TREE_TEST_SANITIZE') == '1' else []
         run('cc', '-std=gnu11', '-Wall', '-Wextra', '-Werror', *flags, f'-I{ROOT}', str(driver), '-o', str(binary))
         payload = Path('files/bin/gnome-calculator')
-        cases = ['good', 'content', 'mode', 'mode-exec-preserved', 'directory-mode', 'type', 'missing', 'unexpected', 'metadata',
+        cases = ['good', 'content', 'mode', 'mode-exec-preserved', 'mode-world-writable', 'directory-mode', 'type', 'missing', 'unexpected', 'metadata',
                  'metadata-type', 'path', 'hardlink', 'external-hardlink', 'setuid', 'fifo', 'socket',
                  'symlink-escape', 'symlink-chain', 'signed-link-target',
                  'extra-good', 'extra-chain-good', 'extra-chain-escape', 'extra-absolute',
@@ -103,8 +103,9 @@ int main(int argc, char **argv)
             held_socket = None
             if name.startswith('extra-') or name == 'unauthorized-extra':
                 extra = source / 'files/extra'
-                extra.mkdir(mode=0o700)
-                data = extra / 'payload'; data.write_bytes(b'unsigned extra output'); data.chmod(0o600)
+                extra.mkdir(mode=0o777)
+                extra.chmod(0o777)
+                data = extra / 'payload'; data.write_bytes(b'unsigned extra output'); data.chmod(0o666)
                 os.setxattr(data, 'user.attacker', b'not trusted')
                 if name == 'extra-chain-good':
                     (extra / 'middle').symlink_to('payload'); (extra / 'first').symlink_to('middle')
@@ -118,6 +119,7 @@ int main(int argc, char **argv)
                 item.chmod(0o755); item.write_bytes(b'corrupted deployed signed payload')
             elif name == 'mode': item.chmod(0o644)
             elif name == 'mode-exec-preserved': item.chmod(0o711)
+            elif name == 'mode-world-writable': item.chmod(0o777)
             elif name == 'directory-mode': (source / 'files/bin').chmod(0o700)
             elif name == 'type': item.unlink(); item.mkdir()
             elif name == 'missing': item.unlink()
