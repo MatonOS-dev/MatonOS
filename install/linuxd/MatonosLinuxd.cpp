@@ -305,6 +305,17 @@ bool IsSubsystemCaller() {
     return callingUid == expectedUid;
 }
 
+bool IsStoreCommand(const std::string& command) {
+    return command == "list_installed" || command == "list_remotes" || command == "add_flathub" ||
+            command == "install_repo" || command == "remove_repo" || command == "install" ||
+            command == "uninstall" || command == "installed_for_uid" || command == "check_update" ||
+            command == "installed_commit" || command == "metadata" || command == "desktop_entry" ||
+            command == "icon" || command == "begin_staged_install" || command == "verify_staged_install" ||
+            command == "abort_staged_install" || command == "abort_pending" || command == "pending_metadata" ||
+            command == "pending_desktop" || command == "pending_icon" || command == "bind_pending" ||
+            command == "install_complete" || command == "install_failed";
+}
+
 bool IsTrustedCaller() {
     android::IPCThreadState* state = android::IPCThreadState::self();
     if (!android::PermissionCache::checkPermission(android::String16("org.matonos.permission.SYSTEM_BRIDGE"),
@@ -447,10 +458,7 @@ class LinuxdService final : public BnLinuxd {
                                  const android::String16& args16,
                                  android::String16* aidl_return) override {
         const std::string command = ToUtf8(command16);
-        const bool subsystemHandoff = command=="begin_staged_install" || command=="verify_staged_install" ||
-                command=="abort_staged_install" || command=="pending_metadata" || command=="pending_desktop" ||
-                command=="pending_icon" || command=="bind_pending" || command=="install_complete" || command=="install_failed";
-        if (!(subsystemHandoff ? IsSubsystemCaller() : IsTrustedCaller()))
+        if (IsStoreCommand(command) ? !IsSubsystemCaller() : !IsTrustedCaller())
             return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         const std::string args = ToUtf8(args16);
         auto reply = [aidl_return](const std::string& value) {
@@ -660,7 +668,7 @@ class LinuxdService final : public BnLinuxd {
 
     android::binder::Status subscribe(const android::String16& topic16,
             const android::sp<ILinuxdListener>& listener) override {
-        if (!IsTrustedCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
+        if (!IsSubsystemCaller()) return android::binder::Status::fromExceptionCode(android::binder::Status::EX_SECURITY);
         if (ToUtf8(topic16) != "progress" || !listener) return android::binder::Status::ok();
         android::sp<ILinuxdListener> evicted;
         {
