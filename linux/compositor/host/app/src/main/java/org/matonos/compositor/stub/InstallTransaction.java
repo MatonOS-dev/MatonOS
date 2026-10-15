@@ -157,8 +157,13 @@ final class InstallTransaction {
             callback.onComplete(operationId, manifest.toString());
         } catch (Throwable error) {
             Log.e(TAG, "Install worker failed for " + appRef, error);
-            DnsForwarder.release();
             fail(error.getMessage() == null ? error.toString() : error.getMessage());
+        } finally {
+            // The forwarder socket lives in this operation's run/ directory, so
+            // it must not outlive the worker on any path, cancellation
+            // included. Release before linuxd seals the tree; success already
+            // released it before reporting completion.
+            DnsForwarder.release();
         }
     }
 

@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.os.Binder;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.util.Log;
 import org.matonos.systembridge.ICompositorInstall;
 import org.matonos.systembridge.ICompositorInstallCallback;
@@ -28,9 +29,11 @@ public final class CompositorInstallService extends Service {
     private static final String CHANNEL = "linux-install";
     private static final int NOTIFICATION_ID = 3;
     private static final String BRIDGE_PACKAGE = "org.matonos.systembridge";
+    private static final String WAKE_LOCK = "MatonOS:CompositorInstall";
 
     private final Object lock = new Object();
     private InstallTransaction active;
+    private PowerManager.WakeLock wakeLock;
 
     private final ICompositorInstall.Stub binder = new ICompositorInstall.Stub() {
         @Override public void startInstall(ICompositorInstallCallback callback, String operationId,
@@ -42,10 +45,12 @@ public final class CompositorInstallService extends Service {
                 if (active != null) throw new IllegalStateException("Another install is active");
                 active = transaction;
             }
-            beginForeground();
             try {
+                beginForeground();
                 transaction.start(() -> finish(transaction));
             } catch (RuntimeException error) {
+                // Clear the notification and wake lock of a start that failed;
+                // the bridge fails the transaction and staging is collected.
                 finish(transaction);
                 throw error;
             }
@@ -67,6 +72,7 @@ public final class CompositorInstallService extends Service {
         InstallTransaction transaction;
         synchronized (lock) { transaction = active; active = null; }
         if (transaction != null) transaction.cancel();
+        releaseWakeLock();
         super.onDestroy();
     }
 
@@ -92,11 +98,25 @@ public final class CompositorInstallService extends Service {
                 .setSmallIcon(android.R.drawable.stat_sys_download)
                 .setOngoing(true).build();
         startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        // Held from the first worker step to the completion callback, so a
+        // screen-off or low-power idle never leaves staging half-written.
+        PowerManager power = getSystemService(PowerManager.class);
+        PowerManager.WakeLock lock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK);
+        lock.setReferenceCounted(false);
+        lock.acquire();
+        synchronized (this) { wakeLock = lock; }
+    }
+
+    private void releaseWakeLock() {
+        PowerManager.WakeLock lock;
+        synchronized (this) { lock = wakeLock; wakeLock = null; }
+        if (lock != null && lock.isHeld()) lock.release();
     }
 
     /** Runs on the worker thread once for the transaction that just finished. */
     private void finish(InstallTransaction transaction) {
         synchronized (lock) { if (active == transaction) active = null; }
+        releaseWakeLock();
         try { stopForeground(STOP_FOREGROUND_REMOVE); }
         catch (RuntimeException error) { Log.w(TAG, "Cannot clear the install notification", error); }
         stopSelf();
