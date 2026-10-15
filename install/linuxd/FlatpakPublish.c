@@ -697,7 +697,7 @@ int flatpak_publish_tracked(const char* app_ref, const char* app_commit,
     }
 #ifndef MATONOS_PUBLISH_HOST_TEST
     unsigned app_id=0;
-    if((!maton_parse_install_path(user_dir,&app_id) && !pending_deployment_path(user_dir)) || strcmp(system_dir,MATON_RUNTIME_DIR) || maton_store_prepare()) {
+    if((!maton_parse_install_path(user_dir,&app_id) && !pending_deployment_path(user_dir)) || strcmp(system_dir,MATON_RUNTIME_DIR) || maton_storage_prepare()) {
         fail(error,error_size,"system-wide installation roots unavailable or inconsistent");return -1;
     }
 #endif
@@ -919,13 +919,15 @@ static int staged_pin_remote(const char* installation,const char* remote) {
 int flatpak_begin_staged_install(int uid,const char* operation,const char* remote,
         char* error,unsigned long size) {
     if(error&&size)error[0]=0;
-    if(!staged_app_uid(uid)||!valid_operation_id(operation)||!valid_remote(remote)||maton_store_prepare()) {
+    if(!staged_app_uid(uid)||!valid_operation_id(operation)||!valid_remote(remote)||maton_storage_prepare()) {
         fail(error,size,"invalid compositor staging registration");return -1;
     }
     int root=open(MATON_STAGING_ROOT,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
     if(root<0)return -1;
     char owner[32];snprintf(owner,sizeof(owner),"%d",uid);
-    int parent=maton_storage_child(root,owner,"u:object_r:matonos_flatpak_staging_file:s0",0711);
+    /* Sticky write/traverse-only parent lets the subsystem app create its
+     * operation directory without listing or removing another UID's entries. */
+    int parent=maton_storage_child(root,owner,"u:object_r:matonos_flatpak_staging_file:s0",01733);
     close(root);if(parent<0)return -1;
     char trust_name[96]={0},trust[PATH_MAX],path[PATH_MAX],repo[PATH_MAX];int op=-1,rc=-1,trust_created=0,operation_created=0;
     if(staged_name(trust_name,sizeof(trust_name),"trust",operation)||

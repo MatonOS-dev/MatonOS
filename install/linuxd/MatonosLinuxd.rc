@@ -2,10 +2,10 @@
 service matonos-linuxd /system_ext/bin/matonos-linuxd
     class late_start
     user system
-    group system inet
-    # SETUID/SETGID are inherited by the staging helper for fixed FPINSTALL pulls.
-    # linuxd needs CHOWN/FOWNER to seal downloaded staging objects.
-    capabilities SETGID SETUID CHOWN FOWNER
+    group system
+    # CHOWN lets linuxd take over app-owned staging; system owns it before
+    # chmod and fs-verity operations, so FOWNER is unnecessary.
+    capabilities CHOWN
     disabled
     restart_period 5
     seclabel u:r:matonos_linuxd:s0

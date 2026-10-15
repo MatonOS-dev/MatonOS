@@ -175,7 +175,7 @@ void flatpak_manager_init(void) {
         closedir(abandoned);
     }
     /* Fixed management scratch only; app runtimes belong to the stubs. */
-    if (maton_store_prepare()) fprintf(stderr, "linuxd: management storage unavailable\n");
+    if (maton_storage_prepare()) fprintf(stderr, "linuxd: management storage unavailable\n");
 
     setenv("TMPDIR", "/data/linux-app/manager/cache", 1);
     setenv("XDG_RUNTIME_DIR", "/data/linux-app/manager/run", 1);
@@ -225,7 +225,7 @@ static int app_install_roots(const char* ref, int app_uid, char* system_dir, siz
 /* Existing installations are migrated from Flatpak's recorded origin. Never
  * bless a requested remote merely because the new metadata is absent. */
 static int check_remote_pin(const char* ref,const char* remote,int uid,int commit) {
-    if(maton_store_prepare())return -1;
+    if(maton_storage_prepare())return -1;
     int fd=open(MATON_LINUX_ROOT "/manager",O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
     if(fd<0)return -1;
     int rc=remote_pin_check(fd,ref,remote);

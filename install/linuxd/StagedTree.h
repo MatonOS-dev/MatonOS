@@ -41,6 +41,8 @@ static inline void maton_staged_inodes_free(struct maton_staged_inodes* all) {
 static inline int maton_staged_capture_inner(struct maton_staged_inodes* all,int source,int destination,dev_t device,
         uid_t owner,unsigned depth,char* error,size_t size) {
     struct stat root,dst;
+    /* The staging producer owns source. CHOWN moves it to linuxd's AID_SYSTEM
+     * before chmod/verity work, so none of these operations need CAP_FOWNER. */
     if(depth>128 || fstat(source,&root)||fstat(destination,&dst)||
             root.st_dev!=device||dst.st_dev!=device||dst.st_uid!=owner||fchmod(destination,0700)||
             fchown(source,owner,owner)||fchmod(source,0700))
