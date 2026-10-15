@@ -1402,9 +1402,8 @@ static int staged_source_repo(int installation,const char* path) {
 static int staged_label_tree(int dir,unsigned depth) {
     if(depth>128)return -1;
 #ifndef MATONOS_PUBLISH_HOST_TEST
-    static const char deployment[]="u:object_r:matonos_flatpak_deployment_file:s0";
     static const char code[]="u:object_r:matonos_linux_code_file:s0";
-    if(fsetxattr(dir,"security.selinux",deployment,sizeof(deployment),0))return -1;
+    if(fsetxattr(dir,"security.selinux",code,sizeof(code),0))return -1;
 #endif
     DIR* entries=fdopendir(dup(dir));if(!entries)return -1;rewinddir(entries);
     int rc=0;struct dirent* e;
@@ -1424,7 +1423,7 @@ static int staged_label_tree(int dir,unsigned depth) {
 #ifndef MATONOS_PUBLISH_HOST_TEST
             char path[4096];
             if(snprintf(path,sizeof(path),"/proc/self/fd/%d/%s",dir,e->d_name)>=(int)sizeof(path)||
-                    lsetxattr(path,"security.selinux",deployment,sizeof(deployment),0))rc=-1;
+                    lsetxattr(path,"security.selinux",code,sizeof(code),0))rc=-1;
 #endif
         }else rc=-1;
     }
