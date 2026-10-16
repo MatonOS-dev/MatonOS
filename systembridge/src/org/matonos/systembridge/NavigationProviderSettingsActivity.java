@@ -34,7 +34,7 @@ public final class NavigationProviderSettingsActivity extends Activity {
         new AlertDialog.Builder(this)
                 .setTitle("Navigation bar provider")
                 .setMessage("Allow " + selected + " to provide the system navigation bar?\n\n"
-                        + "The selected app can request Back, Home and Recents actions. Its signing certificate "
+                        + "The selected app can request Back and Home actions. Its signing certificate "
                         + "will be pinned until you revoke this choice.\n\nCertificate: " + certificate)
                 .setPositiveButton("Allow", (dialog, which) -> {
                     try {

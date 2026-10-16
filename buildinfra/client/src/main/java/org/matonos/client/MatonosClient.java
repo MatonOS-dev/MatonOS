@@ -270,22 +270,6 @@ public final class MatonosClient implements AutoCloseable {
         catch (Exception e) { return Result.unavailable(reasonFor(e)); }
     }
 
-    public Result<String> getRecentTasks(int maxTasks) {
-        return invoke("launcher", b -> b.getRecentTasks(maxTasks));
-    }
-
-    public Result<Boolean> removeRecentTask(int taskId) {
-        return invoke("launcher", b -> b.removeRecentTask(taskId));
-    }
-
-    public Result<Boolean> moveTaskToFront(int taskId) {
-        return invoke("launcher", b -> b.moveTaskToFront(taskId));
-    }
-
-    public Result<Boolean> setTaskFullscreen(int taskId) {
-        return invoke("launcher", b -> b.setTaskFullscreen(taskId));
-    }
-
     public Result<Boolean> ensureShellOverlayAccess() {
         return invoke("launcher", ISystemBridge::ensureShellOverlayAccess);
     }
@@ -296,14 +280,6 @@ public final class MatonosClient implements AutoCloseable {
 
     public Result<Boolean> navigateHome() {
         return invoke("nav.home", ISystemBridge::navigateHome);
-    }
-
-    public Result<Boolean> navigateRecents() {
-        return invoke("nav.recents", ISystemBridge::navigateRecents);
-    }
-
-    public Result<byte[]> getRecentTaskThumbnail(int taskId) {
-        return invoke("launcher", b -> b.getRecentTaskThumbnail(taskId));
     }
 
     /** Creates the typed service endpoint used by a user-selected navigation provider. */

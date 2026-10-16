@@ -1,11 +1,9 @@
 package org.matonos.systembridge;
 
-import android.app.ActivityManager;
 import android.app.AppOpsManager;
 import android.app.Service;
 import android.hardware.display.DisplayManager;
 import android.content.Context;
-import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
@@ -25,10 +23,6 @@ import android.view.InputDevice;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.Display;
-import android.graphics.Point;
-import android.graphics.Bitmap;
-import android.window.TaskSnapshot;
-import android.window.TaskSnapshotManager;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -43,7 +37,6 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Locale;
 import java.nio.charset.StandardCharsets;
-import java.io.ByteArrayOutputStream;
 import java.util.Set;
 import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
@@ -55,7 +48,6 @@ import vendor.matonos.channel.IChannelListener;
 public final class SystemBridgeService extends Service {
     private static final String TAG = "MatonSystemBridge";
     private static final String PERMISSION = "org.matonos.permission.SYSTEM_BRIDGE";
-    private static final int MAX_EXPOSED_TASKS = 50;
     private static volatile SystemBridgeService activeService;
     private volatile Set<String> allowedCerts;
     private volatile Set<String> targetCallers;
@@ -131,76 +123,6 @@ public final class SystemBridgeService extends Service {
             }
         }
 
-        @Override public String getRecentTasks(int maxTasks) {
-            int uid = Binder.getCallingUid();
-            enforceLauncherCaller("getRecentTasks");
-            int limit = Math.max(0, Math.min(maxTasks, MAX_EXPOSED_TASKS));
-            JSONArray result = new JSONArray();
-            if (limit == 0) return result.toString();
-            try {
-                for (ActivityManager.RecentTaskInfo task : recentTasks(uid, limit)) {
-                    if (task.userId != ActivityManager.getCurrentUser()) continue;
-                    String packageName = taskPackageName(task);
-                    if (packageName == null) continue;
-                    JSONObject item = new JSONObject();
-                    item.put("taskId", task.taskId);
-                    item.put("packageName", packageName);
-                    item.put("windowingMode", task.getWindowingMode());
-                    result.put(item);
-                }
-                return result.toString();
-            } catch (JSONException e) {
-                throw new IllegalStateException("Cannot encode recent tasks", e);
-            }
-        }
-
-        @Override public boolean moveTaskToFront(int taskId) {
-            int uid = Binder.getCallingUid();
-            enforceLauncherCaller("moveTaskToFront:" + taskId);
-            if (findRecentTask(taskId, uid) == null) return false;
-            try {
-                ActivityTaskManager.getService().moveTaskToFront(null,
-                        "org.matonos.systembridge", taskId, 0, null);
-                return true;
-            } catch (RemoteException | RuntimeException e) {
-                Log.w(TAG, "Cannot move allowlisted recent task to front: " + taskId, e);
-                return false;
-            }
-        }
-
-        @Override public boolean setTaskFullscreen(int taskId) {
-            int uid = Binder.getCallingUid();
-            enforceLauncherCaller("setTaskFullscreen:" + taskId);
-            ActivityManager.RecentTaskInfo task = findRecentTask(taskId, uid);
-            if (task == null || task.token == null) return false;
-            if (task.getWindowingMode() == WindowConfiguration.WINDOWING_MODE_FULLSCREEN) return true;
-            try {
-                WindowContainerTransaction transaction = new WindowContainerTransaction()
-                        .setWindowingMode(task.token, WindowConfiguration.WINDOWING_MODE_FULLSCREEN);
-                new WindowOrganizer().applyTransaction(transaction);
-                return true;
-            } catch (RuntimeException e) {
-                Log.w(TAG, "Cannot make allowlisted recent task fullscreen: " + taskId, e);
-                return false;
-            }
-        }
-
-        @Override public boolean removeRecentTask(int taskId) {
-            int uid = Binder.getCallingUid();
-            String packageName = enforceLauncherCaller("removeRecentTask:" + taskId);
-            ActivityManager.RecentTaskInfo task = findRecentTask(taskId, uid);
-            if (task == null) return false;
-            String taskPackage = taskPackageName(task);
-            if (taskPackage == null || taskPackage.equals(packageName)
-                    || isMatonLauncherPackage(taskPackage)
-                    || taskPackage.equals("com.android.systemui")) return false;
-            try { return ActivityTaskManager.getService().removeTask(taskId); }
-            catch (RemoteException | RuntimeException e) {
-                Log.w(TAG, "Cannot remove allowlisted current-user task " + taskId, e);
-                return false;
-            }
-        }
-
         @Override public boolean navigateBack(boolean longPress) {
             enforceSelectedProviderCaller("nav.back", "navigateBack:" + longPress);
             return injectBack(longPress);
@@ -212,92 +134,6 @@ public final class SystemBridgeService extends Service {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             try { startActivityAsUser(home, UserHandle.CURRENT); return true; }
             catch (RuntimeException e) { Log.e(TAG, "Authorized Home navigation failed", e); return false; }
-        }
-
-        @Override public boolean navigateRecents() {
-            int uid = Binder.getCallingUid();
-            enforceSelectedProviderCaller("nav.recents", "navigateRecents");
-            try {
-                List<ActivityManager.RecentTaskInfo> tasks = recentTasks(uid, MAX_EXPOSED_TASKS);
-                if (!tasks.isEmpty() && "org.matonos.recents".equals(taskPackageName(tasks.get(0)))) {
-                    for (ActivityManager.RecentTaskInfo task : tasks) {
-                        String pkg = taskPackageName(task);
-                        if (pkg == null || isMatonLauncherPackage(pkg) || "com.android.systemui".equals(pkg)) continue;
-                        ActivityTaskManager.getService().moveTaskToFront(null,
-                                "org.matonos.systembridge", task.taskId, 0, null);
-                        return true;
-                    }
-                    return false;
-                }
-                Intent recents = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_DEFAULT)
-                        .setComponent(new ComponentName("org.matonos.recents",
-                                "org.matonos.recents.RecentsComponentAnchor"))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                startActivityAsUser(recents, UserHandle.CURRENT);
-                return true;
-            } catch (RemoteException | RuntimeException e) {
-                Log.e(TAG, "Authorized Recents navigation failed", e); return false;
-            }
-        }
-
-        @Override public byte[] getRecentTaskThumbnail(int taskId) {
-            int uid = Binder.getCallingUid();
-            String caller = enforceAuthorizedCaller("launcher", "getRecentTaskThumbnail:" + taskId);
-            if (!isLauncherCaller(caller)) deny("getRecentTaskThumbnail", uid,
-                    "caller package is not Shell, Shelf, or Recents");
-            ActivityManager.RecentTaskInfo task = findRecentTask(taskId, uid);
-            String packageName = task == null ? null : taskPackageName(task);
-            if (task == null || packageName == null || isMatonLauncherPackage(packageName)
-                    || "com.android.systemui".equals(packageName)
-                    || task.userId != ActivityManager.getCurrentUser()) return new byte[0];
-            // At most one source, one initial scaled bitmap, and four smaller
-            // bitmaps can be allocated. Track them all so failures anywhere in
-            // scaling or compression still release every native pixel buffer.
-            Bitmap[] ownedBitmaps = new Bitmap[6];
-            int ownedBitmapCount = 0;
-            Bitmap source = null;
-            Bitmap scaled = null;
-            try {
-                TaskSnapshot snapshot = TaskSnapshotManager.getInstance().getTaskSnapshot(
-                        taskId, TaskSnapshotManager.RESOLUTION_LOW);
-                if (snapshot == null || !snapshot.isBufferValid() || snapshot.hasProtectedContent()) return new byte[0];
-                source = snapshot.wrapToBitmap();
-                if (source == null) return new byte[0];
-                ownedBitmaps[ownedBitmapCount++] = source;
-                float scale = Math.min(1f, Math.min(512f / source.getWidth(), 512f / source.getHeight()));
-                scaled = Bitmap.createScaledBitmap(source,
-                        Math.max(1, Math.round(source.getWidth() * scale)),
-                        Math.max(1, Math.round(source.getHeight() * scale)), true);
-                if (scaled != source) ownedBitmaps[ownedBitmapCount++] = scaled;
-                ByteArrayOutputStream out = new ByteArrayOutputStream();
-                for (int attempt = 0; attempt < 4; attempt++) {
-                    out.reset();
-                    scaled.compress(Bitmap.CompressFormat.PNG, 100, out);
-                    if (out.size() <= 512 * 1024) break;
-                    Bitmap smaller = Bitmap.createScaledBitmap(scaled,
-                            Math.max(1, scaled.getWidth() * 3 / 4),
-                            Math.max(1, scaled.getHeight() * 3 / 4), true);
-                    if (smaller != scaled && smaller != source)
-                        ownedBitmaps[ownedBitmapCount++] = smaller;
-                    Bitmap previous = scaled;
-                    scaled = smaller;
-                    if (previous != scaled && !previous.isRecycled()) previous.recycle();
-                }
-                byte[] png = out.toByteArray();
-                return png.length <= 512 * 1024 ? png : new byte[0];
-            } catch (Exception e) {
-                Log.w(TAG, "Authorized task thumbnail unavailable taskId=" + taskId, e);
-                return new byte[0];
-            } finally {
-                for (int i = 0; i < ownedBitmapCount; i++) {
-                    Bitmap bitmap = ownedBitmaps[i];
-                    try {
-                        if (bitmap != null && !bitmap.isRecycled()) bitmap.recycle();
-                    } catch (RuntimeException e) {
-                        Log.w(TAG, "Could not recycle task thumbnail bitmap", e);
-                    }
-                }
-            }
         }
 
         @Override public String getNavigationBarProviderState() {
@@ -767,7 +603,7 @@ public final class SystemBridgeService extends Service {
 
     private static Set<String> knownTargets() {
         return new HashSet<>(java.util.Arrays.asList("launcher", "input", "sleep", "wifi",
-                "audio", "camera", "install", "addons", "status", "nav.back", "nav.home", "nav.recents"));
+                "audio", "camera", "install", "addons", "status", "nav.back", "nav.home"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {
@@ -1045,34 +881,8 @@ public final class SystemBridgeService extends Service {
                 String selection, String[] selectionArgs) { return 0; }
     }
 
-    private List<ActivityManager.RecentTaskInfo> recentTasks(int callingUid, int limit) {
-        int userId = UserHandle.getUserId(callingUid);
-        if (userId != ActivityManager.getCurrentUser()) return java.util.Collections.emptyList();
-        return ActivityTaskManager.getInstance().getRecentTasks(limit,
-                ActivityManager.RECENT_IGNORE_UNAVAILABLE | ActivityManager.RECENT_WITH_EXCLUDED,
-                userId);
-    }
-
-    private ActivityManager.RecentTaskInfo findRecentTask(int taskId, int callingUid) {
-        for (ActivityManager.RecentTaskInfo task : recentTasks(callingUid, MAX_EXPOSED_TASKS)) {
-            if (task.taskId == taskId && task.userId == ActivityManager.getCurrentUser()) return task;
-        }
-        return null;
-    }
-
-    private static String taskPackageName(ActivityManager.RecentTaskInfo task) {
-        ComponentName component = task.topActivity != null ? task.topActivity
-                : task.baseActivity != null ? task.baseActivity
-                : task.origActivity != null ? task.origActivity : task.realActivity;
-        if (component != null) return component.getPackageName();
-        if (task.baseIntent != null && task.baseIntent.getComponent() != null)
-            return task.baseIntent.getComponent().getPackageName();
-        return null;
-    }
-
     private static boolean isMatonLauncherPackage(String packageName) {
-        return "org.matonos.shell".equals(packageName) || "org.matonos.shelf".equals(packageName)
-                || "org.matonos.recents".equals(packageName);
+        return "org.matonos.shell".equals(packageName) || "org.matonos.shelf".equals(packageName);
     }
 
     private static boolean isLauncherCaller(String packageName) {
@@ -1082,7 +892,7 @@ public final class SystemBridgeService extends Service {
     private String enforceLauncherCaller(String operation) {
         String packageName = enforceAuthorizedCaller("launcher", operation);
         if (!isLauncherCaller(packageName))
-            deny(operation, Binder.getCallingUid(), "caller must be MatonOS Shell, Shelf, or Recents");
+            deny(operation, Binder.getCallingUid(), "caller must be MatonOS Shell or Shelf");
         return packageName;
     }
 

@@ -5,4 +5,3 @@ addons org.matonos.settings
 input org.matonos.settings
 sleep org.matonos.settings
 wifi org.matonos.settings
-launcher org.matonos.recents
