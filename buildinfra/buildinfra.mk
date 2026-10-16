@@ -10,3 +10,7 @@ PRODUCT_PACKAGES += MatonLinuxSubsystem
 PRODUCT_COPY_FILES += \
     device/maton/pc_x86_64/buildinfra/apps-built/libmatonos-v3-loader.so:$(TARGET_COPY_OUT_SYSTEM_EXT)/priv-app/MatonLinuxSubsystem/lib/x86_64/libmatonos-v3-loader.so \
     device/maton/pc_x86_64/buildinfra/apps-built/libmatonos-v3-loader-i386.so:$(TARGET_COPY_OUT_SYSTEM_EXT)/priv-app/MatonLinuxSubsystem/lib/x86_64/libmatonos-v3-loader-i386.so
+
+# remotes-origin: the read-only Flatpak planning helper has the same APK/image layout.
+PRODUCT_COPY_FILES += \
+    device/maton/pc_x86_64/buildinfra/apps-built/libmatonos-flatpak-plan.so:$(TARGET_COPY_OUT_SYSTEM_EXT)/priv-app/MatonLinuxSubsystem/lib/x86_64/libmatonos-flatpak-plan.so
