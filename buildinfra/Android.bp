@@ -107,29 +107,7 @@ prebuilt_etc {
     system_ext_specific: true,
 }
 
-// compositor: v4 Wayland compositor host app (Java). Its native libraries
-// (wlroots, wayland, pixman, xkbcommon, libdrm, libmaton_compositor) are
-// packaged inside the APK by linux/subsystem/build-compositor.sh + Gradle.
-android_app_import {
-    name: "MatonLinuxSubsystem",
-    privileged: true,
-    required: [
-        "privapp-permissions-org.matonos.linux",
-    ],
-    apk: "apps-built/MatonLinuxSubsystem.apk",
-    system_ext_specific: true,
-    preprocessed: true,
-    // build-apps.sh stores and aligns JNI/dex before signing. System apps do
-    // not get PM extraction; JNI loads from the APK.
-    //
-    // WARNING: generated Flatpak stubs load the host through
-    // org.matonos.linux.stub.StubLoader, which hard-codes this module's
-    // install path (/system_ext/priv-app/MatonLinuxSubsystem/MatonLinuxSubsystem.apk)
-    // and the stored, uncompressed JNI layout (apk!/lib/<abi>). Renaming the
-    // module, changing its partition, dropping `privileged` or compressing the
-    // JNI libraries silently disables StubLoader; update StubLoader.SYSTEM_APK
-    // with any such change.
-}
+// v3.5: MatonLinuxSubsystem is imported by the root Android.bp from its pinned prebuilt.
 
 // The session broker is a JNI library loaded inside each app's own process
 // (lib/x86_64/libmatonos-dbus-broker.so in the APK). There is no standalone

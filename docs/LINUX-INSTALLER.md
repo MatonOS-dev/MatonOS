@@ -8,8 +8,11 @@ remains for phase D. No migration or v2 repair is planned. Add no GPLv3 dependen
 
 ## Ownership and protocol
 
-The compositor (`org.matonos.linux`) performs Flatpak pull, deployment,
-and `apply_extra` at its PackageManager-assigned app UID. It uses the image or
+The compositor (`org.matonos.linux`) performs Flatpak pull and deployment
+at its PackageManager-assigned app UID. An application's `apply_extra` is
+deliberately not run here: it is arbitrary vendor code, so the app's
+generated stub applies it on launch (see
+`docs/FLATPAK-EXTRA-DATA.md`). The compositor uses the image or
 same-signer updated host's v3 loader, `matonos-app-flatpak` and
 `matonos-app-bwrap`. It never runs as system, UID 2902, or linuxd's domain.
 linuxd only authorizes, verifies, publishes and collects deployments. Only
@@ -260,13 +263,19 @@ symlink chain escape, FIFO/socket/device, hardlink alias, cancellation, stale
 operation, writable mapping and source replacement. Preserve existing leases,
 runtime references and concurrent users.
 
-Coordinator rebuilds linuxd, bridge, host APK, Flatpak helper/APEX packaging
-and policy after B-D. On `adb -s localhost:5555`, without stopping/rebooting
-the user's VM, verify Enforcing and install Firefox (plain) and Chrome
-(extra-data) through the normal entry point. Trace worker/extractor UID and
-SELinux context: compositor's actual app UID/domain, never 2902/system/linuxd.
-Check compositor DNS/wake-lock lifecycle, shared-runtime ownership, signed
-file checksums, sanitized extra output, no new relevant AVCs and successful
-launch. Exercise failing extraction/cancellation, update while an old leased
-version runs, another Android user and missing state. A host regression probe
-alone is not a VM success claim.
+Coordinator rebuilds linuxd, bridge, host APK and policy after B-D. The
+subsystem APK build packages the Flatpak tool inputs; build fork commit
+`4cce363` in `~/matonos/repos/MatonOS_apexs` with `flatpak/build.sh` first.
+On `adb -s localhost:5555`,
+without stopping/rebooting the user's VM, verify Enforcing and install
+Firefox (plain) and Chrome (extra-data) through the normal entry point.
+Trace the installer pull/deploy UID and SELinux context: compositor's actual
+app UID/domain, never 2902/system/linuxd. Then launch Chrome and trace the
+`apply_extra` process: the stub's own app UID/domain (`untrusted_app_all`),
+never the compositor, 2902, system or linuxd; confirm `/app/extra` resolves
+to the stub's private directory. Check compositor DNS/wake-lock lifecycle,
+shared-runtime ownership, signed file checksums, sanitized extra output, no
+new relevant AVCs and successful launch. Exercise failing extraction,
+cancellation, an update while an old leased version runs, another Android
+user and missing state. A host regression probe alone is not a VM success
+claim.

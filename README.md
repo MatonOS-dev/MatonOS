@@ -60,8 +60,8 @@ Work in progress, not yet ready for daily use.
     over. Aurora is in the MatonOS F-Droid repo.
 - **In progress:** an A/B installer (install from the live image to a
   disk), Secure Boot via shim with our own keys, signed driver add-ons, and
-  v4 Linux app support (a static musl Flatpak APEX plus a wlroots-based
-  compositor).
+  v4 Linux app support (Flatpak tools bundled in the subsystem APK plus a
+  wlroots-based compositor).
 
 The full roadmap (v2 to v8) and every design decision, with the reasons
 behind it, are in
@@ -75,7 +75,7 @@ This repository is the device tree; check it out at
 | Path | What |
 |---|---|
 | `./` | Product config, the ODM driver bundle, daemons, sepolicy, the system bridge (`systembridge/`), the installer service (`install/`), add-ons, Secure Boot, and build/test tools (`tools/`). Start with `CLAUDE.md` (rules) and `NOTES.md` (decisions). |
-| `linux/` | Linux apps: the static musl Flatpak APEX (`flatpak/`), the Wayland compositor host and runtime stubs (`subsystem/`, `stubgen/`, `runtimes/`), and the D-Bus broker. |
+| `linux/` | Linux apps: Flatpak tools bundled in the subsystem APK (`flatpak/`), the Wayland compositor host and runtime stubs (`subsystem/`, `stubgen/`, `runtimes/`), and the D-Bus broker. |
 | `rn-apps/settings/` | MatonOS Settings (Expo SDK 57, Expo UI Jetpack Compose only), which also contains the installer. |
 | `rn-apps/flathub/` | Current Software Centre UI prototype for Flathub/Flatpak; target architecture is documented in [`docs/SOFTWARE-CENTRE.md`](docs/SOFTWARE-CENTRE.md). |
 | `rn-apps/rn-common/` | Shared React Native library. |

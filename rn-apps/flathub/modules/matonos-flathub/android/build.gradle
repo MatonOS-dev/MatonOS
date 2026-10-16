@@ -5,6 +5,7 @@ plugins {
 group = 'org.matonos.flathub.nativebridge'
 version = '0.1.0'
 android {
+  buildFeatures { aidl true }
   namespace 'org.matonos.flathub.nativebridge'
   defaultConfig { minSdk 32; versionCode 1; versionName '0.1.0' }
 }

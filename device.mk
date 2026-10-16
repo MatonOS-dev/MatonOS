@@ -48,18 +48,6 @@ PRODUCT_COPY_FILES += \
     frameworks/native/data/etc/android.hardware.usb.host.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.usb.host.xml \
     frameworks/native/data/etc/android.software.freeform_window_management.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.software.freeform_window_management.xml
 
-# ------------------------------------------------- Xwayland (compositor)
-# The Xwayland server and its X11 stack runtime libraries (built by
-# linux/subsystem/build-xwayland.sh, staged by tools/stage-xwayland.sh).
-XWAYLAND_SYSTEM_EXT := device/maton/pc_x86_64/linux/subsystem/prebuilt/system_ext
-XWAYLAND_FILES := \
-    $(wildcard $(XWAYLAND_SYSTEM_EXT)/bin/*) \
-    $(wildcard $(XWAYLAND_SYSTEM_EXT)/lib64/*.so) \
-    $(wildcard $(XWAYLAND_SYSTEM_EXT)/lib64/*.so.*) \
-    $(wildcard $(XWAYLAND_SYSTEM_EXT)/lib64/xwayland/*.so) \
-    $(shell find $(XWAYLAND_SYSTEM_EXT)/share -type f 2>/dev/null)
-PRODUCT_COPY_FILES += $(foreach f,$(XWAYLAND_FILES),$(f):$(TARGET_COPY_OUT_SYSTEM_EXT)/$(patsubst $(XWAYLAND_SYSTEM_EXT)/%,%,$(f)))
-
 # ---------------------------------------------------------------- HALs
 # Software-only implementations from hardware/interfaces; fine for bring-up,
 # none of them need a TEE.
@@ -157,10 +145,6 @@ $(call inherit-product-if-exists, $(LOCAL_PATH)/systembridge/systembridge.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/camera/camera.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/input/input.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/bootanim/bootanim.mk)
-
-# Flatpak: the static musl stack ships as the updatable com.matonos.flatpak
-# APEX on system_ext (linux/flatpak/Android.bp). The old bionic bundle is gone.
-$(call inherit-product-if-exists, $(LOCAL_PATH)/linux/flatpak/flatpak.mk)
 
 # addons: product properties/hooks for the signed per-slot driver package
 # service. Its executable and init rc are assembled by bundle/contents.list.

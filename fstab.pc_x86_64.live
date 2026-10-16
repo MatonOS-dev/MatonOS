@@ -22,6 +22,7 @@ vendor             /vendor      erofs  ro                                  wait,
 odm                /odm         erofs  ro                                  wait,logical,first_stage_mount,slotselect
 
 /dev/block/ram1    /metadata    ext4   nodev,noatime,nosuid                wait,formattable
+# fsverity remains for PackageInstallerSession v4 APK integrity (idsig).
 /dev/block/ram0    /data        ext4   nodev,noatime,nosuid,errors=panic   latemount,wait,quota,fsverity,formattable,reservedsize=64M,fileencryption=aes-256-xts:aes-256-cts:v2
 
 /dev/block/zram0   none         swap   defaults                            zramsize=50%

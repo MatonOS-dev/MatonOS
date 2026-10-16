@@ -3,10 +3,6 @@
 # it lives in ../private/matonos_system_bridge.te.
 type matonos_system_bridge, domain;
 
-# Public declarations let fixed vendor file_contexts map this system_ext
-# executable and private /data tree without adding policy files.
-type matonos_linuxd_exec, exec_type, file_type, system_file_type;
-
 # Public PCI identity only: vendor HALs and platform Mesa clients share it.
 # No config/resource/modalias/uevent files and no writable hardware controls.
 type sysfs_matonos_pci_id, fs_type, sysfs_type;

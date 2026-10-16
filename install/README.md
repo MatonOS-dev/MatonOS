@@ -1,3 +1,6 @@
+> v3.5: linuxd is retired. Any linuxd/shared-store paths below describe the
+> historical design. See [current ownership and device checks](../docs/RETIRE-LINUXD.md).
+
 # Installer service
 
 The app-authored request contract is in [AB-LAYOUT.md](AB-LAYOUT.md), and the

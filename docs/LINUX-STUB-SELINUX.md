@@ -1,20 +1,16 @@
-# Linux stub SELinux
+# Linux stub SELinux (v3.5)
 
 Generated device-signed stubs run in stock untrusted_app_* with ordinary
-PackageManager-owned per-user data and levelFrom=all categories. linuxd and the
-System Bridge authenticate scoped management requests by certificate and live
-PackageManager identity. No custom stub domain or MLS trust is added.
+PackageManager-owned per-user data and levelFrom=all categories. The subsystem
+authenticates store/repair calls using the caller UID, sole package, pinned
+signer and declared ref. There is no linuxd Binder service or domain.
 
-StubService creates `<dataDir>/runtime` mode 0700. Its sockets, symlinks, X11,
-audio and bus use stock app_data_file policy at the stub's UID/MLS level.
-linuxd cannot create, label or access these runtime sockets. No media_rw_data_file
-runtime exception, global tmpfs, socket type, input metadata policy or Downloads
-bind grant remains.
+StubService creates its private runtime sockets. Staging is inside the
+subsystem app's private cache; APK code is owned by PackageManager. There is
+no shared /data/linux-app store, code/staging label, CHOWN capability or lease.
+Flatpak executables are native libraries shipped in the subsystem APK and
+resolved beside its v3 loader. The compat-proxy loader blocks Binder ioctls for
+Linux payloads; the Java parent keeps Binder for scoped platform work.
 
-Shared `/data/linux-app` code uses deployment/code labels with read-only app
-access and process leases. Explicit neverallows deny app mutation and
-execute_no_trans. The compat-proxy loader blocks Binder ioctls for Linux
-payloads; the Java parent retains Binder for authenticated platform work.
-See [storage](../install/linuxd/STORAGE-LAYOUT.md) and
-[launch](../linux/subsystem/V3-LAUNCH.md). Fresh enforcing-image validation is
-pending; no new exception should be added to compensate for an unused v2 path.
+See [retirement and device checks](RETIRE-LINUXD.md). Fresh enforcing-image
+validation remains the coordinator's task.

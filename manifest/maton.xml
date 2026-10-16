@@ -44,9 +44,4 @@
   <project path="hardware/baylibre/audio" name="android_hardware_baylibre_audio"
            remote="matonos-dev" revision="matonos/v1.2" />
 
-  <!-- Linux apps: the static musl Flatpak stack ships as the updatable
-       com.matonos.flatpak APEX built from linux/flatpak/ and the
-       MatonOS-dev/MatonOS_apexs release assets. The former bionic-Flatpak
-       forks (flatpak, ostree, bubblewrap, glib, gnupg, ...) were deleted on
-       GitHub (2026-10-04) and are no longer referenced here. -->
 </manifest>

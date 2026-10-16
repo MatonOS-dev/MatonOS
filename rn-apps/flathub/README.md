@@ -1,7 +1,10 @@
+> v3.5: linuxd is retired. Any linuxd/shared-store paths below describe the
+> historical design. See [current ownership and device checks](../../docs/RETIRE-LINUXD.md).
+
 # Software Center
 
 This is the current Flathub-only UI prototype. The target shared APK,
-Flatpak and MatonOS APEX design is in
+Flatpak design is in
 [`docs/SOFTWARE-CENTRE.md`](../../docs/SOFTWARE-CENTRE.md); this prototype's
 direct Flathub API and existing Flatpak bridge calls are not the final
 multi-Source contract.

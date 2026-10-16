@@ -1,11 +1,15 @@
 # Flatpak stub install handover
 
+> Historical handover: v3.5 moved the Flatpak executables into the
+> subsystem APK; APEX references below record the former packaging.
+
 Updated: 2026-10-06 (evening). Read this before touching Flatpak installs.
 
 ## Flow (decided)
 
 1. **Store** (`rn-apps/flathub`) calls the bridge: `add_flathub`, then
-   `install {ref, operationId, icon}`.
+   `install {ref, remote, label, icon, operationId}`, with the label and icon
+   PNG read from the remote's appstream (never the deployment's `.desktop`).
 2. **Bridge** generates a signed stub (`flatpak.<app-id>`) and installs it via
    PackageInstaller. The stub's launcher activity ships **disabled**, so the
    app stays hidden until its Flatpak is installed. The stub carries the full

@@ -1,20 +1,40 @@
-# Linux app stack
+# Linux app stack — v3.5 repository split
 
-MatonOS is based on AOSP. Each signed Flatpak stub owns its compositor,
-Xwayland, private JNI session bus, JavaPortal, audio sockets and DNS forwarder.
-`StubActivity` → `StubService` / `PerAppRuntime` → `V3Launcher` starts the
-`linux/compat-proxy` loader, which runs the bionic Flatpak applet from the
-`com.matonos.flatpak` APEX under the stub UID and inherited app policy.
+MatonOS is based on AOSP. The subsystem APK sources, generated stubs,
+OSTree packs, compatibility proxy/loaders, Flatpak, embedded PipeWire and
+per-app session bus now live in the standalone repository:
+https://github.com/MatonOS-dev/linux-subsystem-app
 
-linuxd owns installation, updates, store configuration, metadata and stub-signer
-verification. Shared immutable app versions and runtimes live in
-`/data/linux-app`; private HOME, cache and runtime sockets live in ordinary
-PackageManager-owned stub data. See [launch](subsystem/V3-LAUNCH.md),
-[storage](../install/linuxd/STORAGE-LAYOUT.md) and [APEX](flatpak/APEX.md).
+The device tree imports `prebuilt/linux-subsystem/MatonLinuxSubsystem.apk`.
+Its `SOURCE` pins the source commit, APK hash and signer. The native libraries and executable
+helpers beside it are extracted from that exact APK for the system copy's
+nativeLibraryDir. The root `Android.bp` keeps the MatonLinuxSubsystem module,
+partition and install path stable for StubLoader.
 
-The v2 privileged launch/sandbox layer failed on enforcing SELinux and was
-retired completely. There is no fallback, archived source fixture or compatibility
-mode. Its uinput pads, Downloads bind grants, GTK settings, global machine-id,
-shared socket tree and seccomp-notify SysV supervisor are gone. SysV IPC in the
-v3 proxy and app-openable shared-folder integration remain gaps; kernel
-CONFIG_SYSVIPC stays disabled. Historical handovers are retained as records.
+Build the APK and run its tests in the standalone repository with its root
+`build.sh`; supply the existing signing keystore/password by external paths.
+To update the image prebuilt:
+
+1. Verify the new APK with SDK `apksigner verify --print-certs` and check that
+   its signer is the expected subsystem key.
+2. Copy it into `prebuilt/linux-subsystem/`, then run the standalone repo's
+   `linux/compat-proxy/extract-loaders.sh APK OUTPUT_DIRECTORY` against it.
+3. Update `SOURCE` with the exact source commit, SHA-256 values and signer.
+4. The subsystem has no system bridge caller trust entry. Other registered
+   apps still build through `tools/build-apps.sh`.
+5. Run `MATON_BUILD_COORDINATOR=1 tools/preflight.sh`, then request a fresh
+   image build from the coordinator and test that image without hot-patching.
+
+The system bridge, SELinux/image configuration and remaining image components
+stay here. Xwayland, xkbcomp, their libraries and keyboard data are packaged
+by the subsystem APK; there is no global image Xwayland installation.
+
+The source branch still uses `SessionBus` → `NativeBroker` → the native JNI
+D-Bus broker. Java supplies desktop portals, not the session bus; the active
+broker therefore moved with its tests. PipeWire is also packaged and used by
+the APK. No kernel or SELinux changes are part of this extraction.
+
+Runtime launch, storage and pack documentation moved with the standalone
+source. An image build and fresh-boot/runtime checks remain integration work
+for the coordinator; no runtime validation is implied by preflight or APK
+compilation.

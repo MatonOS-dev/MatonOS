@@ -59,7 +59,6 @@ public final class SystemBridgeService extends Service {
     private static volatile SystemBridgeService activeService;
     private volatile Set<String> allowedCerts;
     private volatile Set<String> targetCallers;
-    private LinuxdDeploymentReconciler flatpakStubManager;
     private android.os.Handler geometryHandler;
     private boolean geometryRetryPending;
     private final ConcurrentMap<String, Subscription> subscriptions = new ConcurrentHashMap<>();
@@ -383,8 +382,6 @@ public final class SystemBridgeService extends Service {
     @Override public void onCreate() {
         super.onCreate();
         activeService = this;
-        flatpakStubManager = new LinuxdDeploymentReconciler(this);
-        flatpakStubManager.start();
         // sleep: poll off the main thread; failed power inspection keeps sleep blocked.
         sleepWakeForwarder = new AndroidWakeStateForwarder(this);
         sleepWakeForwarder.start();
@@ -410,7 +407,6 @@ public final class SystemBridgeService extends Service {
     }
 
     @Override public void onDestroy() {
-        if (flatpakStubManager != null) flatpakStubManager.close();
         // sleep: stop the poller with the persistent bridge service.
         if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
         if (navigationBarWindow != null) navigationBarWindow.close();
