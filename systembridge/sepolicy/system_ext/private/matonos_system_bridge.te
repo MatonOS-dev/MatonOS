@@ -11,7 +11,6 @@ app_domain(matonos_linux_app)
 net_domain(matonos_linux_app)
 allow matonos_linux_app system_file:dir r_dir_perms;
 allow matonos_linux_app system_file:file r_file_perms;
-allow matonos_linux_app matonos_flatpak_cli_exec:file { execute execute_no_trans getattr map open read };
 
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.
@@ -26,7 +25,6 @@ allow matonos_system_bridge vendor_configs_file:file r_file_perms;
 
 # Runtime sockets live in each stub's PM-owned app data and use stock app policy.
 
-type matonos_flatpak_cli_exec, exec_type, system_file_type, file_type;
 
 allow storaged sysfs_devices_block:file { read open getattr };
 # Secure Element's package-specific seapp rule uses stock app_data_file rights.
@@ -71,4 +69,3 @@ allowxperm { appdomain -isolated_app_all } ntsync_device:chr_file ioctl { 0x4e80
 
 # v3-stub: ELF loading is in-process under the stub's stock app filter/domain.
 # Read and executable mmap only: no execute_no_trans, transitions or write grants.
-allow untrusted_app_all matonos_flatpak_cli_exec:file { r_file_perms execute };
