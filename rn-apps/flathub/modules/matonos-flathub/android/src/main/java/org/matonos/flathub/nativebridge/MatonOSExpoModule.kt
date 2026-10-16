@@ -72,7 +72,7 @@ class MatonOSExpoModule : Module() {
       if (parts.size != 3) return@AsyncFunction false
       requireClient().unsubscribe(parts[0], parts[1], callback).available
     }
-    AsyncFunction("storeInstall") { ref: String, operationId: String, promise: Promise ->
+    AsyncFunction("storeInstall") { ref: String, label: String?, iconUrl: String?, operationId: String, promise: Promise ->
       withStore(promise) { store ->
         store.addRemote("flathub", FLATHUB_URL, "${operationId}_remote", object : Callback() {
           override fun onResult(id: String, ok: Boolean, error: String?) {
@@ -81,14 +81,14 @@ class MatonOSExpoModule : Module() {
               promise.reject("STORE_INSTALL", error ?: "Could not configure Flathub", null)
               return
             }
-            store.install(ref, "flathub", operationId, callbackFor())
+            store.install(ref, "flathub", label, fetchIcon(iconUrl), operationId, callbackFor())
             promise.resolve(true)
           }
         })
       }
     }
-    AsyncFunction("storeUpdate") { ref: String, operationId: String, promise: Promise ->
-      withStore(promise) { it.update(ref, operationId, callbackFor()); promise.resolve(true) }
+    AsyncFunction("storeUpdate") { ref: String, label: String?, iconUrl: String?, operationId: String, promise: Promise ->
+      withStore(promise) { it.update(ref, label, fetchIcon(iconUrl), operationId, callbackFor()); promise.resolve(true) }
     }
     AsyncFunction("storeUninstall") { ref: String, operationId: String, promise: Promise ->
       withStore(promise) { it.uninstall(ref, operationId, callbackFor()); promise.resolve(true) }
@@ -114,6 +114,43 @@ class MatonOSExpoModule : Module() {
   private fun emitResult(id: String, ok: Boolean, error: String?) {
     sendEvent("linuxAppStoreEvent", mapOf("operationId" to id, "phase" to "complete", "percent" to 100,
       "result" to mapOf("ok" to ok, "error" to (error ?: ""), "operationId" to id)))
+  }
+
+  /** Fetches the appstream icon for a stub, so the launcher label and icon
+   * always come from the store's appstream read. Returns null (fallback) on
+   * any network, size or format problem; never throws. */
+  private fun fetchIcon(url: String?): ByteArray? {
+    if (url.isNullOrBlank() || !url.startsWith("https://")) return null
+    return try {
+      val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+      connection.connectTimeout = 10_000
+      connection.readTimeout = 20_000
+      connection.instanceFollowRedirects = true
+      connection.setRequestProperty("Accept", "image/png,image/*")
+      try {
+        if (connection.responseCode != 200) return null
+        val bytes = connection.inputStream.use { input ->
+          val out = java.io.ByteArrayOutputStream()
+          val buffer = ByteArray(8192)
+          var total = 0
+          while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > MAX_ICON_BYTES) return null
+            out.write(buffer, 0, read)
+          }
+          out.toByteArray()
+        }
+        if (isPng(bytes)) bytes else null
+      } finally { connection.disconnect() }
+    } catch (_: Exception) { null }
+  }
+
+  private fun isPng(bytes: ByteArray): Boolean {
+    if (bytes.size < 8) return false
+    val magic = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+    return magic.indices.all { bytes[it] == magic[it] }
   }
 
   private fun withStore(promise: Promise, action: (ILinuxAppStore) -> Unit) {
@@ -164,6 +201,7 @@ class MatonOSExpoModule : Module() {
 
   private companion object {
     const val FLATHUB_URL = "https://dl.flathub.org/repo/flathub.flatpakrepo"
+    const val MAX_ICON_BYTES = 1024 * 1024
     const val STUB_INSTALL_ACTION = "org.matonos.linuxhost.INSTALL"
     const val STUB_UPDATE_ACTION = "org.matonos.linuxhost.UPDATE"
     const val STUB_OPERATION_EXTRA = "org.matonos.linuxhost.OPERATION_ID"

@@ -178,7 +178,7 @@ export default function App() {
     setOperationKind("install");
     setBusyRef(app.ref); setProgress("Preparing installation…"); setPercent(null); setMessage("");
     try {
-      await installApp(app.ref, operationId);
+      await installApp(app.ref, app.name, app.icon || null, operationId);
       if (operationIdRef.current !== operationId) return;
       setProgress("Downloading and installing…");
       setTimeout(() => {
