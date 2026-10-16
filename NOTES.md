@@ -1142,7 +1142,11 @@ Apps stay ordinary SDK apps, so the standard Android dev tools apply.
 Features given up until they can be done without patching AOSP (user rule).
 Each entry: what, why no non-patch way, what it would need.
 - **Flatpak extra-data extraction as fixed installer UID 2902 (2026-10-15).**
-  The proposed native bubblewrap helper cannot run the extractor in a confined
+  Resolved 2026-10-16 without patches by the stub design: an app's
+  `apply_extra` is deferred to the app's own generated stub and runs under
+  its UID/domain (`docs/FLATPAK-EXTRA-DATA.md`). Only the fixed-UID-2902
+  helper variant below stays dropped. The proposed native bubblewrap helper
+  cannot run the extractor in a confined
   non-app SELinux domain with the current stock policy: `private/domain.te`
   forbids non-app domains executing `data_file_type` files, including our
   deployment/code labels. Changing UID alone leaves linuxd's privileged

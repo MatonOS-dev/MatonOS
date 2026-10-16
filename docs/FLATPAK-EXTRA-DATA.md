@@ -1,5 +1,9 @@
 # Fixed-identity extra-data extraction: deferred
 
+**Status (2026-10-16): implemented as the stub design at the end of this
+file** ("Stub design (option 0 step 3)"), on branch `ostree-packs`. The
+sections below are the earlier investigation that led there.
+
 Investigation on branch `extra-data-installer`, 2026-10-15. No runtime change
 is shipped. Chrome remains an example of the general extra-data failure;
 there is no per-app exception.
@@ -88,7 +92,11 @@ vendor code, or claim the existing stub path already provides this worker.
 No helper/APEX/policy modules need rebuilding for this documentation-only
 result. No AOSP builds or VM mutations were performed.
 
-## isolatedProcess option (option 0 step 3), 2026-10-16
+## isolatedProcess option (option 0 step 3), 2026-10-16 — superseded
+
+Superseded the same day by the stub design at the end of this file, which
+runs `apply_extra` under the app stub's own UID instead of an isolated
+process. Kept for the policy analysis.
 
 Investigated moving only the `apply_extra` step into an
 `android:isolatedProcess="true"` service in the subsystem app, with the
@@ -135,3 +143,58 @@ device-policy grant. Both are out of scope under the zero-patches rule. No
 service, AIDL, manifest or policy change was made; no image build or VM run.
 
 Details and the stopped work item: `out/pc-logs/agents/apply-extra-isolated.final.md`.
+
+## Stub design (option 0 step 3), implemented 2026-10-16
+
+Shipped on branch `ostree-packs`. The installer never runs an
+application's `apply_extra`; the generated stub applies it on first launch
+and after every update.
+
+A fetched commit's `xa.extra-data-sources` payload is checksum-verified at
+pull time, so the raw, still-unapplied downloads are authenticated input.
+They stay in the published deployment's `files/extra` (unsigned, but pinned
+by the signed commit's metadata) and are packed with the rest of the
+deployment:
+
+1. Flatpak's `apply_extra_data` is skipped for `app/*` refs only, in the
+   fork's `common/flatpak-dir.c:flatpak_dir_deploy` — the one local change
+   to the fork. Runtimes and extensions keep upstream behaviour and are
+   applied at install; only apps have a stub to defer to.
+2. On launch, `ExtraData.prepare` reads linuxd's `active` symlink for the
+   pinned installation, copies `files/extra` into the stub's private data
+   directory (regular files and directories only; symlinks recreated but
+   never followed), runs `/app/bin/apply_extra` there through the same v3
+   loader the launch uses, and records the commit in `extra.state`.
+3. `apply_extra` runs in the restricted `run --sandbox` form through
+   `matonos-app-flatpak --command=/app/bin/apply_extra --cwd=/app/extra`, at
+   the stub's own PackageManager UID and SELinux domain, with no bus, host
+   filesystem or devices. The loader maps the private directory over
+   `/app/extra`; that target is longer than the `/app` pack mount, so VFS
+   longest-prefix lookup keeps it (verified against the loader's host
+   scaffold).
+4. The normal launch maps the same private directory over `/app/extra`, so
+   the application sees exactly the tree its script produced.
+5. A commit change (update) or a failed earlier attempt always wipes and
+   regenerates the private output, so no stale tree survives. Uninstalling
+   removes it with the app's data.
+
+Why not the env-gated defer of the earlier plan: the wrapper
+(`flatpak-env-wrapper.c`) calls `clearenv()` and rejects `run`, and
+`matonos-app-flatpak` only selects the helper, so a variable set by linuxd
+would be dropped; a per-process variable would also disable
+runtime/extension extra-data application, which has no stub to fall back
+on. Deferring by ref kind is the narrow, correct gate, and it matches the
+live publication path: `FlatpakPublish.c:verify_staged_install` moves the
+phase-C staging checkout into the installation and never re-deploys, so the
+phase-C install is the only apply site.
+
+Not reproduced: Flatpak's `extra/export` promotion (icons and desktop files
+a script writes into `files/extra/export`), because the published
+deployment is linuxd-owned and read-only. The raw downloads also stay inside
+both the deployment and the stub APK packs — a space cost accepted for now
+that is self-correcting once packs are built from the applied tree.
+
+The device half of this change (the `MatonOS_apexs` rebuild of
+`matonos-app-flatpak` with the fork change) is not buildable in this
+worktree; the host code, its unit tests and the fork diff are in
+`out/pc-logs/agents/apply-extra-stub.final.md`.
