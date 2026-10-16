@@ -1,3 +1,6 @@
+> v3.5: linuxd is retired. Any linuxd/shared-store paths below describe the
+> historical design. See [current ownership and device checks](RETIRE-LINUXD.md).
+
 # Fixed-identity extra-data extraction
 
 **Status (v3.5, 2026-10-16, branch `ostree-packs`): implemented as the

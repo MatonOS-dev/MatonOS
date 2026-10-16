@@ -1,3 +1,6 @@
+> v3.5: linuxd is retired. Any linuxd/shared-store paths below describe the
+> historical design. See [current ownership and device checks](RETIRE-LINUXD.md).
+
 # In-process D-Bus portals
 
 Each v3 stub runs its private JNI session bus (`linux/dbus-broker`) and
