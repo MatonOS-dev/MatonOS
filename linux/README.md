@@ -6,7 +6,7 @@ per-app session bus now live in the standalone repository:
 https://github.com/MatonOS-dev/linux-subsystem-app
 
 The device tree imports `prebuilt/linux-subsystem/MatonLinuxSubsystem.apk`.
-Its `SOURCE` pins the source commit, APK hash and signer. The three executable
+Its `SOURCE` pins the source commit, APK hash and signer. The native libraries and executable
 helpers beside it are extracted from that exact APK for the system copy's
 nativeLibraryDir. The root `Android.bp` keeps the MatonLinuxSubsystem module,
 partition and install path stable for StubLoader.
@@ -20,14 +20,14 @@ To update the image prebuilt:
 2. Copy it into `prebuilt/linux-subsystem/`, then run the standalone repo's
    `linux/compat-proxy/extract-loaders.sh APK OUTPUT_DIRECTORY` against it.
 3. Update `SOURCE` with the exact source commit, SHA-256 values and signer.
-4. Run `tools/build-apps.sh` (or its normal app selection) to regenerate bridge
-   caller trust from the pinned APK. Other registered apps still build here.
+4. The subsystem has no system bridge caller trust entry. Other registered
+   apps still build through `tools/build-apps.sh`.
 5. Run `MATON_BUILD_COORDINATOR=1 tools/preflight.sh`, then request a fresh
    image build from the coordinator and test that image without hot-patching.
 
 The system bridge, SELinux/image configuration and remaining image components
-stay here. Xwayland, xkbcomp and their system libraries/data are preserved under
-`prebuilt/xwayland/`; `tools/stage-xwayland.sh` refreshes that image component.
+stay here. Xwayland, xkbcomp, their libraries and keyboard data are packaged
+by the subsystem APK; there is no global image Xwayland installation.
 
 The source branch still uses `SessionBus` → `NativeBroker` → the native JNI
 D-Bus broker. Java supplies desktop portals, not the session bus; the active
