@@ -7,12 +7,12 @@ function decode(value: string): { ok?: boolean; output?: string; error?: string 
   catch { throw new Error("The Flatpak service returned an invalid response."); }
 }
 
-export async function installApp(ref: string, label: string | null, iconUrl: string | null, operationId: string) {
-  return MatonOS.storeInstall(ref, label, iconUrl, operationId);
+export async function installApp(ref: string, operationId: string) {
+  return MatonOS.storeInstall(ref, operationId);
 }
 
-export async function updateApp(ref: string, label: string | null, iconUrl: string | null, operationId: string) {
-  return MatonOS.storeUpdate(ref, label, iconUrl, operationId);
+export async function updateApp(ref: string, operationId: string) {
+  return MatonOS.storeUpdate(ref, operationId);
 }
 
 export async function uninstallApp(ref: string, operationId: string) {

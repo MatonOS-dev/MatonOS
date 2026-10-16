@@ -1,12 +1,93 @@
-# Fixed-identity extra-data extraction: deferred
+# Fixed-identity extra-data extraction
 
-**Status (2026-10-16): implemented as the stub design at the end of this
-file** ("Stub design (option 0 step 3)"), on branch `ostree-packs`. The
-sections below are the earlier investigation that led there.
+**Status (v3.5, 2026-10-16, branch `ostree-packs`): implemented as the
+per-package service design at the end of this file** ("v3.5 design"). The
+earlier "Stub design" sections are the superseded v3.4 approach, kept for the
+policy analysis. Earlier sections are investigation only.
 
-Investigation on branch `extra-data-installer`, 2026-10-15. No runtime change
-is shipped. Chrome remains an example of the general extra-data failure;
-there is no per-app exception.
+## v3.5 design (current)
+
+Every generated package — app stub and runtime/extension package alike — gets
+its own small service (`org.matonos.linux.stub.ExtraService`, AIDL
+`IExtraExec`). The subsystem app installs the package's content (packs, no
+applied extra output), then binds that service, and the service runs
+`apply_extra` under the *package's own* UID. Vendor `apply_extra` code never
+runs as the subsystem app.
+
+Flow (requirements as shipped):
+
+1. **Flatpak fork** (`common/flatpak-dir.c`, commit
+   `4cce363ef3168baf10a4cd0a916694d3959f9558`): `apply_extra_data` is skipped at
+   deploy time for **all** refs, not just apps. Downloads stay
+   checksum-verified at pull time; the raw, still-unapplied files stay in the
+   deployment's `files/extra` and are packed with the rest of the content.
+2. **Per-package service.** `StubGenerator` declares `ExtraService` in every
+   base (apps and `noActivities` runtime packages) with
+   `org.matonos.linuxhost.EXTRA_MOUNT` naming the declared mount point
+   (`/app` for apps, the runtime's own mount point otherwise). It mounts the
+   package's packs read-only there through the v3 loader, copies its raw extra
+   downloads from its own installed `pack_` carriers into a writable
+   package-private directory, maps that over `<mount>/extra` (the map target is
+   longer than the pack mount, so VFS longest-prefix lookup keeps it), and runs
+   `<mount>/bin/apply_extra` with that directory as its working directory.
+3. **Non-exported binding, enforced at call time.** A service in another app's
+   package cannot be bound with `android:exported="false"` when the caller has
+   a different UID, so the service is declared exported and refuses every
+   caller whose UID is not `org.matonos.linux`'s
+   (`Binder.getCallingUid()` checked on the binder thread, before the work is
+   handed to a worker thread). This is the one deliberate deviation; it is
+   recorded here and in the service's own documentation.
+4. **Output by fd.** One pipe: a status byte (`ExtraProtocol`), then for
+   `STATUS_OK` a POSIX ustar archive of the applied tree (`Tar`), for
+   `STATUS_ERROR` a length-prefixed UTF-8 message, for `STATUS_NONE` nothing.
+   The subsystem app validates and extracts it: regular files and directories
+   only, no setuid/setgid/sticky, no devices/FIFOs/hard links, symlinks
+   relative and non-escaping, every size and total overflow-checked, and it
+   rejects duplicate entries and names that escape the destination.
+5. **Publish as a split.** The extracted tree is packed in the same pack
+   format as a self-contained `extra_<sha256>` split (one payload pack plus its
+   own embedded `assets/matonos/objects.index`/`objects.ostree`), installed as
+   a second `INHERIT_EXISTING` session that inherits what the first installed
+   (the package is not running yet). A timeout (service 14 min, client 15 min)
+   or any failure fails the whole install; on a first install the package is
+   removed, on an update the next update regenerates it.
+6. **Launch.** `PackLaunch.argumentsWithExtra` mounts the base packs at the
+   declared mount point and the `extra_` split at `<mount>/extra`, so the app
+   and its runtime see exactly the tree `apply_extra` produced.
+7. **Removed v3.4 path.** `ExtraData` (first-launch apply, `extra.state`, the
+   private output directory, linuxd's `active` symlink) is deleted. Vendor
+   apply_extra code never runs in the subsystem app.
+
+Fidelity deviations from Flatpak's deploy-time step, all deliberate and
+documented: no bubblewrap sandbox (the process is already in the package's own
+UID and SELinux domain), the loader runs directly rather than through
+`matonos-app-flatpak run`, and a `#!/bin/sh` shebang resolves through Android's
+`/bin -> /system/bin` shell. Everything the proxy can forward unchanged
+(scan/auth/EAPOL/data is a Wi-Fi concern; here, the whole `apply_extra`
+execution environment) stays Android's own.
+
+Launcher data source order (requirement 6): the deployment's
+`export/share/applications/*.desktop` → a `.desktop` produced at
+`extra/export/` (which overrides the deployment's export and carries its
+components in the `extra_` split) → the remote's appstream, read by the
+subsystem app itself and never passed in by a caller → the Flatpak app id and
+a generic icon. `MimeType=` associations come from the selected desktop file.
+The base stub has no launcher entry; components live in a code-free
+`launcher_<sha256>` split unless the selected desktop file came from the extra
+output, in which case they live in the `extra_` split.
+
+Host tests: `linux/stubgen/tests/run-tests.sh` plus the JVM unit tests
+`TarTest`, `ExtraPayloadTest`, `LauncherDataTest` in the subsystem app. Device
+checks are listed in `out/pc-logs/agents/extra-split.final.md`.
+
+## Superseded: stub design (option 0 step 3), v3.4
+
+Superseded on 2026-10-16 by the v3.5 per-package service design above. Kept for
+the record: v3.4 ran an app's `apply_extra` on first launch inside the stub
+process itself (`ExtraData.prepare`), which could not serve runtimes or
+extensions and did not produce a durable, pack-format output.
+
+Older investigation follows.
 
 ## Confirmed call path
 

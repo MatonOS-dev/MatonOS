@@ -10,8 +10,8 @@ type NativeApi = {
   subscribe(target: string, topic: string, subscriptionId: string): Promise<boolean>;
   unsubscribe(subscriptionId: string): Promise<boolean>;
   addListener(name: "linuxAppStoreEvent", listener: (event: StoreEvent) => void): EventSubscription;
-  storeInstall(ref: string, label: string | null, iconUrl: string | null, operationId: string): Promise<boolean>;
-  storeUpdate(ref: string, label: string | null, iconUrl: string | null, operationId: string): Promise<boolean>;
+  storeInstall(ref: string, operationId: string): Promise<boolean>;
+  storeUpdate(ref: string, operationId: string): Promise<boolean>;
   storeUninstall(ref: string, operationId: string): Promise<boolean>;
   storeListInstalled(): Promise<string>;
   storeListRemotes(): Promise<string>;
@@ -28,8 +28,8 @@ export const MatonOS = {
   startStubUpdate: (ref: string, operationId?: string) => Native.startStubUpdate(ref, operationId ?? null),
   launchStub: (appId: string) => Native.launchStub(appId),
   call: (target: string, command: string, args: unknown = {}) => Native.call(target, command, JSON.stringify(args)),
-  storeInstall: (ref: string, label: string | null, iconUrl: string | null, operationId: string) => Native.storeInstall(ref, label, iconUrl, operationId),
-  storeUpdate: (ref: string, label: string | null, iconUrl: string | null, operationId: string) => Native.storeUpdate(ref, label, iconUrl, operationId),
+  storeInstall: (ref: string, operationId: string) => Native.storeInstall(ref, operationId),
+  storeUpdate: (ref: string, operationId: string) => Native.storeUpdate(ref, operationId),
   storeUninstall: (ref: string, operationId: string) => Native.storeUninstall(ref, operationId),
   storeListInstalled: () => Native.storeListInstalled(),
   storeListRemotes: () => Native.storeListRemotes(),
