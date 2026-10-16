@@ -37,7 +37,6 @@ java_test_host {
     name: "MatonSystemBridgeAuthorizationTests",
     srcs: [
         "src/org/matonos/systembridge/BridgeCallerIdentity.java",
-        "src/org/matonos/systembridge/FlatpakStubIdentity.java",
         "tests/src/**/*.java",
     ],
     static_libs: ["junit"],
