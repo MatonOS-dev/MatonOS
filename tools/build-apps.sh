@@ -201,14 +201,6 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   printf '%s\n' "$fingerprint" > "$stamp"
 done < "$APP_LIST"
 
-# v3.5: subsystem is an independently built, pinned prebuilt. Derive trust
-# from the exact APK imported by Soong, never a local development key.
-subsystem_apk=$DEVICE_DIR/prebuilt/linux-subsystem/MatonLinuxSubsystem.apk
-[[ -s $subsystem_apk ]] || die "missing pinned subsystem APK: $subsystem_apk"
-subsystem_cert=$("$SDK/build-tools/36.0.0/apksigner" verify --print-certs "$subsystem_apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]' | head -n1)
-[[ $subsystem_cert =~ ^[0-9a-f]{64}$ ]] || die "invalid pinned subsystem certificate"
-printf 'matonos-linux-subsystem %s\n' "$subsystem_cert" >> "$allow_tmp"
-printf '%s\n' matonos-linux-subsystem >> "$processed_tmp"
 
 allow_existing=$DEVICE_DIR/systembridge/res/raw/caller_cert_allowlist.txt
 if [[ -f $allow_existing ]]; then

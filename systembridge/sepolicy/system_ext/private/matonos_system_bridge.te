@@ -4,14 +4,6 @@ app_domain(matonos_system_bridge)
 # Coarse Binder transport only; bridge methods enforce stub identity and scope.
 binder_call(untrusted_app_all, matonos_system_bridge)
 
-# Package-specific privileged app identity. A dedicated domain is necessary:
-type matonos_linux_app, domain;
-typeattribute matonos_linux_app coredomain;
-app_domain(matonos_linux_app)
-net_domain(matonos_linux_app)
-allow matonos_linux_app system_file:dir r_dir_perms;
-allow matonos_linux_app system_file:file r_file_perms;
-
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.
 allow matonos_system_bridge input_service:service_manager find;
