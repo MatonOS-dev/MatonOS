@@ -988,13 +988,14 @@ Feature work continues, but in this shape from now on.
     is the gralloc its dma-buf import trick relies on.
   - Flatpaks as real Android apps, WebAPK-style: on Flatpak install the host
     generates a stub APK per app (package org.matonos.linux.<flatpak-id>,
-    label/icon from the .desktop file, one launcher activity that asks the
+    label/icon from the remote's appstream (v3.5; not the .desktop file), one launcher activity that asks the
     compositor to `flatpak run <id>`), signs it with an on-device key
     (apksig) and installs it silently (the bridge does this); uninstalling the Flatpak removes the stub. Windows use
     setTaskDescription(label, icon) so Recents/taskbar group them under the
     app. Same mechanism could give browser PWAs real app entries.
     Stub install flow: (1) store app -> bridge flatpak.install -> linuxd
-    runs flatpak install and reports the app's .desktop + icon; (2) the
+    runs flatpak install; the appstream label + icon the store supplies (v3.5)
+    build the stub; (2) the
     STORE app instantiates a template stub (package org.matonos.linux.<id>,
     label/icon, <uses-library> compositor lib, one launcher activity,
     versionCode bumped on name/icon changes) and signs it with a per-device

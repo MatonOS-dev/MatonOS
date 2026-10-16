@@ -2,7 +2,7 @@
 
 linuxd is a late-start system_ext service. Its absence never blocks boot.
 The authenticated `ILinuxd` interface serves install/update/store configuration,
-metadata, icons, desktop entries, inventories, reconciliation and stub-signer
+metadata, inventories, reconciliation and stub-signer
 registration. The System Bridge verifies PackageManager identities; generated
 stubs may request only their own installation/update. No runtime-directory,
 Downloads, kill or launch-status RPC remains. Rebuild bridge, linuxd and host
@@ -163,8 +163,9 @@ Under the publication mutex, linuxd imports with `pull-local --untrusted
 --gpg-verify` using its own configured remote/keyring, verifies checksums,
 seals objects, deploys into an unpublished `.pending-<FlatpakID>-XXXXXX`
 installation, sanitizes checkouts and persists the system-wide remote pin.
-Only then can the bridge request operation-scoped metadata, desktop text and
-PNG icon. Missing icons use the existing generated fallback. Unknown operations,
+Only then can the bridge request operation-scoped metadata. The stub's launcher
+label and icon come from the store's appstream read, so linuxd returns no
+desktop text or icon. Unknown operations,
 refs and remote mismatches fail closed; arbitrary installation paths, signing
 keys and installer UIDs are not handoff inputs.
 
