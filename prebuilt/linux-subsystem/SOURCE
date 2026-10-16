@@ -1,13 +1,13 @@
 v3.5 signed subsystem APK prebuilt
 repo: https://github.com/MatonOS-dev/linux-subsystem-app
-commit: 9915f2868daff157c00fa9ac22268a4e1edbffc3
+commit: b5d766868e473c2ad35c6576f9a5aa60008a15f8
 flatpak-repo: https://github.com/MatonOS-dev/flatpak
 flatpak-branch: matonos/v26.10
 flatpak-commit: 4cce363ef3168baf10a4cd0a916694d3959f9558
 certificate-sha256: 4596a6aff58a0bed52a9b25b87a6a89ec849018941c2fb1dd360226e4679ff58
 
 SHA-256:
-7223c20908620be70676e8bbbea44b209e664d119f53d2609bb56dec688dcb85  MatonLinuxSubsystem.apk
+aa93d19155df21f677191c943055e2c9561e40bda9b945937cac04ea49ecc08c  MatonLinuxSubsystem.apk
 2e96336e86a88d6fc5ff2c6b5736ca5b592e341d6253b8027ceb1ecc9db6e631  libmatonos-flatpak-plan.so
 fa428e78641dc2971d5e4665eb14fdf9f33a61422087b63c67df39d150eed674  libmatonos-v3-loader-i386.so
 59cece3134f59115c1c563ed96f240fd3460c4bc62f783f0c1a2c222c3195305  libmatonos-v3-loader.so
