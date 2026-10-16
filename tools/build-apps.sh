@@ -142,7 +142,7 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   stamp=$DEVICE_DIR/prebuilt/apps-built/.$key_id.inputs
   extra_inputs=()
   if [[ $key_id == matonos-linux-subsystem ]]; then
-    extra_inputs+=("$DEVICE_DIR/linux/subsystem/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker" "$DEVICE_DIR/linux/pipewire" "$DEVICE_DIR/linux/compat-proxy")
+    extra_inputs+=("$DEVICE_DIR/linux/subsystem/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker" "$DEVICE_DIR/linux/pipewire" "$DEVICE_DIR/linux/compat-proxy" "$DEVICE_DIR/linux/flatpak")
   fi
   # The broker records the image Flatpak build version. Rebuild the APK when
   # that generated input changes, even when app sources are unchanged.
