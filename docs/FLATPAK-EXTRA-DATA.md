@@ -87,3 +87,51 @@ vendor code, or claim the existing stub path already provides this worker.
 
 No helper/APEX/policy modules need rebuilding for this documentation-only
 result. No AOSP builds or VM mutations were performed.
+
+## isolatedProcess option (option 0 step 3), 2026-10-16
+
+Investigated moving only the `apply_extra` step into an
+`android:isolatedProcess="true"` service in the subsystem app, with the
+extra-data files and the app's file tree handed over as `ParcelFileDescriptor`s
+and output written through a supplied directory FD. No runtime change is
+shipped and no policy was added.
+
+Result: **blocked by stock policy; stopped.** The loader that would run
+`apply_extra` cannot reach the code it must run. Exact path:
+
+- `system/sepolicy/private/app.te` (lines 806-823) is a hard platform
+  `neverallow`: `isolated_app_all` may not hold `execute`/`execute_no_trans`
+  (`no_x_file_perms`) on any `data_file_type` except `apex_art_data_file`,
+  `dalvikcache_data_file`, `system_data_file` and `apk_data_file`.
+  `matonos_flatpak_deployment_file` and `matonos_linux_code_file` are declared
+  `file_type, data_file_type, core_data_file_type` in
+  `systembridge/sepolicy/system_ext/private/matonos_system_bridge.te`
+  (lines 54 and 79), so the loader's `PROT_EXEC` mapping of `apply_extra` and
+  the runtime is a neverallow violation. The type also covers
+  `matonos_flatpak_staging_file` (line 78), i.e. the deployment at
+  install time.
+- `/apex/com.matonos.flatpak/bin/matonos-app-flatpak` is
+  `matonos_flatpak_cli_exec` (line 55). Its allow rules are scoped to
+  `matonos_linuxd` (line 56), `matonos_linux_app` (line 32) and
+  `untrusted_app_all` (line 150). `isolated_app` is deliberately not part of
+  `untrusted_app_all` (`system/sepolicy/public/attributes` lines 206-207,
+  216), so the isolated process has no read/map/execute on the Flatpak binary.
+- Executing the loader itself is not the blocker: for the image host it is
+  `system_file` (`system/sepolicy/private/file_contexts` line 545; copied in by
+  `buildinfra/buildinfra.mk`), which `appdomain` may execute via
+  `system/sepolicy/private/domain.te` line 164; for an updated host it is
+  `apk_data_file`, allowed by `system/sepolicy/private/app.te` lines 470-471.
+  `isolated_app` is in `appdomain`, so the loader starts but then cannot map
+  what it was started to run.
+- Passing FDs does not bypass SELinux: read/`PROT_EXEC` are re-checked against
+  the file label and the isolated process's SID, and adding the missing allows
+  would be a device-policy change (forbidden here) while the data-execution
+  neverallow would still reject `execute`.
+
+The subsystem app remains the reader of extra-data and the verifier/committer
+of the pinned deployment; only the vendor `apply_extra` step was to move, and
+it cannot run under `isolated_app` without an AOSP policy exception and a
+device-policy grant. Both are out of scope under the zero-patches rule. No
+service, AIDL, manifest or policy change was made; no image build or VM run.
+
+Details and the stopped work item: `out/pc-logs/agents/apply-extra-isolated.final.md`.
