@@ -116,7 +116,7 @@ rules, but no native Soong module.
 ## Fixed Soong imports and privileges
 
 `buildinfra/Android.bp` contains one `android_app_import` per image app
-(Settings, MatonOSRecents) and each associated `prebuilt_etc` permission
+(Settings) and each associated `prebuilt_etc` permission
 file. Sleepd, Wi-Fi, input, Bluetooth, PipeWire, and `libmatonos-ipc` are in
 the ODM bundle. AudioToneTest is in the Gradle registry for `adb install`
 testing only; it is not an image package. Imported APKs are privileged on
@@ -148,21 +148,16 @@ The system bridge package is `org.matonos.systembridge`, platform-signed,
 privileged and persistent. It is the only custom app compiled with platform
 APIs. Its versioned AIDL exposes `getBridgeApiVersion`/`getBridgeApiHash`,
 generic `call(target, command, jsonArgs)`, topic subscribe/unsubscribe
-callbacks, and launcher operations for overlay access, recent tasks, task
-switch/close/fullscreen, scoped shelf navigation (`navigateBack`,
-`navigateHome`, `navigateRecents`), bounded PNG thumbnails, and the typed
-navigation-provider adapter/state query. Task list reads use `REAL_GET_TASKS`;
-task removal revalidates current-user recents and refuses MatonOS
-Shell/Shelf/Recents and SystemUI tasks. The platform-signed bridge owns the
+callbacks, and launcher operations for overlay access, scoped shelf navigation
+(`navigateBack`, `navigateHome`), and the typed navigation-provider adapter/state
+query. The platform-signed bridge owns the
 system application-overlay host and its navigation inset source; it embeds
 the selected provider with `SurfaceControlViewHost`. Provider selection is
 disabled by default (Shelf is the preset), requires explicit user confirmation,
 pins the selected signing certificate, and can be revoked. The
 `input.set_absolute_pointer_mode` call disables acceleration and sets pointer
 speed to -7, returning the effective settings. The launcher methods authorize the `launcher` target on
-every call; navigation methods require the exact Shelf package, and task
-methods require one of the exact Shell/Shelf/Recents packages. Mutations and
-thumbnails revalidate current-user recents. Every authorized operation and
+every call; navigation methods require the exact Shelf package. Every authorized operation and
 denial is written to the bridge audit log.
 
 The app-facing bridge API is v6. This app-facing AIDL version/hash is distinct
@@ -366,7 +361,7 @@ that machine.
 
 ## Developing system apps
 
-`MatonOSSettings` and `MatonOSRecents` use the shared `MatonosClient` Gradle
+`MatonOSSettings` uses the shared `MatonosClient` Gradle
 library. The default is `BridgeMode.REQUIRED`: call
 `MatonOS.requireBridge(activity, accessTargets, requiredChannelTargets,
 client -> ...)` before building the app UI. It checks installation, permission,

@@ -88,8 +88,7 @@ PRODUCT_PACKAGES += \
 # desktop status bar): release/ extends AOSP's cp2a release config.
 PRODUCT_RELEASE_CONFIG_MAPS += device/maton/pc_x86_64/release/release_config_map.textproto
 # Home/taskbar/recents = stock Launcher3 (Launcher3QuickStep from
-# handheld_system_ext), always desktop-first (user, 2026-09-27). MatonOS
-# Shell/Shelf/Recents are parked (sources stay in apps/, not in the image).
+# handheld_system_ext), always desktop-first (user, 2026-09-27).
 # Debug property from WM Shell's DesktopDisplayModeController: forces the
 # default display desktop-first regardless of keyboard/touchpad. If a later
 # release drops it, the display falls back to the classic touch-first shell.

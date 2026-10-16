@@ -59,19 +59,6 @@ android_app_import {
     required: ["privapp-permissions-org.matonos.flathub"],
 }
 
-android_app_import {
-    name: "MatonOSRecents",
-    optional_uses_libs: [
-        "androidx.window.extensions",
-        "androidx.window.sidecar",
-    ],
-    apk: "apps-built/MatonOSRecents.apk",
-    system_ext_specific: true,
-    privileged: true,
-    preprocessed: true,
-    required: ["privapp-permissions-org.matonos.recents"],
-}
-
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.settings",
     src: "privapp-permissions/privapp-permissions-org.matonos.settings.xml",
@@ -82,13 +69,6 @@ prebuilt_etc {
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.flathub",
     src: "privapp-permissions/privapp-permissions-org.matonos.flathub.xml",
-    sub_dir: "permissions",
-    system_ext_specific: true,
-}
-
-prebuilt_etc {
-    name: "privapp-permissions-org.matonos.recents",
-    src: "privapp-permissions/privapp-permissions-org.matonos.recents.xml",
     sub_dir: "permissions",
     system_ext_specific: true,
 }

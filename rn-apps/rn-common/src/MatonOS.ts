@@ -8,15 +8,6 @@ export type BridgeSnapshot = {
   missingChannels: string[];
 };
 export type CallResult = {available: boolean; value: string; reason: string};
-export type RecentTask = {
-  taskId: number;
-  packageName: string;
-  label?: string;
-  component?: string;
-  windowingMode?: number;
-  iconUri?: string;
-  thumbnailUri?: string;
-};
 
 type EventMap = {
   matonosAreaEvent: (event: MatonAreaEvent) => void;
@@ -31,11 +22,6 @@ type MatonOSClientModule = NativeEvents<EventMap> & {
   subscribe(target: string, topic: string, subscriptionId: string): Promise<boolean>;
   unsubscribe(subscriptionId: string): Promise<boolean>;
   navigate(action: NavigationAction, longPress: boolean): Promise<CallResult>;
-  getRecentTasks(maxTasks: number): Promise<CallResult>;
-  moveTaskToFront(taskId: number): Promise<CallResult>;
-  setTaskFullscreen(taskId: number): Promise<CallResult>;
-  removeRecentTask(taskId: number): Promise<CallResult>;
-  getRecentTaskThumbnail(taskId: number): Promise<CallResult>;
 };
 
 export type NavigationAction = 'back' | 'home' | 'recents';
@@ -64,36 +50,6 @@ export const MatonOS = {
   navigate: async (action: NavigationAction, longPress = false): Promise<boolean> => {
     const result = await NativeMatonOS.navigate(action, longPress);
     return result.available && result.value === 'true';
-  },
-
-  getRecentTasks: async (maxTasks = 32): Promise<RecentTask[]> => {
-    const result = await NativeMatonOS.getRecentTasks(maxTasks);
-    if (!result.available || !result.value) return [];
-    try {
-      return JSON.parse(result.value) as RecentTask[];
-    } catch {
-      return [];
-    }
-  },
-
-  moveTaskToFront: async (taskId: number): Promise<boolean> => {
-    const result = await NativeMatonOS.moveTaskToFront(taskId);
-    return result.available && result.value === 'true';
-  },
-
-  setTaskFullscreen: async (taskId: number): Promise<boolean> => {
-    const result = await NativeMatonOS.setTaskFullscreen(taskId);
-    return result.available && result.value === 'true';
-  },
-
-  removeRecentTask: async (taskId: number): Promise<boolean> => {
-    const result = await NativeMatonOS.removeRecentTask(taskId);
-    return result.available && result.value === 'true';
-  },
-
-  getRecentTaskThumbnail: async (taskId: number): Promise<string> => {
-    const result = await NativeMatonOS.getRecentTaskThumbnail(taskId);
-    return result.available ? result.value : '';
   },
 
   subscribe: (

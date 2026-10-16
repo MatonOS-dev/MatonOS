@@ -9,15 +9,6 @@ export type BridgeSnapshot = {
   missingChannels: Array<string>;
 };
 export type CallResult = {available: boolean; value: string; reason: string};
-export type RecentTask = {
-  taskId: number;
-  packageName: string;
-  label?: string;
-  component?: string;
-  windowingMode?: number;
-  iconUri?: string;
-  thumbnailUri?: string;
-};
 export type NavigationAction = 'back' | 'home' | 'recents';
 
 export interface Spec extends TurboModule {
@@ -26,11 +17,6 @@ export interface Spec extends TurboModule {
   call(target: string, command: string, jsonArgs: string): Promise<CallResult>;
   getWallpaperSeedColor(): Promise<number>;
   navigate(action: NavigationAction, longPress: boolean): Promise<CallResult>;
-  getRecentTasks(maxTasks: number): Promise<CallResult>;
-  moveTaskToFront(taskId: number): Promise<CallResult>;
-  setTaskFullscreen(taskId: number): Promise<CallResult>;
-  removeRecentTask(taskId: number): Promise<CallResult>;
-  getRecentTaskThumbnail(taskId: number): Promise<CallResult>;
   subscribe(target: string, topic: string, subscriptionId: string): Promise<boolean>;
   unsubscribe(subscriptionId: string): Promise<boolean>;
   addListener(eventName: string): void;
