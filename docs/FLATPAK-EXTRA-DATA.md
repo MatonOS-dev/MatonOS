@@ -40,18 +40,18 @@ Flow (requirements as shipped):
    (`Binder.getCallingUid()` checked on the binder thread, before the work is
    handed to a worker thread). This is the one deliberate deviation; it is
    recorded here and in the service's own documentation.
-4. **Output by fd.** One pipe: a status byte (`ExtraProtocol`), then for
-   `STATUS_OK` a POSIX ustar archive of the applied tree (`Tar`), for
-   `STATUS_ERROR` a length-prefixed UTF-8 message, for `STATUS_NONE` nothing.
-   The subsystem app validates and extracts it: regular files and directories
-   only, no setuid/setgid/sticky, no devices/FIFOs/hard links, symlinks
-   relative and non-escaping, every size and total overflow-checked, and it
-   rejects duplicate entries and names that escape the destination.
-5. **Publish as a split.** The extracted tree is packed in the same pack
-   format as a self-contained `extra_<sha256>` split (one payload pack plus its
-   own embedded `assets/matonos/objects.index`/`objects.ostree`), installed as
-   a second `INHERIT_EXISTING` session that inherits what the first installed
-   (the package is not running yet). A timeout (service 14 min, client 15 min)
+4. **Output by fd.** One pipe: a status byte, then for `STATUS_OK` package
+   name, split name, versionCode, APK byte length, and the unsigned split APK.
+   The subsystem app copies the bytes to staging after checking available
+   space, validates only package/split/version identity from the binary
+   manifest, signs with apksig and never unpacks or inspects payload entries.
+   `STATUS_ERROR` carries a length-prefixed UTF-8 message; `STATUS_NONE` means
+   there was no raw extra data.
+5. **Publish as a split.** The package service uses `ObjectPacks` and
+   `StubGenerator` to build a self-contained `extra_<sha256>` APK after
+   `apply_extra`; the subsystem app signs it and installs it as a second
+   `INHERIT_EXISTING` session (the package is not running yet). A timeout
+   (service 14 min, client 15 min)
    or any failure fails the whole install; on a first install the package is
    removed, on an update the next update regenerates it.
 6. **Launch.** `PackLaunch.argumentsWithExtra` mounts the base packs at the
@@ -69,18 +69,15 @@ UID and SELinux domain), the loader runs directly rather than through
 (scan/auth/EAPOL/data is a Wi-Fi concern; here, the whole `apply_extra`
 execution environment) stays Android's own.
 
-Launcher data source order (requirement 6): the deployment's
-`export/share/applications/*.desktop` → a `.desktop` produced at
-`extra/export/` (which overrides the deployment's export and carries its
-components in the `extra_` split) → the remote's appstream, read by the
-subsystem app itself and never passed in by a caller → the Flatpak app id and
-a generic icon. `MimeType=` associations come from the selected desktop file.
-The base stub has no launcher entry; components live in a code-free
-`launcher_<sha256>` split unless the selected desktop file came from the extra
-output, in which case they live in the `extra_` split.
+Launcher data comes from the deployment export, appstream and app id using the
+ordinary subsystem path. The subsystem app never reads `extra/export` or any
+other vendor-produced output. Consequently an `apply_extra`-generated desktop
+entry cannot override the launcher metadata in v3.5; that behavior is dropped
+to preserve the package-content boundary. The extra split contains the full
+applied tree and remains independently mounted at `<mount>/extra`.
 
 Host tests: `linux/stubgen/tests/run-tests.sh` plus the JVM unit tests
-`TarTest`, `ExtraPayloadTest`, `LauncherDataTest` in the subsystem app. Device
+`LauncherDataTest` in the subsystem app. Device
 checks are listed in `out/pc-logs/agents/extra-split.final.md`.
 
 ## Superseded: stub design (option 0 step 3), v3.4
