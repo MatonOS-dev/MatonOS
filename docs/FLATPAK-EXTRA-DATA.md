@@ -170,8 +170,8 @@ v3 in-process loader rather than kernel exec of deployment files. This is a
 separate design: do not reuse an ordinary app UID, grant system identity to
 vendor code, or claim the existing stub path already provides this worker.
 
-No helper/APEX/policy modules need rebuilding for this documentation-only
-result. No AOSP builds or VM mutations were performed.
+The subsystem APK packages the helper executables beside the v3 loader. No
+AOSP builds or VM mutations were performed for this documentation-only note.
 
 ## isolatedProcess option (option 0 step 3), 2026-10-16 — superseded
 
@@ -199,12 +199,8 @@ Result: **blocked by stock policy; stopped.** The loader that would run
   the runtime is a neverallow violation. The type also covers
   `matonos_flatpak_staging_file` (line 78), i.e. the deployment at
   install time.
-- `/apex/com.matonos.flatpak/bin/matonos-app-flatpak` is
-  `matonos_flatpak_cli_exec` (line 55). Its allow rules are scoped to
-  `matonos_linuxd` (line 56), `matonos_linux_app` (line 32) and
-  `untrusted_app_all` (line 150). `isolated_app` is deliberately not part of
-  `untrusted_app_all` (`system/sepolicy/public/attributes` lines 206-207,
-  216), so the isolated process has no read/map/execute on the Flatpak binary.
+- `libmatonos-app-flatpak.so` is shipped in the subsystem APK native-library
+  directory and executed through the v3 loader under the stub UID.
 - Executing the loader itself is not the blocker: for the image host it is
   `system_file` (`system/sepolicy/private/file_contexts` line 545; copied in by
   `buildinfra/buildinfra.mk`), which `appdomain` may execute via

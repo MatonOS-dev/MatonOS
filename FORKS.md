@@ -16,18 +16,17 @@ check them out in place of the stock projects.
 | `external/wayland` | [android_external_wayland](https://github.com/MatonOS-dev/android_external_wayland) | AOSP | 1.26.0 for wlroots |
 | `external/wayland-protocols` | [android_external_wayland-protocols](https://github.com/MatonOS-dev/android_external_wayland-protocols) | AOSP | 1.48 for wlroots |
 
-### Static Flatpak stack
+### Flatpak stack
 
-The Flatpak runtime is built for Alpine 3.24/musl and shipped as a static APEX
-payload. Flatpak 1.16.6 and bubblewrap 0.12.0 are the Alpine 3.24 stable
-versions selected by the user on 2026-10-05; they replace the earlier bionic
-pins for this branch.
+Flatpak 1.19.2 and bubblewrap 0.13.0 are bionic NDK builds. The tools ship in
+the subsystem APK's native-library directory. The multicall is built by
+MatonOS_apexs; `tools/build-apps.sh` builds and packages the in-tree applet
+helpers. Packaging move: v3.5.
 
 | Path | Repository | Based on | What we change |
 | --- | --- | --- | --- |
-| `linux/flatpak-static` | [flatpak](https://github.com/MatonOS-dev/flatpak) | `matonos/v26.10`, `03e6b205d01c9560a829941d95065a7c683d9667` | Alpine 3.24 static Flatpak source and build inputs |
-| `linux/flatpak-static/gpgme-lite` | [DullPGP](https://github.com/MatonOS-dev/DullPGP) | `195ed326465e898711012cd877556510f32d3fbc` | Portable OpenPGP verification for the static Flatpak/OSTree executable |
-| `linux/flatpak/prebuilt/static` | [MatonOS_apexs](https://github.com/MatonOS-dev/MatonOS_apexs) | `bbdc6994e618627e6692e6df90ae9c26e61e0421`; binary SHA-256 recorded in `prebuilt/static/SOURCE` | Alpine 3.24 static APEX payload inputs |
+| `linux/flatpak` | [flatpak](https://github.com/MatonOS-dev/flatpak) | `matonos/v26.10`; build fork commit `4cce363` | Bionic Flatpak source |
+| `linux/flatpak/prebuilt/static` | [MatonOS_apexs](https://github.com/MatonOS-dev/MatonOS_apexs) | `flatpak/build.sh`; binary SHA-256 recorded in `prebuilt/static/SOURCE` | Bionic Flatpak/OSTree multicall input for subsystem APK |
 
 Changing a fork: commit on `matonos/v1.2` in the project checkout, push to its
 MatonOS-dev repository, and upstream the fix where it makes sense.

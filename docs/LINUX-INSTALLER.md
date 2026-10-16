@@ -263,9 +263,10 @@ symlink chain escape, FIFO/socket/device, hardlink alias, cancellation, stale
 operation, writable mapping and source replacement. Preserve existing leases,
 runtime references and concurrent users.
 
-Coordinator rebuilds linuxd, bridge, host APK, Flatpak helper/APEX packaging
-and policy after B-D. The APEX rebuild must include the local flatpak fork
-change that skips `apply_extra` for app refs. On `adb -s localhost:5555`,
+Coordinator rebuilds linuxd, bridge, host APK and policy after B-D. The
+subsystem APK build packages the Flatpak tool inputs; build fork commit
+`4cce363` in `~/matonos/repos/MatonOS_apexs` with `flatpak/build.sh` first.
+On `adb -s localhost:5555`,
 without stopping/rebooting the user's VM, verify Enforcing and install
 Firefox (plain) and Chrome (extra-data) through the normal entry point.
 Trace the installer pull/deploy UID and SELinux context: compositor's actual

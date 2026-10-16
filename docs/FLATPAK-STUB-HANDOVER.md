@@ -1,5 +1,8 @@
 # Flatpak stub install handover
 
+> Historical handover: v3.5 moved the Flatpak executables into the
+> subsystem APK; APEX references below record the former packaging.
+
 Updated: 2026-10-06 (evening). Read this before touching Flatpak installs.
 
 ## Flow (decided)

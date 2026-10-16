@@ -1,7 +1,7 @@
 # MatonOS Software Centre
 
-This document defines one MatonOS-owned application centre for Android APKs,
-Flatpaks and MatonOS APEX updates. It replaces the planned F-Droid client or
+This document defines one MatonOS-owned application centre for Android APKs and
+Flatpaks. It replaces the planned F-Droid client or
 small app-only updater in the MatonOS Settings plan. Operating-system image
 updates remain a separate A/B `update_engine` feature; add-on slot updates
 remain with their owning add-on design.
@@ -11,15 +11,11 @@ remain with their owning add-on design.
 The UI, catalogue, search, normalized metadata, update checks and schedule,
 transaction queue, progress model, trust prompts, and installed-app display
 are shared. A **Source** adapter translates one package format's repository
-or channel into this shared contract. There are three Sources:
+or channel into this shared contract. There are two Sources:
 
 1. **APK** — F-Droid-format repositories, including user-added repositories.
 2. **Flatpak** — Flatpak remotes, including user-added remotes. All Flatpak
    work goes through linuxd via a System Bridge capability.
-3. **APEX** — only MatonOS updatable APEXes, such as
-   `com.matonos.flatpak`, from MatonOS's own signed channel. Users cannot add
-   APEX repositories. Install is staged and follows APEX reboot or
-   rebootless activation requirements.
 
 The centre does not update the OS image, bootloader, kernel add-ons, or
 arbitrary files. APK and Flatpak updates retain their format-specific
@@ -34,22 +30,17 @@ flowchart LR
   CORE[Centre service\nnormalization, scheduler, queue, policy]
   APK[APK Source\nF-Droid-format repos]
   FLAT[Flatpak Source\nremote metadata]
-  APEX[APEX Source\nMatonOS signed channel]
   BRIDGE[System Bridge\ncapability gate, hidden APIs, audit]
   PM[Android PackageInstaller]
   LINUXD[linuxd\nFlatpak install/update/remove]
-  APEXD[PackageInstaller / apexd\nstaged session]
   APK --> CORE
   FLAT --> CORE
-  APEX --> CORE
   UI <-->|AIDL| API
   API --- CORE
   CORE -->|APK session capability| BRIDGE
   CORE -->|Flatpak capability| BRIDGE
-  CORE -->|APEX staged-session capability| BRIDGE
   BRIDGE --> PM
   BRIDGE --> LINUXD
-  BRIDGE --> APEXD
 ```
 
 ### Placement recommendation
@@ -58,12 +49,12 @@ Put the catalogue and transaction coordinator in a dedicated privileged
 MatonOS Software Centre service app, built as a Gradle Java application and
 shipped as a normal system app with its own pinned signing key. Keep the
 Expo/Compose-facing UI as a client. The service owns shared policy and the
-three Java Source adapters; it has no direct hidden-API access and no generic
+two Java Source adapters; it has no direct hidden-API access and no generic
 root or shell path.
 
 Use the System Bridge only for narrowly named capabilities that require
-privilege: creating/committing a PackageInstaller session for APKs, invoking
-linuxd operations for Flatpak, and creating/committing an APEX staged session.
+privilege: creating/committing a PackageInstaller session for APKs and
+invoking linuxd operations for Flatpak.
 The bridge checks the caller package, pinned certificate, capability
 allowlist, and consent; it audits grants, denials and privileged calls. Do
 not put catalogue parsing, scheduling or generic transaction orchestration
@@ -128,7 +119,7 @@ public interface Source {
 }
 ```
 
-`SourceKind` has exactly `APK`, `FLATPAK`, `APEX`. `TrustAssessment` includes
+`SourceKind` has exactly `APK` and `FLATPAK`. `TrustAssessment` includes
 the source identity, normalized origin, signing/key fingerprints, previous
 fingerprint where rotation applies, verification result, whether trust is
 built-in or user-added, and whether a prompt is required. A Source reports
@@ -197,29 +188,6 @@ the new one is verified and activated. Rollback uses Flatpak's retained
 deployment where possible; otherwise report that rollback is unavailable and
 leave the prior version intact until commit.
 
-### APEX Source: MatonOS signed channel only
-
-The APEX Source has a fixed MatonOS channel and product allowlist. It accepts
-no custom URL, repository, key or channel from a user or app. Channel
-metadata is authenticated with the MatonOS release signing policy and binds
-APEX package name, version, digest, signing key identity, minimum OS/release
-and activation requirements. The service offers only allowlisted updateable
-APEXes, such as `com.matonos.flatpak`.
-
-Stage APEX updates using PackageInstaller's staged-session mechanism and
-apexd. Validate package name, version monotonicity, digest and expected APEX
-signing key before commit. Most APEX updates activate on reboot; support
-rebootless activation only for APEXes and platform states explicitly marked
-safe by Android. Show “restart required” before queuing a reboot-required
-update, and never initiate a reboot without a clear user action. APEX
-activation is an atomic platform transaction; apexd rollback on failed boot
-is the recovery path. Live images with volatile `/data` cannot promise to
-retain staged APEX updates across power loss; disclose that limitation and
-deliver those updates in a new live image. APEX private signing keys are
-offline release keys: **never on the device, build host or CI**. The device
-may carry only the verification material/platform trust configuration
-required by Android.
-
 ## Shared transactions and progress
 
 The service owns one durable operation queue, deduplicated by source-qualified
@@ -238,15 +206,12 @@ Atomicity and rollback are backend-specific:
 |---|---|---|
 | APK | PackageInstaller session commit | Session abort before commit; after commit, install prior APK only if its verified bytes and signing identity are still available. No general uninstall rollback. |
 | Flatpak | linuxd verifies, deploys and atomically selects the new deployment/stub | Discard staging before publish; keep previous deployment until activation; roll back to it if retained. |
-| APEX | Commit staged PackageInstaller session; activate according to apexd | Staged session can be abandoned before activation; after activation rely on apexd boot rollback and report reboot requirement. |
 
 Progress is a shared event model (`phase`, `fraction?`, `bytesDone?`,
 `bytesTotal?`, `messageKey`, `canCancel`, timestamp). Render an indeterminate
 bar when a backend does not report a percentage. Cancellation is honored
 before a backend's commit boundary; after that boundary the UI says it is
-finishing and does not claim cancellation. APEX progress separately reports
-download/staging and `rebootRequired`; reboot is never disguised as install
-completion.
+finishing and does not claim cancellation.
 
 ## Update checks and scheduling
 
@@ -262,8 +227,7 @@ metered networks unless the user opts in; permit metadata-only checks on
 metered networks if configured; defer automatic downloads and installation
 when battery is low or the device is on battery, with a user override for
 manual installs. Never auto-commit an update while prompting is required.
-APEX downloads may stage in the background after trust is established, but
-activation/reboot is explicit. Respect Android background execution limits;
+Respect Android background execution limits;
 use a durable scheduled job and unique work rather than a permanently running
 service.
 
@@ -288,8 +252,6 @@ repository/remote is persisted:
    published MatonOS-approved transition; show old and new fingerprints and
    require confirmation when continuity cannot be proven. Never silently
    replace a pin after TLS, DNS or redirect changes.
-5. Keep APEX channel trust outside this user flow: only the fixed MatonOS
-   channel and release trust configuration are accepted.
 
 Persist trust by source ID, canonical origin and key fingerprint. Removing a
 source revokes future downloads from it but does not silently uninstall its
@@ -315,9 +277,6 @@ review.
   `pull-local --untrusted --gpg-verify` publication and stub-signing boundary; no direct
   Binder from Flatpak sandboxes, no bridge access from payloads and no
   `ostree show` verification.
-- APEX: fixed package/channel allowlist, monotonic versions, pinned release
-  identity, staged-session checks and boot rollback. Release private keys
-  never enter device/build/CI systems.
 - Prevent confused-deputy behavior: repository metadata cannot request bridge
   capabilities, change scheduler policy, start services, or supply arbitrary
   shell arguments. The only install target is a validated source-qualified
@@ -342,10 +301,6 @@ review.
 3. **Trust and scheduler hardening:** shared punycode/canonical-origin flow,
    user-added APK repositories, key-rotation UX, durable queue, metered and
    battery rules, recovery and audit review.
-4. **APEX channel:** fixed MatonOS channel manifest and allowlist, staged
-   sessions, version/signature validation, reboot-required UX and apexd
-   rollback reporting. Start with `com.matonos.flatpak`; release keys stay
-   offline.
 5. **Polish and migration:** installed-app reconciliation, accessible
    progress, source health, release permission policy, and removal of the
    obsolete F-Droid client/privileged-extension plan once the centre covers
@@ -365,11 +320,7 @@ review.
   commit.
 - What are the default daily check time, low-battery threshold, charging
   policy and metered-network behavior?
-- Which APKs, Flatpaks and APEXes are eligible for rollback retention, and
+- Which APKs and Flatpaks are eligible for rollback retention, and
   what storage budget bounds retained APKs/Flatpak deployments?
-- Which MatonOS APEXes beyond `com.matonos.flatpak` are updateable, and which
-  are safe for rebootless activation?
 - How are MatonOS channel manifests published, signed, mirrored and revoked
   while keeping all private signing material offline?
-- How should the centre present live-image APEX updates that cannot survive
-  reboot because `/data` is volatile?

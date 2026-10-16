@@ -28,7 +28,7 @@ No other daemon command is introduced.
 | deployment leases, retired-version GC | V3Launcher, DeploymentStore, FlatpakManager | Deleted. Installed APKs supply payloads; PM owns replacement and removal. |
 | shared runtime publication/refcounts/GC | FlatpakManager, RuntimeRefs, FlatpakPublish | Deleted. Existing runtime APK sessions and package dependency inventory remain in LinuxAppStoreService. |
 | launch lookup metadata | V3Launcher shared-install pointer | Minimal PackageDeployment/DeploymentRecord scaffolding in stub-private cache. Index split carries the original commit object, metadata and deploy bytes, hashed into its split name. No payload checkout. |
-| helper environment, global HOME/cache, staging helper sync | flatpak-env-wrapper, linux-paths.h, stage-apex-helpers.sh | Deleted, including APEX module/payload and helper build entry. Existing unprivileged matonos-app-flatpak/bwrap entries remain. |
+| helper environment, global HOME/cache, staging helper sync | flatpak-env-wrapper, linux-paths.h, stage-apex-helpers.sh | Deleted. Unprivileged applet helpers remain and ship in the subsystem APK. |
 | init/storage/permissions | MatonosLinuxd.rc, install.mk, policy | Deleted; no boot service, CHOWN, system-owned /data/linux-app tree or Binder service label. |
 
 Runtime APK installation, missing-runtime repair, per-package extra-data,
@@ -54,8 +54,8 @@ this retirement; they are retained, not ports of daemon jobs.
   code/deployment/staging types, all related rules and path/service mappings
   removed. `sepolicy/system_ext/private/matonos_controllers.te` contained only
   daemon grants; those are gone. Fixed policy files remain present.
-- `linux/flatpak/Android.bp`: management wrapper prebuilt/module removed from
-  APEX; sources, binary, stamp/provenance and binary license inventory removed.
+- `linux/flatpak/Android.bp`: removed with the Flatpak APEX; helper sources
+  and prebuilt tool inputs remain for subsystem APK packaging.
   `tools/build-flatpak-helpers.sh` now builds only unprivileged applet entries.
 - `install/tools/test-flatpak.sh` and `flatpak-operation-state.py`: removed;
   they depended on the dead service's dumpsys protocol.
@@ -146,7 +146,7 @@ is defined above and in linux/packs/README.md and linux/subsystem/V3-LAUNCH.md.
 - `install/SHARED-CHANGES.md`
 - `linux/README.md`
 - `linux/compat-proxy/README.md`
-- `linux/flatpak/APEX.md`
+- `linux/flatpak/prebuilt/static/README.md`
 - `linux/packs/README.md`
 - `linux/stubgen/README.md`
 - `linux/subsystem/DNS-FORWARDER.md`

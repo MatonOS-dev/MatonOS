@@ -1763,7 +1763,7 @@ validation remains for the coordinator.
 `/data/linux-app/` store keyed by app id (`uid % 100000`), and retire
 `org.matonos.linuxruntimes`. This fix retains the current per-user layout.
 
-### Flatpak APEX updates (2026-10-04)
+### Flatpak APEX updates (2026-10-04; superseded by v3.5)
 `com.matonos.flatpak` updates out-of-cycle (CVE fixes, newer Flatpak/bwrap
 pair) via staged install (adb install for dev; the
 [Software Centre APEX Source](docs/SOFTWARE-CENTRE.md) uses System Bridge and
@@ -1772,7 +1772,7 @@ activates on reboot, apexd rolls back on failed boot. Live images (RAM /data)
 cannot keep staged updates: they get new images. Release key: generate once,
 keep offline (dev key in repo until then).
 
-### Flatpak consolidation: static APEX, per-app installs, in-app D-Bus (2026-10-05)
+### Flatpak consolidation: static APEX, per-app installs, in-app D-Bus (2026-10-05; historical)
 - **Bionic stack deleted.** `retired/flatpak-bionic/` is gone and nothing
   references it. The only Flatpak is the static musl `com.matonos.flatpak`
   APEX: one multicall ELF for flatpak/ostree/bwrap, applets dispatch on
@@ -1822,3 +1822,14 @@ keep offline (dev key in repo until then).
   the staged commit) and install straight to the stub UID. B is preferred;
   A is the fallback. The shared runtime `--system` installation is owned by
   the preinstalled Runtimes app and is known up front.
+
+### v3.5: Flatpak tools in the subsystem APK (2026-10-16)
+The `com.matonos.flatpak` APEX is deleted. The static Flatpak multicall and
+the `matonos-app-flatpak` / `matonos-app-bwrap` helpers ship as executable
+`lib*.so` entries beside `libmatonos-v3-loader.so` in the subsystem APK;
+the Flathub `.flatpakrepo` file ships as an APK asset. Launch, install,
+OSTree pack staging and bwrap recognition resolve those files from the
+PackageManager-reported subsystem APK native-library directory. Build fork
+commit `4cce363` from `~/matonos/repos/flatpak` using
+`~/matonos/repos/MatonOS_apexs/flatpak/build.sh` before refreshing the APK.
+The APEX Soong/product/security wiring and its release key are removed.
