@@ -1,3 +1,1 @@
-# Verify the bridge UID via the existing platform permission Binder service.
-binder_call(matonos_linuxd, system_server)
-allow matonos_linuxd permission_service:service_manager find;
+# Controller permissions are derived from the signed stub manifest.

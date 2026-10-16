@@ -48,7 +48,7 @@ class MatonOSExpoModule : Module() {
       mapOf("available" to result.available, "value" to (result.value ?: ""), "reason" to (result.reason ?: ""))
     }
     // "Install me" / "update me": wait for the stub, then start its activity
-    // (found by its Flatpak ref metadata). The stub calls linuxd itself;
+    // (found by its Flatpak ref metadata). The stub calls the subsystem store itself;
     // "install me" does nothing if the Flatpak is installed, so it also resumes.
     AsyncFunction("startStubInstall") { ref: String, operationId: String? ->
       startStubActivity(STUB_INSTALL_ACTION, ref, operationId)

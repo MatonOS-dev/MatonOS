@@ -1,6 +1,3 @@
-# The system_ext native service is built by Soong and starts after boot.
-PRODUCT_PACKAGES += matonos-linuxd
-
 # install: VABC snapshots are served by snapuserd over mainline UBLK.
 PRODUCT_VIRTUAL_AB_COMPRESSION_METHOD := none
 # Do NOT let AOSP generate odm.img: our driver bundle (built by
