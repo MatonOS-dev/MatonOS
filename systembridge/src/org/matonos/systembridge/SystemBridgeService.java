@@ -1,5 +1,6 @@
 package org.matonos.systembridge;
 
+import android.graphics.Point;
 import android.app.AppOpsManager;
 import android.app.Service;
 import android.hardware.display.DisplayManager;
