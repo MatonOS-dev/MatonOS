@@ -364,8 +364,6 @@ public final class SystemBridgeService extends Service {
         }
     };
 
-    };
-
 
 
     @Override public IBinder onBind(Intent intent) {
@@ -1029,7 +1027,8 @@ public final class SystemBridgeService extends Service {
                         result.putString("result", channel.call(arg, request));
                     } catch (RemoteException e) {
                         throw new IllegalStateException("addons service call failed", e);
-                    else throw new IllegalArgumentException("unknown bridge shell method");
+                    }
+                } else throw new IllegalArgumentException("unknown bridge shell method");
                 return result;
             } catch (RuntimeException e) {
                 Log.w(TAG, "Bridge trust provider request failed method=" + method
