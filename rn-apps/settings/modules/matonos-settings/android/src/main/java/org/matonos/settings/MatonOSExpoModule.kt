@@ -91,27 +91,6 @@ class MatonOSExpoModule : Module() {
           .getWallpaperColors(WallpaperManager.FLAG_SYSTEM)?.primaryColor?.toArgb() ?: 0xff6750a4.toInt()
       } catch (_: Exception) { 0xff6750a4.toInt() }
     }
-    AsyncFunction("navigate") { action: String, longPress: Boolean ->
-      val method = when (action) {
-        "back" -> "navigateBack"
-        "home" -> "navigateHome"
-        else -> return@AsyncFunction resultMap(false, false, "INVALID_NAVIGATION_ACTION")
-      }
-      val current = requireClient()
-      try {
-        // The stable Java client gains these methods with the matching bridge
-        // update. Reflection keeps this package source-compatible while an
-        // older image reports an unavailable capability cleanly.
-        val result = if (action == "back") current.javaClass.getMethod(method, Boolean::class.javaPrimitiveType!!).invoke(current, longPress)
-          else current.javaClass.getMethod(method).invoke(current)
-        val available = result.javaClass.getField("available").getBoolean(result)
-        val value = result.javaClass.getField("value").get(result) as? Boolean ?: false
-        val reason = result.javaClass.getField("reason").get(result) as? String
-        resultMap(available, value, reason)
-      } catch (_: ReflectiveOperationException) {
-        resultMap(false, false, "NAVIGATION_CAPABILITY_UNAVAILABLE")
-      }
-    }
     AsyncFunction("subscribe") { target: String, topic: String, subscriptionId: String ->
       val current = requireClient()
       if (listeners.containsKey(subscriptionId)) return@AsyncFunction true
@@ -131,12 +110,6 @@ class MatonOSExpoModule : Module() {
   }
 
   private fun requireClient() = requireNotNull(client) { "MatonOS client is not initialized" }
-
-  private fun resultMap(available: Boolean, value: Any?, reason: String?) = mapOf(
-    "available" to available,
-    "value" to (value?.toString() ?: ""),
-    "reason" to (reason ?: ""),
-  )
 
   private fun snapshot(current: MatonosClient, available: Boolean, reason: String?, channels: List<String>) = mapOf(
     "available" to available,

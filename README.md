@@ -79,7 +79,6 @@ This repository is the device tree; check it out at
 | `rn-apps/settings/` | MatonOS Settings (Expo SDK 57, Expo UI Jetpack Compose only), which also contains the installer. |
 | `rn-apps/flathub/` | Current Software Centre UI prototype for Flathub/Flatpak; target architecture is documented in [`docs/SOFTWARE-CENTRE.md`](docs/SOFTWARE-CENTRE.md). |
 | `rn-apps/rn-common/` | Shared React Native library. |
-| `rn-apps/recents` | The earlier custom shell. It is parked, not built into the image; Launcher3 replaced it. (launchme/Shell and shelf were retired and removed 2026-09-30.) |
 | `FORKS.md` | Our forks of AOSP/third-party projects (minigbm, drm_hwcomposer, BayLibre audio, libdrm, libxkbcommon, pixman, wayland, wayland-protocols) in the [MatonOS-dev](https://github.com/MatonOS-dev) org, pulled in by `manifest/maton.xml`. |
 
 ## Building

@@ -7,21 +7,15 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.Signature;
-import android.hardware.input.InputManager;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.Binder;
 import android.os.IBinder;
-import android.os.SystemClock;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.Log;
-import android.view.InputDevice;
-import android.view.KeyCharacterMap;
-import android.view.KeyEvent;
 import android.view.Display;
 
 import org.json.JSONArray;
@@ -54,7 +48,6 @@ public final class SystemBridgeService extends Service {
     private android.os.Handler geometryHandler;
     private boolean geometryRetryPending;
     private final ConcurrentMap<String, Subscription> subscriptions = new ConcurrentHashMap<>();
-    private NavigationBarWindow navigationBarWindow;
     // sleep: forward Android's current suspend blockers to the sleep daemon.
     private AndroidWakeStateForwarder sleepWakeForwarder;
     private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
@@ -71,19 +64,6 @@ public final class SystemBridgeService extends Service {
         @Override public String getBridgeApiHash() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiHash");
             return "d4a82b10f6e9c73b81a2d5e4f09c8a3b7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1";
-        }
-
-        @Override public boolean injectBackKey() {
-            enforceAuthorizedCaller("input", "injectBackKey");
-            long now = SystemClock.uptimeMillis();
-            KeyEvent down = new KeyEvent(now, now, KeyEvent.ACTION_DOWN,
-                    KeyEvent.KEYCODE_BACK, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
-                    KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
-            KeyEvent up = KeyEvent.changeAction(down, KeyEvent.ACTION_UP);
-            InputManager input = getSystemService(InputManager.class);
-            boolean first = input.injectInputEvent(down, InputManager.INJECT_INPUT_EVENT_MODE_ASYNC);
-            boolean second = input.injectInputEvent(up, InputManager.INJECT_INPUT_EVENT_MODE_ASYNC);
-            return first && second;
         }
 
         @Override public String getBridgeStatus() {
@@ -103,44 +83,6 @@ public final class SystemBridgeService extends Service {
                 status.put("availableChannels", channels); }
             catch (JSONException ignored) { }
             return status.toString();
-        }
-
-        @Override public boolean ensureShellOverlayAccess() {
-            String packageName = enforceLauncherCaller("ensureShellOverlayAccess");
-            if (!"org.matonos.shelf".equals(packageName))
-                deny("ensureShellOverlayAccess", Binder.getCallingUid(), "caller is not the shelf");
-            try {
-                int uid = getPackageManager().getApplicationInfo(packageName, 0).uid;
-                AppOpsManager appOps = getSystemService(AppOpsManager.class);
-                appOps.setMode(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, uid, packageName,
-                        AppOpsManager.MODE_ALLOWED);
-                return appOps.checkOpNoThrow(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, uid,
-                        packageName) == AppOpsManager.MODE_ALLOWED;
-            } catch (PackageManager.NameNotFoundException e) {
-                deny("ensureShellOverlayAccess", Binder.getCallingUid(),
-                        "allowlisted shelf package disappeared");
-                return false;
-            }
-        }
-
-        @Override public boolean navigateBack(boolean longPress) {
-            enforceSelectedProviderCaller("nav.back", "navigateBack:" + longPress);
-            return injectBack(longPress);
-        }
-
-        @Override public boolean navigateHome() {
-            enforceSelectedProviderCaller("nav.home", "navigateHome");
-            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            try { startActivityAsUser(home, UserHandle.CURRENT); return true; }
-            catch (RuntimeException e) { Log.e(TAG, "Authorized Home navigation failed", e); return false; }
-        }
-
-        @Override public String getNavigationBarProviderState() {
-            String caller = enforceAuthorizedCaller("status", "getNavigationBarProviderState");
-            if (!"org.matonos.settings".equals(caller))
-                deny("getNavigationBarProviderState", Binder.getCallingUid(), "Settings is required");
-            return navigationProviderState().toString();
         }
 
         @Override public String call(String target, String command, String jsonArgs) {
@@ -208,7 +150,6 @@ public final class SystemBridgeService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        applyNavigationProviderSelection();
         applyAbsolutePointerModeIfPresent();
         return START_STICKY;
     }
@@ -219,10 +160,6 @@ public final class SystemBridgeService extends Service {
         // sleep: poll off the main thread; failed power inspection keeps sleep blocked.
         sleepWakeForwarder = new AndroidWakeStateForwarder(this);
         sleepWakeForwarder.start();
-        grantBridgeOverlayAppOps();
-        ensureBuiltInShelfDefault();
-        navigationBarWindow = new NavigationBarWindow(this);
-        applyNavigationProviderSelection();
         geometryHandler = new android.os.Handler(getMainLooper());
         DisplayManager displayManager = getSystemService(DisplayManager.class);
         if (displayManager != null) {
@@ -236,14 +173,13 @@ public final class SystemBridgeService extends Service {
         for (long delay : new long[] {5000, 15000, 30000}) {
             geometryHandler.postDelayed(this::applyAbsolutePointerModeIfPresent, delay);
         }
-        // The bridge is bound explicitly by apps. Shell administration is exposed
+        // The bridge is bound explicitly by apps. Root/adb administration is exposed
         // through the UID-gated ContentProvider below, never ServiceManager.
     }
 
     @Override public void onDestroy() {
         // sleep: stop the poller with the persistent bridge service.
         if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
-        if (navigationBarWindow != null) navigationBarWindow.close();
         if (geometryHandler != null) geometryHandler.removeCallbacksAndMessages(null);
         if (activeService == this) activeService = null;
         super.onDestroy();
@@ -319,186 +255,6 @@ public final class SystemBridgeService extends Service {
         result.put("pointerSpeed", Settings.System.getIntForUser(getContentResolver(),
                 Settings.System.POINTER_SPEED, 0, userId));
         return result;
-    }
-
-    private void grantBridgeOverlayAppOps() {
-        try {
-            AppOpsManager appOps = getSystemService(AppOpsManager.class);
-            int uid = android.os.Process.myUid();
-            appOps.setMode(AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, uid, getPackageName(),
-                    AppOpsManager.MODE_ALLOWED);
-            appOps.setMode(AppOpsManager.OPSTR_SYSTEM_APPLICATION_OVERLAY, uid, getPackageName(),
-                    AppOpsManager.MODE_ALLOWED);
-            Log.i(TAG, "Enabled app-ops for bridge-owned navigation host window");
-        } catch (RuntimeException failure) {
-            Log.e(TAG, "Could not enable bridge navigation overlay app-ops", failure);
-        }
-    }
-
-    private JSONObject navigationProviderState() {
-        android.content.SharedPreferences prefs = getSharedPreferences(
-                "navigation_bar_provider", MODE_PRIVATE);
-        JSONObject state = new JSONObject();
-        try {
-            state.put("packageName", prefs.getString("package", NavigationBarWindow.DEFAULT_PROVIDER));
-            state.put("enabled", prefs.getBoolean("enabled", false));
-            state.put("certificateSha256", prefs.getString("certificate", ""));
-            state.put("defaultDenied", !prefs.getBoolean("enabled", false));
-            state.put("userChoiceMade", prefs.getBoolean("userChoiceMade", false));
-        } catch (JSONException impossible) { }
-        return state;
-    }
-
-    private void applyNavigationProviderSelection() {
-        if (navigationBarWindow == null) return;
-        android.content.SharedPreferences prefs = getSharedPreferences(
-                "navigation_bar_provider", MODE_PRIVATE);
-        String pkg = prefs.getString("package", NavigationBarWindow.DEFAULT_PROVIDER);
-        String cert = prefs.getString("certificate", null);
-        String serviceClass = prefs.getString("serviceClass", null);
-        boolean enabled = prefs.getBoolean("enabled", false);
-        navigationBarWindow.select(pkg, cert, serviceClass, enabled);
-    }
-
-    /** Enable the image-bundled Shelf by default only when its pinned app key matches. */
-    private void ensureBuiltInShelfDefault() {
-        android.content.SharedPreferences prefs = getSharedPreferences(
-                "navigation_bar_provider", MODE_PRIVATE);
-        if (prefs.getBoolean("userChoiceMade", false)) return;
-        String existingPackage = prefs.getString("package", null);
-        // Before this default existed, an explicit revoke was stored as enabled=false
-        // without the newer userChoiceMade marker. Preserve that revocation.
-        if (prefs.contains("enabled") && !prefs.getBoolean("enabled", false)) {
-            prefs.edit().putBoolean("userChoiceMade", true).apply();
-            return;
-        }
-        if (existingPackage != null && !NavigationBarWindow.DEFAULT_PROVIDER.equals(existingPackage)) {
-            // Preserve legacy explicit selections written before userChoiceMade existed.
-            prefs.edit().putBoolean("userChoiceMade", true).apply();
-            return;
-        }
-        String pinned = pinnedCertificateForKey(this, "matonos-shelf");
-        String installed = certificateFor(this, NavigationBarWindow.DEFAULT_PROVIDER);
-        if (pinned == null || !pinned.equals(installed)) {
-            Log.e(TAG, "Built-in Shelf certificate does not match caller_cert_allowlist; default remains disabled");
-            return;
-        }
-        String serviceClass = providerServiceClass(this, NavigationBarWindow.DEFAULT_PROVIDER);
-        if (serviceClass == null) {
-            Log.e(TAG, "Built-in Shelf has no visible navigation provider service; default remains disabled");
-            return;
-        }
-        prefs.edit().putString("package", NavigationBarWindow.DEFAULT_PROVIDER)
-                .putString("certificate", pinned).putString("serviceClass", serviceClass)
-                .putBoolean("enabled", true).putBoolean("userChoiceMade", false)
-                .putBoolean("builtInDefault", true).apply();
-        Log.i(TAG, "Enabled image-bundled Shelf as the certificate-pinned default navigation provider");
-    }
-
-    static String pinnedCertificateForKey(Context context, String keyId) {
-        if (keyId == null) return null;
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                context.getResources().openRawResource(R.raw.caller_cert_allowlist), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String[] fields = line.trim().split("\\s+");
-                if (fields.length == 2 && fields[0].equals(keyId)) return fields[1].toLowerCase(Locale.ROOT);
-                // Compatibility with the pre-key-id generated hash-only file.
-                if (fields.length == 1 && keyId.equals("matonos-shelf")
-                        && fields[0].matches("(?i)[0-9a-f]{64}")) {
-                    String installed = certificateFor(context, NavigationBarWindow.DEFAULT_PROVIDER);
-                    if (fields[0].equalsIgnoreCase(installed)) return fields[0].toLowerCase(Locale.ROOT);
-                }
-            }
-        } catch (Exception ignored) { }
-        return null;
-    }
-
-    static String providerServiceClass(Context context, String packageName) {
-        if (packageName == null || packageName.isEmpty()) return null;
-        android.content.Intent intent = new android.content.Intent(NavigationBarWindow.PROVIDER_ACTION)
-                .setPackage(packageName);
-        java.util.List<android.content.pm.ResolveInfo> candidates =
-                context.getPackageManager().queryIntentServices(intent, 0);
-        if (candidates.size() != 1 || candidates.get(0).serviceInfo == null
-                || !candidates.get(0).serviceInfo.exported) return null;
-        return candidates.get(0).serviceInfo.name;
-    }
-
-    private String enforceSelectedProviderCaller(String target, String operation) {
-        int uid = Binder.getCallingUid();
-        android.content.SharedPreferences prefs = getSharedPreferences(
-                "navigation_bar_provider", MODE_PRIVATE);
-        String selected = prefs.getString("package", NavigationBarWindow.DEFAULT_PROVIDER);
-        String pinnedCertificate = prefs.getString("certificate", null);
-        if (!prefs.getBoolean("enabled", false) || pinnedCertificate == null)
-            deny(operation, uid, "navigation provider capability is not enabled by the user");
-        String[] packages = getPackageManager().getPackagesForUid(uid);
-        String pkg = BridgeCallerIdentity.solePackage(packages);
-        if (pkg == null) {
-            deny(operation, uid, "caller UID does not map to exactly one installed package");
-        }
-        if (selected.equals(pkg)) {
-            try {
-                PackageInfo info = getPackageManager().getPackageInfo(pkg,
-                        PackageManager.GET_SIGNING_CERTIFICATES);
-                String current = certificateFor(this, pkg);
-                String stillSolePackage = BridgeCallerIdentity.solePackage(
-                        getPackageManager().getPackagesForUid(uid));
-                if (info.applicationInfo.uid == uid && pkg.equals(stillSolePackage)
-                        && pinnedCertificate.equals(current)) {
-                    Log.i(TAG, "Authorized provider action=" + operation + " target=" + target
-                            + " package=" + pkg + " uid=" + uid);
-                    return pkg;
-                }
-            } catch (PackageManager.NameNotFoundException ignored) {
-                // Package disappeared between UID attribution and certificate check.
-            }
-        }
-        deny(operation, uid, "caller is not the selected, certificate-pinned navigation provider");
-        return null;
-    }
-
-    static String certificateFor(android.content.Context context, String packageName) {
-        try {
-            PackageInfo info = context.getPackageManager().getPackageInfo(packageName,
-                    PackageManager.GET_SIGNING_CERTIFICATES);
-            if (info.signingInfo == null || info.signingInfo.getApkContentsSigners().length != 1)
-                return "unavailable";
-            return sha256(info.signingInfo.getApkContentsSigners()[0].toByteArray());
-        } catch (PackageManager.NameNotFoundException e) {
-            return "package unavailable";
-        }
-    }
-
-    static void selectNavigationProvider(Context context, String packageName, boolean enabled) {
-        android.content.SharedPreferences prefs = context.getSharedPreferences(
-                "navigation_bar_provider", MODE_PRIVATE);
-        if (packageName == null || packageName.isEmpty()) {
-            if (enabled) throw new IllegalArgumentException("provider package is required");
-            prefs.edit().putBoolean("enabled", false).putBoolean("userChoiceMade", true)
-                    .putBoolean("builtInDefault", false).apply();
-            Log.i(TAG, "Navigation provider explicitly revoked by user");
-        } else {
-            String certificate = certificateFor(context, packageName);
-            if ("unavailable".equals(certificate) || "package unavailable".equals(certificate))
-                throw new IllegalArgumentException("selected provider is not installed or has no signing certificate");
-            String serviceClass = providerServiceClass(context, packageName);
-            if (serviceClass == null)
-                throw new IllegalArgumentException("selected package must export exactly one MatonOS navigation provider service");
-            if (NavigationBarWindow.DEFAULT_PROVIDER.equals(packageName)
-                    && !certificate.equals(pinnedCertificateForKey(context, "matonos-shelf")))
-                throw new IllegalArgumentException("built-in Shelf certificate does not match the pinned image key");
-            prefs.edit().putString("package", packageName).putString("certificate", certificate)
-                    .putString("serviceClass", serviceClass).putBoolean("enabled", enabled)
-                    .putBoolean("userChoiceMade", true)
-                    .putBoolean("builtInDefault", false).apply();
-            Log.i(TAG, (enabled ? "User selected" : "User preset") + " navigation provider=" + packageName
-                    + " certificate=" + certificate + " enabled=" + enabled);
-        }
-        SystemBridgeService service = activeService;
-        if (service != null) service.applyNavigationProviderSelection();
-        else context.startService(new Intent(context, SystemBridgeService.class));
     }
 
     private void enforcePermission(int uid, String operation) {
@@ -602,8 +358,8 @@ public final class SystemBridgeService extends Service {
     }
 
     private static Set<String> knownTargets() {
-        return new HashSet<>(java.util.Arrays.asList("launcher", "input", "sleep", "wifi",
-                "audio", "camera", "install", "addons", "status", "nav.back", "nav.home"));
+        return new HashSet<>(java.util.Arrays.asList("input", "sleep", "wifi", "audio",
+                "camera", "install", "addons", "status"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {
@@ -879,49 +635,6 @@ public final class SystemBridgeService extends Service {
         @Override public int delete(android.net.Uri uri, String selection, String[] selectionArgs) { return 0; }
         @Override public int update(android.net.Uri uri, android.content.ContentValues values,
                 String selection, String[] selectionArgs) { return 0; }
-    }
-
-    private static boolean isMatonLauncherPackage(String packageName) {
-        return "org.matonos.shell".equals(packageName) || "org.matonos.shelf".equals(packageName);
-    }
-
-    private static boolean isLauncherCaller(String packageName) {
-        return isMatonLauncherPackage(packageName);
-    }
-
-    private String enforceLauncherCaller(String operation) {
-        String packageName = enforceAuthorizedCaller("launcher", operation);
-        if (!isLauncherCaller(packageName))
-            deny(operation, Binder.getCallingUid(), "caller must be MatonOS Shell or Shelf");
-        return packageName;
-    }
-
-    private void requireShelfCaller(String packageName, String operation) {
-        if (!"org.matonos.shelf".equals(packageName))
-            deny(operation, Binder.getCallingUid(), "only MatonOS Shelf may navigate");
-    }
-
-    private boolean injectBack(boolean longPress) {
-        InputManager input = getSystemService(InputManager.class);
-        long downTime = SystemClock.uptimeMillis();
-        KeyEvent down = new KeyEvent(downTime, downTime, KeyEvent.ACTION_DOWN,
-                KeyEvent.KEYCODE_BACK, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
-                KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
-        boolean first = input.injectInputEvent(down, InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH);
-        if (longPress && first) {
-            try { Thread.sleep(600); }
-            catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            KeyEvent repeat = new KeyEvent(downTime, SystemClock.uptimeMillis(), KeyEvent.ACTION_DOWN,
-                    KeyEvent.KEYCODE_BACK, 1, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
-                    KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_LONG_PRESS,
-                    InputDevice.SOURCE_KEYBOARD);
-            first = input.injectInputEvent(repeat, InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH) && first;
-        }
-        KeyEvent up = new KeyEvent(downTime, SystemClock.uptimeMillis(), KeyEvent.ACTION_UP,
-                KeyEvent.KEYCODE_BACK, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
-                KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
-        boolean second = input.injectInputEvent(up, InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH);
-        return first && second;
     }
 
     private void deny(String operation, int uid, String reason) {

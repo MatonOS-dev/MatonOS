@@ -1,5 +1,5 @@
 export {MatonOS} from './MatonOS';
-export type {BridgeSnapshot, CallResult, MatonAreaEvent, NavigationAction, RecentTask} from './MatonOS';
+export type {BridgeSnapshot, CallResult, MatonAreaEvent} from './MatonOS';
 export {useBridgeAvailable} from './hooks/useBridgeAvailable';
 export {useMatonTheme} from './hooks/useMatonTheme';
 export {useMatonOS} from './hooks/useMatonOS';

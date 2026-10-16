@@ -10,15 +10,11 @@
         android:label="@string/game_controllers_label"
         android:description="@string/game_controllers_description"
         android:protectionLevel="normal" />
-    <!-- Shelf's provider service is protected by this capability; the platform-signed
-         bridge requests it so only the audited gatekeeper can bind the built-in provider. -->
     <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />
     <uses-permission android:name="android.permission.GRANT_RUNTIME_PERMISSIONS" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
-    <uses-permission android:name="android.permission.INJECT_EVENTS" />
-    <!-- This is the audited gatekeeper: certificate checks cover arbitrary third-party
-         navigation providers and future trusted capabilities, not a fixed package list. -->
+    <!-- The bridge verifies certificates for trusted callers not fixed in the image. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <!-- input: pointer settings are written for the current user (USER_CURRENT). -->
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" />
@@ -29,17 +25,7 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- sleep: see system-wide active playback, not only the bridge's own player. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_ROUTING" />
-    <uses-permission android:name="android.permission.STATUS_BAR_SERVICE" />
-    <uses-permission android:name="android.permission.INTERNAL_SYSTEM_WINDOW" />
-    <uses-permission android:name="android.permission.HIDE_NON_SYSTEM_OVERLAY_WINDOWS" />
-    <uses-permission android:name="android.permission.START_ACTIVITIES_FROM_BACKGROUND" />
-    <uses-permission android:name="android.permission.SYSTEM_APPLICATION_OVERLAY" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.MANAGE_APP_OPS_MODES" />
-    <uses-permission android:name="android.permission.MANAGE_ACTIVITY_TASKS" />
-    <uses-permission android:name="android.permission.REORDER_TASKS" />
-    <uses-permission android:name="android.permission.REAL_GET_TASKS" />
-    <uses-permission android:name="android.permission.REMOVE_TASKS" />
     <application
         android:label="MatonOS System Bridge"
         android:persistent="true"
@@ -61,12 +47,6 @@
         </receiver>
         <activity android:name=".SystemBridgeService$TrustedAppsActivity" android:exported="true">
             <intent-filter><action android:name="org.matonos.systembridge.TRUST_SETTINGS" /></intent-filter>
-        </activity>
-        <activity android:name=".NavigationProviderSettingsActivity" android:exported="true">
-            <intent-filter>
-                <action android:name="org.matonos.systembridge.NAVIGATION_PROVIDER_SETTINGS" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
         </activity>
         <provider android:name=".SystemBridgeService$ShellProvider"
             android:authorities="org.matonos.systembridge.shell"

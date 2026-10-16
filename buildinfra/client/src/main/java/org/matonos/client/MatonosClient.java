@@ -17,7 +17,6 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.matonos.systembridge.IMatonosListener;
 import org.matonos.systembridge.ISystemBridge;
-import org.matonos.systembridge.INavigationBarProvider;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -260,37 +259,6 @@ public final class MatonosClient implements AutoCloseable {
         if (current == null) return Result.unavailable("BRIDGE_DISCONNECTED");
         try { return Result.value(current.call(target, command, jsonArgs)); }
         catch (Exception e) { return Result.unavailable(reasonFor(e)); }
-    }
-
-    public Result<Boolean> injectBackKey() {
-        if (!isAvailable()) return Result.unavailable(reason);
-        ISystemBridge current = bridge;
-        if (current == null) return Result.unavailable("BRIDGE_DISCONNECTED");
-        try { return Result.value(current.injectBackKey()); }
-        catch (Exception e) { return Result.unavailable(reasonFor(e)); }
-    }
-
-    public Result<Boolean> ensureShellOverlayAccess() {
-        return invoke("launcher", ISystemBridge::ensureShellOverlayAccess);
-    }
-
-    public Result<Boolean> navigateBack(boolean longPress) {
-        return invoke("nav.back", b -> b.navigateBack(longPress));
-    }
-
-    public Result<Boolean> navigateHome() {
-        return invoke("nav.home", ISystemBridge::navigateHome);
-    }
-
-    /** Creates the typed service endpoint used by a user-selected navigation provider. */
-    public static INavigationBarProvider createNavigationBarProvider(
-            NavigationBarProviderAdapter adapter) {
-        if (adapter == null) throw new IllegalArgumentException("provider adapter is required");
-        return adapter.endpoint();
-    }
-
-    public Result<String> getNavigationBarProviderState() {
-        return invoke("status", ISystemBridge::getNavigationBarProviderState);
     }
 
     private interface BridgeOperation<T> { T call(ISystemBridge bridge) throws Exception; }

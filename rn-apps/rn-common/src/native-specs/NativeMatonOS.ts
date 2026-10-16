@@ -9,14 +9,12 @@ export type BridgeSnapshot = {
   missingChannels: Array<string>;
 };
 export type CallResult = {available: boolean; value: string; reason: string};
-export type NavigationAction = 'back' | 'home' | 'recents';
 
 export interface Spec extends TurboModule {
   checkStartup(accessTargets: Array<string>, requiredChannels: Array<string>): Promise<BridgeSnapshot>;
   getBridgeSnapshot(accessTarget: string): Promise<BridgeSnapshot>;
   call(target: string, command: string, jsonArgs: string): Promise<CallResult>;
   getWallpaperSeedColor(): Promise<number>;
-  navigate(action: NavigationAction, longPress: boolean): Promise<CallResult>;
   subscribe(target: string, topic: string, subscriptionId: string): Promise<boolean>;
   unsubscribe(subscriptionId: string): Promise<boolean>;
   addListener(eventName: string): void;

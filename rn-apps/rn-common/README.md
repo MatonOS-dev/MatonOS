@@ -6,7 +6,7 @@ Shared UI and typed MatonOS client for MatonOS apps. Current apps pin Expo SDK 5
 
 - `matonTheme.ts` creates Material 3 light/dark themes seeded from wallpaper colors, with system theme selection.
 - `MatonButton` is the shared Paper-based button used by app surfaces.
-- `MatonOS.ts` and `useMatonOS` expose typed promise calls, startup/availability state, topic event subscriptions, wallpaper color, and scoped `back`/`home` navigation. Navigation calls are authorized by the platform bridge for the Shelf package only; apps have no `INJECT_EVENTS` permission.
+- `MatonOS.ts` and `useMatonOS` expose typed promise calls, startup/availability state, topic event subscriptions, and wallpaper color.
 - `useBridgeAvailable` listens for bridge availability changes.
 - `native-specs/NativeMatonOS.ts` is the Codegen TurboModule contract. Its Android implementation wraps the shared `buildinfra/client` Java client; do not reimplement or fork that client here.
 

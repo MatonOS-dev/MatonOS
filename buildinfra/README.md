@@ -25,15 +25,14 @@ output (normally `out/target/product/pc_x86_64/system/framework/framework.jar`);
 before each build. Rebuild the AOSP framework first whenever the platform API
 changes. The jar is compile-only and is never packaged in an APK.
 
-`buildinfra/apps/apps.list` is the app registry. It includes Settings, Shell,
-Shelf and Recents image apps plus AudioToneTest, which is staged for `adb install`
+`buildinfra/apps/apps.list` is the app registry. It includes Settings and
+Flathub image apps plus AudioToneTest, which is staged for `adb install`
 testing only. Each app has its own development keystore under
 `~/.config/matonos-keys/<app>.jks`; the matching password is stored in a
 mode-0600 file beside it. Keys are generated on first use and never enter git.
 The settings pilot's certificate SHA-256 is written to the fixed
 `systembridge/res/raw/caller_cert_allowlist.txt` resource before AOSP compiles
-the bridge. Shell, Shelf and Recents have distinct persistent app keys; the
-Expo CNG projects use their pinned Gradle wrapper (Expo 57 uses Gradle 9.3.1 /
+the bridge. Expo CNG projects use their pinned Gradle wrapper (Expo 57 uses Gradle 9.3.1 /
 AGP 8.12.0), compile against API 36, and run `check:release-linkage` before
 their APK and generated privapp XML are staged. Keep one key per package so F-Droid or other app updates cannot
 inherit another app's bridge access. Release builds will use separate release
@@ -148,22 +147,16 @@ The system bridge package is `org.matonos.systembridge`, platform-signed,
 privileged and persistent. It is the only custom app compiled with platform
 APIs. Its versioned AIDL exposes `getBridgeApiVersion`/`getBridgeApiHash`,
 generic `call(target, command, jsonArgs)`, topic subscribe/unsubscribe
-callbacks, and launcher operations for overlay access, scoped shelf navigation
-(`navigateBack`, `navigateHome`), and the typed navigation-provider adapter/state
-query. The platform-signed bridge owns the
-system application-overlay host and its navigation inset source; it embeds
-the selected provider with `SurfaceControlViewHost`. Provider selection is
-disabled by default (Shelf is the preset), requires explicit user confirmation,
-pins the selected signing certificate, and can be revoked. The
-`input.set_absolute_pointer_mode` call disables acceleration and sets pointer
-speed to -7, returning the effective settings. The launcher methods authorize the `launcher` target on
-every call; navigation methods require the exact Shelf package. Every authorized operation and
-denial is written to the bridge audit log.
+callbacks, caller identity and trust management, and hardware/installer
+operations over the daemon channel. Settings uses the
+`input.set_absolute_pointer_mode` call, which disables acceleration and sets
+pointer speed to -7. Every authorized operation and denial is written to the
+bridge audit log.
 
 The app-facing bridge API is v6. This app-facing AIDL version/hash is distinct
 from the frozen stable vendor channel, which remains VINTF v1. `adb shell content call --uri
 content://org.matonos.systembridge.shell --method trust --arg <package>
---extra targets:s:launcher,audio` grants developer access; use `untrust` or
+--extra targets:s:input,audio` grants developer access; use `untrust` or
 `list` to revoke or inspect entries. The exported provider accepts shell UID
 2000 and root only, and audits denied callers. The Trusted developer apps
 screen is the user-confirmed grant/revoke and package block-list UI.
@@ -267,11 +260,11 @@ normal `tools/build.sh -K -M`. Verify the APK certificate with
 `apksigner verify --print-certs`, the installed package is under
 `/system_ext/priv-app`, the generated allowlist digest matches the APK, and
 the privapp XML is in `/system_ext/etc/permissions`. After a fresh boot, check
-`dumpsys package org.matonos.settings` and `org.matonos.shell`, bridge logs
+`dumpsys package org.matonos.settings`, bridge logs
 (`MatonSystemBridge`), sleepd logs (`matonos-sleepd`), read sleep state from
 Settings, and observe a state event after changing
-`persist.vendor.maton.sleep_idle_s`. Check shell task listing, task-fronting,
-fullscreen, and overlay authorization from its UI as well.
+`persist.vendor.maton.sleep_idle_s`. Check the Settings pages and their
+supported bridge operations as well.
 
 For QEMU, after a successful full image build, boot a fresh VM with:
 
@@ -290,16 +283,14 @@ adb -s 127.0.0.1:5565 shell dumpsys package org.matonos.settings
 adb -s 127.0.0.1:5565 logcat -d -s MatonSystemBridge matonos-sleepd
 ```
 
-The Settings page must show sleep state; press its BACK button to exercise the
-privileged input method. The shell should replace the stock launcher and show
-its recent-task shelf; selecting a task exercises task-fronting/fullscreen and
-opening the shelf exercises overlay authorization. On QEMU, `suspendSupported` may be false and a real
-suspend cycle is not required. Shut down that VM before starting another.
+The Settings page must show sleep state. On QEMU, `suspendSupported` may be
+false and a real suspend cycle is not required. Shut down that VM before
+starting another.
 
 ## Test on real PCs
 
 The 2026-09-25 16:49 coordinated image boots to `sys.boot_completed=1`.
-On that image the bridge, Settings and shell packages are installed, the
+On that image the bridge and Settings packages are installed, the
 Settings package holds `SYSTEM_BRIDGE`, and the audio/bluetooth/input/sleep/wifi
 stable channel service instances are registered. The bridge process remained
 alive. This image predates the API v4 and ContentProvider changes: the shell
@@ -309,13 +300,13 @@ used to exercise the startup dialog or visual bridge features. Serial and
 screen captures are under `out/pc-logs/buildinfra/` (`serial-current.log`,
 `settings.png`, `settings-unlocked.png`).
 
-The Gradle registered-app build succeeds, including the RN shell and refreshed
-MatonosClient AIDL generation. `tools/build-native.sh` also builds every
+The Gradle registered-app build succeeds, including Settings and Flathub and
+refreshed MatonosClient AIDL generation. `tools/build-native.sh` also builds every
 registered daemon, HAL and `libmatonos-ipc.so` for x86_64/API 35. Preflight
 passes. The API v4 bridge Java source and privileged permission import are
 awaiting the coordinator's `MatonSystemBridge` module compile check and a
-subsequent image. No fresh-image evidence is claimed for the new task, overlay,
-pointer-setting, trust-provider or ban-list methods yet.
+subsequent image. No fresh-image evidence is claimed for the new pointer-setting,
+trust-provider or ban-list methods yet.
 
 For each machine below, install a freshly built image (do not update the
 running system in place), boot normally, and open **MatonOS Settings**. Set

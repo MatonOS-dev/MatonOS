@@ -114,8 +114,7 @@ PRODUCT_PACKAGES := $(filter-out Stk SimAppDialog CarrierDefaultApp ImsServiceEn
 $(call inherit-product, $(LOCAL_PATH)/apps/apps.mk)
 
 # (ro.matonos.always_taskbar / shelf_nav / maximize_fullscreen removed with
-# the retired Launcher3 and frameworks/base patches; the custom Shell/Shelf
-# were retired too.)
+# the retired Launcher3 and frameworks/base patches.)
 
 # Defaults Android has no config for (app stores may install apps), applied
 # after boot by a system_ext script (sepolicy/system_ext).

@@ -21,10 +21,7 @@ type MatonOSClientModule = NativeEvents<EventMap> & {
   getWallpaperSeedColor(): Promise<number>;
   subscribe(target: string, topic: string, subscriptionId: string): Promise<boolean>;
   unsubscribe(subscriptionId: string): Promise<boolean>;
-  navigate(action: NavigationAction, longPress: boolean): Promise<CallResult>;
 };
-
-export type NavigationAction = 'back' | 'home' | 'recents';
 
 export type MatonAreaEvent = {
   target: string;
@@ -46,11 +43,6 @@ export const MatonOS = {
   call: (target: string, command: string, args: unknown = {}): Promise<CallResult> =>
     NativeMatonOS.call(target, command, JSON.stringify(args)),
   getWallpaperSeedColor: () => NativeMatonOS.getWallpaperSeedColor(),
-
-  navigate: async (action: NavigationAction, longPress = false): Promise<boolean> => {
-    const result = await NativeMatonOS.navigate(action, longPress);
-    return result.available && result.value === 'true';
-  },
 
   subscribe: (
     target: string,

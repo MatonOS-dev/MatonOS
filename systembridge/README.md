@@ -4,8 +4,7 @@ Package-scoped bridge calls are attributed to a caller only when
 `PackageManager.getPackagesForUid()` returns exactly one installed package.
 Binder identifies a process by UID, not by package, so a shared UID cannot
 safely be attributed to whichever package happens to have a trust record.
-The same rule applies to selected navigation-provider calls and to creating
-third-party trust. Package UID and signing certificate are checked again at
+The same rule applies to creating third-party trust. Package UID and signing certificate are checked again at
 authorization time; trust remains keyed by package and current certificate.
 Ambiguous UID denials are recorded in the bridge log.
 

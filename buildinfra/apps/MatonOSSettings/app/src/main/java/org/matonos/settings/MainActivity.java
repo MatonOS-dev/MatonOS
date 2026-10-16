@@ -26,21 +26,11 @@ public final class MainActivity extends Activity {
         page.setPadding(32, 32, 32, 32);
         status = new TextView(this);
         status.setText("Connecting to MatonOS system bridge…");
-        Button back = new Button(this);
-        back.setText("Send BACK through bridge");
-        back.setOnClickListener(v -> {
-            if (client == null || !client.isAvailable()) return;
-            new Thread(() -> {
-                MatonosClient.Result<Boolean> result = client.injectBackKey();
-                runOnUiThread(() -> status.setText(result.available && result.value ? "BACK injected" : "BACK unavailable: " + result.reason));
-            }).start();
-        });
         Button trust = new Button(this); trust.setText("Trusted developer apps");
         trust.setOnClickListener(v -> startActivity(new Intent(MatonOS.TRUST_SETTINGS)
                 .setComponent(new android.content.ComponentName("org.matonos.systembridge",
                         "org.matonos.systembridge.SystemBridgeService$TrustedAppsActivity"))));
         page.addView(status);
-        page.addView(back);
         page.addView(trust);
         setContentView(page);
         sleep = new SleepClient(client);
