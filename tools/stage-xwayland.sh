@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Stage the Xwayland server and its runtime libraries from the pinned build
 # (out/matonos/compositor/xstage) into the device tree for image inclusion.
-# Run after build-xwayland.sh; the image imports linux/subsystem/prebuilt/
+# Run after build-xwayland.sh; the image imports prebuilt/xwayland/
 # system_ext via the copy rules in device.mk.
 set -Eeuo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-AOSP=$(cd "$ROOT/../../.." && pwd)
+AOSP=${MATON_AOSP_ROOT:-$(cd "$ROOT/../../.." && pwd)}
 SRC=$AOSP/out/matonos/compositor/xstage/x86_64
-DST=$ROOT/linux/subsystem/prebuilt/system_ext
+DST=$ROOT/prebuilt/xwayland/system_ext
 [[ -x $SRC/bin/Xwayland ]] || { echo "ERROR: Xwayland missing at $SRC/bin/Xwayland; run build-xwayland.sh" >&2; exit 1; }
 mkdir -p "$DST/bin" "$DST/lib64"
 install -m 0755 "$SRC/bin/Xwayland" "$DST/bin/Xwayland"

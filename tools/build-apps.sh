@@ -140,22 +140,7 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   printf '%s\n' "$key_id" >> "$processed_tmp"
 
   stamp=$DEVICE_DIR/prebuilt/apps-built/.$key_id.inputs
-  extra_inputs=()
-  if [[ $key_id == matonos-linux-subsystem ]]; then
-    extra_inputs+=("$DEVICE_DIR/linux/subsystem/native" "$DEVICE_DIR/systembridge/aidl" "$DEVICE_DIR/linux/dbus-broker" "$DEVICE_DIR/linux/pipewire" "$DEVICE_DIR/linux/compat-proxy" "$DEVICE_DIR/linux/flatpak")
-  fi
-  # The broker records the image Flatpak build version. Rebuild the APK when
-  # that generated input changes, even when app sources are unchanged.
-  flatpak_version_hash=
-  if [[ $key_id == matonos-linux-subsystem ]]; then
-    flatpak_config=${MATON_FLATPAK_BUILD_CONFIG:-${MATON_FLATPAK_NDK:-$AOSP/out/matonos/flatpak-ndk}/flatpak/build/config.h}
-    [[ -s $flatpak_config ]] || die "image Flatpak build config missing: $flatpak_config"
-    flatpak_version_hash=$(sha256sum "$flatpak_config" | cut -d' ' -f1)
-  fi
-  fingerprint=$(inputs_hash "$project" "$DEVICE_DIR/rn-apps/rn-common" "$DEVICE_DIR/buildinfra/client" "${extra_inputs[@]}")-$cert_sha-$flatpak_version_hash
-  if [[ $key_id == matonos-linux-subsystem ]]; then
-    fingerprint+=-$(sha256sum "$DEVICE_DIR/tools/prepare-host-apk.py" | cut -d' ' -f1)
-  fi
+  fingerprint=$(inputs_hash "$project" "$DEVICE_DIR/rn-apps/rn-common" "$DEVICE_DIR/buildinfra/client")-$cert_sha
   if [[ ${MATON_APPS_FORCE:-0} != 1 && -s $stamp && $(cat "$stamp") == "$fingerprint" &&
         -s $DEVICE_DIR/prebuilt/apps-built/$apk_name && -s $DEVICE_DIR/buildinfra/apps-built/$apk_name ]]; then
     info "Skipping $key_id: inputs unchanged since the staged $apk_name"
@@ -207,38 +192,23 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
     [[ -s $permission_xml ]] || die "Expo project did not generate its privileged permission XML: $key_id"
     install -D -m 0644 "$permission_xml" "$DEVICE_DIR/buildinfra/privapp-permissions/privapp-permissions-org.matonos.$app_id.xml"
   fi
-  if [[ $key_id == matonos-linux-subsystem ]]; then
-    # Legacy packaging requests PM extraction for executable APK-owned code in
-    # updates. Store JNI as well so the system copy can dlopen from the APK.
-    # Rewriting a ZIP invalidates its signature: align, then sign with the same
-    # persistent app key. Never mutate Gradle's output or the Soong import.
-    normalized_dir=$(mktemp -d "$DEVICE_DIR/prebuilt/apps-built/.host-apk.XXXXXX")
-    python3 "$DEVICE_DIR/tools/prepare-host-apk.py" "$apk" "$normalized_dir/stored.apk"
-    "$SDK/build-tools/36.0.0/zipalign" -P 16 -f 4 \
-      "$normalized_dir/stored.apk" "$normalized_dir/aligned.apk"
-    "$SDK/build-tools/36.0.0/apksigner" sign --ks "$key_file" --ks-key-alias "$KEY_ALIAS" \
-      --ks-pass "file:$password_file" \
-      --out "$normalized_dir/signed.apk" "$normalized_dir/aligned.apk"
-    apk=$normalized_dir/signed.apk
-    python3 "$AOSP/build/soong/scripts/check_prebuilt_presigned_apk.py" \
-      --preprocessed --privileged --uncompress-priv-app-dex \
-      --zipalign "$SDK/build-tools/36.0.0/zipalign" "$apk" "$normalized_dir/verified"
-    "$SDK/build-tools/36.0.0/zipalign" -c -P 16 4 "$apk"
-  fi
   apk_cert=$("$SDK"/build-tools/36.0.0/apksigner verify --print-certs "$apk" \
     | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]' | head -n1)
   [[ -n $apk_cert && $apk_cert == "$cert_sha" ]] || die "APK signer does not match persistent key for $key_id"
   cp "$apk" "$DEVICE_DIR/prebuilt/apps-built/$apk_name"
   cp "$apk" "$DEVICE_DIR/buildinfra/apps-built/$apk_name"
-  if [[ $key_id == matonos-linux-subsystem ]]; then
-    # x86_64 and i386 v3 loaders (both under lib/x86_64/), 0755, atomically.
-    bash "$DEVICE_DIR/linux/compat-proxy/extract-loaders.sh" \
-      "$apk" "$DEVICE_DIR/buildinfra/apps-built" || die "host APK lacks a v3 loader"
-  fi
-  if [[ $key_id == matonos-linux-subsystem ]]; then rm -rf "$normalized_dir"; normalized_dir=; fi
   info "Staged $DEVICE_DIR/prebuilt/apps-built/$apk_name (certificate SHA-256 $cert_sha)"
   printf '%s\n' "$fingerprint" > "$stamp"
 done < "$APP_LIST"
+
+# v3.5: subsystem is an independently built, pinned prebuilt. Derive trust
+# from the exact APK imported by Soong, never a local development key.
+subsystem_apk=$DEVICE_DIR/prebuilt/linux-subsystem/MatonLinuxSubsystem.apk
+[[ -s $subsystem_apk ]] || die "missing pinned subsystem APK: $subsystem_apk"
+subsystem_cert=$("$SDK/build-tools/36.0.0/apksigner" verify --print-certs "$subsystem_apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]' | head -n1)
+[[ $subsystem_cert =~ ^[0-9a-f]{64}$ ]] || die "invalid pinned subsystem certificate"
+printf 'matonos-linux-subsystem %s\n' "$subsystem_cert" >> "$allow_tmp"
+printf '%s\n' matonos-linux-subsystem >> "$processed_tmp"
 
 allow_existing=$DEVICE_DIR/systembridge/res/raw/caller_cert_allowlist.txt
 if [[ -f $allow_existing ]]; then

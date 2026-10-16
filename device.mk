@@ -50,8 +50,8 @@ PRODUCT_COPY_FILES += \
 
 # ------------------------------------------------- Xwayland (compositor)
 # The Xwayland server and its X11 stack runtime libraries (built by
-# linux/subsystem/build-xwayland.sh, staged by tools/stage-xwayland.sh).
-XWAYLAND_SYSTEM_EXT := device/maton/pc_x86_64/linux/subsystem/prebuilt/system_ext
+# the standalone subsystem repo, staged by tools/stage-xwayland.sh).
+XWAYLAND_SYSTEM_EXT := device/maton/pc_x86_64/prebuilt/xwayland/system_ext
 XWAYLAND_FILES := \
     $(wildcard $(XWAYLAND_SYSTEM_EXT)/bin/*) \
     $(wildcard $(XWAYLAND_SYSTEM_EXT)/lib64/*.so) \

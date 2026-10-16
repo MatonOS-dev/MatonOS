@@ -1,0 +1,6 @@
+v3.5: image-only Xwayland runtime, preserved byte-for-byte from MatonOS
+repository ostree-packs commit 28ecbe6 (linux/subsystem/prebuilt/system_ext).
+The subsystem APK source repository no longer owns these image prebuilts.
+The build recipe and upstream version/hash notices remain available at
+https://github.com/MatonOS-dev/linux-subsystem-app (linux/subsystem/UPSTREAMS).
+Stage refreshed files with tools/stage-xwayland.sh; no server change in this split.
