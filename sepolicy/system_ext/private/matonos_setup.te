@@ -22,7 +22,7 @@ allow matonos_setup { appops_service settings_service }:service_manager find;
 allow surfaceflinger udmabuf_device:chr_file rw_file_perms;
 allow bootanim udmabuf_device:chr_file { open read write ioctl };
 # minigbm's allocator opens udmabuf for DMA buffer allocation on software GPUs.
-allow hal_graphics_allocator_default udmabuf_device:chr_file { open read write ioctl };
+allow hal_graphics_allocator udmabuf_device:chr_file { open read write ioctl };
 
 get_prop(platform_app, bluetooth_lea_prop)
 
