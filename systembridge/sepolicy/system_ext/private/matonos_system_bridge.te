@@ -41,7 +41,8 @@ allow mediaswcodec mediaserver_tmpfs:file { read write map };
 allow { appdomain -isolated_app_all system_server surfaceflinger bootanim } sysfs_matonos_pci_id:file r_file_perms;
 # minigbm hands out udmabuf-backed buffers; clients use the passed fd.
 # (udmabuf_device is a private platform type, so this lives here, not in vendor.)
-allow { appdomain -isolated_app_all system_server } udmabuf_device:chr_file { read write };
+allow { appdomain -isolated_app_all } udmabuf_device:chr_file { open read write ioctl };
+allow system_server udmabuf_device:chr_file { read write };
 allow { appdomain system_server surfaceflinger bootanim } sysfs_type:dir search;
 
 # Read-only boot metadata used by v3.

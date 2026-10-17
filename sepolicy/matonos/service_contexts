@@ -4,6 +4,7 @@ vendor.matonos.channel.IChannel/input u:object_r:matonos_channel_service:s0
 vendor.matonos.channel.IChannel/audio u:object_r:matonos_channel_service:s0
 vendor.matonos.channel.IChannel/camera u:object_r:matonos_channel_service:s0
 vendor.matonos.channel.IChannel/install u:object_r:matonos_channel_service:s0
+vendor.matonos.channel.IChannel/status u:object_r:matonos_channel_service:s0
 # addons: stable protected bridge endpoint for the package manager.
 vendor.matonos.channel.IChannel/addons u:object_r:matonos_channel_service:s0
 android.hardware.boot.IBootControl/default u:object_r:hal_bootctl_service:s0
