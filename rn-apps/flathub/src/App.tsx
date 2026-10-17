@@ -128,7 +128,6 @@ export default function App() {
   const [busyRef, setBusyRef] = useState("");
   const [progress, setProgress] = useState("");
   const [percent, setPercent] = useState<number | null>(null);
-  const operationToken = useRef(0);
   const operationIdRef = useRef("");
   const [operationKind, setOperationKind] = useState<"install" | "uninstall">("install");
   const installedIds = useMemo(() => new Set(installedRefs.map((ref) => ref.split("/")[1])), [installedRefs]);
@@ -172,7 +171,6 @@ export default function App() {
 
   async function startInstall(app: StoreApp | null = selected) {
     if (!app || busyRef) return;
-    const token = ++operationToken.current;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     operationIdRef.current = operationId;
     setOperationKind("install");
@@ -181,17 +179,11 @@ export default function App() {
       await installApp(app.ref, operationId);
       if (operationIdRef.current !== operationId) return;
       setProgress("Downloading and installing…");
-      setTimeout(() => {
-        if (operationToken.current !== token) return;
-        operationIdRef.current = "";
-        setBusyRef(""); setProgress(""); setPercent(null); setMessage("The operation timed out. Check Installed before trying again.");
-      }, 10 * 60 * 1000);
     } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
   }
 
   async function startUninstall() {
     if (!selected || busyRef) return;
-    const token = ++operationToken.current;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     operationIdRef.current = operationId;
     setOperationKind("uninstall");
@@ -200,11 +192,6 @@ export default function App() {
       await uninstallApp(selected.ref, operationId);
       if (operationIdRef.current !== operationId) return;
       setProgress("Removing app…");
-      setTimeout(() => {
-        if (operationToken.current !== token) return;
-        operationIdRef.current = "";
-        setBusyRef(""); setProgress(""); setPercent(null); setMessage("The operation timed out. Check Installed before trying again.");
-      }, 10 * 60 * 1000);
     } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
   }
 
@@ -216,7 +203,6 @@ export default function App() {
     const subscription = MatonOS.addStoreListener((payload) => {
       if (payload.phase === "complete") {
         if (!payload.result?.operationId || payload.result.operationId !== operationIdRef.current) return;
-        operationToken.current++;
         operationIdRef.current = "";
         const completed = payload.result;
         setBusyRef(""); setProgress(""); setPercent(null);
@@ -226,7 +212,8 @@ export default function App() {
         return;
       }
       if (payload.operationId !== operationIdRef.current) return;
-      const eventPercent = typeof payload.percent === "number" ? payload.percent : null;
+      // The installer reports -1 for phases without a known fraction.
+      const eventPercent = typeof payload.percent === "number" && payload.percent >= 0 ? payload.percent : null;
       setPercent(eventPercent);
       setProgress(`${payload.phase || "Working…"}${eventPercent == null ? "" : ` ${eventPercent}%`}`);
     });
