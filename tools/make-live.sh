@@ -133,7 +133,7 @@ cmdline="console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet"
 # real errors, and the kernel console on a VT nobody looks at (serial keeps all).
 cmdline+=" loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6"
 cmdline+=" firmware_class.path=/vendor/firmware"
-cmdline+=" brd.rd_nr=2 brd.rd_size=8388608"
+cmdline+=" brd.rd_nr=2 brd.rd_size=16777216"
 cmdline+=" androidboot.hardware=pc_x86_64"
 cmdline+=" androidboot.fstab_suffix=pc_x86_64.live"
 cmdline+=" androidboot.slot_suffix=_a"
