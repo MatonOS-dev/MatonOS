@@ -38,6 +38,12 @@ function percentToRatio(percent: number | null): number | null {
   return Math.min(1, Math.max(0, percent / 100));
 }
 
+function progressLabel(phase: string, percent: number | null, bytesDone: number, bytesTotal: number): string {
+  const fraction = percent == null ? "" : ` ${percent}%`;
+  const size = bytesTotal > 0 ? ` · ${Math.floor(Math.max(0, bytesDone) / 1048576)} / ${Math.ceil(bytesTotal / 1048576)} MB` : "";
+  return `${phase || "Working…"}${fraction}${size}`;
+}
+
 function Screenshots({ app }: { app: StoreApp }) {
   if (app.screenshots.length === 0) return null;
   return (
@@ -215,7 +221,9 @@ export default function App() {
       // The installer reports -1 for phases without a known fraction.
       const eventPercent = typeof payload.percent === "number" && payload.percent >= 0 ? payload.percent : null;
       setPercent(eventPercent);
-      setProgress(`${payload.phase || "Working…"}${eventPercent == null ? "" : ` ${eventPercent}%`}`);
+      const done = typeof payload.bytesDone === "number" ? payload.bytesDone : 0;
+      const total = typeof payload.bytesTotal === "number" ? payload.bytesTotal : 0;
+      setProgress(progressLabel(payload.phase || "Working…", eventPercent, done, total));
     });
     return () => subscription.remove();
   }, []);
