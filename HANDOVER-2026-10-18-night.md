@@ -118,3 +118,79 @@ Earlier in the day, with a VFS alias (since removed), vulkaninfo itself ran and 
 1. F-Droid repo for the subsystem on download.hanro50.net.za/matonos — after Flatpak apps work end to end.
 2. Software centre (own store, F-Droid + Flatpak sources) per the existing plan.
 3. Podman addon, Digitalis addon — unchanged, not started.
+
+## Notes: what I learnt today
+
+### Android packaging / PackageManager
+- **SystemConfig only reads `*.xml`.** `prebuilt_etc` names the installed file after the module unless
+  `filename_from_src: true`; our four privapp allowlists were installed without an extension and never read.
+  Permissions only worked because `ro.control_privapp_permissions` was unset (log-only). Check
+  `ls /system_ext/etc/permissions/` on every image that adds a config file.
+- **System apps start "stopped"** on first boot (`scannedAsStoppedSystemApp=true`) and receive no BOOT_COMPLETED.
+  Exempt with `<initial-package-state package=... stopped="false"/>` in a permissions XML.
+- **An updated system app keeps only what the system version declared:** privileged permissions and `<library>`
+  shared libraries. Hence the bootstrap declares the same permissions and `org.matonos.linuxhost` as the real app.
+- **Update-over-update keeps the old shared-library entry** (`SharedLibrariesImpl.getAllowedSharedLibInfos`:
+  "declares library ... that already exists; skipping"), so dependents' `usesLibraryFiles` point at a deleted APK.
+  The platform still builds the dependent's library loader from the **system** copy first (log: "Configuring clns-N
+  for other apk /system_ext/priv-app/..."), so StubLoader itself always loads; only the host lookup must not trust
+  `sharedLibraryFiles`.
+- **LoadedApk creates the AppComponentFactory twice** (before and after `instantiateClassLoader`) and passes its own
+  loader to `instantiate*`. State in the factory must be static; load components from your own loader.
+- **PackageInstaller:** `session.commit()` fails "Files still open" if the write stream is still open.
+  `FLAG_UPDATED_SYSTEM_APP` is also set when the bootstrap itself is the installed update — it does not mean "the
+  real host is installed".
+- **Same versionCode over a system app** installs fine with `adb install -r`; for the bootstrap->real flow the real
+  APK needs a higher versionCode (commit count + 2 in build.sh).
+- **untrusted_app ioctl allowlist:** FICLONE (0x9409) on app_data_file is denied; libglnx tries it before every copy.
+- Privileged permissions defined by the requesting app's own signer (Bluetooth, DownloadProvider, mainline modules)
+  are signature grants and unaffected by allowlists — a naive "requested privileged perm not allowlisted" scan
+  produces false positives for them.
+
+### Kernel / seccomp / signals
+- **SUD and seccomp are independent.** SUD's selector stepping aside does not exempt anything from a seccomp filter;
+  seccomp still judges every syscall by instruction pointer.
+- **A seccomp TRAP while SIGSYS is blocked (inside the SIGSYS handler) = kernel kills the process with SIGSYS**,
+  no handler, no log — exit 159. Any libc (bionic) call inside the handler that issues a filtered syscall dies this
+  way. pthread_create's stack mmap (128 KiB + guard = 180224 bytes, PROT_NONE, MAP_NORESERVE) is the signature.
+- **BPF can only compare 32-bit words:** IP ranges must be split at 4 GiB boundaries; a piece ending exactly on the
+  boundary must skip the upper check (its low word is 0).
+- Only one SUD configuration exists per thread, so our own SUD use would collide with Wine's.
+- **Kernel error order:** `mkdir`/create on an existing target returns EEXIST even on a read-only mount
+  (fs/namei.c filename_create); EROFS only if the target is missing. bwrap relies on it (ensure_node_at).
+- `O_PATH|O_NOFOLLOW` on a symlink opens the link itself (fstat gives S_IFLNK). libglnx's `glnx_chaseat` tries
+  `openat2` and falls back to `openat` on ENOSYS — leaving openat2 unimplemented is legitimate; implementing it with
+  unenforced RESOLVE_* flags is not.
+
+### bwrap / flatpak internals that bit us
+- **`--bind-fd`:** after the mount bwrap reopens the destination and requires `st_dev`+`st_ino` equal to the fd
+  ("Race condition binding dirfd"); emulated binds must preserve the source identity.
+- **Bind sources are opened via the old root after pivot_root**; the emulated old root must show the full pre-pivot
+  view, including proxy virtual mounts.
+- **flatpak emits usr-merge links itself** (`--symlink usr/lib64 /lib64` ...) only after `glnx_chaseat` finds the
+  dir in the runtime fd — never alias them in the VFS.
+- **Without `--socket=session-bus` flatpak starts xdg-dbus-proxy**, whose setup lists the real `/` (denied for apps).
+  Our broker is already per-app and policy-checked, so the direct bind is right.
+- `/run/host/os-release` comes from the host `/etc/os-release` first, then `/usr/lib/os-release`.
+- flatpak's ldconfig runs in a **second bwrap** with its own mounts — main-bwrap fixes do not automatically cover it.
+- `--no-session-bus` removes the bus entirely; `FLATPAK_RUN_FLAG_NO_SESSION_BUS_PROXY` is not "direct".
+
+### Debugging technique that worked
+- **strace on the VM** (userdebug has /system/bin/strace) attached from a polling loop on the exact comm:
+  `for i in $(seq 5000); do p=$(pgrep -x libmatonos-v3-l|head -1); [ -n "$p" ] && exec strace -f -tt -ff -o /data/local/tmp/st -p $p; done`
+  run as a host-side background `adb shell`. It found the SIGSYS cause in one run after a day of guessing.
+- Proxy trace mode: touch `<stub data>/cache/v3-trace` (chown to the stub uid, restorecon). Trace ids are the
+  internal `PROXY_SC_*` enum (starts at `unknown=-1`), not kernel numbers — map with the enum order.
+- Read bwrap's and flatpak's source for the exact failing message (`~/matonos/build/main-out/flatpak/cache/src/
+  bubblewrap/bubblewrap.c`, `~/matonos/repos/flatpak/common/`) before briefing: every fix today came from that.
+- `adb shell` reads stdin: inside `while read` loops use `</dev/null`. `pm list permissions -f` lines start with
+  `+ permission:`.
+
+### Process
+- Each luna round moved bwrap one step; the value came from coordinator analysis + narrow briefs. Expect luna to
+  stop early or work around; "instrument first, change after" in the brief helps.
+- Verify the remote model id before launching codex with a non-default model (sol run failed silently: model
+  `sol-6.1` "not supported when using Codex with a ChatGPT account").
+- Image builds take 45–60 min (full analysis after the host reboot); subsystem APK builds ~3 min at 16 jobs — iterate
+  with `adb install -r` of the real APK, rebuild images only for policy/device-tree/StubLoader changes.
+- StubLoader changes need an image (stubs load it from the bootstrap copy).
