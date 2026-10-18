@@ -1,8 +1,5 @@
 # Controller permissions are derived from the signed stub manifest.
 
-# The Linux subsystem (org.matonos.linux) runs as stock priv_app (per-SDK
-# domains such as priv_app_36, hence priv_app_all). Its install
-# operations bind the per-operation DNS forwarder socket and create pack-mount
-# symlinks in its own private data, like untrusted apps may in theirs
-# (system/sepolicy/private/untrusted_app_all.te).
-allow priv_app_all privapp_data_file:{ lnk_file sock_file fifo_file } create_file_perms;
+# The Linux subsystem (org.matonos.linux) runs as untrusted_app_34 (see
+# systembridge seapp_contexts); untrusted_app_all already lets it create the
+# DNS forwarder socket and pack-mount symlinks in its own data.

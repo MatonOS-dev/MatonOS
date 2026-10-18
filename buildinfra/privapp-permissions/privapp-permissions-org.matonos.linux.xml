@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <permissions>
+    <!-- Only install/uninstall of generated stubs and background starts are
+         privileged; otherwise the subsystem is an untrusted app (SELinux:
+         untrusted_app_34, systembridge seapp_contexts). -->
     <privapp-permissions package="org.matonos.linux">
-        <permission name="org.matonos.permission.SYSTEM_BRIDGE" />
         <permission name="android.permission.INSTALL_PACKAGES" />
         <permission name="android.permission.DELETE_PACKAGES" />
         <!-- remotes-origin: show subsystem provider choices after network planning. -->
         <permission name="android.permission.START_ACTIVITIES_FROM_BACKGROUND" />
-        <permission name="android.permission.HIDE_NON_SYSTEM_OVERLAY_WINDOWS" />
     </privapp-permissions>
 </permissions>

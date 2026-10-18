@@ -7,3 +7,8 @@ user=secure_element seinfo=platform name=com.android.se domain=secure_element ty
 # rejects a name-only rule for non-privileged apps (insecure: any app could take
 # a flatpak.* name), failing the whole file and leaving every app in zygote.
 # The subsystem verifies generated-stub identity using PackageManager.
+# The Linux subsystem stays a priv-app only for its install/background
+# permissions (privapp-permissions-org.matonos.linux) and the StubLoader path;
+# SELinux-wise it is an ordinary untrusted app at its targetSdk (36 ->
+# untrusted_app_34, as stock maps it). Bump with targetSdk.
+user=_app isPrivApp=true name=org.matonos.linux domain=untrusted_app_34 type=app_data_file levelFrom=all
