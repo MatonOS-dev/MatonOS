@@ -18,3 +18,47 @@ mode: 0755
 user: AID_ROOT
 group: AID_ROOT
 caps: 0
+
+# Host tools the subsystem execs from the same directory (flatpak, bwrap,
+# planner, ostree tool, Xwayland, xkbcomp): same reason as the loader.
+[system_ext/priv-app/MatonLinuxSubsystem/lib/x86_64/libmatonos-app-bwrap.so]
+mode: 0755
+user: AID_ROOT
+group: AID_ROOT
+caps: 0
+
+[system_ext/priv-app/MatonLinuxSubsystem/lib/x86_64/libmatonos-app-flatpak.so]
+mode: 0755
+user: AID_ROOT
+group: AID_ROOT
+caps: 0
+
+[system_ext/priv-app/MatonLinuxSubsystem/lib/x86_64/libmatonos-flatpak-plan.so]
+mode: 0755
+user: AID_ROOT
+group: AID_ROOT
+caps: 0
+
+[system_ext/priv-app/MatonLinuxSubsystem/lib/x86_64/libmatonos-flatpak.so]
+mode: 0755
+user: AID_ROOT
+group: AID_ROOT
+caps: 0
+
+[system_ext/priv-app/MatonLinuxSubsystem/lib/x86_64/libmatonos-xkbcomp.so]
+mode: 0755
+user: AID_ROOT
+group: AID_ROOT
+caps: 0
+
+[system_ext/priv-app/MatonLinuxSubsystem/lib/x86_64/libmatonos-Xwayland-server.so]
+mode: 0755
+user: AID_ROOT
+group: AID_ROOT
+caps: 0
+
+[system_ext/priv-app/MatonLinuxSubsystem/lib/x86_64/libmatonos-Xwayland.so]
+mode: 0755
+user: AID_ROOT
+group: AID_ROOT
+caps: 0
