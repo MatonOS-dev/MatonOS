@@ -9,4 +9,7 @@
         <!-- remotes-origin: show subsystem provider choices after network planning. -->
         <permission name="android.permission.START_ACTIVITIES_FROM_BACKGROUND" />
     </privapp-permissions>
+    <!-- System apps start "stopped" on first boot and then get no BOOT_COMPLETED;
+         the bootstrap needs it to install the embedded subsystem APK. -->
+    <initial-package-state package="org.matonos.linux" stopped="false" />
 </permissions>
