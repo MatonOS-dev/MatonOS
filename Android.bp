@@ -1,23 +1,16 @@
-// compositor: v4 Wayland compositor host app (Java). Its native libraries
-// (wlroots, wayland, pixman, xkbcommon, libdrm, libmaton_compositor) are
-// packaged by the standalone linux-subsystem-app repository.
+// Linux subsystem bootstrap (org.matonos.linux, versionCode 1). It contains the
+// real signed subsystem APK, built by the standalone linux-subsystem-app
+// repository, and installs it over itself on first boot (and after "uninstall
+// updates"); updates then come from our F-Droid repo. The bootstrap has no
+// native code; the installed /data copy gets PackageManager lib extraction.
+// Image/policy changes must keep working with the previously shipped subsystem.
 android_app_import {
     name: "MatonLinuxSubsystem",
     privileged: true,
     required: [
         "privapp-permissions-org.matonos.linux",
     ],
-    apk: "prebuilt/linux-subsystem/MatonLinuxSubsystem.apk",
+    apk: "prebuilt/linux-subsystem/MatonLinuxSubsystemBootstrap.apk",
     system_ext_specific: true,
     preprocessed: true,
-    // The standalone build stores and aligns JNI/dex before signing. System apps do
-    // not get PM extraction; JNI loads from the APK.
-    //
-    // WARNING: generated Flatpak stubs load the host through
-    // org.matonos.linux.stub.StubLoader, which hard-codes this module's
-    // install path (/system_ext/priv-app/MatonLinuxSubsystem/MatonLinuxSubsystem.apk)
-    // and the stored, uncompressed JNI layout (apk!/lib/<abi>). Renaming the
-    // module, changing its partition, dropping `privileged` or compressing the
-    // JNI libraries silently disables StubLoader; update StubLoader.SYSTEM_APK
-    // with any such change.
 }

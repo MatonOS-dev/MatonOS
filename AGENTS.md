@@ -292,21 +292,21 @@ mount options, devices, environment or flags); the privileged side derives
 everything from the verified stub identity (UID + per-device signature),
 its installed manifest and its granted Android permissions.
 
-Stub code loading (user, 2026-10-10): generated stubs keep `<uses-library
-org.matonos.linuxhost>` but name `org.matonos.linux.stub.StubLoader` as
-their `appComponentFactory`. It swaps the platform's shared-library loader
-(always the image copy) for one over the installed host APK, so compositor
-updates reach stubs on their next launch; running apps are never killed on a
-host update. Trust comes from the platform: only the image path or an
-installed update of `org.matonos.linux` (same signature, enforced by
-PackageManager) is accepted, so there is no extra certificate check.
-**Keep in sync:** `StubLoader.SYSTEM_APK` hard-codes the `MatonLinuxSubsystem`
-install path (`buildinfra/Android.bp`), and the loader expects stored,
-uncompressed JNI libraries (`apk!/lib/<abi>`). Renaming or moving that module
-or compressing its JNI libraries silently disables StubLoader. StubLoader
-itself only updates with the image: keep it small. After a host update,
-running stubs keep the old code next to a new compositor/linuxd. Pre-alpha:
-no interface compatibility guarantee; relaunch the app. Stub/host interface
+Stub code loading (user, 2026-10-10; bootstrap 2026-10-18): generated stubs
+keep `<uses-library org.matonos.linuxhost>` but name
+`org.matonos.linux.stub.StubLoader` as their `appComponentFactory`; it loads
+the installed host APK, so compositor updates reach stubs on their next
+launch; running apps are never killed on a host update. The image ships only
+a bootstrap `org.matonos.linux` (versionCode 1, no native code) that embeds the
+real APK and installs it over itself on first boot or after "uninstall
+updates"; later versions come from our F-Droid repo. The bootstrap must declare
+the same `<library>` and privileged permissions as the real app (Android only
+lets an update keep what the system version declared). Trust comes from the
+platform: only an installed update of `org.matonos.linux` (same signature,
+enforced by PackageManager) is accepted. **Compatibility rule:** an image's
+policy/device-tree changes must keep working with the previously shipped
+subsystem, which runs until its F-Droid update arrives. Pre-alpha: no
+stub/host interface guarantee; relaunch the app. Stub/host interface
 versioning is due once MatonOS leaves pre-alpha.
 
 SysV IPC (user, 2026-10-10): the kernel keeps Android's `# CONFIG_SYSVIPC is
