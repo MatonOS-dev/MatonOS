@@ -23,6 +23,7 @@
 #   -n  no KVM
 #   -S  boot with OVMF Secure Boot code and Microsoft keys enrolled
 #   -V  use this persistent writable OVMF vars file (created from the selected template)
+#   -F  full-screen window (default: a fixed window exactly the -r size, no resizing)
 #
 # The image is attached as a USB stick (qemu-xhci + usb-storage): that's the
 # real use case, and androidboot.boot_part_uuid matches SCSI/NVMe/MMC disks
@@ -45,8 +46,9 @@ ADB_PORT=5555
 EXTRA=""
 SECURE_BOOT=0
 VARS_FILE=""
+FULLSCREEN=0
 
-while getopts "i:g:m:r:s:a:x:nSV:h" opt; do
+while getopts "i:g:m:r:s:a:x:nSV:Fh" opt; do
   case $opt in
     i) IMAGE=$OPTARG ;;
     g) GFX=$OPTARG ;;
@@ -58,6 +60,7 @@ while getopts "i:g:m:r:s:a:x:nSV:h" opt; do
     n) KVM=0 ;;
     S) SECURE_BOOT=1 ;;
     V) VARS_FILE=$OPTARG ;;
+    F) FULLSCREEN=1 ;;
     *) sed -n '2,/^set -E/p' "$0" | sed '$d'; exit 1 ;;
   esac
 done
@@ -150,11 +153,11 @@ fi
 # the user's desktop and never take the user's adb port 5555 (user rule).
 # MATON_QEMU_WINDOWED=1 is an explicit opt-in for a user-authorized desktop
 # graphics test; it only disables the automatic headless display selection.
-# Start the interactive display full-screen before firmware/Android boot. This
-# avoids opening a 640x480 GTK window during POST and changing the guest mode
-# before SurfaceFlinger picks its boot-time display size. zoom-to-fit keeps the
-# EDID-selected guest mode independent from later host window resizes.
-gtk_gl="gtk,gl=on,zoom-to-fit=on" gtk_plain="gtk,zoom-to-fit=on"  # windowed: GTK full-screen spans every monitor
+# The window is either full-screen (-F; GTK full-screen spans every monitor)
+# or fixed at exactly the -r size (zoom-to-fit off): host window changes never
+# become guest display-mode changes, which upset Launcher3's taskbar.
+gtk_gl="gtk,gl=on,zoom-to-fit=off" gtk_plain="gtk,zoom-to-fit=off"
+[[ $FULLSCREEN == 1 ]] && args+=(-full-screen)
 # MATON_QEMU_HEADLESS=1: no window (unattended runs; a GTK GL window stalls
 # the guest while the host display is off or locked).
 [[ ${MATON_QEMU_HEADLESS:-0} == 1 ]] && gtk_gl=egl-headless gtk_plain=none
