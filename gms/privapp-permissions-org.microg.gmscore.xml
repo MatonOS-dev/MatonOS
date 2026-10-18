@@ -9,5 +9,12 @@
         <permission name="android.permission.UPDATE_APP_OPS_STATS"/>
         <permission name="android.permission.UPDATE_DEVICE_STATS"/>
         <permission name="android.permission.WATCH_APPOPS"/>
+        <permission name="android.permission.INTERACT_ACROSS_USERS"/>
+        <permission name="android.permission.START_ACTIVITIES_FROM_BACKGROUND"/>
+        <permission name="android.permission.PROVIDE_DEFAULT_ENABLED_CREDENTIAL_SERVICE"/>
+        <permission name="android.permission.PROVIDE_REMOTE_CREDENTIALS"/>
+        <!-- Requested by microG but not needed on MatonOS. -->
+        <deny-permission name="android.permission.DUMP"/>
+        <deny-permission name="android.permission.MANAGE_USB"/>
     </privapp-permissions>
 </permissions>

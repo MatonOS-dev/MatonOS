@@ -174,3 +174,8 @@ PRODUCT_SYSTEM_EXT_PROPERTIES += \
 # Legacy charger/libsuspend must not become a second suspend policy on PCs.
 # The stock AIDL charger already returns false; pin the legacy HIDL default too.
 PRODUCT_SYSTEM_EXT_PROPERTIES += ro.charger.enable_suspend=false
+
+# Privileged permissions must be allowlisted (privapp-permissions-*.xml): a priv-app
+# requesting one that is neither allowlisted nor denied stops boot instead of only
+# being logged. Allowlist or <deny-permission> every new request.
+PRODUCT_VENDOR_PROPERTIES += ro.control_privapp_permissions=enforce
