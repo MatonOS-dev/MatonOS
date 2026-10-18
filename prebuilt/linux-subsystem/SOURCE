@@ -1,11 +1,11 @@
 v3.5 signed subsystem bootstrap APK prebuilt (versionCode 1; embeds the real APK, installs it over itself on first boot)
 repo: https://github.com/MatonOS-dev/linux-subsystem-app
-commit: 61dee8decbe8d5a8c18ad3eb1d9b65a77783c8be
+commit: 17581088e8bbfeb1d723e0959ab08d0c3b3ebd8c
 flatpak-repo: https://github.com/MatonOS-dev/flatpak
 flatpak-branch: matonos/v26.10
 flatpak-commit: 4cce363ef3168baf10a4cd0a916694d3959f9558
 certificate-sha256: 4596a6aff58a0bed52a9b25b87a6a89ec849018941c2fb1dd360226e4679ff58
 
 SHA-256:
-4cfdd54d27b59e0fe31c9adfd501b9474358b84d54e8a574c297f7ae1526c4cb  MatonLinuxSubsystemBootstrap.apk
-1856ca5831b40ffbefcb61affca02ffb79d7327f5d381109be1a80bafb393dbf  embedded MatonLinuxSubsystem.apk (versionCode='395')
+66db21abf2ac729a21abefe38f0a53d68278e788434b1620c7dccde2dcc18b53  MatonLinuxSubsystemBootstrap.apk
+bd6ec411669365b3e945ca5c4131f59aa8546575cbdfc170f01db65f08e7df21  embedded MatonLinuxSubsystem.apk (versionCode='399')
