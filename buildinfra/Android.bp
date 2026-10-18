@@ -62,6 +62,7 @@ android_app_import {
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.settings",
     src: "privapp-permissions/privapp-permissions-org.matonos.settings.xml",
+    filename_from_src: true,
     sub_dir: "permissions",
     system_ext_specific: true,
 }
@@ -69,6 +70,7 @@ prebuilt_etc {
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.flathub",
     src: "privapp-permissions/privapp-permissions-org.matonos.flathub.xml",
+    filename_from_src: true,
     sub_dir: "permissions",
     system_ext_specific: true,
 }
@@ -76,6 +78,7 @@ prebuilt_etc {
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.linux",
     src: "privapp-permissions/privapp-permissions-org.matonos.linux.xml",
+    filename_from_src: true,
     sub_dir: "permissions",
     system_ext_specific: true,
 }
@@ -83,6 +86,7 @@ prebuilt_etc {
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.systembridge",
     src: "privapp-permissions/privapp-permissions-org.matonos.systembridge.xml",
+    filename_from_src: true,
     sub_dir: "permissions",
     system_ext_specific: true,
 }
