@@ -279,8 +279,9 @@ the security layer (linuxd, confined bwrap SELinux domains, "containment beats
 compatibility"). v3 retired that: Linux processes run as their stub app, the
 Android app sandbox is the boundary, and they may use Binder from any code
 (needed e.g. for `AHardwareBuffer_allocate`). See "the Linux layer is not a
-security sandbox" above. Parts still valid in v3 (stub code loading/bootstrap,
-SysV IPC emulation, code in the app's own data) are restated where they apply.
+security sandbox" above. Exceptions — these paragraphs below are still current
+in v3: "Stub code loading" (incl. the bootstrap APK), "SysV IPC", and the
+exception that apps may run code from their own data directory.
 
 Linux/Flatpak app sandboxes must have no access to Android binder. The
 mechanism is SELinux: executing bwrap transitions out of linuxd's domain
