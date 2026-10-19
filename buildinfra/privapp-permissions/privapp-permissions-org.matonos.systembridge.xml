@@ -4,5 +4,10 @@
         <permission name="android.permission.WRITE_SECURE_SETTINGS" />
         <permission name="android.permission.WRITE_SETTINGS" />
         <permission name="android.permission.MANAGE_APP_OPS_MODES" />
+        <!-- sleep: PowerManager wake-lock dump; system-wide playback state. -->
+        <permission name="android.permission.DUMP" />
+        <permission name="android.permission.MODIFY_AUDIO_ROUTING" />
+        <!-- input: per-user pointer settings (USER_CURRENT). -->
+        <permission name="android.permission.MANAGE_USERS" />
     </privapp-permissions>
 </permissions>
