@@ -39,6 +39,8 @@ Read after `HANDOVER-2026-10-18-night.md`. Agent briefs/logs/reports: `out/pc-lo
   `matonos/v1.2` stays for old builds.
 - **Unmerged:** subsystem branch `egl-window` (`8557d20`, worktree `~/matonos/repos/lsa-gpuint`): EGL Wayland window
   surfaces (pbuffer -> copy into client AHB -> maton_ahb_buffer_v1). Host checks pass; merge after a VM test.
+- **Unmerged:** subsystem branch `host-os-release` (`f0e3d1b`): generated MatonOS /etc/os-release in the host view +
+  logo at /run/host/matonos/logo.txt; host tests pass, VM test pending (check `cat /run/host/os-release` in a Flatpak).
 - Worktrees: `lsa-vkwsi` (free), `lsa-gpuint` (egl-window), `lsa-vkcube` (merged; remove with `git worktree remove`),
   device tree `out/worktrees/venus-gralloc` (merged; remove).
 - **No VM running.** /data was RAM; everything installed is gone.
