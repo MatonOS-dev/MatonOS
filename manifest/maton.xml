@@ -6,7 +6,7 @@
       https://raw.githubusercontent.com/MatonOS-dev/MatonOS/main/manifest/maton.xml
     repo sync -c
   Brings in the MatonOS device tree and our forks of AOSP / third-party
-  projects (github.com/MatonOS-dev, branch matonos/v1.2).
+  projects (github.com/MatonOS-dev, release branches pinned below).
 -->
 <manifest>
   <remote name="matonos-dev" fetch="https://github.com/MatonOS-dev" />
@@ -18,7 +18,7 @@
   <!-- Graphics: minigbm (fork of android-generic's), drm_hwcomposer -->
   <remove-project name="platform/external/minigbm" />
   <project path="external/minigbm" name="android_external_minigbm"
-           remote="matonos-dev" revision="matonos/v1.2" />
+           remote="matonos-dev" revision="matonos/v26.10" />
   <remove-project name="platform/external/drm_hwcomposer" />
   <project path="external/drm_hwcomposer" name="android_external_drm_hwcomposer"
            remote="matonos-dev" revision="matonos/v1.2" />
