@@ -274,10 +274,13 @@ Prefer the newest stable over prereleases; note any deliberate exception
 
 ## Rule: Flatpak apps never get binder (user, 2026-10-04)
 
-**SUPERSEDED (user, 2026-10-19):** v2-era rule (linuxd/bwrap SELinux domains,
-retired). Under v3, Linux processes run as their stub app and may use Binder
-from any code (needed e.g. for `AHardwareBuffer_allocate`); see "the Linux layer
-is not a security sandbox" above. The rest of this section describes v2.
+**SUPERSEDED (user, 2026-10-19) — this whole section is v2.** In v2 we were
+the security layer (linuxd, confined bwrap SELinux domains, "containment beats
+compatibility"). v3 retired that: Linux processes run as their stub app, the
+Android app sandbox is the boundary, and they may use Binder from any code
+(needed e.g. for `AHardwareBuffer_allocate`). See "the Linux layer is not a
+security sandbox" above. Parts still valid in v3 (stub code loading/bootstrap,
+SysV IPC emulation, code in the app's own data) are restated where they apply.
 
 Linux/Flatpak app sandboxes must have no access to Android binder. The
 mechanism is SELinux: executing bwrap transitions out of linuxd's domain
