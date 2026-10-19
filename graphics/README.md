@@ -74,3 +74,29 @@ component. Check AVCs on the debug-permissive real-hardware boot.
    the lock screen without delaying boot.
 5. Plug or unplug an external display and confirm the active display remains
    usable.
+
+## Virtio-GPU Venus AHardwareBuffer status (2026-10-19)
+
+On the running Venus VM (`127.0.0.1:5556`), the active properties are
+`ro.hardware.gralloc=minigbm_gbm_mesa` and `ro.hardware.vulkan=virtio`.
+The AIDL allocator is the `minigbm` service; its minigbm fork build is
+statically linked to `libminigbm_gralloc_gbm_mesa`, while the stable mapper
+loads the `gralloc.minigbm_gbm_mesa` module. `pc-gpu-detect.sh` selects Vulkan
+from the virtio PCI ID and does not currently select the allocator backend.
+
+An instrumented native probe allocated a 500x500 RGBA8 AHB with usage `0xb00`
+(GPU color output, sampled image and compositor overlay); stride was 500.
+AHardwareBuffer exposes usage and layout in its description, but no blob flag.
+The live Mesa GBM path allocates virgl GL resources and exports dma-bufs; it
+does not request virtio blob resources. The virtgpu minigbm backend already
+creates blob resources with `VIRTGPU_BLOB_FLAG_USE_SHAREABLE`, but the current
+Soong allocator is linked to the Mesa GBM backend. The native Vulkan probe
+still aborts at `vkGetAndroidHardwareBufferPropertiesANDROID`; AHB import and
+vkcube presentation have not passed.
+
+Do not replace `gbm_mesa` globally: real amdgpu/i915/nouveau allocations must
+keep their current path. A virtio-only fix needs a fork-side runtime allocator
+choice shared by the AIDL allocator and stable mapper, driven by the early
+GPU detection result; switching only `ro.hardware.gralloc` is insufficient
+because the allocator backend is statically linked. This requires a new
+minigbm fork change before the VM import and screenshot checks can be done.

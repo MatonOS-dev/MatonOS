@@ -232,6 +232,7 @@ get_prop(surfaceflinger, vendor_maton_mesa_prop)
 get_prop(bootanim, vendor_maton_mesa_prop)
 get_prop(zygote, vendor_maton_mesa_prop)
 get_prop(hal_graphics_allocator_default, vendor_maton_mesa_prop)
+get_prop(gpuservice, vendor_maton_mesa_prop)
 # Every Mesa client (apps' RenderThread, system_server's UI) reads the GPU
 # selection; without it Mesa falls back to llvmpipe, whose JIT needs execmem.
 get_prop({ appdomain -isolated_app_all system_server }, vendor_maton_mesa_prop)

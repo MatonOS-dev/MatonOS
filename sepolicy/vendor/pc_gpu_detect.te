@@ -28,6 +28,8 @@ type sysfs_matonos_boot_vga, fs_type, sysfs_type;
 allow pc_gpu_detect sysfs_matonos_boot_vga:file r_file_perms;
 allow pc_gpu_detect sysfs_type:dir search;
 allow { pc_gpu_detect vendor_modprobe pc_wakeup hal_graphics_allocator_default hal_graphics_composer_default } sysfs_matonos_pci_id:file r_file_perms;
+# gpuservice reads the selected PCI identity to initialize Mesa GPU reporting.
+allow gpuservice sysfs_matonos_pci_id:file r_file_perms;
 allow { vendor_modprobe hal_graphics_allocator_default hal_graphics_composer_default } sysfs_type:dir search;
 
 # A separate toolbox inode named modprobe: cat/setprop/readlink stay in detect.
