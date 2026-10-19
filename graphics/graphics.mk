@@ -1,6 +1,6 @@
 #
 # Graphics for pc_x86_64: Mesa (prebuilt, tools/build-mesa.sh) + minigbm
-# gralloc (BlissOS's, gbm_mesa backend: buffers allocated via Mesa's GBM) +
+# gralloc (native virtgpu on virtio_gpu; Mesa GBM on other DRM drivers) +
 # drm_hwcomposer (HWC3).
 #
 
@@ -23,8 +23,9 @@ PRODUCT_PACKAGES += \
 # ---------------------------------------------------------------- Mesa
 # Staged by tools/build-mesa.sh with vendor-relative paths:
 #   lib64/egl/lib{EGL,GLESv1_CM,GLESv2}_mesa.so, lib64/libgallium-*.so,
-#   lib64/libgbm_mesa.so + lib64/libgbm_mesa_wrapper.so (minigbm's gbm_mesa
-#   backend dlopens the wrapper),
+#   lib64/libgbm_mesa.so + lib64/libgbm_mesa_wrapper.so (minigbm's GBM Mesa
+#   backend dlopens the wrapper; virtio_gpu uses minigbm's native virtgpu
+#   backend),
 #   lib64/hw/vulkan.{intel,intel_hasvk,radeon,nouveau,virtio,swrast}.so,
 #   etc/intel_vulkan_pci_ids.txt (Intel anv/hasvk split for pc-gpu-detect.sh)
 PRODUCT_COPY_FILES += \

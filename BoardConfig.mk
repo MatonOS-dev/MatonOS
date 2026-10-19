@@ -121,10 +121,10 @@ SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy/system_ext/private
 -include $(DEVICE_PATH)/input/BoardConfig.mk
 
 # ---------------------------------------------------------------- graphics
-# minigbm is BlissOS/android-generic's (manifest/maton.xml). Its gbm_mesa backend
-# allocates through Mesa's GBM for every Mesa GPU. The matonos/v1.2 fork
-# branch pinned in manifest/maton.xml selects gbm_mesa for the AIDL allocator
-# and stable-C mapper (vendorforks/README.md).
+# minigbm is BlissOS/android-generic's (manifest/maton.xml). The matonos/v26.10
+# fork branch selects a shared runtime backend set for the AIDL allocator and
+# stable-C mapper: native virtgpu for virtio_gpu, GBM Mesa for other DRM drivers.
+# The gbm_mesa Soong backend links this library (vendorforks/README.md).
 $(call soong_config_set,minigbm,backend,gbm_mesa)
 # HWUI renders with GL for v1 (sets ro.hwui.use_vulkan=false): Vulkan
 # availability varies per PC.
