@@ -12,6 +12,8 @@
 #                          host Vulkan)
 #                   std:   plain VGA framebuffer, no GPU acceleration
 #                   none:  headless, serial console only
+#   MATON_QEMU=<path>  use this qemu-system-x86_64 (e.g. a local venus build);
+#                      its ../lib (local virglrenderer) goes on LD_LIBRARY_PATH
 #   -m  RAM in MiB  (default: 8192; /data lives in RAM on the live image)
 #   -r  resolution  (default: 1600x900; at least ~1000x600 keeps Android's
 #                   large-screen desktop layout)
@@ -70,7 +72,10 @@ done
 XRES=${BASH_REMATCH[1]} YRES=${BASH_REMATCH[2]}
 LOG=${LOG:-$(dirname "$IMAGE")/serial-live.log}
 SOCK=$LOG.sock.$ADB_PORT.$$
-command -v qemu-system-x86_64 >/dev/null || die "install qemu-system-x86"
+QEMU=${MATON_QEMU:-qemu-system-x86_64}
+command -v "$QEMU" >/dev/null || die "install qemu-system-x86 (or set MATON_QEMU)"
+qemu_lib=$(dirname "$(command -v "$QEMU")")/../lib
+[[ -n ${MATON_QEMU:-} && -d $qemu_lib ]] && export LD_LIBRARY_PATH=$qemu_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
 OVMF_CODE=""
 # secureboot: select enrolled-Microsoft-key OVMF and retain VARS for MOK enrollment.
@@ -225,4 +230,4 @@ done
 echo "VM slot $got"
 
 echo "Serial console -> $LOG (interactive: $SOCK)"
-exec qemu-system-x86_64 "${args[@]}"
+exec "$QEMU" "${args[@]}"
