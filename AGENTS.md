@@ -11,6 +11,17 @@ machine-specific: never commit it. Use it instead of guessing paths.
 
 Read `NOTES.md` first: roadmap, decisions (with reasons) and open issues.
 
+## Principle: the Linux layer is not a security sandbox (user, 2026-10-19)
+
+This is not a security sandbox/solution. It may use parts of Linux that were
+designed for that purpose (seccomp, namespaces, bwrap, SELinux-style
+confinement), but our use case is purely as a method to fill in the gaps where
+standard Android has them. The security boundary is Android's own app sandbox:
+each Linux app runs as its stub app (UID, SELinux domain, seccomp). The compat
+proxy and GPU forwarders are an emulation layer; do not add in-process
+hardening as a security goal (e.g. the proxy's Binder guard was removed on
+2026-10-19 for this reason).
+
 ## Principle: work around Android's quirks, don't patch into Android
 
 When Android misbehaves on PCs, prefer solutions that sit *around* Android
@@ -262,6 +273,11 @@ Prefer the newest stable over prereleases; note any deliberate exception
 (and why) next to its pin.
 
 ## Rule: Flatpak apps never get binder (user, 2026-10-04)
+
+**SUPERSEDED (user, 2026-10-19):** v2-era rule (linuxd/bwrap SELinux domains,
+retired). Under v3, Linux processes run as their stub app and may use Binder
+from any code (needed e.g. for `AHardwareBuffer_allocate`); see "the Linux layer
+is not a security sandbox" above. The rest of this section describes v2.
 
 Linux/Flatpak app sandboxes must have no access to Android binder. The
 mechanism is SELinux: executing bwrap transitions out of linuxd's domain
