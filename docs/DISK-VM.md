@@ -16,20 +16,24 @@ must use persistent mode because the installed VM needs writes to userdata.
 ## Build the current test image
 
 The product artifacts are read from `/mnt/data/aosp/out/target/product/pc_x86_64`.
-This checkout's current output does not contain a standalone bzImage; the
-latest staged kernel is at
-`/mnt/data/aosp/device/maton/pc_x86_64/prebuilt/bzImage`. The systemd-boot
-binary from the existing payload preparation is at
+The current product output has no standalone bzImage, so stage the latest
+kernel artifact into the task's output directory first. The source
+`/mnt/data/aosp/device/maton/pc_x86_64/prebuilt/bzImage` is read-only; the
+installer and payload builder use the copy under `out/pc-logs/disk-vm/`. The
+systemd-boot binary from the existing payload preparation is at
 `/mnt/data/aosp/out/pc-logs/secureboot/payload-check/efi/systemd-bootx64.efi`.
-These are input-only; neither is modified. AOSP's host `simg2img` is needed
+These inputs are read-only during packaging. AOSP's host `simg2img` is needed
 when the product `super.img` is sparse.
 
 ```sh
 cd /mnt/data/aosp/device/maton/pc_x86_64
+mkdir -p /mnt/data/aosp/out/pc-logs/disk-vm
+cp /mnt/data/aosp/device/maton/pc_x86_64/prebuilt/bzImage \
+  /mnt/data/aosp/out/pc-logs/disk-vm/bzImage
 PATH=/mnt/data/aosp/out/host/linux-x86/bin:$PATH \
   tools/make-payload.sh \
     -o /mnt/data/aosp/out/target/product/pc_x86_64 \
-    -k /mnt/data/aosp/device/maton/pc_x86_64/prebuilt/bzImage \
+    -k /mnt/data/aosp/out/pc-logs/disk-vm/bzImage \
     -b /mnt/data/aosp/out/pc-logs/secureboot/payload-check/efi/systemd-bootx64.efi \
     -s 6442450944 \
     -d /mnt/data/aosp/out/pc-logs/disk-vm/payload
