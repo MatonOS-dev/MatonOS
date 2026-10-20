@@ -16,11 +16,34 @@ PAYLOAD_DIR="${PAYLOAD_DIR:-$(dirname "$(readlink -f "$0")")/payload}"
 LABEL="${LABEL:-Android}"
 VERIFY="${VERIFY:-1}"
 DISCARD="${DISCARD:-0}"
+IMAGE_TARGET=""
+IMAGE_SIZE_BYTES=""
+FILE_WORK=""
+
+while (($#)); do
+  case $1 in
+    --image) [[ $# -ge 2 ]] || { echo "ERROR: --image needs a file path" >&2; exit 1; }; IMAGE_TARGET=$2; shift 2 ;;
+    --size) [[ $# -ge 2 ]] || { echo "ERROR: --size needs a byte count" >&2; exit 1; }; IMAGE_SIZE_BYTES=$2; shift 2 ;;
+    -h|--help)
+      sed -n '2,18p' "$0"
+      echo "\nFile target: $0 --image <file> --size <bytes>"
+      exit 0 ;;
+    *) echo "ERROR: unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+if [[ -n $IMAGE_TARGET || -n $IMAGE_SIZE_BYTES ]]; then
+  [[ -n $IMAGE_TARGET && -n $IMAGE_SIZE_BYTES ]] || { echo "ERROR: --image and --size must be used together" >&2; exit 1; }
+  [[ $IMAGE_SIZE_BYTES =~ ^[0-9]+$ ]] || { echo "ERROR: --size must be an integer number of bytes" >&2; exit 1; }
+  IMAGE_TARGET=$(realpath -m -- "$IMAGE_TARGET")
+  [[ $IMAGE_TARGET != / && ( ! -e $IMAGE_TARGET || -f $IMAGE_TARGET ) ]] || { echo "ERROR: image target must be a regular file path" >&2; exit 1; }
+fi
 
 MNT=$(mktemp -d)
 cleanup() {
   mountpoint -q "$MNT" 2>/dev/null && umount "$MNT"
   rmdir "$MNT" 2>/dev/null || true
+  [[ -z $FILE_WORK ]] || rm -rf -- "$FILE_WORK"
 }
 trap cleanup EXIT
 trap 'echo; echo "Installation FAILED at line $LINENO. The target disk is in an unknown state." >&2' ERR
@@ -40,9 +63,14 @@ wait_for_node() {
 }
 
 # ---------------------------------------------------------------- preflight
-[[ $EUID -eq 0 ]]           || die "run as root"
-[[ -d /sys/firmware/efi ]]  || die "this machine was not booted in UEFI mode"
-for t in lsblk sgdisk wipefs blockdev findmnt mkfs.vfat zstd dd partprobe udevadm sha256sum; do
+if [[ -z $IMAGE_TARGET ]]; then
+  [[ $EUID -eq 0 ]]           || die "run as root"
+  [[ -d /sys/firmware/efi ]]  || die "this machine was not booted in UEFI mode"
+  REQUIRED_TOOLS=(lsblk sgdisk wipefs blockdev findmnt mkfs.vfat zstd dd partprobe udevadm sha256sum)
+else
+  REQUIRED_TOOLS=(sgdisk zstd dd sha256sum mformat mmd mcopy mdir)
+fi
+for t in "${REQUIRED_TOOLS[@]}"; do
   command -v "$t" >/dev/null || die "missing tool: $t"
 done
 [[ -f $PAYLOAD_DIR/payload.conf ]] || die "no payload found in $PAYLOAD_DIR"
@@ -84,6 +112,90 @@ fi
 
 info "Checking payload integrity"
 ( cd "$PAYLOAD_DIR" && sha256sum -c --quiet SHA256SUMS ) || die "payload is corrupt (checksum mismatch)"
+
+create_partition_table() {
+  local target=$1
+  sgdisk -a 2048 \
+    -n 1:0:+"${ESP_SIZE_MIB}"M          -t 1:EF00 -c 1:esp \
+    -n 2:0:+4M                          -t 2:8300 -c 2:misc \
+    -n 3:0:+64M                         -t 3:8300 -c 3:metadata \
+    -n 4:0:+$((SUPER_SIZE_BYTES / 1048576))M -t 4:8300 -c 4:super \
+    -n 5:0:0                            -t 5:8300 -c 5:userdata \
+    "$target" >/dev/null
+}
+
+install_file_image() {
+  local min_bytes esp_start esp_offset super_start misc_start meta_start esp_uuid fatdev cmdline initrds
+  min_bytes=$(( (ESP_SIZE_MIB + 4 + 64 + 2 + MIN_USERDATA_MIB) * 1048576 + SUPER_SIZE_BYTES ))
+  (( IMAGE_SIZE_BYTES >= min_bytes )) || die "image is too small: $((IMAGE_SIZE_BYTES / 1048576)) MiB, need at least $((min_bytes / 1048576)) MiB"
+  FILE_WORK=$(mktemp -d)
+  mkdir -p "$(dirname "$IMAGE_TARGET")"
+  info "Creating sparse disk image $IMAGE_TARGET ($IMAGE_SIZE_BYTES bytes)"
+  truncate -s "$IMAGE_SIZE_BYTES" "$IMAGE_TARGET"
+  sgdisk --zap-all "$IMAGE_TARGET" >/dev/null
+  create_partition_table "$IMAGE_TARGET"
+  sgdisk -v "$IMAGE_TARGET" >/dev/null || die "GPT verification failed"
+
+  esp_start=$(sgdisk -i 1 "$IMAGE_TARGET" | sed -n 's/^First sector: *\([0-9][0-9]*\).*/\1/p')
+  super_start=$(sgdisk -i 4 "$IMAGE_TARGET" | sed -n 's/^First sector: *\([0-9][0-9]*\).*/\1/p')
+  esp_uuid=$(sgdisk -i 1 "$IMAGE_TARGET" | sed -n 's/^Partition unique GUID: *//p' | tr '[:upper:]' '[:lower:]')
+  [[ $esp_start =~ ^[0-9]+$ && $esp_uuid =~ ^[0-9a-f-]{36}$ ]] || die "could not read ESP location or PARTUUID"
+  esp_offset=$((esp_start * 512))
+  fatdev="$IMAGE_TARGET@@$esp_offset"
+
+  info "Writing system image into the sparse file"
+  zstd -dc "$PAYLOAD_DIR/super.img.zst" | dd of="$IMAGE_TARGET" bs=1M seek=$(((super_start * 512) / 1048576)) iflag=fullblock conv=notrunc,fsync status=progress
+  # GPT partition starts are 1 MiB aligned, so MiB-sized dd seeks land exactly
+  # at these partition boundaries while preserving the sparse file elsewhere.
+  misc_start=$(sgdisk -i 2 "$IMAGE_TARGET" | sed -n 's/^First sector: *\([0-9][0-9]*\).*/\1/p')
+  meta_start=$(sgdisk -i 3 "$IMAGE_TARGET" | sed -n 's/^First sector: *\([0-9][0-9]*\).*/\1/p')
+  dd if=/dev/zero of="$IMAGE_TARGET" bs=1M seek=$(((misc_start * 512) / 1048576)) count=4 conv=notrunc,fsync status=none
+  dd if=/dev/zero of="$IMAGE_TARGET" bs=1M seek=$(((meta_start * 512) / 1048576)) count=16 conv=notrunc,fsync status=none
+
+  info "Formatting and populating the ESP without mounting it"
+  mformat -i "$fatdev" -F -v ANDROIDESP ::
+  mmd -i "$fatdev" ::/EFI ::/EFI/BOOT ::/EFI/systemd ::/EFI/Linux ::/android ::/loader ::/loader/entries ::/EFI/BOOT/licenses
+  for f in Fedora-shim-x64-BSD-3-Clause.txt Intel-Microcode-LICENSE.txt AMD-WHENCE.txt; do
+    mcopy -i "$fatdev" "$PAYLOAD_DIR/licenses/$f" ::/EFI/BOOT/licenses/
+  done
+  if [[ ${SECURE_BOOT:-0} == 1 ]]; then
+    for f in EFI/BOOT/BOOTX64.EFI EFI/BOOT/grubx64.efi EFI/BOOT/mmx64.efi EFI/BOOT/matonos-dev.der EFI/systemd/systemd-bootx64.efi EFI/Linux/matonos.efi; do
+      mcopy -i "$fatdev" "$PAYLOAD_DIR/efi/$f" "::/$f"
+    done
+  else
+    mcopy -i "$fatdev" "$PAYLOAD_DIR/microcode.cpio" ::/android/microcode.cpio
+    mcopy -i "$fatdev" "$PAYLOAD_DIR/efi/systemd-bootx64.efi" ::/EFI/systemd/systemd-bootx64.efi
+    mcopy -i "$fatdev" "$PAYLOAD_DIR/efi/systemd-bootx64.efi" ::/EFI/BOOT/BOOTX64.EFI
+    mcopy -i "$fatdev" "$PAYLOAD_DIR/bzImage" ::/android/bzImage
+    initrds="initrd  /android/microcode.cpio"
+    if [[ -f $PAYLOAD_DIR/vendor_ramdisk.img ]]; then
+      mcopy -i "$fatdev" "$PAYLOAD_DIR/vendor_ramdisk.img" ::/android/vendor_ramdisk.img
+      initrds+=$'\n'"initrd  /android/vendor_ramdisk.img"
+    fi
+    mcopy -i "$fatdev" "$PAYLOAD_DIR/ramdisk.img" ::/android/ramdisk.img
+    initrds+=$'\n'"initrd  /android/ramdisk.img"
+  fi
+
+  printf 'default android.conf\ntimeout 3\nconsole-mode keep\neditor no\n' > "$FILE_WORK/loader.conf"
+  mcopy -i "$fatdev" "$FILE_WORK/loader.conf" ::/loader/loader.conf
+  cmdline="$KERNEL_CMDLINE androidboot.boot_devices=pci0000:00/0000:00:1d.0 androidboot.boot_part_uuid=$esp_uuid"
+  if [[ ${SECURE_BOOT:-0} == 1 ]]; then
+    printf 'title   %s\nefi     /EFI/Linux/matonos.efi\noptions %s\n' "$LABEL" "$cmdline" > "$FILE_WORK/android.conf"
+    printf 'title   %s (debug)\nefi     /EFI/Linux/matonos.efi\noptions %s %s\n' "$LABEL" "$cmdline" "${DEBUG_CMDLINE:-}" > "$FILE_WORK/android-debug.conf"
+  else
+    printf 'title   %s\nlinux   /android/bzImage\n%s\noptions %s\n' "$LABEL" "$initrds" "$cmdline" > "$FILE_WORK/android.conf"
+    printf 'title   %s (debug)\nlinux   /android/bzImage\n%s\noptions %s %s\n' "$LABEL" "$initrds" "$cmdline" "${DEBUG_CMDLINE:-}" > "$FILE_WORK/android-debug.conf"
+  fi
+  mcopy -i "$fatdev" "$FILE_WORK/android.conf" ::/loader/entries/android.conf
+  mcopy -i "$fatdev" "$FILE_WORK/android-debug.conf" ::/loader/entries/android-debug.conf
+  sync
+  info "Disk image ready (ESP PARTUUID $esp_uuid)"
+}
+
+if [[ -n $IMAGE_TARGET ]]; then
+  install_file_image
+  exit 0
+fi
 
 # Work out which disk we booted from so we never offer it as a target.
 boot_disk=""
@@ -173,13 +285,7 @@ fi
 
 # ---------------------------------------------------------------- partition
 info "Creating partitions"
-sgdisk -a 2048 \
-  -n 1:0:+"${ESP_SIZE_MIB}"M          -t 1:EF00 -c 1:esp \
-  -n 2:0:+4M                          -t 2:8300 -c 2:misc \
-  -n 3:0:+64M                         -t 3:8300 -c 3:metadata \
-  -n 4:0:+$((SUPER_SIZE_BYTES / 1048576))M -t 4:8300 -c 4:super \
-  -n 5:0:0                            -t 5:8300 -c 5:userdata \
-  "$DISK" >/dev/null
+create_partition_table "$DISK"
 partprobe "$DISK" || true
 udevadm settle
 
