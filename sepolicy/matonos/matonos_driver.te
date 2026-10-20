@@ -172,6 +172,10 @@ allow matonos_driver proc_swaps:file r_file_perms;
 # slot and does not write either device.
 # Resolve /dev/block before opening the partition nodes labeled below.
 allow matonos_driver block_device:dir search;
+# misc carries its own by-name label, unlike the ESP and disk nodes.
+allow matonos_driver misc_block_device:blk_file rw_file_perms;
+# BLKGETDISKSEQ (0x1280): the ESP writer checks the disk identity before writing.
+allowxperm matonos_driver matonos_install_block_device:blk_file ioctl 0x1280;
 hal_server_domain(matonos_driver, hal_bootctl)
 get_prop(matonos_driver, exported_default_prop)
 

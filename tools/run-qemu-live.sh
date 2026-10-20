@@ -32,6 +32,8 @@
 # but not virtio-blk. adb: `adb connect localhost:5555` (userdebug builds).
 # The image is opened copy-on-write by default. MATON_QEMU_PERSISTENT=1
 # writes to the image directly; use this for a prepared installed disk.
+# MATON_QEMU_DISK=nvme attaches the image as an internal NVMe disk instead
+# (installed disks: emulated usb-storage makes Android boots take ~20 min).
 set -Eeuo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -123,6 +125,12 @@ case ${MATON_QEMU_PERSISTENT:-0} in
   *) die "MATON_QEMU_PERSISTENT must be 0 or 1" ;;
 esac
 
+case ${MATON_QEMU_DISK:-usb} in
+  usb)  disk_dev="usb-storage,bus=xhci.0,drive=live,bootindex=0" ;;
+  nvme) disk_dev="nvme,serial=matonos0,drive=live,bootindex=0" ;;
+  *)    die "MATON_QEMU_DISK must be usb or nvme" ;;
+esac
+
 args=(
   -machine "$machine" -m "$MEM" -smp 4
   # No S3: virtio-gpu loses its scanout over suspend-to-RAM and the screen
@@ -132,7 +140,7 @@ args=(
   -drive "if=pflash,format=raw,file=$vars"
   -device "qemu-xhci,id=xhci"
   -drive "id=live,if=none,format=raw,snapshot=$snapshot,file=$IMAGE"
-  -device "usb-storage,bus=xhci.0,drive=live,bootindex=0"
+  -device "$disk_dev"
   # Input: q35's built-in PS/2 keyboard and the VMware absolute mouse
   # (vmmouse, PS/2 AUX), not usb-kbd/usb-tablet. QEMU's xHCI can't wake the
   # guest (no PME/ACPI wake), but the i8042 PS/2 controller can, so keys and
