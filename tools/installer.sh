@@ -125,7 +125,7 @@ create_partition_table() {
 }
 
 install_file_image() {
-  local min_bytes esp_start esp_offset super_start misc_start meta_start esp_uuid fatdev cmdline initrds
+  local min_bytes esp_sectors esp_start esp_offset super_start misc_start meta_start esp_uuid fatdev cmdline initrds
   min_bytes=$(( (ESP_SIZE_MIB + 4 + 64 + 2 + MIN_USERDATA_MIB) * 1048576 + SUPER_SIZE_BYTES ))
   (( IMAGE_SIZE_BYTES >= min_bytes )) || die "image is too small: $((IMAGE_SIZE_BYTES / 1048576)) MiB, need at least $((min_bytes / 1048576)) MiB"
   FILE_WORK=$(mktemp -d)
@@ -153,7 +153,10 @@ install_file_image() {
   dd if=/dev/zero of="$IMAGE_TARGET" bs=1M seek=$(((meta_start * 512) / 1048576)) count=16 conv=notrunc,fsync status=none
 
   info "Formatting and populating the ESP without mounting it"
-  mformat -i "$fatdev" -F -v ANDROIDESP ::
+  # Without -T mformat sizes the filesystem to the rest of the file and its FAT
+  # tables overwrite misc/metadata/super.
+  esp_sectors=$(( $(sgdisk -i 1 "$IMAGE_TARGET" | sed -n 's/^Last sector: *\([0-9][0-9]*\).*/\1/p') - esp_start + 1 ))
+  mformat -i "$fatdev" -T "$esp_sectors" -h 64 -s 32 -F -v ANDROIDESP ::
   mmd -i "$fatdev" ::/EFI ::/EFI/BOOT ::/EFI/systemd ::/EFI/Linux ::/android ::/loader ::/loader/entries ::/EFI/BOOT/licenses
   for f in Fedora-shim-x64-BSD-3-Clause.txt Intel-Microcode-LICENSE.txt AMD-WHENCE.txt; do
     mcopy -i "$fatdev" "$PAYLOAD_DIR/licenses/$f" ::/EFI/BOOT/licenses/
