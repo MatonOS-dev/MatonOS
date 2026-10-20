@@ -170,6 +170,8 @@ allow matonos_driver proc_swaps:file r_file_perms;
 # install: BootControl HAL persists A/B state in misc and changes the
 # systemd-boot default on the ESP. It is live-safe: the live image reports one
 # slot and does not write either device.
+# Resolve /dev/block before opening the partition nodes labeled below.
+allow matonos_driver block_device:dir search;
 hal_server_domain(matonos_driver, hal_bootctl)
 get_prop(matonos_driver, exported_default_prop)
 
