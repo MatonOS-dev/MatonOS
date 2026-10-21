@@ -18,7 +18,8 @@ check them out in place of the stock projects.
 
 ### Flatpak stack
 
-Flatpak 1.19.2 and bubblewrap 0.13.0 are bionic NDK builds. The tools ship in
+Flatpak 1.19.2 and bubblewrap 0.13.0 are static musl builds (no bionic on the
+Linux side of the compat proxy, 2026-10-21). The tools ship in
 the subsystem APK's native-library directory. The multicall is built by
 MatonOS_apexs; `tools/build-apps.sh` builds and packages the in-tree applet
 helpers. Packaging move: v3.5.
@@ -31,6 +32,16 @@ helpers. Packaging move: v3.5.
 Changing a fork: commit on the release branch named by the task (currently
 `matonos/v26.10`) in the project checkout. The coordinator pushes to its
 MatonOS-dev repository and upstreams fixes where it makes sense.
+
+### Graphics stack
+
+The vendor Mesa is not a `repo` project: `tools/build-mesa.sh` cross-compiles a
+checkout with the NDK and stages it into `prebuilt/mesa/` (see
+`graphics/graphics.mk`).
+
+| Path | Repository | Based on | What we change |
+| --- | --- | --- | --- |
+| `~/matonos/repos/mesa` (build input) | [mesa](https://github.com/MatonOS-dev/mesa) | upstream [mesa](https://gitlab.freedesktop.org/mesa/mesa) tag `mesa-26.2.3`, branch `matonos/v26.10` | EGL accepts `EGL_OPENGL_API` on Android (desktop GL passthrough) |
 
 ## Dependency bumps for wlroots
 

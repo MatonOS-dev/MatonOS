@@ -6,7 +6,8 @@
 #   ./build-mesa.sh [-m <mesa src>] [-n <ndk>] [-a <aosp dir>] [-o <build dir>]
 #                   [-j <jobs>] [-S]
 #
-#   -m  Mesa release source    (default: $MESA_DIR or ~/Documents/mesa-26.2.3)
+#   -m  Mesa source            (default: $MESA_DIR or ~/matonos/repos/mesa, a checkout of
+#                               MatonOS-dev/mesa branch matonos/v26.10; see FORKS.md)
 #   -n  Android NDK            (default: $ANDROID_NDK or ~/Documents/android-ndk-r30)
 #   -a  AOSP checkout          (default: derived from this script's location)
 #   -o  build directory        (default: <aosp>/out/pc-mesa)
@@ -40,7 +41,7 @@ info() { echo "==> $*"; }
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
 AOSP=$(readlink -f "$DEVICE_DIR/../../..")
 . "$(dirname -- "$(readlink -f -- "$0")")/local-env.sh"
-MESA=${MESA_DIR:-$HOME/Documents/mesa-26.2.3}
+MESA=${MESA_DIR:-$HOME/matonos/repos/mesa}
 NDK=${ANDROID_NDK:-$HOME/Documents/android-ndk-r30}
 OUT=""
 JOBS=$(nproc)
@@ -66,7 +67,7 @@ LLVM_CONFIG=/usr/lib/llvm-$LLVM_VERSION/bin/llvm-config
 TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 
 # ---------------------------------------------------------------- preflight
-[[ -f $MESA/meson.build ]] || die "no Mesa source at $MESA (-m); get a release from https://archive.mesa3d.org/"
+[[ -f $MESA/meson.build ]] || die "no Mesa source at $MESA (-m); clone https://github.com/MatonOS-dev/mesa (branch matonos/v26.10)"
 [[ -x $TOOLCHAIN/bin/x86_64-linux-android$API-clang ]] || die "no NDK (API $API) at $NDK (-n)"
 [[ -x $LLVM_CONFIG ]] || die "missing $LLVM_CONFIG (install llvm-$LLVM_VERSION-dev)"
 for t in meson ninja glslangValidator python3 readelf; do
