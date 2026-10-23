@@ -223,6 +223,11 @@ APPROVED_PATCHES = {
     # seccomp allowlist gains futex_waitv/futex2, rseq and robust lists, which
     # bionic merely never listed (no blocklist entry) and Linux apps need.
     "bionic/0001-seccomp-allow-futex2-futex_waitv-rseq-robust-lists-for-apps.patch",
+    # 2026-10-23: small upstreamable fix for an obvious AOSP bug (user-approved):
+    # Soong's Rust maps the sandybridge arch variant to target-cpu=sandybridge
+    # (AVX) while C/C++ uses -march=corei7; makes Rust match (x86-64-v2 baseline).
+    "build/soong/0001-rust-build-the-sandybridge-variant-for-corei7-x86-64.patch",
+    "build/soong/0002-rust-build-the-x86-sandybridge-variant-for-corei7.patch",
 }
 
 
