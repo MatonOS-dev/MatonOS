@@ -17,7 +17,14 @@ TARGET_ARCH := x86_64
 TARGET_ARCH_VARIANT := sandybridge
 TARGET_CPU_ABI := x86_64
 TARGET_CPU_VARIANT := generic
-# 64-bit only userspace (see pc_x86_64.mk: core_64_bit_only.mk)
+# 32-bit x86 LIBRARIES only (user, 2026-10-23): i386 Linux apps call the
+# 32-bit Android GL/Vulkan stack in-process. The zygote stays 64-bit only and
+# 32-bit Android apps stay unsupported (pc_x86_64.mk: core_64_bit_only.mk).
+# Same v2 baseline: sandybridge -> -march=corei7 (Rust via patches/build/soong).
+TARGET_2ND_ARCH := x86
+TARGET_2ND_ARCH_VARIANT := sandybridge
+TARGET_2ND_CPU_ABI := x86
+TARGET_2ND_CPU_VARIANT := generic
 
 TARGET_BOARD_PLATFORM := pc_x86_64
 TARGET_BOOTLOADER_BOARD_NAME := pc_x86_64
