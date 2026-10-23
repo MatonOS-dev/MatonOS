@@ -48,6 +48,12 @@ JOBS=$(nproc)
 API=35
 LLVM_VERSION=21
 STAGE_ONLY=0
+ARCH=${MATON_MESA_ARCH:-x86_64}
+case $ARCH in
+  x86_64) ABI=x86_64; CC_ABI=x86_64; RUST_ABI=x86_64; LIBDIR=lib64; MARCH=x86-64-v2; RUST_CPU=x86-64-v2; TRIPLE=x86_64-unknown-linux-android ;;
+  i686) ABI=x86; CC_ABI=i686; RUST_ABI=i686; LIBDIR=lib; MARCH=corei7; RUST_CPU=corei7; TRIPLE=i686-unknown-linux-android ;;
+  *) die "unsupported architecture $ARCH" ;;
+esac
 
 while getopts "m:n:a:o:j:Sh" opt; do
   case $opt in
@@ -68,7 +74,7 @@ TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 
 # ---------------------------------------------------------------- preflight
 [[ -f $MESA/meson.build ]] || die "no Mesa source at $MESA (-m); clone https://github.com/MatonOS-dev/mesa (branch matonos/v26.10)"
-[[ -x $TOOLCHAIN/bin/x86_64-linux-android$API-clang ]] || die "no NDK (API $API) at $NDK (-n)"
+[[ -x $TOOLCHAIN/bin/$CC_ABI-linux-android$API-clang ]] || die "no NDK $ABI compiler (API $API) at $NDK (-n)"
 [[ -x $LLVM_CONFIG ]] || die "missing $LLVM_CONFIG (install llvm-$LLVM_VERSION-dev)"
 for t in meson ninja glslangValidator python3 readelf; do
   command -v "$t" >/dev/null || die "missing tool: $t"
@@ -77,10 +83,15 @@ python3 -c 'import mako, yaml' 2>/dev/null || die "missing python3-mako / python
 
 mkdir -p "$OUT"
 
-CC=$TOOLCHAIN/bin/x86_64-linux-android$API-clang
-LIBELF_PREFIX=$OUT/libelf/prefix
-AND_BUILD=$OUT/android
-AND_INSTALL=$OUT/android-install
+CC=$TOOLCHAIN/bin/$CC_ABI-linux-android$API-clang
+if [[ $ARCH == x86_64 ]]; then
+  BUILD_TAG=""
+else
+  BUILD_TAG="-$ARCH"
+fi
+LIBELF_PREFIX=$OUT/libelf$BUILD_TAG/prefix
+AND_BUILD=$OUT/android$BUILD_TAG
+AND_INSTALL=$OUT/android-install$BUILD_TAG
 
 if [[ $STAGE_ONLY == 0 ]]; then
 # ---------------------------------------------------------------- 1. host tools
@@ -141,7 +152,7 @@ rm -rf "$LIBELF_OUT"
 mkdir -p "$LIBELF_OUT/obj" "$LIBELF_OUT/cfg" "$LIBELF_PREFIX/lib" "$LIBELF_PREFIX/include"
 # AOSP's config.h enables zstd-compressed sections; not needed for shaders.
 grep -v 'USE_ZSTD' "$ELFUTILS/config.h" > "$LIBELF_OUT/cfg/config.h"
-elf_cflags=(-O2 -march=x86-64-v2 -fPIC -DHAVE_CONFIG_H -D_GNU_SOURCE -DNMNES=1000 -std=gnu99
+elf_cflags=(-O2 -march=$MARCH -mtune=generic -fPIC -DHAVE_CONFIG_H -D_GNU_SOURCE -DNMNES=1000 -std=gnu99
             -D_FILE_OFFSET_BITS=64 -Wno-pointer-arith -Wno-typedef-redefinition
             -include AndroidFixup.h
             -I"$LIBELF_OUT/cfg" -I"$ELFUTILS" -I"$ELFUTILS/include" -I"$ELFUTILS/lib"
@@ -157,7 +168,7 @@ for src in "$ELFUTILS"/libelf/*.c "$ELFUTILS"/lib/*.c; do
 done
 for f in adler32 compress crc32 deflate infback inffast inflate inftrees trees uncompr zutil; do
   obj=$LIBELF_OUT/obj/zlib_$f.o
-  "$CC" -O2 -march=x86-64-v2 -fPIC -fvisibility=hidden -DHAVE_UNISTD_H -c "$zlib_src/$f.c" -o "$obj"
+  "$CC" -O2 -march=$MARCH -mtune=generic -fPIC -fvisibility=hidden -DHAVE_UNISTD_H -c "$zlib_src/$f.c" -o "$obj"
   objs+=("$obj")
 done
 "$CC" -shared -Wl,-soname,libelf.so -o "$LIBELF_PREFIX/lib/libelf.so" "${objs[@]}"
@@ -181,25 +192,25 @@ elf_version=$(sed -n 's/^AC_INIT(\[[^]]*\],\[\([0-9.]*\)\].*/\1/p' "$ELFUTILS/co
 # llvm-tblgen drives the build and tools/llvm-config-android.sh answers
 # Mesa's llvm-config queries from the host's llvm-config.
 LLVM_ANDROID_SRC=${LLVM_ANDROID_SRC:-$HOME/Documents/llvm-project-21.1.8.src}
-LLVM_ANDROID=$OUT/llvm-android
+LLVM_ANDROID=$OUT/llvm-android$BUILD_TAG
 if [[ ! -f $LLVM_ANDROID/lib/libLLVMCore.a || ! -f $LLVM_ANDROID/lib/libLLVMAMDGPUCodeGen.a ]]; then
   [[ -f $LLVM_ANDROID_SRC/llvm/CMakeLists.txt ]] ||
     die "no LLVM source at $LLVM_ANDROID_SRC (llvm-project-$($LLVM_CONFIG --version).src from github.com/llvm/llvm-project releases)"
   info "Building LLVM $($LLVM_CONFIG --version) for Android (X86+AMDGPU, static)"
-  "$AOSP/prebuilts/cmake/linux-x86/bin/cmake" -S "$LLVM_ANDROID_SRC/llvm" -B "$OUT/llvm-build" -G Ninja \
+  "$AOSP/prebuilts/cmake/linux-x86/bin/cmake" -S "$LLVM_ANDROID_SRC/llvm" -B "$OUT/llvm-build$BUILD_TAG" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
-    -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-$API -DANDROID_STL=c++_static \
-    -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2 \
+    -DANDROID_ABI=$ABI -DANDROID_PLATFORM=android-$API -DANDROID_STL=c++_static \
+    -DCMAKE_C_FLAGS=-march=$MARCH -DCMAKE_CXX_FLAGS=-march=$MARCH \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$LLVM_ANDROID" \
     -DLLVM_TARGETS_TO_BUILD='X86;AMDGPU' \
-    -DLLVM_HOST_TRIPLE=x86_64-unknown-linux-android -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-unknown-linux-android \
+    -DLLVM_HOST_TRIPLE=$TRIPLE -DLLVM_DEFAULT_TARGET_TRIPLE=$TRIPLE \
     -DLLVM_NATIVE_TOOL_DIR="$(dirname "$LLVM_CONFIG")" -DLLVM_TABLEGEN="$(dirname "$LLVM_CONFIG")/llvm-tblgen" \
     -DBUILD_SHARED_LIBS=OFF -DLLVM_BUILD_LLVM_DYLIB=OFF -DLLVM_BUILD_TOOLS=OFF -DLLVM_BUILD_UTILS=OFF \
     -DLLVM_INCLUDE_TESTS=OFF -DLLVM_INCLUDE_EXAMPLES=OFF -DLLVM_INCLUDE_BENCHMARKS=OFF \
     -DLLVM_INCLUDE_DOCS=OFF -DLLVM_INCLUDE_UTILS=OFF \
     -DLLVM_ENABLE_TERMINFO=OFF -DLLVM_ENABLE_ZLIB=OFF -DLLVM_ENABLE_ZSTD=OFF -DLLVM_ENABLE_LIBXML2=OFF \
     -DLLVM_ENABLE_LIBEDIT=OFF -DLLVM_ENABLE_LIBPFM=OFF -DLLVM_ENABLE_RTTI=ON -DLLVM_ENABLE_PIC=ON
-  "$AOSP/prebuilts/cmake/linux-x86/bin/cmake" --build "$OUT/llvm-build" -j"$JOBS" --target install
+  "$AOSP/prebuilts/cmake/linux-x86/bin/cmake" --build "$OUT/llvm-build$BUILD_TAG" -j"$JOBS" --target install
 fi
 export MATON_LLVM_ANDROID_PREFIX=$LLVM_ANDROID MATON_LLVM_HOST_CONFIG=$LLVM_CONFIG
 
@@ -222,42 +233,42 @@ if ! grep -q 'pc_x86_64: rename' "$drm_ht"; then
   } > "$tmp"
   mv "$tmp" "$drm_ht"
 fi
-cat > "$OUT/android-x86_64.ini" <<EOF
+cat > "$OUT/android-$ARCH.ini" <<EOF
 [binaries]
-c = '$TOOLCHAIN/bin/x86_64-linux-android$API-clang'
-cpp = '$TOOLCHAIN/bin/x86_64-linux-android$API-clang++'
+c = '$CC'
+cpp = '$CC++'
 ar = '$TOOLCHAIN/bin/llvm-ar'
 strip = '$TOOLCHAIN/bin/llvm-strip'
 pkg-config = 'pkg-config'
 # NVK (nouveau Vulkan) is Rust: rustup's x86_64-linux-android std, NDK linker.
-rust = ['$HOME/.cargo/bin/rustc', '--target', 'x86_64-linux-android', '-C', 'target-cpu=x86-64-v2', '-C', 'linker=$TOOLCHAIN/bin/x86_64-linux-android$API-clang']
+rust = ['$HOME/.cargo/bin/rustc', '--target', '$RUST_ABI-linux-android', '-C', 'target-cpu=$RUST_CPU', '-C', 'linker=$CC']
 bindgen = '$HOME/.cargo/bin/bindgen'
 llvm-config = '$DEVICE_DIR/tools/llvm-config-android.sh'
 
 [properties]
-bindgen_clang_arguments = ['--target=x86_64-linux-android$API', '--sysroot=$TOOLCHAIN/sysroot']
+bindgen_clang_arguments = ['--target=$TRIPLE$API', '--sysroot=$TOOLCHAIN/sysroot']
 # Only our own .pc files (libelf); everything else is stubbed or a static
 # fallback, never the host's.
 pkg_config_libdir = ['$PKGCONFIG_DIR']
 
 [built-in options]
-c_args = ['-march=x86-64-v2']
-cpp_args = ['-march=x86-64-v2']
+c_args = ['-march=$MARCH', '-mtune=generic']
+cpp_args = ['-march=$MARCH', '-mtune=generic']
 cpp_link_args = ['-static-libstdc++']
 
 [host_machine]
 system = 'android'
-cpu_family = 'x86_64'
-cpu = 'x86_64'
+cpu_family = '$ABI'
+cpu = '$ABI'
 endian = 'little'
 EOF
 
 info "Configuring Mesa for Android (API $API)"
 rm -rf "$AND_BUILD" "$AND_INSTALL"
 meson setup "$AND_BUILD" "$MESA" \
-  --cross-file "$OUT/android-x86_64.ini" \
+  --cross-file "$OUT/android-$ARCH.ini" \
   --prefix /vendor \
-  --libdir lib64 \
+  --libdir "$LIBDIR" \
   -Dbuildtype=release -Db_ndebug=true \
   -Ddefault_library=shared \
   --force-fallback-for=libdrm,zlib,expat -Dallow-fallback-for=libdrm \
@@ -281,7 +292,7 @@ ninja -C "$AND_BUILD" -j"$JOBS"
 DESTDIR=$AND_INSTALL ninja -C "$AND_BUILD" install >/dev/null
 fi  # STAGE_ONLY
 
-src=$AND_INSTALL/vendor/lib64
+src=$AND_INSTALL/vendor/$LIBDIR
 [[ -d $src ]] || die "nothing installed under $src"
 
 # ---------------------------------------------------------------- 4. gbm_mesa wrapper
@@ -300,27 +311,27 @@ info "Building libgbm_mesa_wrapper.so (links $gbm_soname)"
 
 # ---------------------------------------------------------------- 5. stage
 info "Staging into $STAGE"
-rm -rf "$STAGE"
-mkdir -p "$STAGE/lib64/egl" "$STAGE/lib64/hw" "$STAGE/lib64/gbm"
-cp "$gbm_lib" "$STAGE/lib64/$gbm_soname"
-cp "$src/gbm/dri_gbm.so" "$STAGE/lib64/gbm/"
-cp "$OUT/libgbm_mesa_wrapper.so" "$STAGE/lib64/"
-cp "$LIBELF_PREFIX/lib/libelf.so" "$STAGE/lib64/"
+rm -rf "$STAGE/$LIBDIR"
+mkdir -p "$STAGE/$LIBDIR/egl" "$STAGE/$LIBDIR/hw" "$STAGE/$LIBDIR/gbm"
+cp "$gbm_lib" "$STAGE/$LIBDIR/$gbm_soname"
+cp "$src/gbm/dri_gbm.so" "$STAGE/$LIBDIR/gbm/"
+cp "$OUT/libgbm_mesa_wrapper.so" "$STAGE/$LIBDIR/"
+cp "$LIBELF_PREFIX/lib/libelf.so" "$STAGE/$LIBDIR/"
 
 for l in EGL GLESv1_CM GLESv2; do
   [[ -f $src/lib${l}_mesa.so ]] || die "missing lib${l}_mesa.so"
-  cp "$src/lib${l}_mesa.so" "$STAGE/lib64/egl/"
+  cp "$src/lib${l}_mesa.so" "$STAGE/$LIBDIR/egl/"
 done
 shopt -s nullglob
 gallium=("$src"/libgallium*.so)
 (( ${#gallium[@]} > 0 )) || die "missing libgallium*.so"
-cp "${gallium[@]}" "$STAGE/lib64/"
+cp "${gallium[@]}" "$STAGE/$LIBDIR/"
 # Vulkan HALs: the loader opens /vendor/lib64/hw/vulkan.<ro.hardware.vulkan>.so
 # (ro.hardware.vulkan is set per GPU by pc-gpu-detect.sh).
 for pair in intel:intel intel_hasvk:intel_hasvk radeon:radeon nouveau:nouveau virtio:virtio lvp:swrast; do
   lib=$src/libvulkan_${pair%%:*}.so
   [[ -f $lib ]] || die "missing $(basename "$lib")"
-  cp "$lib" "$STAGE/lib64/hw/vulkan.${pair##*:}.so"
+  cp "$lib" "$STAGE/$LIBDIR/hw/vulkan.${pair##*:}.so"
 done
 shopt -u nullglob
 
@@ -346,7 +357,7 @@ if ! grep -qE '^0x[0-9a-f]+ (intel_hasvk|none)$' "$STAGE/etc/intel_vulkan_pci_id
   die "Intel Vulkan PCI ID table is empty; check Mesa pci_ids headers"
 fi
 
-find "$STAGE" -name '*.so' -exec "$TOOLCHAIN/bin/llvm-strip" --strip-unneeded {} +
+find "$STAGE/$LIBDIR" -name '*.so' -exec "$TOOLCHAIN/bin/llvm-strip" --strip-unneeded {} +
 
 # ---------------------------------------------------------------- 6. check deps
 # Everything must resolve in the vendor/sphal namespaces at runtime.
@@ -362,5 +373,7 @@ while IFS= read -r -d '' so; do
 done < <(find "$STAGE" -name '*.so' -print0)
 (( bad == 0 )) || die "unexpected runtime dependencies (see above)"
 
-info "Done: $(find "$STAGE" -name '*.so' | wc -l) libraries, $(du -sh "$STAGE" | cut -f1)"
-find "$STAGE" -name '*.so' -printf '    %P\n' | sort
+info "Done ($ARCH): $(find "$STAGE/$LIBDIR" -name '*.so' | wc -l) libraries, $(du -sh "$STAGE" | cut -f1)"
+find "$STAGE/$LIBDIR" -name '*.so' -printf '    %P\n' | sort
+
+if [[ $ARCH == x86_64 && $STAGE_ONLY == 0 ]]; then MATON_MESA_ARCH=i686 "$0" -m "$MESA" -n "$NDK" -a "$AOSP" -o "$OUT" -j "$JOBS"; fi

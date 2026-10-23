@@ -8,7 +8,10 @@ PC_GRAPHICS_PATH := device/maton/pc_x86_64/graphics
 PC_MESA_PREBUILT := device/maton/pc_x86_64/prebuilt/mesa
 
 ifeq ($(wildcard $(PC_MESA_PREBUILT)/lib64),)
-$(error Mesa prebuilts missing at $(PC_MESA_PREBUILT); run tools/build-mesa.sh)
+$(error 64-bit Mesa prebuilts missing at $(PC_MESA_PREBUILT); run tools/build-mesa.sh)
+endif
+ifeq ($(wildcard $(PC_MESA_PREBUILT)/lib),)
+$(error 32-bit Mesa prebuilts missing at $(PC_MESA_PREBUILT); run tools/build-mesa.sh)
 endif
 
 # ---------------------------------------------------------------- HALs
@@ -28,6 +31,7 @@ PRODUCT_PACKAGES += \
 #   backend),
 #   lib64/hw/vulkan.{intel,intel_hasvk,radeon,nouveau,virtio,swrast}.so,
 #   etc/intel_vulkan_pci_ids.txt (Intel anv/hasvk split for pc-gpu-detect.sh)
+# The same driver set is staged under lib/ for the 32-bit x86 secondary ABI.
 PRODUCT_COPY_FILES += \
     $(foreach f,$(shell test -d $(PC_MESA_PREBUILT) && cd $(PC_MESA_PREBUILT) && find . -type f -printf '%P\n'),\
         $(PC_MESA_PREBUILT)/$(f):$(TARGET_COPY_OUT_VENDOR)/$(f))

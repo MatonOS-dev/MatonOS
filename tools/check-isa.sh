@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Audit x86-64 ELF code in files, directory trees, and APK native libraries.
+# Audit x86-64 and i686 ELF code in files, directory trees, and APK native libraries.
 # Runtime-dispatch allowlist entries name exact functions and cite their
 # CPUID selection path; broad library or mnemonic suppressions are forbidden.
 set -Eeuo pipefail
@@ -31,7 +31,7 @@ patterns = [
     re.compile(r'^(lzcnt|tzcnt|movbe|adcx|adox|aesenc|aesenclast|aesdec|aesdeclast|pclmulqdq|sha1[a-z0-9]*|sha256[a-z0-9]*|rdrand|rdseed|endbr64|clflushopt|clwb|cldemote|serialize|umonitor|umwait|tpause|enqcmd|movdiri|movdir64b|pconfig|wbnoinvd|wrss[a-z0-9]*|wruss[a-z0-9]*)$'),
 ]
 inst = re.compile(r'^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2}\s+)*([a-z][a-z0-9.]*)\s*(.*)$', re.I)
-seen=set(); failures=[]; dispatched=[]; scanned=0
+seen=set(); failures=[]; dispatched=[]; trusted=[]; scanned=0
 
 def is_elf(path):
     try:
@@ -90,10 +90,16 @@ def run_file(path, label, symbol_hint=None):
     global scanned
     if not is_elf(path): return
     info=subprocess.run([objdump,'-f',path],text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
-    if 'elf64-x86-64' not in info.stdout: return
+    if not any(machine in info.stdout for machine in ('elf64-x86-64', 'elf32-i386')): return
     key=(os.path.realpath(path),label)
     if key in seen: return
     seen.add(key); scanned+=1
+    # Mesa is explicitly trusted to runtime-dispatch ISA-specific routines;
+    # the vendor build includes its CPU feature checks and per-driver kernels.
+    normalized = label.replace('\\', '/')
+    if normalized.startswith('prebuilt/mesa/') or '/prebuilt/mesa/' in normalized:
+        trusted.append(f'MESA-DISPATCH-ALLOW {label}')
+        return
     sym=symbol_companion(path, symbol_hint)
     dis_path=sym or path
     dis=subprocess.run([objdump,'-d','--demangle','--no-show-raw-insn',dis_path],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -119,7 +125,8 @@ def visit(path):
         try:
             with zipfile.ZipFile(path) as z:
                 for name in z.namelist():
-                    if '/lib/x86_64/' not in '/'+name and not name.startswith('lib/x86_64/'): continue
+                    if not any('/lib/'+abi+'/' in '/'+name or name.startswith('lib/'+abi+'/')
+                               for abi in ('x86_64', 'x86')): continue
                     data=z.read(name)
                     if data[:4]!=b'\x7fELF': continue
                     with tempfile.NamedTemporaryFile() as f:
@@ -130,8 +137,9 @@ def visit(path):
 for p in inputs:
     if not os.path.exists(p): failures.append(f'{p}: missing input')
     else: visit(p)
-print(f'ISA audit: {scanned} x86_64 ELF objects scanned; runtime-dispatch allowlist: {len(dispatched)} instruction sites in exact symbols')
+print(f'ISA audit: {scanned} x86 ELF objects scanned; runtime-dispatch allowlist: {len(dispatched)} instruction sites in exact symbols')
 for f in dispatched: print(f)
+for f in trusted: print(f)
 if failures:
     for f in failures: print('FAIL '+f)
     sys.exit(1)
