@@ -141,7 +141,7 @@ rm -rf "$LIBELF_OUT"
 mkdir -p "$LIBELF_OUT/obj" "$LIBELF_OUT/cfg" "$LIBELF_PREFIX/lib" "$LIBELF_PREFIX/include"
 # AOSP's config.h enables zstd-compressed sections; not needed for shaders.
 grep -v 'USE_ZSTD' "$ELFUTILS/config.h" > "$LIBELF_OUT/cfg/config.h"
-elf_cflags=(-O2 -fPIC -DHAVE_CONFIG_H -D_GNU_SOURCE -DNMNES=1000 -std=gnu99
+elf_cflags=(-O2 -march=x86-64-v2 -fPIC -DHAVE_CONFIG_H -D_GNU_SOURCE -DNMNES=1000 -std=gnu99
             -D_FILE_OFFSET_BITS=64 -Wno-pointer-arith -Wno-typedef-redefinition
             -include AndroidFixup.h
             -I"$LIBELF_OUT/cfg" -I"$ELFUTILS" -I"$ELFUTILS/include" -I"$ELFUTILS/lib"
@@ -157,7 +157,7 @@ for src in "$ELFUTILS"/libelf/*.c "$ELFUTILS"/lib/*.c; do
 done
 for f in adler32 compress crc32 deflate infback inffast inflate inftrees trees uncompr zutil; do
   obj=$LIBELF_OUT/obj/zlib_$f.o
-  "$CC" -O2 -fPIC -fvisibility=hidden -DHAVE_UNISTD_H -c "$zlib_src/$f.c" -o "$obj"
+  "$CC" -O2 -march=x86-64-v2 -fPIC -fvisibility=hidden -DHAVE_UNISTD_H -c "$zlib_src/$f.c" -o "$obj"
   objs+=("$obj")
 done
 "$CC" -shared -Wl,-soname,libelf.so -o "$LIBELF_PREFIX/lib/libelf.so" "${objs[@]}"
@@ -189,6 +189,7 @@ if [[ ! -f $LLVM_ANDROID/lib/libLLVMCore.a || ! -f $LLVM_ANDROID/lib/libLLVMAMDG
   "$AOSP/prebuilts/cmake/linux-x86/bin/cmake" -S "$LLVM_ANDROID_SRC/llvm" -B "$OUT/llvm-build" -G Ninja \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
     -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-$API -DANDROID_STL=c++_static \
+    -DCMAKE_C_FLAGS=-march=x86-64-v2 -DCMAKE_CXX_FLAGS=-march=x86-64-v2 \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$LLVM_ANDROID" \
     -DLLVM_TARGETS_TO_BUILD='X86;AMDGPU' \
     -DLLVM_HOST_TRIPLE=x86_64-unknown-linux-android -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-unknown-linux-android \

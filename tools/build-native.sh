@@ -193,3 +193,4 @@ PY
 done
 (( found )) || die "no native daemon projects found"
 info "Staged NDK daemons and libmatonos-ipc for x86_64 / API $API"
+"$DEVICE_DIR/tools/check-isa.sh" "$DEVICE_DIR/prebuilt/native"

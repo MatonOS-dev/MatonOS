@@ -366,4 +366,14 @@ else
   info "Skipping installer payload (not requested)"
 fi
 
+if [[ $DO_AOSP == 1 && -z $MODULES ]]; then
+  info "x86-64-v2 ISA audit"
+  "$TOOLS/check-isa.sh" --product-out "$PRODUCT_OUT" \
+    --symbols-dir "$PRODUCT_OUT/symbols/vendor/lib64" \
+    --symbols-dir "$PRODUCT_OUT/symbols/vendor/lib64/hw" \
+    "$PRODUCT_OUT/system/bin" "$PRODUCT_OUT/system/lib64" \
+    "$PRODUCT_OUT/vendor/bin" "$PRODUCT_OUT/vendor/lib64" \
+    "$PRODUCT_OUT/apex" "$DEVICE_DIR/prebuilt/mesa"
+fi
+
 info "Done in $(( (SECONDS - start) / 60 )) min"
