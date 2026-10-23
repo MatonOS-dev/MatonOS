@@ -1,0 +1,5 @@
+# Mesa probes each option as debug.mesa.*, vendor.mesa.* and bare mesa.*
+# (src/util/os_misc.c). The bare name is outside the vendor namespace, so
+# vendor policy cannot label it and the unset lookup hits default_prop.
+# Nothing on the image sets mesa.*; silence the probe without granting it.
+dontaudit hal_graphics_allocator_default default_prop:file read;
