@@ -1,0 +1,30 @@
+From 9acfd67f62503c914437a22a2aeda16b6f4fab0f Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Fri, 23 Oct 2026 19:25:04 +0200
+Subject: [PATCH] rust: build the sandybridge variant for corei7 (x86-64-v2)
+
+C/C++ maps TARGET_ARCH_VARIANT sandybridge to -march=corei7 (no AVX), but
+Rust used target-cpu=sandybridge, emitting AVX in Rust crates. MatonOS uses
+this variant for its x86-64-v2 baseline (CPUs without AVX).
+
+Change-Id: Ic2ab91052a8157189232eb6fdf3a2847ad391756
+---
+ rust/config/x86_64_device.go | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/rust/config/x86_64_device.go b/rust/config/x86_64_device.go
+index 1469593b4..0af7c060d 100644
+--- a/rust/config/x86_64_device.go
++++ b/rust/config/x86_64_device.go
+@@ -39,7 +39,7 @@ var (
+ 		"haswell":                     []string{"-C target-cpu=haswell"},
+ 		"ivybridge":                   []string{"-C target-cpu=ivybridge"},
+ 		"pantherlake":                 []string{"-C target-cpu=pantherlake"},
+-		"sandybridge":                 []string{"-C target-cpu=sandybridge"},
++		"sandybridge":                 []string{"-C target-cpu=corei7"}, // MatonOS: match C/C++ -march=corei7 (x86-64-v2, no AVX)
+ 		"silvermont":                  []string{"-C target-cpu=silvermont"},
+ 		"skylake":                     []string{"-C target-cpu=skylake"},
+ 		//TODO: Add target-cpu=stoneyridge when rustc supports it.
+-- 
+2.43.0
+
