@@ -2,6 +2,7 @@
 status org.matonos.settings
 install org.matonos.settings
 addons org.matonos.settings
+mountd org.matonos.linux
 input org.matonos.settings
 sleep org.matonos.settings
 wifi org.matonos.settings

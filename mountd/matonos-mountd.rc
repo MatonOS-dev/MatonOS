@@ -1,0 +1,8 @@
+service vendor.matonos-mountd /vendor/bin/hw/matonos-mountd
+    class core
+    user root
+    group system
+    disabled
+
+on post-fs
+    start vendor.matonos-mountd

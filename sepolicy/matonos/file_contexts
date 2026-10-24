@@ -3,11 +3,15 @@
 /odm(/.*)? u:object_r:vendor_file:s0
 /odm/etc(/.*)? u:object_r:vendor_configs_file:s0
 /odm/bin/matonos-addons-service u:object_r:matonos_addon_manager_exec:s0
+/vendor/bin/hw/matonos-mountd u:object_r:matonos_mountd_exec:s0
 /odm/bin/(hw/)?(matonos|maton)-.* u:object_r:matonos_driver_exec:s0
 /odm/bin/maton-audio-select\.sh u:object_r:matonos_audio_select_exec:s0
 /odm/bin/(pipewire|wireplumber) u:object_r:matonos_driver_exec:s0
 /odm/bin/pw-cat u:object_r:matonos_driver_helper_exec:s0
 /data/vendor/maton-audio(/.*)? u:object_r:matonos_driver_data_file:s0
+# Mountd only reads the subsystem's explicitly labeled deployment and home trees.
+/data/misc_ce/[0-9]+/matonos-linux/deployments(/.*)? u:object_r:matonos_mountd_deployment_file:s0
+/data/misc_ce/[0-9]+/matonos-linux/home(/.*)? u:object_r:matonos_mountd_home_file:s0
 # Add-on ZIP/image intake is mutable only in this private staging directory.
 /data/vendor/matonos-addons(/.*)? u:object_r:matonos_addon_data_file:s0
 # The optional mountpoint may remain an empty directory when no add-on disk exists.

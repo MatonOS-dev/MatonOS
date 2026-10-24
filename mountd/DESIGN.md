@@ -1,11 +1,13 @@
 # mountd design
 
-Status: design only; no daemon is implemented yet. The v46 spike shows that
-real mounts work in a stub mount namespace, but a mount daemon by itself does
-not deliver native syscall latency while the proxy still traps every Linux
-`openat` and `newfstatat`. A host-only direct-prefix prototype reduced proxy
-open latency by 17% and stat latency by 6%, leaving both about 32× slower than
-native. User-dispatch overhead dominates the remaining cost.
+Status (2026-10-24): device-side extracted-directory prototype implemented.
+The subsystem-side syscall fast path and authenticated deployment-record
+integration are still pending, so mountd by itself does not deliver native
+syscall latency while the proxy still traps every Linux `openat` and
+`newfstatat`. A host-only direct-prefix prototype reduced proxy open latency
+by 17% and stat latency by 6%, leaving both about 32× slower than native.
+User-dispatch overhead dominates the remaining cost. EROFS loop mounting is
+also deferred; failures keep the existing proxy path.
 
 ## Decision from the spike
 
@@ -31,14 +33,16 @@ mountpoints without changing the image.
   existing translated VFS path and never blocks boot or app launch.
 * The subsystem sends a `mount_stub` command over the system bridge's generic
   `vendor.matonos.channel.IChannel/mountd` target. The bridge authenticates
-  the calling installed stub and passes the verified package, UID, signer,
-  PID and request nonce. Do not add a second app-facing Binder service.
+  the installed subsystem caller, verifies the requested stub package, UID,
+  signer and live PID, then passes those fields plus a fresh request nonce.
+  Do not add a second app-facing Binder service.
 * mountd opens a pidfd first, checks the PID still belongs to the supplied
   UID and installed stub identity, then opens `/proc/<pid>/ns/mnt`. Recheck
   the pidfd and process identity before mount operations to close PID reuse
   races. Reject arbitrary caller paths: derive source trees from the
   verified stub's deployment record and UID-owned work directory.
-* The daemon enters only that mount namespace, creates the fixed mountpoints,
+* The daemon enters only that mount namespace and mounts the fixed mountpoints
+  (the targets must already exist in the root image),
   and bind-mounts the selected immutable app tree at `/app`, the authenticated
   runtime tree at `/usr`, and the stub's writable home at `/home/<name>`.
   Mount read-only app/runtime sources; keep only the home writable. Use
@@ -50,6 +54,11 @@ mountpoints without changing the image.
   identity. When the process exits, its namespace and mounts disappear with
   it. Do not unmount paths in a recycled PID. On update, a new stub process
   gets new mounts; a running process keeps its pinned old deployment.
+* Current extracted-tree source roots are `/data/misc_ce/<user>/matonos-linux/`
+  and are labeled with dedicated SELinux types. The subsystem must provide a
+  deployment ID from its authenticated deployment record; the daemon derives
+  every source path from the ID and UID and never accepts paths from callers.
+  Confirm that install ownership matches the enforced UID ownership check.
 * Retain proxy translation for nested bwrap views, `flatpak-spawn --host`,
   noncanonical paths, anything outside the fixed app/runtime/home view, and
   all launches if mountd is unavailable or rejects the request.

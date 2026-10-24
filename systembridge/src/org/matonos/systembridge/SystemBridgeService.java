@@ -1,6 +1,7 @@
 package org.matonos.systembridge;
 
 import android.graphics.Point;
+import android.app.ActivityManager;
 import android.app.AppOpsManager;
 import android.app.Service;
 import android.hardware.display.DisplayManager;
@@ -34,6 +35,7 @@ import java.util.Locale;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.Base64;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -87,13 +89,18 @@ public final class SystemBridgeService extends Service {
         }
 
         @Override public String call(String target, String command, String jsonArgs) {
-            enforceAuthorizedCaller(target, "call:" + command);
+            String callerPackage = enforceAuthorizedCaller(target, "call:" + command);
             validateName(target, "target");
             validateName(command, "command");
             try {
                 if (jsonArgs != null && jsonArgs.length() > 64 * 1024)
                     throw new IllegalArgumentException("channel arguments too large");
                 JSONObject args = new JSONObject(jsonArgs == null ? "{}" : jsonArgs);
+                if ("mountd".equals(target) && "mount_stub".equals(command)) {
+                    if (!"org.matonos.linux".equals(callerPackage))
+                        throw new SecurityException("mountd requests require the installed Linux subsystem");
+                    args = verifyMountdIdentity(args);
+                }
                 if (args.toString().length() > 64 * 1024)
                     throw new IllegalArgumentException("channel arguments too large");
                 if ("input".equals(target) && "set_absolute_pointer_mode".equals(command))
@@ -263,6 +270,44 @@ public final class SystemBridgeService extends Service {
             deny(operation, uid, "missing permission");
     }
 
+    private JSONObject verifyMountdIdentity(JSONObject args) throws Exception {
+        if (args.length() != 4 || !args.has("pid") || !args.has("uid")
+                || !args.has("package") || !args.has("deployment"))
+            throw new IllegalArgumentException("invalid mountd request fields");
+        int pid = args.getInt("pid");
+        int uid = args.getInt("uid");
+        String packageName = args.getString("package");
+        String deployment = args.getString("deployment");
+        if (pid <= 1 || uid < 10000 || packageName.isEmpty() || deployment.isEmpty())
+            throw new IllegalArgumentException("invalid mountd identity");
+        if (getPackageManager().getPackageUidAsUser(packageName, UserHandle.getUserId(uid)) != uid)
+            throw new SecurityException("mountd package UID mismatch");
+        PackageInfo info = getPackageManager().getPackageInfoAsUser(packageName,
+                PackageManager.GET_SIGNING_CERTIFICATES, UserHandle.getUserId(uid));
+        if (info.applicationInfo == null || info.applicationInfo.uid != uid
+                || info.signingInfo == null || info.signingInfo.getApkContentsSigners().length != 1)
+            throw new SecurityException("mountd package identity is ambiguous");
+        boolean running = false;
+        ActivityManager activityManager = getSystemService(ActivityManager.class);
+        List<ActivityManager.RunningAppProcessInfo> processes =
+                activityManager == null ? null : activityManager.getRunningAppProcesses();
+        if (processes != null) for (ActivityManager.RunningAppProcessInfo process : processes) {
+            if (process.pid == pid && process.uid == uid && process.processName != null
+                    && (process.processName.equals(packageName)
+                        || process.processName.startsWith(packageName + ":"))) {
+                running = true;
+                break;
+            }
+        }
+        if (!running) throw new SecurityException("mountd PID is not a running process for the package");
+        String signer = sha256(info.signingInfo.getApkContentsSigners()[0].toByteArray());
+        args.put("uid", uid);
+        args.put("package", packageName);
+        args.put("signer", signer);
+        args.put("requestNonce", UUID.randomUUID().toString());
+        return args;
+    }
+
     private String enforceAuthorizedCaller(String target, String operation) {
         int uid = Binder.getCallingUid();
         enforcePermission(uid, operation);
@@ -360,7 +405,7 @@ public final class SystemBridgeService extends Service {
 
     private static Set<String> knownTargets() {
         return new HashSet<>(java.util.Arrays.asList("input", "sleep", "wifi", "audio",
-                "camera", "install", "addons", "status"));
+                "camera", "install", "addons", "mountd", "status"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {
