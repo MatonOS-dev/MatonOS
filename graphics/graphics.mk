@@ -15,10 +15,13 @@ $(error 32-bit Mesa prebuilts missing at $(PC_MESA_PREBUILT); run tools/build-me
 endif
 
 # ---------------------------------------------------------------- HALs
+# libmaton_mesa_sphal_deps (graphics/Android.bp) pulls vendor libhardware for
+# both ABIs: the copied Mesa has no Soong deps and nothing 32-bit links it.
 PRODUCT_PACKAGES += \
     android.hardware.graphics.allocator-service.minigbm \
     mapper.minigbm \
     gralloc.minigbm_gbm_mesa \
+    libmaton_mesa_sphal_deps \
     android.hardware.composer.hwc3-service.drm \
     pc-gpu-detect.sh \
     init.pc_x86_64.graphics.rc

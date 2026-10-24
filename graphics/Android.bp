@@ -14,3 +14,13 @@ prebuilt_etc {
     relative_install_path: "init",
     vendor: true,
 }
+
+// Installs the vendor variants of the libraries the copied Mesa prebuilts
+// need in the sphal namespace, for both ABIs (32-bit: i386 GPU bridge).
+cc_library_shared {
+    name: "libmaton_mesa_sphal_deps",
+    vendor: true,
+    compile_multilib: "both",
+    srcs: ["sphal-deps/sphal_deps.c"],
+    shared_libs: ["libhardware"],
+}
