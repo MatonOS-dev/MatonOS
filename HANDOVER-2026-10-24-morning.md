@@ -56,3 +56,16 @@ PASS), kernel v2 pin restored.
 - Device-tree preflight forbids naming AOSP libraries in PRODUCT_PACKAGES — use a local vendor anchor module.
 - Agents sometimes force-add `prebuilt/` binaries: check `git diff --stat @{u}..HEAD` before pushing the public repo.
 - Codex usage limit hit once (~05:35, reset 05:41); continuation briefs resume from the worktree diff.
+
+## Update 11:30 (before context clear)
+- Subsystem `main` **9101375** pushed (flat i386 LDT code segments = segmented memory phase B code side; proxy fd
+  index: open ~13.6 µs vs 2.75 native, stat ~8 µs). Branches: `steam2` 7c5bb53 (per-sandbox /dev/shm WIP, untested),
+  `mountd-spike` 7397d23. Device `main` 200b534 (+ mountd/DESIGN.md); `wip/mountd-dev` d5903b0 = unvalidated snapshot.
+- Running: **mountd-dev** (PID 2601400, device tree; daemon builds, now selinux_policy check → report
+  `out/pc-logs/agents/mountd-dev.final.md`). On exit, `relaunch-steam2.sh` auto-starts **steam2** (boots VM itself;
+  goal: Steam login window renders).
+- VM is OFF. Never run Soong while the VM runs (memory `no-soong-with-vm`).
+- Next: review mountd-dev → merge to device main + push → brief subsystem side (request mounts at stub launch,
+  untrapped file syscalls when mounted, proxy fallback) → v47 image (VM off) → VM test. Then smoke tests
+  (GTK4 Text Editor, Kate, SuperTuxKart, Electron, Steam).
+- Sol window reopens ~11:36 (log `out/pc-logs/agents/sol-jobs.txt`).
