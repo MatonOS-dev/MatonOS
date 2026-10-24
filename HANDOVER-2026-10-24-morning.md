@@ -69,3 +69,34 @@ PASS), kernel v2 pin restored.
   untrapped file syscalls when mounted, proxy fallback) → v47 image (VM off) → VM test. Then smoke tests
   (GTK4 Text Editor, Kate, SuperTuxKart, Electron, Steam).
 - Sol window reopens ~11:36 (log `out/pc-logs/agents/sol-jobs.txt`).
+
+## Plan (agreed with user, 2026-10-23/24)
+Deadline Sunday 2026-10-25 evening: Flatpak core + i386. Work order: i386 done → 32-bit segmented memory → proxy
+optimise/simplify/cleanup → parallel installs → bug fixes.
+
+1. **Mount daemon (main speed path)** — user: "current path stays as a fallback, but a priv daemon gets added".
+   - `matonos-mountd` init daemon, own SELinux domain in the daemon zone. Subsystem asks it over binder at stub
+     launch; it verifies caller + stub PID (installed Linux stub, verified pack/dir sources), `setns` into
+     `/proc/<pid>/ns/mnt`, bind-mounts /app, /usr, home. Mount points added to the root image.
+   - No zygote/framework patch, no user namespaces, no seccomp change; apps still cannot mount; subsystem stays
+     untrusted_app.
+   - When mounts are present: file syscalls are NOT trapped (native speed). Proxy VFS translation remains the fallback
+     (daemon absent, nested bwrap views, flatpak-spawn --host, paths outside the fixed view).
+   - Open: packs live in APK splits → erofs image per pack (verified hash, loop mount) vs extracted dirs (spike data
+     in `mountd/DESIGN.md`).
+2. **Segmented memory**: 32-bit + 64-bit only, NO 16-bit. Code segments emulated (no bionic modify_ldt patch);
+   modify_ldt emulated; flat code segments done (9101375). Phase B is validated with Steam.
+3. **Steam**: install works (Compat.i386 planner fix); blocked at /dev/shm → steam2 branch (private /dev/shm per
+   sandbox). Then CEF/login-window blockers. Apps need `allow=multiarch` (upstream model, no per-app hacks).
+4. **Proxy**: keep openat2 RESOLVE_IN_ROOT fast path (fast > simple). fd-bookkeeping rewrite done; addendum = immutable
+   pack-tree metadata index + native comparison benchmarks (incl. 1 GB read). proot = test-checklist reference only
+   (GPL, ptrace — never copy).
+5. **Installs**: parallel plan executor done; still to verify in VM: cancellation, fetch dedup, failure isolation.
+6. **Smoke tests**: GTK4 (Text Editor), Kate (Qt), SuperTuxKart (SDL), an Electron app, Steam — on a clean disk.
+7. **Build rules**: ISA baseline x86-64-v2 everywhere (kernel too; corei7 Rust patches approved); wrfsbase used when
+   AT_HWCAP2 FSGSBASE, else arch_prctl. Multilib x86 libs, 64-bit zygote only; i386 driver parity with 64-bit.
+8. **Later**: image size trim (3,286 MiB; 540 MB uncompressed .ko, erofs compression, Mesa strip); OTA server +
+   installer per support policy (6 months free per version, free upgrade resets clock, extended to 4 y negotiable —
+   releases 1–2 strictly 6 months); GLX minor gaps; real PC after.
+
+Codex ladder: luna medium → luna-high → sol-6.1-low after 2 luna-high fails, max 1 sol job per 5 h.
