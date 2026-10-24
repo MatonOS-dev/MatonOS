@@ -100,3 +100,25 @@ optimise/simplify/cleanup → parallel installs → bug fixes.
    releases 1–2 strictly 6 months); GLX minor gaps; real PC after.
 
 Codex ladder: luna medium → luna-high → sol-6.1-low after 2 luna-high fails, max 1 sol job per 5 h.
+
+## Recipes & paths
+- Repos: subsystem `~/matonos/repos/linux-subsystem-app` (push `git push origin main main:egl-window`); worktrees
+  `~/matonos/repos/lsa-dns`, `~/matonos/repos/lsa-gpuint`; device tree here (public MatonOS-dev/MatonOS).
+- Agents: `out/pc-logs/agents/run-task.sh <name>`; brief `<name>.md`, report `<name>.final.md`, log `<name>.log`.
+  Brief worktree paths explicitly; check report paths after runs.
+- Subsystem build (Gradle/NDK, OK alongside VM):
+  `MATON_BUILD_JOBS=N MATON_SUBSYSTEM_OUT=~/matonos/build/main-out MATON_SIGNING_STORE_FILE=~/.config/matonos-keys/matonos-linux-subsystem.jks MATON_SIGNING_PASSWORD_FILE=~/.config/matonos-keys/matonos-linux-subsystem.pass ./build.sh; r=$?; [ $r = 0 ] && git push ...`
+  `--build-dependencies` needs JOBS ≤ 4, then `tools/refresh-flatpak-prebuilt-source.sh` + commit the prebuilt.
+- Image (VM OFF): `MATON_BUILD_COORDINATOR=1 bash tools/build.sh -K -M`; module/policy check `-m <module>` /
+  `-m selinux_policy` (also VM off). Images in `~/matonos/vm/coord/vNN.img` (v46 latest).
+- VM (disk VM = v46, `~/matonos/vm/disk-vm/disk.img`, old `disk-v45.img`):
+  `MATON_QEMU_HEADLESS=1 MATON_QEMU_DISK=nvme MATON_QEMU_PERSISTENT=1 MATON_QEMU=~/matonos/qemu-venus/bin/qemu-system-x86_64 tools/run-qemu-live.sh -i ~/matonos/vm/disk-vm/disk.img -g venus -m 12288 -a 5556 -s ~/matonos/vm/disk-vm/serial.log`
+  Stop: `adb shell sync` then `out/pc-logs/agents/vm.sh kill 5556`.
+
+## Hard rules
+- Never kill by pattern (pkill -f killed my own shell); literal PIDs only, ps-verify not own shell lineage.
+- Never Soong while the VM runs. Push only after a green build; push regularly (device + subsystem + WIP branches).
+- Before pushing the public repo: `git diff --stat @{u}..HEAD` — no force-added prebuilt/ binaries, no keys.
+- Zero AOSP patches without user approval (APPROVED_PATCHES in preflight/checks.py). No GPLv3 in locked areas.
+- No per-app hacks, no arbitrary limits, no migrations. Provenance before credit (no copying GPL code).
+- As coordinator don't patch agent areas mid-run; commit agent work by explicit paths, never `commit -a`.
