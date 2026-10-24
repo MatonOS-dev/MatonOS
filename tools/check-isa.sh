@@ -47,9 +47,17 @@ def build_id(path):
     except OSError: return None
 
 def symbol_companion(path, hint=None):
+    # Static multicall builds retain a matching unstripped companion beside
+    # the stripped executable (for example matonos-flatpak.symbols). Discover
+    # it without requiring callers to know the producer's symbol directory.
+    base=hint or os.path.basename(path)
+    aliases={'libmatonos-flatpak.so':'matonos-flatpak.symbols'}
+    adjacent=[]
+    for name in (base+'.symbols', aliases.get(base,'')):
+        if name: adjacent.append(os.path.join(os.path.dirname(path),name))
+    for candidate in adjacent:
+        if is_elf(candidate) and build_id(candidate)==build_id(path): return candidate
     for root in symbol_dirs:
-        base=hint or os.path.basename(path)
-        aliases={'libmatonos-flatpak.so':'matonos-flatpak.symbols'}
         names=(base+'.symbols',base,aliases.get(base,''))
         for name in names:
             if not name: continue
