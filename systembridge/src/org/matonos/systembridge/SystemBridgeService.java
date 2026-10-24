@@ -360,7 +360,7 @@ public final class SystemBridgeService extends Service {
 
     private static Set<String> knownTargets() {
         return new HashSet<>(java.util.Arrays.asList("input", "sleep", "wifi", "audio",
-                "camera", "install", "addons", "status"));
+                "camera", "install", "addons", "mountd", "status"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {

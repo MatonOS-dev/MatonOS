@@ -142,6 +142,7 @@ $(call inherit-product-if-exists, $(LOCAL_PATH)/buildinfra/buildinfra.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/systembridge/systembridge.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/camera/camera.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/input/input.mk)
+$(call inherit-product-if-exists, $(LOCAL_PATH)/mountd/mountd.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/bootanim/bootanim.mk)
 
 # addons: product properties/hooks for the signed per-slot driver package

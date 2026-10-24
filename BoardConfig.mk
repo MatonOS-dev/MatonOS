@@ -126,6 +126,7 @@ SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy/system_ext/private
 -include $(DEVICE_PATH)/systembridge/BoardConfig.mk
 -include $(DEVICE_PATH)/camera/BoardConfig.mk
 -include $(DEVICE_PATH)/input/BoardConfig.mk
+-include $(DEVICE_PATH)/mountd/BoardConfig.mk
 
 # ---------------------------------------------------------------- graphics
 # minigbm is BlissOS/android-generic's (manifest/maton.xml). The matonos/v26.10

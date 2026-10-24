@@ -12,6 +12,7 @@
             <instance>camera</instance>
             <instance>install</instance>
             <instance>addons</instance>
+            <instance>mountd</instance>
         </interface>
     </hal>
 </manifest>

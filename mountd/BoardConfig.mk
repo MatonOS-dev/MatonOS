@@ -1,0 +1,1 @@
+BOARD_ROOT_EXTRA_FOLDERS += app usr
