@@ -11,6 +11,10 @@ machine-specific: never commit it. Use it instead of guessing paths.
 
 Read `NOTES.md` first: roadmap, decisions (with reasons) and open issues.
 
+## Priority chain (user, 2026-10-24)
+
+When goals conflict: **Google-certifiable Android > performance > compatibility > simplicity.**
+
 ## Principle: the Linux layer is not a security sandbox (user, 2026-10-19)
 
 This is not a security sandbox/solution. It may use parts of Linux that were
