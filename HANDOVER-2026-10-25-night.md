@@ -103,3 +103,5 @@ must never be writable — RO EROFS ok; apps may find non-protected services, re
 - 20:47 DESIGN SWITCH (user): one EROFS image per package/runtime ID, prefix-swap proxy; erofs-single brief queued after fd-cleanup + locale-missing; native-dirs/native-ids/tree-image/cross-reader superseded (native-ids branch parked).
 - 21:14 hourly: locale-missing pass 2 merged (subpath-only packing); fd-cleanup finishing; building image v49 (subsystem built by tools/build.sh) → disk VM → install+launch test.
 - 22:11 v49 CLEAN end-to-end (enforcing, no hand fixes): cold Tux Racer install 294 s (was 674 s), Locale 3 splits / 49 KB (was 27 / 736 MB), erofsd chmod OK (owner dirs 755), game renders. Only denial: GLib inotify watch on the subsystem's /data/app lib dir (harmless, denied). Next: fd-cleanup → erofs-single.
+- 22:15 hourly: fd-cleanup (f8847cc 3250830 3534867, 18-fd fixed reserve) NOT merged: host-command-pair.py times out (passes on main) → fd-cleanup2 (codex) fixing. v49 clean run committed.
+- 22:50 user: overnight approved; hourly check stays; park blockers and move on.
