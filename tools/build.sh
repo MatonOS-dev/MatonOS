@@ -169,6 +169,8 @@ fi
 [[ -d $DEVICE_DIR/prebuilt/mesa ]] || die "no staged Mesa; run without -M"
 
 if [[ $DO_AOSP == 1 ]]; then
+  "$TOOLS/build-subsystem.sh"
+
   info "MatonOS Gradle apps"
   "$TOOLS/build-apps.sh"
 

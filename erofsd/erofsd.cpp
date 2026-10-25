@@ -178,10 +178,13 @@ class Mounter : public org::matonos::erofs::BnErofsMounter, public IBinder::Deat
             if (mkdir(ownerDir.c_str(), 0755) && errno != EEXIST) {
                 return error(6, StringPrintf("mount: mkdir %s: %s", ownerDir.c_str(), strerror(errno)));
             }
+            // init services run with umask 077; apps must traverse the owner dir.
+            chmod(ownerDir.c_str(), 0755);
             std::string target = StringPrintf("%s/%u", ownerDir.c_str(), ++mCounter);
             if (mkdir(target.c_str(), 0755) && errno != EEXIST) {
                 return error(6, StringPrintf("mount: mkdir %s: %s", target.c_str(), strerror(errno)));
             }
+            chmod(target.c_str(), 0755);
             if (!initMount(real, target, offset)) {
                 rmdir(target.c_str());
                 return error(6, StringPrintf("mount: init could not mount %s", key.c_str()));
