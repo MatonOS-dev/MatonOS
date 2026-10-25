@@ -13,7 +13,7 @@ CMAKE=${MATON_CMAKE:-$AOSP/prebuilts/cmake/linux-x86/bin/cmake}
 NINJA=${MATON_NINJA:-$(command -v ninja || true)}
 OUT=${MATON_NATIVE_OUT:-$AOSP/out/pc-native}
 API=35
-JOBS=${MATON_BUILD_JOBS:-4}
+JOBS=${MATON_BUILD_JOBS:-$(nproc)}
 
 while getopts 'n:a:o:j:c:h' opt; do
   case $opt in
@@ -25,7 +25,7 @@ while getopts 'n:a:o:j:c:h' opt; do
     *) sed -n '2,19p' "$0"; exit 1 ;;
   esac
 done
-[[ $JOBS =~ ^[1-4]$ ]] || die "MATON_BUILD_JOBS must be between 1 and 4"
+[[ $JOBS =~ ^[1-9][0-9]*$ ]] || die "MATON_BUILD_JOBS must be a positive integer"
 TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 [[ -x $TOOLCHAIN/bin/x86_64-linux-android$API-clang ]] || die "NDK r30/API $API missing at $NDK"
 [[ -x $CMAKE ]] || die "CMake missing; expected AOSP prebuilt at $CMAKE"

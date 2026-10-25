@@ -15,6 +15,12 @@ Read `NOTES.md` first: roadmap, decisions (with reasons) and open issues.
 
 When goals conflict: **Google-certifiable Android > performance > compatibility > simplicity.**
 
+## Rule: no job or thread caps (user, 2026-10-25)
+
+Builds and tools use the whole CPU: default to `$(nproc)`, validate only that a job count is a positive integer.
+Any job/thread/worker cap you find (fixed defaults like 4, "between 1 and N" checks, hard-coded worker counts) is to
+be removed when you touch that code, not worked around. Lower `-j` by hand only for a measured RAM problem.
+
 ## Principle: the Linux layer is not a security sandbox (user, 2026-10-19)
 
 This is not a security sandbox/solution. It may use parts of Linux that were

@@ -15,7 +15,7 @@ SDK_TOOLS_SHA=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583
 GRADLE_HOME=${MATON_GRADLE_HOME:-$HOME/Documents/gradle-9.4.1}
 KEY_DIR=${MATON_KEY_DIR:-$HOME/.config/matonos-keys}
 KEY_ALIAS=matonos-dev
-APP_JOBS=${MATON_BUILD_JOBS:-4}
+APP_JOBS=${MATON_BUILD_JOBS:-$(nproc)}
 APP_LIST=$DEVICE_DIR/buildinfra/apps/apps.list
 JAVA_HOME=${JAVA_HOME:-$AOSP/prebuilts/jdk/jdk21/linux-x86}
 if [[ -x $JAVA_HOME/bin/java ]]; then export JAVA_HOME PATH="$JAVA_HOME/bin:$PATH"; fi
@@ -23,7 +23,7 @@ if [[ -x $JAVA_HOME/bin/java ]]; then export JAVA_HOME PATH="$JAVA_HOME/bin:$PAT
 for tool in java keytool curl unzip openssl sha256sum python3; do
   command -v "$tool" >/dev/null || die "$tool is required"
 done
-[[ $APP_JOBS =~ ^[0-9]+$ && $APP_JOBS -ge 1 && $APP_JOBS -le 16 ]] || die "MATON_BUILD_JOBS must be between 1 and 16"
+[[ $APP_JOBS =~ ^[1-9][0-9]*$ ]] || die "MATON_BUILD_JOBS must be a positive integer"
 for api in 35 36; do
   [[ -f $AOSP/prebuilts/sdk/$api/public/android.jar ]] || die "AOSP API $api public SDK stubs are missing"
 done

@@ -99,8 +99,8 @@ fi
 
 NINJA=${MATON_NINJA:-$AOSP/prebuilts/build-tools/linux-x86/bin/ninja}
 [[ -x $NINJA ]] || die "AOSP Ninja executable not found: $NINJA"
-JOBS=${MATON_BUILD_JOBS:-6}
-[[ $JOBS =~ ^[1-6]$ ]] || die "MATON_BUILD_JOBS must be between 1 and 6 (host memory limit)."
+JOBS=${MATON_BUILD_JOBS:-$(nproc)}
+[[ $JOBS =~ ^[1-9][0-9]*$ ]] || die "MATON_BUILD_JOBS must be a positive integer"
 # make-live.sh also packs both ramdisks (init, fstab): keep them current too.
 TARGETS=(systemimage systemextimage vendorimage productimage
   "out/target/product/$PRODUCT/ramdisk.img" "out/target/product/$PRODUCT/vendor_ramdisk.img")
