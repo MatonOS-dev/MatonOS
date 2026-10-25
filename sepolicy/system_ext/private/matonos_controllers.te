@@ -3,3 +3,63 @@
 # The Linux subsystem (org.matonos.linux) runs as untrusted_app_34 (see
 # systembridge seapp_contexts); untrusted_app_all already lets it create the
 # DNS forwarder socket and pack-mount symlinks in its own data.
+
+# --- matonos-erofsd (erofsd/), 2026-10-25 ---
+# matonos-erofsd (erofsd/): validates requests to mount EROFS images embedded
+# in Linux stub/runtime APK splits read-only under /mnt/matonos; init performs
+# the mounts through matonos.erofs.* property triggers (matonos-erofsd.rc),
+# because domain.te:2111 reserves filesystem mount/relabel for init, vold and a
+# few others. The mounts reach app namespaces through mount propagation (zygote
+# makes app roots MS_SLAVE); no app namespace is entered. contextmount types
+# must never be writable, which a read-only EROFS mount satisfies.
+type matonos_erofsd, domain, coredomain;
+type matonos_erofsd_exec, system_file_type, exec_type, file_type;
+init_daemon_domain(matonos_erofsd)
+
+# Files inside the mounted images. contextmount_type: never writable by anyone.
+type matonos_erofs_file, fs_type, contextmount_type;
+# /mnt/matonos and the per-image mount points.
+type matonos_mnt_dir, file_type;
+type matonos_erofs_service, app_api_service, service_manager_type;
+
+# Mount points, and /mnt/matonos/.src/<id> symlinks naming the APK for init.
+allow matonos_erofsd tmpfs:dir search;
+allow matonos_erofsd matonos_mnt_dir:dir create_dir_perms;
+allow matonos_erofsd matonos_mnt_dir:lnk_file { create unlink };
+# Requests to init, and the check that a mount is (no longer) there.
+set_prop(matonos_erofsd, matonos_erofs_prop)
+allow matonos_erofsd matonos_erofs_file:dir search;
+allow matonos_erofsd matonos_erofs_file:filesystem getattr;
+# The image source: the caller's installed split (read-only, PackageManager owned).
+allow matonos_erofsd apk_data_file:dir search;
+allow matonos_erofsd apk_data_file:file r_file_perms;
+allow matonos_erofsd { system_data_root_file system_data_file }:dir search;
+
+binder_use(matonos_erofsd)
+add_service(matonos_erofsd, matonos_erofs_service)
+# Ownership and signer checks through PackageManager.
+allow matonos_erofsd package_native_service:service_manager find;
+binder_call(matonos_erofsd, system_server)
+
+# Linux stubs (and the subsystem app) call the mounter; their lifetime tokens
+# are binder objects the daemon watches.
+binder_call({ appdomain -isolated_app_all }, matonos_erofsd)
+binder_call(matonos_erofsd, appdomain)
+allow { appdomain -isolated_app_all } matonos_erofs_service:service_manager find;
+
+# init: the mount and unmount syscalls. EROFS stores labels in xattrs
+# (labeledfs); context= relabels the whole mount.
+allow init matonos_mnt_dir:dir { search mounton };
+allow init matonos_mnt_dir:lnk_file read;
+allow init apk_data_file:dir search;
+allow init apk_data_file:file r_file_perms;
+allow init labeledfs:filesystem relabelfrom;
+allow init matonos_erofs_file:filesystem { mount unmount relabelto relabelfrom };
+allow init matonos_erofs_file:dir search;
+
+# Apps read and map (including executable code) files on the mounted images.
+allow appdomain matonos_mnt_dir:dir r_dir_perms;
+allow appdomain matonos_erofs_file:dir r_dir_perms;
+allow appdomain matonos_erofs_file:file rx_file_perms;
+allow appdomain matonos_erofs_file:lnk_file r_file_perms;
+allow appdomain matonos_erofs_file:filesystem getattr;

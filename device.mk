@@ -118,6 +118,10 @@ $(call inherit-product, $(LOCAL_PATH)/apps/apps.mk)
 
 # Defaults Android has no config for (app stores may install apps), applied
 # after boot by a system_ext script (sepolicy/system_ext).
+# EROFS image mounter for Linux stubs (erofsd/): pack splits carry EROFS images,
+# mounted read-only under /mnt/matonos and visible to apps via propagation.
+PRODUCT_PACKAGES += matonos-erofsd
+
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/setup/matonos-setup.sh:$(TARGET_COPY_OUT_SYSTEM_EXT)/bin/matonos-setup.sh \
     $(LOCAL_PATH)/setup/matonos-setup.rc:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/init/matonos-setup.rc \

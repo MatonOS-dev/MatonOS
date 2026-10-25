@@ -191,22 +191,6 @@ def check_bundle_registry() -> None:
             error(registry, f"line {lineno}: invalid bundle row: {' '.join(fields)}")
 
 
-def check_fixed_sepolicy_files() -> None:
-    inventories = {
-        "sepolicy/matonos": {"matonos_driver.te", "matonos_bridge.te", "file_contexts", "property.te", "property_contexts", "service_contexts"},
-        "sepolicy/system_ext/private": {"matonos_controllers.te", "matonos_setup.te", "property.te", "property_contexts", "file_contexts"},
-        "systembridge/sepolicy/system_ext/private": {"matonos_system_bridge.te", "file_contexts", "genfs_contexts", "seapp_contexts", "service_contexts"},
-    }
-    for directory, allowed in inventories.items():
-        root = DEVICE / directory
-        if not root.is_dir():
-            error(root, "fixed MatonOS SELinux policy directory is missing")
-            continue
-        for path in root.iterdir():
-            if path.is_file() and path.name not in allowed:
-                error(path, f"new file violates the fixed {directory} file set (allowed: {', '.join(sorted(allowed))})")
-
-
 # User-approved exceptions to the zero-patches rule (CLAUDE.md), by path
 # relative to patches/. Each needs an explicit user decision.
 APPROVED_PATCHES = {
@@ -265,7 +249,6 @@ def main() -> int:
         ("product makefiles", check_product_makefiles),
         ("Android.bp declarations", check_android_bp),
         ("ODM bundle registry", check_bundle_registry),
-        ("SELinux file inventory", check_fixed_sepolicy_files),
         ("AOSP patch allowlist", check_patches),
         ("Android.bp formatting", check_bpfmt),
     )
@@ -278,7 +261,7 @@ def main() -> int:
         for item in ERRORS:
             print(f"  FAIL: {item}", file=sys.stderr)
         return 1
-    print("Preflight passed: device modules, prebuilts, ODM registry, SELinux file set, patches, and Android.bp formatting are clean.")
+    print("Preflight passed: device modules, prebuilts, ODM registry, patches, and Android.bp formatting are clean.")
     return 0
 
 

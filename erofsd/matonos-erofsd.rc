@@ -1,0 +1,19 @@
+on post-fs-data
+    mkdir /mnt/matonos 0755 root root
+    mkdir /mnt/matonos/.src 0700 root root
+
+service matonos-erofsd /system_ext/bin/matonos-erofsd
+    class core
+    user root
+    group root
+
+# matonos-erofsd validates each request; init does the mount syscalls, which
+# system/sepolicy (domain.te) reserves for init, vold and a few others.
+# Values are ids/paths the daemon wrote; done=<id> signals completion only.
+on property:matonos.erofs.mount=*
+    mount erofs /mnt/matonos/.src/${matonos.erofs.mount} ${matonos.erofs.target} ro nodev nosuid fsoffset=${matonos.erofs.offset},context=u:object_r:matonos_erofs_file:s0
+    setprop matonos.erofs.done ${matonos.erofs.mount}
+
+on property:matonos.erofs.umount=*
+    umount ${matonos.erofs.utarget}
+    setprop matonos.erofs.done ${matonos.erofs.umount}

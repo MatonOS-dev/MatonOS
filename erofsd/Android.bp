@@ -1,0 +1,44 @@
+// matonos-erofsd: mounts EROFS images embedded in Linux stub splits.
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+aidl_interface {
+    name: "org.matonos.erofs",
+    unstable: true,
+    system_ext_specific: true,
+    local_include_dir: "aidl",
+    srcs: ["aidl/org/matonos/erofs/IErofsMounter.aidl"],
+    backend: {
+        cpp: {
+            enabled: true,
+        },
+        java: {
+            enabled: true,
+        },
+        ndk: {
+            enabled: false,
+        },
+    },
+}
+
+cc_binary {
+    name: "matonos-erofsd",
+    system_ext_specific: true,
+    srcs: ["erofsd.cpp"],
+    init_rc: ["matonos-erofsd.rc"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
+    header_libs: ["libcutils_headers"],
+    shared_libs: [
+        "libbase",
+        "libbinder",
+        "liblog",
+        "libutils",
+        "libziparchive",
+        "org.matonos.erofs-cpp",
+        "packagemanager_aidl-cpp",
+    ],
+}

@@ -1,2 +1,3 @@
-# No system_ext-owned MatonOS properties at present. Runtime and bundle
-# properties use the vendor-owned vendor.maton.* namespace.
+# Runtime and bundle properties use the vendor-owned vendor.maton.* namespace.
+# matonos-erofsd requests to init (matonos-erofsd.rc) and init's completion ids.
+system_internal_prop(matonos_erofs_prop)

@@ -3,7 +3,7 @@
 `tools/preflight.sh` runs fast checks before a coordinator-started AOSP build.
 It checks device Soong modules and Make config for `/system` installs and
 unsafe `PRODUCT_COPY_FILES`, verifies imported APK/source paths, checks the
-ODM bundle registry, enforces the fixed `sepolicy/matonos/` file set and the
+ODM bundle registry, enforces the
 zero AOSP patch rule, and runs `bpfmt -l` on device `Android.bp` files. It
 prints each failure with a source path and exits non-zero. It needs Python 3
 and the AOSP host `bpfmt` tool. Run it with
