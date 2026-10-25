@@ -85,3 +85,5 @@ must never be writable — RO EROFS ok; apps may find non-protected services, re
 - Not tested yet: the daemon's own mount path (needs a stub signed with the per-device stub key + an assets/matonos/*.erofs entry, i.e. the erofs-pipeline rework), and the subsystem's pin at boot (the image still ships the 10-18 subsystem prebuilt; refresh it).
 - Note: mkfs.erofs must use --all-root (host uid 1000 showed up as system on the mount).
 - Next: move the triggers into a vendor APEX (public prop type), then the pipeline rework.
+- 09:14 hourly: APEX/erofsd/policy/neverallow build running (Soong analysis, a memory-stall warning); VM off on purpose for Soong; mountd docs removed (fc5d535); waiting on the user: subsystem own domain vs keep erofsd (recommended keep).
+- 09:40 user decision: no APEX. erofsd + triggers stay in the image (55a63b2 as tested); vendor-APEX attempt reverted (a vendor daemon can't call PackageManager). The API is frozen, keep the daemon tiny. Next: EROFS pipeline rework, then the full stub test.
