@@ -24,7 +24,7 @@ MATON_SUBSYSTEM_OUT=$OUT \
   MATON_SIGNING_STORE_FILE=$KEY_DIR/matonos-linux-subsystem.jks \
   MATON_SIGNING_PASSWORD_FILE=$KEY_DIR/matonos-linux-subsystem.pass \
   MATON_BUILD_JOBS=${MATON_BUILD_JOBS:-$(nproc)} \
-  "$REPO/build.sh"
+  bash -c 'cd "$1" && ./build.sh' _ "$REPO"  # its tests use repo-relative paths
 
 for f in MatonLinuxSubsystemBootstrap.apk MatonLinuxSubsystem.apk; do
   [[ -s $OUT/$f ]] || die "subsystem build produced no $f"
