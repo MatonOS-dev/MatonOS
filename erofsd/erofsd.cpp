@@ -149,7 +149,9 @@ class Mounter : public org::matonos::erofs::BnErofsMounter, public IBinder::Deat
         }
         if (pin.empty()) return error(4, "mount: no stub certificate pinned");
         std::string package = callerPackage(uid);
-        if (package.empty() || !signedWith(package, pin)) {
+        // Pinned stubs, and the subsystem itself (it seeds updates from installed images).
+        bool subsystem = package == kSubsystemPackage && signedWith(kSubsystemPackage, kSubsystemCert);
+        if (package.empty() || (!subsystem && !signedWith(package, pin))) {
             return error(2, StringPrintf("mount: uid %d is not a pinned Linux stub", uid));
         }
         unique_fd fd(open(apkPath.c_str(), O_RDONLY | O_CLOEXEC));
