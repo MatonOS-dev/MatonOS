@@ -195,7 +195,9 @@ class Mounter : public org::matonos::erofs::BnErofsMounter, public IBinder::Deat
         it->second.idle = false;
         if (it->second.tokens.insert(token.get()).second) {
             token->linkToDeath(sp<IBinder::DeathRecipient>::fromExisting(this));
-            mTokens[token.get()].insert(key);
+            Held& held = mTokens[token.get()];
+            held.ref = token;  // a strong reference keeps the proxy, and with it the death link, alive
+            held.keys.insert(key);
         }
         *out = it->second.path;
         return Status::ok();
@@ -207,7 +209,7 @@ class Mounter : public org::matonos::erofs::BnErofsMounter, public IBinder::Deat
         std::lock_guard<std::mutex> lock(mLock);
         auto held = mTokens.find(token);
         if (held == mTokens.end()) return;
-        for (const auto& key : held->second) {
+        for (const auto& key : held->second.keys) {
             auto it = mMounts.find(key);
             if (it != mMounts.end()) it->second.tokens.erase(token);
         }
@@ -233,7 +235,10 @@ class Mounter : public org::matonos::erofs::BnErofsMounter, public IBinder::Deat
                 continue;
             }
             LOG(INFO) << "unmounted " << m.path << (replaced ? " (apk replaced)" : " (unused)");
-            for (IBinder* token : m.tokens) mTokens[token].erase(it->first);
+            for (IBinder* token : m.tokens) {
+                auto held = mTokens.find(token);
+                if (held != mTokens.end()) held->second.keys.erase(it->first);
+            }
             it = mMounts.erase(it);
         }
     }
@@ -296,7 +301,11 @@ class Mounter : public org::matonos::erofs::BnErofsMounter, public IBinder::Deat
     unsigned mCounter = 0;
     unsigned mRequest = 0;
     std::map<std::string, Mount> mMounts;
-    std::map<IBinder*, std::set<std::string>> mTokens;
+    struct Held {
+        sp<IBinder> ref;
+        std::set<std::string> keys;
+    };
+    std::map<IBinder*, Held> mTokens;
 };
 
 }  // namespace
