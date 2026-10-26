@@ -120,3 +120,7 @@ must never be writable — RO EROFS ok; apps may find non-protected services, re
 - 05:50: building image v50 (erofsd token fix) → disk VM → install + launch + idle-sweep test (background, ~2 h).
 - 06:14 hourly: session-plan-test (4b5abde: real install hand-off test; update seeding from mounted image) merged: build=1. Image v50 in Soong.
 - 06:25: /home at 98% (11G) — ostree in the subsystem tests refused to write (min-free-space) → session-plan-test merge reset (not a code failure). Moving old disk-VM images v43–v48 + live images v43–v47 to /mnt/data2/matonos-archive/vm (cold storage). Then retry the session-plan-test merge.
+- 06:44: moved 10 old images to /mnt/data2/matonos-archive/vm (/home 98% → 67%). session-plan-test merged + pushed (4b5abde, full build green). v50 still building.
+- 06:55 user: after token test do the local fake-update test, then Flathub smoke apps one by one (downloads OK).
+- 07:00: update test PARKED — store only adds Flathub (no custom-remote UI). Plan: small test client with the store permission → ILinuxAppStore.addRemote(local OSTree repo built on host with flatpak build-init/export + test GPG key, served via adb reverse) → install → publish commit 2 → update(ref); check image rebuild seeded from mounted image + stub remount. Moving to Flathub smoke apps.
+- 07:14 hourly: v50 token fix VERIFIED (enforcing): after stopping stub + subsystem, the sweep unmounted all 6 Flatpak images '(unused)' via init within ~15 min (remaining 6 erofs mounts are Android's system partitions). Next: Flathub smoke apps.
