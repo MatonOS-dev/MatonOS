@@ -27,7 +27,7 @@ helpers. Packaging move: v3.5.
 
 | Path | Repository | Based on | What we change |
 | --- | --- | --- | --- |
-| `linux/flatpak` | [flatpak](https://github.com/MatonOS-dev/flatpak) | `matonos/v26.10`; build fork commit `4cce363` | Bionic Flatpak source |
+| `linux/flatpak` | [flatpak](https://github.com/MatonOS-dev/flatpak) | `matonos/v26.10`; build fork commit `8078df1` | Bionic Flatpak source |
 | `linux/flatpak/prebuilt/static` | [MatonOS_apexs](https://github.com/MatonOS-dev/MatonOS_apexs) | `flatpak/build.sh`; binary SHA-256 recorded in `prebuilt/static/SOURCE` | Bionic Flatpak/OSTree multicall input for subsystem APK |
 
 Changing a fork: commit on the release branch named by the task (currently
