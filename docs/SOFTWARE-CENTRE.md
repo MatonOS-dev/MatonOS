@@ -287,7 +287,56 @@ review.
 - Review licensing of every source module and transitive dependency against
   the no-GPLv3/LGPLv3 image rule before import.
 
-## Phased plan
+## F-Droid Source plan (2026-10-28)
+
+This supersedes the phased plan below for the F-Droid work. It starts from
+the shipped Expo app (`rn-apps/flathub`), not from the separate service app
+and AIDL contract above: those wait until the native module outgrows the app.
+The centre has exactly two Sources, F-Droid (APK) and Flatpak.
+
+Decisions (user, 2026-10-28):
+
+- The official F-Droid repository is built in and enabled by default, with a
+  pinned signing fingerprint.
+- Search shows one merged list across both Sources; each row carries a source
+  badge.
+- Anti-feature labels and filters come later; they are not part of phases 1–4.
+
+Shape:
+
+- **Shared layer (TypeScript):** one `Source` interface in the UI (search,
+  details, installed, updates, install, uninstall, progress). The current
+  Flathub code becomes `FlathubSource`; the new adapter is `FdroidSource`.
+  Catalogue, search, progress bars and Installed are shared.
+- **Native layer (Java, in the `matonos-flathub` Expo module):**
+  1. Index client: fetch `entry.jar`, verify its signer against the repo's
+     pinned fingerprint, fetch `index-v2.json` and check it against the
+     SHA-256 in `entry.json`; parse and cache per repo.
+  2. Download: fetch the APK and check the index SHA-256 before the package
+     manager sees it.
+  3. Install: a `PackageInstaller` session committed by the Software Center
+     itself (privileged app, no bridge call), requesting update ownership so
+     later updates of apps it installed need no prompt.
+- **Licence:** own client and parser written from the F-Droid format
+  specification; no F-Droid client code (GPL-3.0).
+
+Phases:
+
+1. **Read-only catalogue:** built-in official repo; merged browse and search
+   with source badges; unit tests that reject a bad JAR signature, a wrong
+   fingerprint and an index hash mismatch.
+2. **Install and uninstall:** PackageInstaller sessions (split APKs when the
+   index lists them) with progress in the shared bars.
+3. **Updates:** compare installed `versionCode`; offer an update only when the
+   installed signing certificate matches the repo APK's; background check;
+   prompt-free install for apps the centre owns.
+4. **User-added repositories:** `fdroidrepos://` links and manual add with a
+   fingerprint, shown in the trust prompt (punycode for non-ASCII hosts);
+   removal.
+5. **Document clean-up:** rewrite this file for the shipped shape (two
+   Sources, no linuxd, no separate service app unless needed).
+
+## Phased plan (original, superseded for F-Droid by the plan above)
 
 1. **Shared skeleton and APK MVP:** Java service/AIDL, shared metadata and
    transaction types, built-in F-Droid-format repository, signed-index and
