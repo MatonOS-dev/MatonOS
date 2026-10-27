@@ -300,7 +300,9 @@ Decisions (user, 2026-10-28):
   pinned signing fingerprint.
 - Search shows one merged list across both Sources; each row carries a source
   badge.
-- Anti-feature labels and filters come later; they are not part of phases 1–4.
+- Anti-feature labels and filters come later, together with Flatpak's
+  equivalents (permissions/safety ratings), as one shared model across both
+  Sources; they are not part of phases 1–4.
 
 Shape:
 
