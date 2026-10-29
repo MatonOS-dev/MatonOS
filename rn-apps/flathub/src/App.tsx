@@ -3,9 +3,11 @@ import { FlatList, View } from "react-native";
 import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Text, RNHostView } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { clickable, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
-import { getAppById, getAppDetails, getCollection, searchApps, type StoreApp } from "./FlathubApi";
-import { getInstalledRefs, installApp, runApp, uninstallApp } from "./FlatpakBridge";
-import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
+import { getCollection, type StoreApp } from "./FlathubApi";
+import { runApp } from "./FlatpakBridge";
+import { FlathubSource } from "./sources/FlathubSource";
+import { FdroidSource } from "./sources/FdroidSource";
+import type { Source } from "./sources/Source";
 
 type Page = "browse" | "installed";
 type Feed = "popular" | "new";
@@ -22,6 +24,10 @@ function Show({ when, children }: { when: boolean; children: ReactNode }) {
 function AppIcon({ app, imageSize }: { app: StoreApp; imageSize: number }) {
   if (!app.icon) return null;
   return <ComposeImage source={{ uri: app.icon }} contentDescription={`${app.name} icon`} modifiers={[size(imageSize, imageSize)]} />;
+}
+
+function SourceBadge({ app }: { app: StoreApp }) {
+  return <Text style={{ typography: "labelSmall" }}>{app.source}</Text>;
 }
 
 function ProgressLine({ progress }: { progress: string }) {
@@ -67,7 +73,7 @@ function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDet
   onLaunch: (app: StoreApp) => void;
 }) {
   const isBusy = busy && Boolean(progress);
-  const buttonLabel = isBusy ? (busyLabel || "Working…") : installed ? "Open" : "Install";
+  const buttonLabel = app.source === "F-Droid" ? "Read only" : isBusy ? (busyLabel || "Working…") : installed ? "Open" : "Install";
   const buttonAction = installed ? () => onLaunch(app) : () => onInstall(app);
   return (
     <Column modifiers={[clickable(() => onOpenDetails(app))]}>
@@ -75,9 +81,10 @@ function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDet
         <AppIcon app={app} imageSize={52} />
         <Column modifiers={[weight(1), padding(12, 0, 12, 0)]}>
           <Text style={{ typography: "titleMedium" }}>{app.name}</Text>
+          <SourceBadge app={app} />
           <Text style={{ typography: "bodyMedium" }} maxLines={2}>{app.summary}</Text>
         </Column>
-        <Button enabled={!busy} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
+        <Button enabled={!busy && app.source === "Flathub"} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
       </Row>
       <Show when={isBusy}>
         <LinearProgressIndicator progress={percentToRatio(percent)} modifiers={[padding(0, 12, 12, 12)]} />
@@ -90,7 +97,7 @@ function DetailContent({ app, installed, busy, busyLabel, progress, percent, onB
   app: StoreApp; installed: boolean; busy: boolean; busyLabel: string; progress: string; percent: number | null; onBack: () => void; onInstall: () => void; onUninstall: () => void;
 }) {
   const permissionText = app.permissions.length ? app.permissions.join(" · ") : "Permission details are not included for this app by the Flathub API.";
-  const actionLabel = busy ? (busyLabel || "Working…") : installed ? "Uninstall" : "Install";
+  const actionLabel = app.source === "F-Droid" ? "Install not available yet" : busy ? (busyLabel || "Working…") : installed ? "Uninstall" : "Install";
   const action = installed ? onUninstall : onInstall;
   return (
     <LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 14 }}>
@@ -99,12 +106,13 @@ function DetailContent({ app, installed, busy, busyLabel, progress, percent, onB
         <AppIcon app={app} imageSize={84} />
         <Column modifiers={[padding(18, 0, 18, 0)]}>
           <Text style={{ typography: "headlineSmall" }}>{app.name}</Text>
+          <SourceBadge app={app} />
           <Text style={{ typography: "bodyLarge" }}>{app.summary}</Text>
           <Text style={{ typography: "bodySmall" }}>{app.developer}</Text>
         </Column>
       </Row>
       <Row horizontalArrangement={{ spacedBy: 10 }} verticalAlignment="center">
-        <Button enabled={!busy} onClick={action}><Text>{actionLabel}</Text></Button>
+        <Button enabled={!busy && app.source === "Flathub"} onClick={action}><Text>{actionLabel}</Text></Button>
         <Column modifiers={[weight(1)]}>
           <Show when={Boolean(progress)}><LinearProgressIndicator progress={percentToRatio(percent)} /></Show>
           <ProgressLine progress={progress} />
@@ -115,6 +123,12 @@ function DetailContent({ app, installed, busy, busyLabel, progress, percent, onB
       <Text style={{ typography: "bodyMedium" }}>{permissionText}</Text>
       <Text style={{ typography: "titleMedium" }}>About this app</Text>
       <Text style={{ typography: "bodyMedium" }}>{app.description.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || app.summary}</Text>
+      {app.source === "F-Droid" ? <>
+        <Text style={{ typography: "titleMedium" }}>F-Droid package</Text>
+        <Text style={{ typography: "bodyMedium" }}>Version {app.versionName} ({app.versionCode})</Text>
+        <Text style={{ typography: "bodySmall" }}>{app.apkName}</Text>
+        <Text style={{ typography: "bodySmall" }}>SHA-256: {app.apkSha256}</Text>
+      </> : null}
       <Text style={{ typography: "bodySmall" }}>{app.id}</Text>
     </LazyColumn>
   );
@@ -137,17 +151,14 @@ export default function App() {
   const operationIdRef = useRef("");
   const [operationKind, setOperationKind] = useState<"install" | "uninstall">("install");
   const installedIds = useMemo(() => new Set(installedRefs.map((ref) => ref.split("/")[1])), [installedRefs]);
+  const sources: Source[] = [FlathubSource, FdroidSource];
 
   async function refreshInstalled() {
     setInstalledError("");
     try {
-      const refs = await getInstalledRefs();
+      const entries = await FlathubSource.installed();
+      const refs = entries.map((app) => app.ref);
       setInstalledRefs(refs);
-      const entries = await Promise.all(refs.map(async (ref) => {
-        const id = ref.split("/")[1];
-        try { return await getAppById(id); }
-        catch { return { id, name: id, summary: "Installed Flatpak", icon: "", developer: "", ref, description: "", screenshots: [], permissions: [] }; }
-      }));
       setInstalledApps(entries);
     } catch (error) {
       setInstalledRefs([]); setInstalledApps([]); setInstalledError(errorText(error));
@@ -164,14 +175,17 @@ export default function App() {
   async function runSearch(value: string) {
     if (!value.trim()) { await loadCollection(feed); return; }
     setLoading(true); setMessage("");
-    try { setApps(await searchApps(value.trim())); }
+    try {
+      const results = await Promise.all(sources.map((source) => source.search(value.trim())));
+      setApps(results.flat());
+    }
     catch (error) { setMessage(errorText(error)); }
     finally { setLoading(false); }
   }
 
   async function openDetails(app: StoreApp) {
     setSelected(app); setMessage("");
-    try { setSelected(await getAppDetails(app)); }
+    try { setSelected(await sources.find((source) => source.name === app.source)!.details(app)); }
     catch (error) { setMessage(errorText(error)); }
   }
 
@@ -182,7 +196,7 @@ export default function App() {
     setOperationKind("install");
     setBusyRef(app.ref); setProgress("Preparing installation…"); setPercent(null); setMessage("");
     try {
-      await installApp(app.ref, operationId);
+      await sources.find((source) => source.name === app.source)!.install(app, operationId);
       if (operationIdRef.current !== operationId) return;
       setProgress("Downloading and installing…");
     } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
@@ -195,7 +209,7 @@ export default function App() {
     setOperationKind("uninstall");
     setBusyRef(selected.ref); setProgress("Preparing removal…"); setPercent(null); setMessage("");
     try {
-      await uninstallApp(selected.ref, operationId);
+      await sources.find((source) => source.name === selected.source)!.uninstall(selected, operationId);
       if (operationIdRef.current !== operationId) return;
       setProgress("Removing app…");
     } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
@@ -206,7 +220,7 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
   useEffect(() => {
-    const subscription = MatonOS.addStoreListener((payload) => {
+    const subscription = FlathubSource.progress((payload) => {
       if (payload.phase === "complete") {
         if (!payload.result?.operationId || payload.result.operationId !== operationIdRef.current) return;
         operationIdRef.current = "";
@@ -248,19 +262,19 @@ export default function App() {
 
   const renderApp = ({ item }: { item: StoreApp }) => (
     <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }} colorScheme="dark" seedColor="#79c75b">
-      <AppTile app={item} installed={installedIds.has(item.id)} busy={Boolean(busyRef)}
+      <AppTile app={item} installed={item.source === "Flathub" && installedIds.has(item.id)} busy={Boolean(busyRef)}
         busyLabel={busyRef === item.ref ? busyButtonLabel(operationKind) : ""}
         progress={busyRef === item.ref ? progress : ""} percent={busyRef === item.ref ? percent : null}
         onOpenDetails={openDetails}
         onInstall={(app) => void startInstall(app)} onLaunch={(app) => void launchApp(app)} />
     </Host>
   );
-  const keyApp = (app: StoreApp) => app.id;
+  const keyApp = (app: StoreApp) => `${app.source}:${app.id}`;
 
   let content: ReactNode;
   if (selected) {
     const currentDetail = selected;
-    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(currentDetail.id)} busy={Boolean(busyRef)}
+    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={currentDetail.source === "Flathub" && installedIds.has(currentDetail.id)} busy={Boolean(busyRef)}
       busyLabel={busyButtonLabel(operationKind)} progress={busyRef === currentDetail.ref ? progress : ""} percent={busyRef === currentDetail.ref ? percent : null}
       onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} /></Host>;
   } else if (page === "installed") {
@@ -276,7 +290,7 @@ export default function App() {
   } else {
     content = <View style={{ flex: 1 }}>
       <Host matchContents={{ vertical: true }} colorScheme="dark" seedColor="#79c75b"><Column>
-      <Text style={{ typography: "headlineSmall" }} modifiers={[padding(20, 18, 20, 0)]}>Explore Flathub</Text>
+      <Text style={{ typography: "headlineSmall" }} modifiers={[padding(20, 18, 20, 0)]}>Explore apps</Text>
       <Row horizontalArrangement={{ spacedBy: 10 }} modifiers={[padding(16, 10, 16, 10)]}>
         <Button onClick={() => void selectFeed("popular")}><Text>Popular</Text></Button>
         <Button onClick={() => void selectFeed("new")}><Text>New</Text></Button>
@@ -286,7 +300,7 @@ export default function App() {
       </OutlinedTextField>
       </Column></Host>
       <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={apps} renderItem={renderApp} keyExtractor={keyApp}
-        ListHeaderComponent={loading ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(16)]}>Loading Flathub…</Text></Host> : null}
+        ListHeaderComponent={loading ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(16)]}>Loading apps…</Text></Host> : null}
         ListEmptyComponent={!loading ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(16)]}>{message || "No apps found."}</Text></Host> : null} />
     </View>;
   }

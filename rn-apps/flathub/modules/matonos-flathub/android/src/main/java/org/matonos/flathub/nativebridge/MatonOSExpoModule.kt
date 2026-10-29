@@ -8,12 +8,14 @@ import org.matonos.client.MatonOS
 import org.matonos.client.MatonosClient
 import org.matonos.linux.ILinuxAppStore
 import org.matonos.linux.ILinuxAppStoreCallback
+import org.matonos.flathub.fdroid.FdroidIndexClient
 import java.util.concurrent.ConcurrentHashMap
 
 class MatonOSExpoModule : Module() {
   private var client: MatonosClient? = null
   private val listeners = ConcurrentHashMap<String, MatonosClient.EventListener>()
   private val storeConnections = ConcurrentHashMap.newKeySet<android.content.ServiceConnection>()
+  private val fdroidIndex = FdroidIndexClient()
 
   override fun definition() = ModuleDefinition {
     Name("MatonOSClient")
@@ -95,6 +97,13 @@ class MatonOSExpoModule : Module() {
     }
     AsyncFunction("storeListInstalled") { promise: Promise -> withStore(promise) { promise.resolve(it.listInstalled()) } }
     AsyncFunction("storeListRemotes") { promise: Promise -> withStore(promise) { promise.resolve(it.listRemotes()) } }
+    AsyncFunction("fdroidSearch") { repository: String, query: String ->
+      fdroidIndex.search(requireNotNull(appContext.reactContext).filesDir, repository, query)
+    }
+    AsyncFunction("fdroidDetails") { repository: String, packageName: String ->
+      fdroidIndex.details(requireNotNull(appContext.reactContext).filesDir, repository, packageName)
+        ?: throw IllegalArgumentException("F-Droid app not found: $packageName")
+    }
   }
 
   private abstract inner class Callback : ILinuxAppStoreCallback.Stub() {

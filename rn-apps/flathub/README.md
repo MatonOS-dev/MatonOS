@@ -1,9 +1,46 @@
 > v3.5: linuxd is retired. Any linuxd/shared-store paths below describe the
 > historical design. See [current ownership and device checks](../../docs/RETIRE-LINUXD.md).
 
-# Software Center
+# Software Center — F-Droid phase 1
 
-This is the current Flathub-only UI prototype. The target shared APK,
+The app has a shared TypeScript `Source` contract for search, details,
+installed apps, updates, install, uninstall, and progress. `FlathubSource`
+wraps the existing Flathub API and Flatpak bridge operations. `FdroidSource`
+reads the built-in official F-Droid repository catalogue and marks install,
+uninstall, and updates as unsupported in this phase. Search merges both
+catalogues into one list with a visible source badge.
+
+The native Java index client downloads `entry.jar`, verifies its JAR signature
+and signer fingerprint, reads `entry.json`, then verifies the SHA-256 of
+`index-v2.json` before parsing or caching it under the app's private files
+directory, separated by repository URL. The signer fingerprint is pinned from
+[F-Droid's release signing keys documentation](https://f-droid.org/docs/Release_Channels_and_Signing_Keys/).
+The catalogue parser and client are original code based on F-Droid's published
+index format; no F-Droid client code is included.
+
+## Phase 1 verification
+
+- `modules/matonos-flathub/android/test-host.sh` runs host-Java checks for a
+  valid signed JAR, a damaged signature, a wrong signer pin, an index hash
+  mismatch, and parsing app/version/APK metadata from a fixture.
+- `npm run typecheck` and `npm run lint` check the TypeScript app.
+- `MATON_AOSP_ROOT=/mnt/data/aosp MATON_APPS_ONLY=matonos-flathub tools/build-apps.sh`
+  builds and signs the Expo app, then checks release linkage.
+- A fresh image/VM was not used for this read-only catalogue phase. On a
+  network-connected MatonOS image, search for a known package and verify it
+  appears beside Flathub results with the F-Droid badge; open its details and
+  confirm the version and APK metadata. F-Droid rows identify themselves as
+  read-only and have installation disabled.
+
+Phase 2 needs verified APK download and `PackageInstaller` install/uninstall
+sessions, source-aware progress, installed-package reconciliation, and tests
+for APK hash and signer checks. Updates remain intentionally unsupported.
+
+---
+
+Historical Flathub behavior and earlier verification notes follow.
+
+The app began as a Flathub-only UI prototype. The target shared APK,
 Flatpak design is in
 [`docs/SOFTWARE-CENTRE.md`](../../docs/SOFTWARE-CENTRE.md); this prototype's
 direct Flathub API and existing Flatpak bridge calls are not the final

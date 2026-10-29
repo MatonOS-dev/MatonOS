@@ -15,6 +15,8 @@ type NativeApi = {
   storeUninstall(ref: string, operationId: string): Promise<boolean>;
   storeListInstalled(): Promise<string>;
   storeListRemotes(): Promise<string>;
+  fdroidSearch(repository: string, query: string): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
+  fdroidDetails(repository: string, packageName: string): Promise<Omit<import("../../../src/sources/Source").StoreApp, "source">>;
   startStubInstall(ref: string, operationId: string | null): Promise<boolean>;
   startStubUpdate(ref: string, operationId: string | null): Promise<boolean>;
   launchStub(appId: string): Promise<boolean>;
@@ -33,6 +35,8 @@ export const MatonOS = {
   storeUninstall: (ref: string, operationId: string) => Native.storeUninstall(ref, operationId),
   storeListInstalled: () => Native.storeListInstalled(),
   storeListRemotes: () => Native.storeListRemotes(),
+  fdroidSearch: (repository: string, query: string) => Native.fdroidSearch(repository, query),
+  fdroidDetails: (repository: string, packageName: string) => Native.fdroidDetails(repository, packageName),
   addStoreListener: (listener: (event: StoreEvent) => void) => Native.addListener("linuxAppStoreEvent", listener),
   subscribe: (target: string, topic: string, listener: (event: MatonAreaEvent) => void) => {
     const id = `${target}:${topic}:${subscriptionIndex++}`;

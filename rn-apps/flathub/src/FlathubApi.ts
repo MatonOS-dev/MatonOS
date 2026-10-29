@@ -1,14 +1,5 @@
-export type StoreApp = {
-  id: string;
-  name: string;
-  summary: string;
-  icon: string;
-  developer: string;
-  ref: string;
-  description: string;
-  screenshots: string[];
-  permissions: string[];
-};
+import type { StoreApp } from "./sources/Source";
+export type { StoreApp } from "./sources/Source";
 
 type SearchHit = {
   id?: string;
@@ -57,6 +48,7 @@ function toApp(hit: SearchHit): StoreApp | null {
     description: "",
     screenshots: [],
     permissions: [],
+    source: "Flathub",
   };
 }
 
@@ -106,10 +98,11 @@ export async function getAppDetails(app: StoreApp): Promise<StoreApp> {
     description: result.description || "",
     screenshots,
     permissions: permissionList(result.metadata),
+    source: "Flathub",
   };
 }
 
 export async function getAppById(id: string): Promise<StoreApp> {
-  const placeholder: StoreApp = { id, name: id, summary: "", icon: "", developer: "", ref: FALLBACK_REF(id), description: "", screenshots: [], permissions: [] };
+  const placeholder: StoreApp = { id, name: id, summary: "", icon: "", developer: "", ref: FALLBACK_REF(id), description: "", screenshots: [], permissions: [], source: "Flathub" };
   return getAppDetails(placeholder);
 }
