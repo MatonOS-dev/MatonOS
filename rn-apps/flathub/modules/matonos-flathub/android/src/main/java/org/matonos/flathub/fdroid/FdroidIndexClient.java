@@ -55,6 +55,24 @@ public final class FdroidIndexClient {
     return installed;
   }
 
+  public List<Map<String, Object>> updatesCatalogue(File cacheRoot, String repository, List<Map<String, Object>> installedPackages) throws Exception {
+    return updatesFromParsedIndex(load(cacheRoot, repository), installedPackages);
+  }
+
+  List<Map<String, Object>> updatesFromParsedIndex(Map<String, Object> catalogue, List<Map<String, Object>> installedPackages) {
+    catalogue = map(catalogue.get("packages"));
+    List<Map<String, Object>> updates = new ArrayList<>();
+    for (Map<String, Object> installed : installedPackages) {
+      String packageName = text(installed.get("packageName"));
+      Map<String, Object> app = app(packageName, map(catalogue.get(packageName)));
+      if (app == null || number(app.get("versionCode")) <= number(installed.get("versionCode"))) continue;
+      if (!sameSigners(strings(installed.get("signerSha256")), strings(app.get("signerSha256")))) continue;
+      updates.add(app);
+    }
+    updates.sort(Comparator.comparing(a -> text(a.get("name")).toLowerCase(Locale.ROOT)));
+    return updates;
+  }
+
   Map<String, Object> parseIndex(String json) {
     Object parsed = Json.parse(json);
     if (!(parsed instanceof Map)) throw new IllegalArgumentException("F-Droid index is not an object");
@@ -168,6 +186,7 @@ public final class FdroidIndexClient {
     result.put("developer", ""); result.put("ref", packageName); result.put("description", localized(metadata.get("description")));
     result.put("screenshots", Collections.emptyList()); result.put("permissions", Collections.emptyList());
     result.put("versionName", text(manifest.get("versionName"))); result.put("versionCode", number(manifest.get("versionCode")));
+    result.put("signerSha256", strings(map(manifest.get("signer")).get("sha256")));
     result.put("apkName", text(file.get("name"))); result.put("apkSha256", text(file.get("sha256"))); result.put("apkFiles", apkFiles);
     return result;
   }
@@ -186,6 +205,16 @@ public final class FdroidIndexClient {
   private static Map<String, Object> map(Object value) { return value instanceof Map ? cast(value) : Collections.emptyMap(); }
   @SuppressWarnings("unchecked") private static Map<String, Object> cast(Object value) { return (Map<String, Object>) value; }
   private static String text(Object value) { return value == null ? "" : String.valueOf(value); }
+  private static List<String> strings(Object value) {
+    List<String> result = new ArrayList<>();
+    if (value instanceof List) for (Object item : (List<?>) value) result.add(normalizeFingerprint(text(item)));
+    else if (value instanceof String && !((String) value).isEmpty()) result.add(normalizeFingerprint((String) value));
+    Collections.sort(result);
+    return result;
+  }
+  private static boolean sameSigners(List<String> installed, List<String> repository) {
+    return !installed.isEmpty() && installed.equals(repository);
+  }
   private static long number(Object value) { return value instanceof Number ? ((Number) value).longValue() : 0; }
   private static String normalizeFingerprint(String value) { return value == null ? "" : value.replace(":", "").replace(" ", "").toLowerCase(Locale.ROOT); }
   private static String fingerprint(byte[] bytes) throws Exception {

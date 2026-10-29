@@ -9,7 +9,7 @@ import { FlathubSource } from "./sources/FlathubSource";
 import { FdroidSource } from "./sources/FdroidSource";
 import type { Source, SourceProgress } from "./sources/Source";
 
-type Page = "browse" | "installed";
+type Page = "browse" | "installed" | "updates";
 type Feed = "popular" | "new";
 const sources: Source[] = [FlathubSource, FdroidSource];
 
@@ -36,7 +36,8 @@ function ProgressLine({ progress }: { progress: string }) {
   return <Text style={{ typography: "bodyMedium" }} maxLines={2}>{progress}</Text>;
 }
 
-function busyButtonLabel(kind: "install" | "uninstall"): string {
+function busyButtonLabel(kind: "install" | "update" | "uninstall"): string {
+  if (kind === "update") return "Updating…";
   return kind === "install" ? "Installing…" : "Working…";
 }
 
@@ -62,9 +63,10 @@ function Screenshots({ app }: { app: StoreApp }) {
   );
 }
 
-function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDetails, onInstall, onUninstall, onLaunch }: {
+function AppTile({ app, installed, updateAvailable, busy, busyLabel, progress, percent, onOpenDetails, onInstall, onUninstall, onLaunch }: {
   app: StoreApp;
   installed: boolean;
+  updateAvailable: boolean;
   busy: boolean;
   busyLabel: string;
   progress: string;
@@ -75,8 +77,8 @@ function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDet
   onLaunch: (app: StoreApp) => void;
 }) {
   const isBusy = busy && Boolean(progress);
-  const buttonLabel = isBusy ? (busyLabel || "Working…") : installed ? app.source === "Flathub" ? "Open" : "Uninstall" : "Install";
-  const buttonAction = installed ? app.source === "Flathub" ? () => onLaunch(app) : () => onUninstall(app) : () => onInstall(app);
+  const buttonLabel = isBusy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? app.source === "Flathub" ? "Open" : "Uninstall" : "Install";
+  const buttonAction = updateAvailable ? () => onInstall(app) : installed ? app.source === "Flathub" ? () => onLaunch(app) : () => onUninstall(app) : () => onInstall(app);
   return (
     <Column modifiers={[clickable(() => onOpenDetails(app))]}>
       <Row verticalAlignment="center" modifiers={[paddingAll(12)]}>
@@ -95,12 +97,12 @@ function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDet
   );
 }
 
-function DetailContent({ app, installed, busy, busyLabel, progress, percent, onBack, onInstall, onUninstall }: {
-  app: StoreApp; installed: boolean; busy: boolean; busyLabel: string; progress: string; percent: number | null; onBack: () => void; onInstall: () => void; onUninstall: () => void;
+function DetailContent({ app, installed, updateAvailable, busy, busyLabel, progress, percent, onBack, onInstall, onUninstall }: {
+  app: StoreApp; installed: boolean; updateAvailable: boolean; busy: boolean; busyLabel: string; progress: string; percent: number | null; onBack: () => void; onInstall: () => void; onUninstall: () => void;
 }) {
   const permissionText = app.permissions.length ? app.permissions.join(" · ") : "Permission details are not included for this app's source.";
-  const actionLabel = busy ? (busyLabel || "Working…") : installed ? "Uninstall" : "Install";
-  const action = installed ? onUninstall : onInstall;
+  const actionLabel = busy ? (busyLabel || "Working…") : updateAvailable ? "Update" : installed ? "Uninstall" : "Install";
+  const action = updateAvailable ? onInstall : installed ? onUninstall : onInstall;
   return (
     <LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 14 }}>
       <Button onClick={onBack}><Text>‹  Back to apps</Text></Button>
@@ -142,6 +144,7 @@ export default function App() {
   const [feed, setFeed] = useState<Feed>("popular");
   const [apps, setApps] = useState<StoreApp[]>([]);
   const [installedApps, setInstalledApps] = useState<StoreApp[]>([]);
+  const [updateApps, setUpdateApps] = useState<StoreApp[]>([]);
   const [installedError, setInstalledError] = useState("");
   const [selected, setSelected] = useState<StoreApp | null>(null);
   const [loading, setLoading] = useState(false);
@@ -150,8 +153,9 @@ export default function App() {
   const [progress, setProgress] = useState("");
   const [percent, setPercent] = useState<number | null>(null);
   const operationIdRef = useRef("");
-  const [operationKind, setOperationKind] = useState<"install" | "uninstall">("install");
+  const [operationKind, setOperationKind] = useState<"install" | "update" | "uninstall">("install");
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
+  const updateIds = useMemo(() => new Set(updateApps.map((app) => `${app.source}:${app.id}`)), [updateApps]);
 
   async function refreshInstalled() {
     setInstalledError("");
@@ -161,6 +165,13 @@ export default function App() {
     } catch (error) {
       setInstalledApps([]); setInstalledError(errorText(error));
     }
+  }
+
+  async function refreshUpdates() {
+    try {
+      const entries = (await Promise.all(sources.map((source) => source.updates()))).flat();
+      setUpdateApps(entries);
+    } catch { setUpdateApps([]); }
   }
 
   async function loadCollection(nextFeed: Feed) {
@@ -191,7 +202,7 @@ export default function App() {
     if (!app || busyRef) return;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     operationIdRef.current = operationId;
-    setOperationKind("install");
+    setOperationKind(installedIds.has(`${app.source}:${app.id}`) ? "update" : "install");
     setBusyRef(app.ref); setProgress("Preparing installation…"); setPercent(null); setMessage("");
     try {
       await sources.find((source) => source.name === app.source)!.install(app, operationId);
@@ -214,7 +225,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => { void loadCollection("popular"); void refreshInstalled(); }, 0);
+    const timer = setTimeout(() => { void loadCollection("popular"); void refreshInstalled(); void refreshUpdates(); }, 0);
     return () => clearTimeout(timer);
   }, []);
   useEffect(() => {
@@ -227,6 +238,7 @@ export default function App() {
         if (!completed?.ok) setMessage(completed?.error || completed?.output?.trim() || "The operation did not complete.");
         else setMessage("Operation complete.");
         void refreshInstalled();
+        void refreshUpdates();
         return;
       }
       if (payload.operationId !== operationIdRef.current) return;
@@ -248,6 +260,7 @@ export default function App() {
   async function selectPage(next: Page) {
     setPage(next); setSelected(null); setMessage("");
     if (next === "installed") await refreshInstalled();
+    if (next === "updates") await refreshUpdates();
     if (next === "browse") await loadCollection(feed);
   }
 
@@ -261,7 +274,7 @@ export default function App() {
 
   const renderApp = ({ item }: { item: StoreApp }) => (
     <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }} colorScheme="dark" seedColor="#79c75b">
-      <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} busy={Boolean(busyRef)}
+      <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} updateAvailable={updateIds.has(`${item.source}:${item.id}`)} busy={Boolean(busyRef)}
         busyLabel={busyRef === item.ref ? busyButtonLabel(operationKind) : ""}
         progress={busyRef === item.ref ? progress : ""} percent={busyRef === item.ref ? percent : null}
         onOpenDetails={openDetails}
@@ -273,18 +286,20 @@ export default function App() {
   let content: ReactNode;
   if (selected) {
     const currentDetail = selected;
-    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(`${currentDetail.source}:${currentDetail.id}`)} busy={Boolean(busyRef)}
+    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(`${currentDetail.source}:${currentDetail.id}`)} updateAvailable={updateIds.has(`${currentDetail.source}:${currentDetail.id}`)} busy={Boolean(busyRef)}
       busyLabel={busyButtonLabel(operationKind)} progress={busyRef === currentDetail.ref ? progress : ""} percent={busyRef === currentDetail.ref ? percent : null}
       onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} /></Host>;
-  } else if (page === "installed") {
+  } else if (page === "installed" || page === "updates") {
+    const entries = page === "installed" ? installedApps : updateApps;
+    const heading = page === "installed" ? "Installed apps" : "Updates";
     content = <View style={{ flex: 1 }}>
       <Host matchContents={{ vertical: true }} colorScheme="dark" seedColor="#79c75b"><Column>
-      <Text style={{ typography: "headlineSmall" }} modifiers={[paddingAll(20)]}>Installed apps</Text>
-      <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading installed apps…</Text></Show>
+      <Text style={{ typography: "headlineSmall" }} modifiers={[paddingAll(20)]}>{heading}</Text>
+      <Show when={loading}><Text modifiers={[paddingAll(20)]}>Loading {page === "installed" ? "installed apps" : "updates"}…</Text></Show>
       <Show when={Boolean(installedError) && !loading}><Text modifiers={[paddingAll(20)]}>{installedError}</Text></Show>
       </Column></Host>
-      <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={installedApps} renderItem={renderApp} keyExtractor={keyApp}
-        ListEmptyComponent={!loading && !installedError ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(20)]}>No installed apps are listed yet.</Text></Host> : null} />
+      <FlatList removeClippedSubviews={false} style={{ flex: 1 }} data={entries} renderItem={renderApp} keyExtractor={keyApp}
+        ListEmptyComponent={!loading && !installedError ? <Host style={{ width: "100%", height: 64 }} colorScheme="dark"><Text modifiers={[paddingAll(20)]}>{page === "installed" ? "No installed apps are listed yet." : "No updates are available."}</Text></Host> : null} />
     </View>;
   } else {
     content = <View style={{ flex: 1 }}>
@@ -311,6 +326,7 @@ export default function App() {
           <Text style={{ typography: "titleLarge" }} modifiers={[weight(1)]}>Software Center</Text>
           <Button onClick={() => void selectPage("browse")}><Text>Browse</Text></Button>
           <Button onClick={() => void selectPage("installed")}><Text>Installed</Text></Button>
+          <Button onClick={() => void selectPage("updates")}><Text>Updates</Text></Button>
         </Row>
         <Show when={Boolean(busyRef)}>
           <Column modifiers={[padding(14, 0, 14, 14)]}>

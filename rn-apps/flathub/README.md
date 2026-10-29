@@ -1,15 +1,17 @@
 > v3.5: linuxd is retired. Any linuxd/shared-store paths below describe the
 > historical design. See [current ownership and device checks](../../docs/RETIRE-LINUXD.md).
 
-# Software Center — F-Droid phases 1–2
+# Software Center — F-Droid phases 1–3
 
 The app has a shared TypeScript `Source` contract for search, details,
 installed apps, updates, install, uninstall, and progress. `FlathubSource`
 wraps the existing Flathub API and Flatpak bridge operations. `FdroidSource`
 reads the built-in official F-Droid repository catalogue. Search merges both
 catalogues into one list with a visible source badge. F-Droid apps can be
-installed and removed through the Software Center; update discovery remains a
-later phase.
+installed and removed through the Software Center. Updates appear in the
+shared Updates view only when the installed version is older and its current
+signing certificate set exactly matches the signer SHA-256 set in the index.
+Missing signer data and signer mismatches are excluded.
 
 The native Java index client downloads `entry.jar`, verifies its JAR signature
 and signer fingerprint, reads `entry.json`, then verifies the SHA-256 of
@@ -28,20 +30,28 @@ event. Uninstall also uses PackageInstaller. Installed F-Droid catalogue rows
 are reconciled with installed package names from PackageManager and appear in
 the same Installed view as Flatpak apps.
 
+WorkManager checks the official repository every 12 hours when a network is
+available and records the update package IDs and check time. Opening the
+Updates view performs a fresh verified-index check. Updating reuses the
+PackageInstaller path and shared progress events; installs request update
+ownership on platform versions that support it so later updates can be
+prompt-free.
+
 ## Verification
 
 - `modules/matonos-flathub/android/test-host.sh` runs host-Java checks for a
   valid signed JAR, a damaged signature, a wrong signer pin, an index hash
   mismatch, parser output from a fixture, and a wrong APK hash that must stop
-  before the PackageInstaller commit callback.
+  before the PackageInstaller commit callback. It also verifies that a higher
+  version with a matching signer is offered and signer mismatch or a
+  non-higher version is not.
 - `npm run typecheck` and `npm run lint` check the TypeScript app.
 - `MATON_AOSP_ROOT=/mnt/data/aosp MATON_APPS_ONLY=matonos-flathub tools/build-apps.sh`
   builds and signs the Expo app, then checks release linkage.
-- A fresh image/VM was not used. On a network-connected MatonOS image, search
-  both sources, install and remove an F-Droid app, and verify it appears in and
-  disappears from the merged Installed view.
-- Updates, installed signer continuity checks, and user-added repositories
-  remain future phases.
+- `MATON_AOSP_ROOT=/mnt/data/aosp MATON_APPS_ONLY=matonos-flathub tools/build-apps.sh`
+  completed successfully for phase 3. No image or VM was used.
+- A fresh image/VM was not used; use the real-PC checks below for runtime
+  validation.
 
 ## Phase 2 real PC checks
 
@@ -55,7 +65,12 @@ the same Installed view as Flatpak apps.
 4. Check reconciliation for a package already installed on the PC and confirm
    an installed package absent from the F-Droid catalogue is not shown as an
    F-Droid app.
-5. Repeat on the Ryzen 5800X/RX 6600/Intel 7265 PC, Surface Pro 3, or HP
+5. Install an older F-Droid package version, then verify it appears in Updates
+   only when its signing certificate matches the index signer. Apply the
+   update and check the shared progress bar and installed version.
+6. Leave the device network-connected for a WorkManager run and verify the
+   check time and update package list survive closing and reopening the app.
+7. Repeat on the Ryzen 5800X/RX 6600/Intel 7265 PC, Surface Pro 3, or HP
    ProDesk 600 G1. F-Droid install behavior should not depend on Wi-Fi,
    Bluetooth, or audio hardware availability.
 

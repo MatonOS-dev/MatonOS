@@ -18,6 +18,7 @@ type NativeApi = {
   fdroidSearch(repository: string, query: string): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
   fdroidDetails(repository: string, packageName: string): Promise<Omit<import("../../../src/sources/Source").StoreApp, "source">>;
   fdroidInstalled(repository: string): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
+  fdroidUpdates(): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
   fdroidInstall(repository: string, packageName: string, operationId: string): Promise<boolean>;
   fdroidUninstall(packageName: string, operationId: string): Promise<boolean>;
   startStubInstall(ref: string, operationId: string | null): Promise<boolean>;
@@ -41,6 +42,7 @@ export const MatonOS = {
   fdroidSearch: (repository: string, query: string) => Native.fdroidSearch(repository, query),
   fdroidDetails: (repository: string, packageName: string) => Native.fdroidDetails(repository, packageName),
   fdroidInstalled: (repository: string) => Native.fdroidInstalled(repository),
+  fdroidUpdates: () => Native.fdroidUpdates(),
   fdroidInstall: (repository: string, packageName: string, operationId: string) => Native.fdroidInstall(repository, packageName, operationId),
   fdroidUninstall: (packageName: string, operationId: string) => Native.fdroidUninstall(packageName, operationId),
   addStoreListener: (listener: (event: StoreEvent) => void) => Native.addListener("linuxAppStoreEvent", listener),

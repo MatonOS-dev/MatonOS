@@ -12,4 +12,5 @@ android {
 dependencies {
   implementation 'com.facebook.react:react-android'
   implementation project(':matonos-client')
+  implementation 'androidx.work:work-runtime:2.12.0'
 }

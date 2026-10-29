@@ -10,6 +10,8 @@ import org.matonos.linux.ILinuxAppStore
 import org.matonos.linux.ILinuxAppStoreCallback
 import org.matonos.flathub.fdroid.FdroidIndexClient
 import org.matonos.flathub.fdroid.FdroidApkInstaller
+import org.matonos.flathub.fdroid.FdroidUpdateChecker
+import org.matonos.flathub.fdroid.FdroidUpdateWorker
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -28,6 +30,7 @@ class MatonOSExpoModule : Module() {
     Events("matonosAreaEvent", "linuxAppStoreEvent")
     OnCreate {
       client = MatonOS.init(requireNotNull(appContext.reactContext), BridgeMode.OPTIONAL)
+      FdroidUpdateWorker.schedule(requireNotNull(appContext.reactContext))
       fdroidEventSink = { operationId, phase, percent, bytesDone, bytesTotal, result ->
         val event = mutableMapOf<String, Any>("source" to "F-Droid", "operationId" to operationId, "phase" to phase, "percent" to percent)
         if (bytesDone >= 0) event["bytesDone"] = bytesDone
@@ -123,6 +126,9 @@ class MatonOSExpoModule : Module() {
       @Suppress("DEPRECATION")
       val packageNames = context.packageManager.getInstalledPackages(0).map { it.packageName }
       fdroidIndex.installedCatalogue(context.filesDir, repository, packageNames)
+    }
+    AsyncFunction("fdroidUpdates") {
+      FdroidUpdateChecker.updates(requireNotNull(appContext.reactContext))
     }
     AsyncFunction("fdroidInstall") { repository: String, packageName: String, operationId: String, promise: Promise ->
       val context = requireNotNull(appContext.reactContext)

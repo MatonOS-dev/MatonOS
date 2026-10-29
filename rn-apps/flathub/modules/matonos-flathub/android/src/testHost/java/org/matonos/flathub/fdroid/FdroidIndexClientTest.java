@@ -27,7 +27,7 @@ public final class FdroidIndexClientTest {
     expectFailure(() -> client.verifyEntryJar(bytes(damaged), fingerprint), "damaged JAR signature");
     expectFailure(() -> client.verifyIndexHash("index data".getBytes(StandardCharsets.UTF_8), "00".repeat(32)), "index hash mismatch");
 
-    String fixture = "{\"packages\":{\"org.example.demo\":{\"metadata\":{\"name\":{\"en-US\":\"Demo App\"},\"summary\":{\"en-US\":\"A small fixture\"},\"icon\":{\"en-US\":{\"name\":\"/icons/demo.png\"}}},\"versions\":{\"abc\":{\"file\":[{\"name\":\"/demo.apk\",\"sha256\":\"abc123\"},{\"name\":\"/demo-split.apk\",\"sha256\":\"def456\"}],\"manifest\":{\"versionName\":\"1.2\",\"versionCode\":12}}}}}}";
+    String fixture = "{\"packages\":{\"org.example.demo\":{\"metadata\":{\"name\":{\"en-US\":\"Demo App\"},\"summary\":{\"en-US\":\"A small fixture\"},\"icon\":{\"en-US\":{\"name\":\"/icons/demo.png\"}}},\"versions\":{\"abc\":{\"file\":[{\"name\":\"/demo.apk\",\"sha256\":\"abc123\"},{\"name\":\"/demo-split.apk\",\"sha256\":\"def456\"}],\"manifest\":{\"versionName\":\"1.2\",\"versionCode\":12,\"signer\":{\"sha256\":[\"aa11\"]}}}}}}}";
     java.util.Map<String, Object> parsed = client.parseIndex(fixture);
     java.util.Map<String, Object> app = client.detailsFromParsedIndex(parsed, "org.example.demo");
     check("Demo App".equals(app.get("name")), "parser name");
@@ -37,7 +37,22 @@ public final class FdroidIndexClientTest {
     check(((java.util.List<?>) app.get("apkFiles")).size() == 2, "parser split APK files");
     check(((Number) app.get("versionCode")).longValue() == 12, "parser version code");
     testApkHashBeforeCommit(signedJar.getParentFile());
-    System.out.println("PASS: signed JAR, signer pin, index hash, index parser, APK hash before commit");
+    testUpdateEligibility(client, parsed);
+    System.out.println("PASS: signed JAR, signer pin, index hash, index parser, APK hash before commit, update signer/version checks");
+  }
+
+  private static void testUpdateEligibility(FdroidIndexClient client, java.util.Map<String, Object> index) {
+    java.util.Map<String, Object> installed = new java.util.LinkedHashMap<>();
+    installed.put("packageName", "org.example.demo"); installed.put("versionCode", 10L);
+    installed.put("signerSha256", java.util.Collections.singletonList("aa11"));
+    check(client.updatesFromParsedIndex(index, java.util.Collections.singletonList(installed)).size() == 1,
+        "higher version with matching signer is offered");
+    installed.put("signerSha256", java.util.Collections.singletonList("bb22"));
+    check(client.updatesFromParsedIndex(index, java.util.Collections.singletonList(installed)).isEmpty(),
+        "signer mismatch does not offer update");
+    installed.put("signerSha256", java.util.Collections.singletonList("aa11")); installed.put("versionCode", 12L);
+    check(client.updatesFromParsedIndex(index, java.util.Collections.singletonList(installed)).isEmpty(),
+        "same version does not offer update");
   }
 
   private static void testApkHashBeforeCommit(File directory) throws Exception {
