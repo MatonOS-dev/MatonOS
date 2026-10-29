@@ -1,14 +1,15 @@
 > v3.5: linuxd is retired. Any linuxd/shared-store paths below describe the
 > historical design. See [current ownership and device checks](../../docs/RETIRE-LINUXD.md).
 
-# Software Center — F-Droid phase 1
+# Software Center — F-Droid phases 1–2
 
 The app has a shared TypeScript `Source` contract for search, details,
 installed apps, updates, install, uninstall, and progress. `FlathubSource`
 wraps the existing Flathub API and Flatpak bridge operations. `FdroidSource`
-reads the built-in official F-Droid repository catalogue and marks install,
-uninstall, and updates as unsupported in this phase. Search merges both
-catalogues into one list with a visible source badge.
+reads the built-in official F-Droid repository catalogue. Search merges both
+catalogues into one list with a visible source badge. F-Droid apps can be
+installed and removed through the Software Center; update discovery remains a
+later phase.
 
 The native Java index client downloads `entry.jar`, verifies its JAR signature
 and signer fingerprint, reads `entry.json`, then verifies the SHA-256 of
@@ -18,23 +19,45 @@ directory, separated by repository URL. The signer fingerprint is pinned from
 The catalogue parser and client are original code based on F-Droid's published
 index format; no F-Droid client code is included.
 
-## Phase 1 verification
+Installing downloads every APK file listed for the selected version into the
+app's cache, verifies each SHA-256 from the signed index, and only then creates
+a PackageInstaller session. The session uses `base.apk` and split names read
+from each APK manifest, requests update ownership on supported platform
+versions, and reports PackageInstaller's result through the shared progress
+event. Uninstall also uses PackageInstaller. Installed F-Droid catalogue rows
+are reconciled with installed package names from PackageManager and appear in
+the same Installed view as Flatpak apps.
+
+## Verification
 
 - `modules/matonos-flathub/android/test-host.sh` runs host-Java checks for a
   valid signed JAR, a damaged signature, a wrong signer pin, an index hash
-  mismatch, and parsing app/version/APK metadata from a fixture.
+  mismatch, parser output from a fixture, and a wrong APK hash that must stop
+  before the PackageInstaller commit callback.
 - `npm run typecheck` and `npm run lint` check the TypeScript app.
 - `MATON_AOSP_ROOT=/mnt/data/aosp MATON_APPS_ONLY=matonos-flathub tools/build-apps.sh`
   builds and signs the Expo app, then checks release linkage.
-- A fresh image/VM was not used for this read-only catalogue phase. On a
-  network-connected MatonOS image, search for a known package and verify it
-  appears beside Flathub results with the F-Droid badge; open its details and
-  confirm the version and APK metadata. F-Droid rows identify themselves as
-  read-only and have installation disabled.
+- A fresh image/VM was not used. On a network-connected MatonOS image, search
+  both sources, install and remove an F-Droid app, and verify it appears in and
+  disappears from the merged Installed view.
+- Updates, installed signer continuity checks, and user-added repositories
+  remain future phases.
 
-Phase 2 needs verified APK download and `PackageInstaller` install/uninstall
-sessions, source-aware progress, installed-package reconciliation, and tests
-for APK hash and signer checks. Updates remain intentionally unsupported.
+## Phase 2 real PC checks
+
+1. Install the rebuilt app on a fresh MatonOS image and confirm that the
+   Software Center opens, searches both sources, and labels F-Droid results.
+2. On a network-connected PC, install a small F-Droid app. Check download
+   progress, PackageInstaller completion, and the merged Installed list; then
+   uninstall it and confirm it disappears from that list.
+3. Repeat with an index version that lists multiple APK files and verify the
+   base APK and splits install in one PackageInstaller session.
+4. Check reconciliation for a package already installed on the PC and confirm
+   an installed package absent from the F-Droid catalogue is not shown as an
+   F-Droid app.
+5. Repeat on the Ryzen 5800X/RX 6600/Intel 7265 PC, Surface Pro 3, or HP
+   ProDesk 600 G1. F-Droid install behavior should not depend on Wi-Fi,
+   Bluetooth, or audio hardware availability.
 
 ---
 
@@ -90,7 +113,7 @@ and `npm run lint` from this directory for source checks.
   `install` call, so no download or progress event was observed. See
   `/mnt/data/aosp/out/pc-logs/flatpak-store/runtime-findings.txt`.
 
-## Real PC checks
+## Historical Flathub real PC checks
 
 1. Boot a fresh MatonOS image on the Ryzen 5800X/RX 6600/Intel 7265 PC, Surface
    Pro 3, or HP ProDesk 600 G1. Confirm the app opens and renders Flathub's

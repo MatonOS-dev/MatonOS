@@ -23,7 +23,9 @@ export const FlathubSource: Source = {
   async install(app, operationId) { await installApp(app.ref, operationId); },
   async uninstall(app, operationId) { await uninstallApp(app.ref, operationId); },
   progress(listener) {
-    const subscription = MatonOS.addStoreListener((event: ProgressEvent) => listener(event));
+    const subscription = MatonOS.addStoreListener((event: ProgressEvent) => {
+      if (event.source !== "F-Droid") listener(event);
+    });
     return subscription;
   },
 };

@@ -1,9 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="org.matonos.permission.QUERY_LINUX_APPS" />
   <uses-permission android:name="org.matonos.permission.INSTALL_LINUX_APPS" />
+  <uses-permission android:name="android.permission.INSTALL_PACKAGES" />
+  <uses-permission android:name="android.permission.DELETE_PACKAGES" />
+  <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
   <!-- Lets the store find generated Flatpak stubs' "install me" activities. -->
   <queries>
     <package android:name="org.matonos.linux" />
+    <package android:name="org.matonos.flathub" />
     <intent>
       <action android:name="org.matonos.linuxhost.INSTALL" />
     </intent>
@@ -12,4 +16,7 @@
       <category android:name="android.intent.category.LAUNCHER" />
     </intent>
   </queries>
+  <application>
+    <receiver android:name="org.matonos.flathub.nativebridge.FdroidInstallReceiver" android:exported="false" />
+  </application>
 </manifest>

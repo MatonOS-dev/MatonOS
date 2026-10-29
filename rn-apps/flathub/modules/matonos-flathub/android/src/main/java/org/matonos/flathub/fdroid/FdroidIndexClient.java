@@ -44,6 +44,17 @@ public final class FdroidIndexClient {
     return app(packageName, map(packages.get(packageName)));
   }
 
+  public List<Map<String, Object>> installedCatalogue(File cacheRoot, String repository, List<String> installedPackages) throws Exception {
+    Map<String, Object> packages = map(load(cacheRoot, repository).get("packages"));
+    List<Map<String, Object>> installed = new ArrayList<>();
+    for (String packageName : installedPackages) {
+      Map<String, Object> value = app(packageName, map(packages.get(packageName)));
+      if (value != null) installed.add(value);
+    }
+    installed.sort(Comparator.comparing(a -> text(a.get("name")).toLowerCase(Locale.ROOT)));
+    return installed;
+  }
+
   Map<String, Object> parseIndex(String json) {
     Object parsed = Json.parse(json);
     if (!(parsed instanceof Map)) throw new IllegalArgumentException("F-Droid index is not an object");
@@ -131,7 +142,25 @@ public final class FdroidIndexClient {
     }
     if (latest == null) return null;
     Map<String, Object> manifest = map(latest.get("manifest"));
-    Map<String, Object> file = map(latest.get("file"));
+    Object rawFile = latest.get("file");
+    List<Map<String, Object>> files = new ArrayList<>();
+    if (rawFile instanceof List) {
+      for (Object value : (List<?>) rawFile) files.add(map(value));
+    } else if (rawFile instanceof Map) {
+      files.add(map(rawFile));
+    }
+    if (files.isEmpty()) return null;
+    Map<String, Object> file = files.get(0);
+    List<Map<String, String>> apkFiles = new ArrayList<>();
+    for (Map<String, Object> item : files) {
+      String name = text(item.get("name"));
+      String sha256 = text(item.get("sha256"));
+      if (!name.isEmpty() && !sha256.isEmpty()) {
+        Map<String, String> apk = new LinkedHashMap<>();
+        apk.put("name", name); apk.put("sha256", sha256); apkFiles.add(apk);
+      }
+    }
+    if (apkFiles.isEmpty()) return null;
     String icon = localized(metadata.get("icon"));
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("id", packageName); result.put("name", fallback(localized(metadata.get("name")), packageName));
@@ -139,7 +168,7 @@ public final class FdroidIndexClient {
     result.put("developer", ""); result.put("ref", packageName); result.put("description", localized(metadata.get("description")));
     result.put("screenshots", Collections.emptyList()); result.put("permissions", Collections.emptyList());
     result.put("versionName", text(manifest.get("versionName"))); result.put("versionCode", number(manifest.get("versionCode")));
-    result.put("apkName", text(file.get("name"))); result.put("apkSha256", text(file.get("sha256")));
+    result.put("apkName", text(file.get("name"))); result.put("apkSha256", text(file.get("sha256"))); result.put("apkFiles", apkFiles);
     return result;
   }
 

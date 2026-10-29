@@ -1,6 +1,6 @@
 import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
 
-export type ProgressEvent = { operationId?: string; line?: string; percent?: number; phase?: string; bytesDone?: number; bytesTotal?: number; result?: { ok?: boolean; error?: string; output?: string; operationId?: string } };
+export type ProgressEvent = { source?: "F-Droid"; operationId?: string; line?: string; percent?: number; phase?: string; bytesDone?: number; bytesTotal?: number; result?: { ok?: boolean; error?: string; output?: string; operationId?: string } };
 
 function decode(value: string): { ok?: boolean; output?: string; error?: string } {
   try { return JSON.parse(value) as { ok?: boolean; output?: string; error?: string }; }

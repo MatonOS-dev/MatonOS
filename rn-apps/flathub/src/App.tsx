@@ -7,10 +7,11 @@ import { getCollection, type StoreApp } from "./FlathubApi";
 import { runApp } from "./FlatpakBridge";
 import { FlathubSource } from "./sources/FlathubSource";
 import { FdroidSource } from "./sources/FdroidSource";
-import type { Source } from "./sources/Source";
+import type { Source, SourceProgress } from "./sources/Source";
 
 type Page = "browse" | "installed";
 type Feed = "popular" | "new";
+const sources: Source[] = [FlathubSource, FdroidSource];
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
@@ -61,7 +62,7 @@ function Screenshots({ app }: { app: StoreApp }) {
   );
 }
 
-function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDetails, onInstall, onLaunch }: {
+function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDetails, onInstall, onUninstall, onLaunch }: {
   app: StoreApp;
   installed: boolean;
   busy: boolean;
@@ -70,11 +71,12 @@ function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDet
   percent: number | null;
   onOpenDetails: (app: StoreApp) => void;
   onInstall: (app: StoreApp) => void;
+  onUninstall: (app: StoreApp) => void;
   onLaunch: (app: StoreApp) => void;
 }) {
   const isBusy = busy && Boolean(progress);
-  const buttonLabel = app.source === "F-Droid" ? "Read only" : isBusy ? (busyLabel || "Working…") : installed ? "Open" : "Install";
-  const buttonAction = installed ? () => onLaunch(app) : () => onInstall(app);
+  const buttonLabel = isBusy ? (busyLabel || "Working…") : installed ? app.source === "Flathub" ? "Open" : "Uninstall" : "Install";
+  const buttonAction = installed ? app.source === "Flathub" ? () => onLaunch(app) : () => onUninstall(app) : () => onInstall(app);
   return (
     <Column modifiers={[clickable(() => onOpenDetails(app))]}>
       <Row verticalAlignment="center" modifiers={[paddingAll(12)]}>
@@ -84,7 +86,7 @@ function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDet
           <SourceBadge app={app} />
           <Text style={{ typography: "bodyMedium" }} maxLines={2}>{app.summary}</Text>
         </Column>
-        <Button enabled={!busy && app.source === "Flathub"} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
+        <Button enabled={!busy} onClick={buttonAction}><Text>{buttonLabel}</Text></Button>
       </Row>
       <Show when={isBusy}>
         <LinearProgressIndicator progress={percentToRatio(percent)} modifiers={[padding(0, 12, 12, 12)]} />
@@ -96,8 +98,8 @@ function AppTile({ app, installed, busy, busyLabel, progress, percent, onOpenDet
 function DetailContent({ app, installed, busy, busyLabel, progress, percent, onBack, onInstall, onUninstall }: {
   app: StoreApp; installed: boolean; busy: boolean; busyLabel: string; progress: string; percent: number | null; onBack: () => void; onInstall: () => void; onUninstall: () => void;
 }) {
-  const permissionText = app.permissions.length ? app.permissions.join(" · ") : "Permission details are not included for this app by the Flathub API.";
-  const actionLabel = app.source === "F-Droid" ? "Install not available yet" : busy ? (busyLabel || "Working…") : installed ? "Uninstall" : "Install";
+  const permissionText = app.permissions.length ? app.permissions.join(" · ") : "Permission details are not included for this app's source.";
+  const actionLabel = busy ? (busyLabel || "Working…") : installed ? "Uninstall" : "Install";
   const action = installed ? onUninstall : onInstall;
   return (
     <LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 14 }}>
@@ -112,7 +114,7 @@ function DetailContent({ app, installed, busy, busyLabel, progress, percent, onB
         </Column>
       </Row>
       <Row horizontalArrangement={{ spacedBy: 10 }} verticalAlignment="center">
-        <Button enabled={!busy && app.source === "Flathub"} onClick={action}><Text>{actionLabel}</Text></Button>
+        <Button enabled={!busy} onClick={action}><Text>{actionLabel}</Text></Button>
         <Column modifiers={[weight(1)]}>
           <Show when={Boolean(progress)}><LinearProgressIndicator progress={percentToRatio(percent)} /></Show>
           <ProgressLine progress={progress} />
@@ -139,7 +141,6 @@ export default function App() {
   const [page, setPage] = useState<Page>("browse");
   const [feed, setFeed] = useState<Feed>("popular");
   const [apps, setApps] = useState<StoreApp[]>([]);
-  const [installedRefs, setInstalledRefs] = useState<string[]>([]);
   const [installedApps, setInstalledApps] = useState<StoreApp[]>([]);
   const [installedError, setInstalledError] = useState("");
   const [selected, setSelected] = useState<StoreApp | null>(null);
@@ -150,18 +151,15 @@ export default function App() {
   const [percent, setPercent] = useState<number | null>(null);
   const operationIdRef = useRef("");
   const [operationKind, setOperationKind] = useState<"install" | "uninstall">("install");
-  const installedIds = useMemo(() => new Set(installedRefs.map((ref) => ref.split("/")[1])), [installedRefs]);
-  const sources: Source[] = [FlathubSource, FdroidSource];
+  const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
 
   async function refreshInstalled() {
     setInstalledError("");
     try {
-      const entries = await FlathubSource.installed();
-      const refs = entries.map((app) => app.ref);
-      setInstalledRefs(refs);
+      const entries = (await Promise.all(sources.map((source) => source.installed()))).flat();
       setInstalledApps(entries);
     } catch (error) {
-      setInstalledRefs([]); setInstalledApps([]); setInstalledError(errorText(error));
+      setInstalledApps([]); setInstalledError(errorText(error));
     }
   }
 
@@ -202,14 +200,14 @@ export default function App() {
     } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
   }
 
-  async function startUninstall() {
-    if (!selected || busyRef) return;
+  async function startUninstall(app: StoreApp | null = selected) {
+    if (!app || busyRef) return;
     const operationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     operationIdRef.current = operationId;
     setOperationKind("uninstall");
-    setBusyRef(selected.ref); setProgress("Preparing removal…"); setPercent(null); setMessage("");
+    setBusyRef(app.ref); setProgress("Preparing removal…"); setPercent(null); setMessage("");
     try {
-      await sources.find((source) => source.name === selected.source)!.uninstall(selected, operationId);
+      await sources.find((source) => source.name === app.source)!.uninstall(app, operationId);
       if (operationIdRef.current !== operationId) return;
       setProgress("Removing app…");
     } catch (error) { operationIdRef.current = ""; setProgress(""); setPercent(null); setMessage(errorText(error)); setBusyRef(""); }
@@ -220,13 +218,13 @@ export default function App() {
     return () => clearTimeout(timer);
   }, []);
   useEffect(() => {
-    const subscription = FlathubSource.progress((payload) => {
+    const handleProgress = (payload: SourceProgress) => {
       if (payload.phase === "complete") {
         if (!payload.result?.operationId || payload.result.operationId !== operationIdRef.current) return;
         operationIdRef.current = "";
         const completed = payload.result;
         setBusyRef(""); setProgress(""); setPercent(null);
-        if (!completed?.ok) setMessage(completed?.error || completed?.output?.trim() || "The Flatpak operation did not complete.");
+        if (!completed?.ok) setMessage(completed?.error || completed?.output?.trim() || "The operation did not complete.");
         else setMessage("Operation complete.");
         void refreshInstalled();
         return;
@@ -238,8 +236,9 @@ export default function App() {
       const done = typeof payload.bytesDone === "number" ? payload.bytesDone : 0;
       const total = typeof payload.bytesTotal === "number" ? payload.bytesTotal : 0;
       setProgress(progressLabel(payload.phase || "Working…", eventPercent, done, total));
-    });
-    return () => subscription.remove();
+    };
+    const subscriptions = sources.map((source) => source.progress(handleProgress));
+    return () => subscriptions.forEach((subscription) => subscription.remove());
   }, []);
 
   async function selectFeed(next: Feed) {
@@ -262,11 +261,11 @@ export default function App() {
 
   const renderApp = ({ item }: { item: StoreApp }) => (
     <Host matchContents={{ vertical: true }} useViewportSizeMeasurement style={{ width: "100%", minHeight: 96 }} colorScheme="dark" seedColor="#79c75b">
-      <AppTile app={item} installed={item.source === "Flathub" && installedIds.has(item.id)} busy={Boolean(busyRef)}
+      <AppTile app={item} installed={installedIds.has(`${item.source}:${item.id}`)} busy={Boolean(busyRef)}
         busyLabel={busyRef === item.ref ? busyButtonLabel(operationKind) : ""}
         progress={busyRef === item.ref ? progress : ""} percent={busyRef === item.ref ? percent : null}
         onOpenDetails={openDetails}
-        onInstall={(app) => void startInstall(app)} onLaunch={(app) => void launchApp(app)} />
+        onInstall={(app) => void startInstall(app)} onUninstall={(app) => void startUninstall(app)} onLaunch={(app) => void launchApp(app)} />
     </Host>
   );
   const keyApp = (app: StoreApp) => `${app.source}:${app.id}`;
@@ -274,7 +273,7 @@ export default function App() {
   let content: ReactNode;
   if (selected) {
     const currentDetail = selected;
-    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={currentDetail.source === "Flathub" && installedIds.has(currentDetail.id)} busy={Boolean(busyRef)}
+    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(`${currentDetail.source}:${currentDetail.id}`)} busy={Boolean(busyRef)}
       busyLabel={busyButtonLabel(operationKind)} progress={busyRef === currentDetail.ref ? progress : ""} percent={busyRef === currentDetail.ref ? percent : null}
       onBack={() => setSelected(null)} onInstall={() => void startInstall(currentDetail)} onUninstall={() => void startUninstall()} /></Host>;
   } else if (page === "installed") {

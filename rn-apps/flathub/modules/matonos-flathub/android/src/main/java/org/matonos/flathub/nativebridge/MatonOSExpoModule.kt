@@ -9,6 +9,12 @@ import org.matonos.client.MatonosClient
 import org.matonos.linux.ILinuxAppStore
 import org.matonos.linux.ILinuxAppStoreCallback
 import org.matonos.flathub.fdroid.FdroidIndexClient
+import org.matonos.flathub.fdroid.FdroidApkInstaller
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 
 class MatonOSExpoModule : Module() {
@@ -22,11 +28,19 @@ class MatonOSExpoModule : Module() {
     Events("matonosAreaEvent", "linuxAppStoreEvent")
     OnCreate {
       client = MatonOS.init(requireNotNull(appContext.reactContext), BridgeMode.OPTIONAL)
+      fdroidEventSink = { operationId, phase, percent, bytesDone, bytesTotal, result ->
+        val event = mutableMapOf<String, Any>("source" to "F-Droid", "operationId" to operationId, "phase" to phase, "percent" to percent)
+        if (bytesDone >= 0) event["bytesDone"] = bytesDone
+        if (bytesTotal >= 0) event["bytesTotal"] = bytesTotal
+        if (result != null) event["result"] = result
+        sendEvent("linuxAppStoreEvent", event)
+      }
     }
     OnDestroy {
       val context = appContext.reactContext
       if (context != null) storeConnections.forEach { try { context.unbindService(it) } catch (_: Exception) { } }
       storeConnections.clear()
+      fdroidEventSink = null
       client?.let { current ->
         listeners.forEach { (id, listener) ->
           val parts = id.split(":", limit = 3)
@@ -104,6 +118,116 @@ class MatonOSExpoModule : Module() {
       fdroidIndex.details(requireNotNull(appContext.reactContext).filesDir, repository, packageName)
         ?: throw IllegalArgumentException("F-Droid app not found: $packageName")
     }
+    AsyncFunction("fdroidInstalled") { repository: String ->
+      val context = requireNotNull(appContext.reactContext)
+      @Suppress("DEPRECATION")
+      val packageNames = context.packageManager.getInstalledPackages(0).map { it.packageName }
+      fdroidIndex.installedCatalogue(context.filesDir, repository, packageNames)
+    }
+    AsyncFunction("fdroidInstall") { repository: String, packageName: String, operationId: String, promise: Promise ->
+      val context = requireNotNull(appContext.reactContext)
+      Thread {
+        val cache = File(context.cacheDir, "fdroid-install/$operationId")
+        try {
+          val app = fdroidIndex.details(context.filesDir, repository, packageName)
+            ?: throw IllegalArgumentException("F-Droid app not found: $packageName")
+          @Suppress("UNCHECKED_CAST")
+          val apkFiles = app["apkFiles"] as? List<Map<String, String>> ?: emptyList()
+          if (apkFiles.isEmpty()) throw IllegalArgumentException("F-Droid app has no downloadable APK files")
+          if (!cache.mkdirs() && !cache.isDirectory) throw IllegalStateException("Cannot create APK download cache")
+          val downloads = apkFiles.mapIndexed { index, item ->
+            val name = item["name"] ?: throw IllegalArgumentException("F-Droid APK has no name")
+            val hash = item["sha256"] ?: throw IllegalArgumentException("F-Droid APK has no SHA-256")
+            val file = File(cache, "$index.apk")
+            downloadApk(repository, name, file, operationId, index, apkFiles.size)
+            file to hash
+          }
+          val installer = context.packageManager.packageInstaller
+          FdroidApkInstaller().verifyThenCommit(downloads.map { it.first }, downloads.map { it.second }) { verified ->
+            val params = android.content.pm.PackageInstaller.SessionParams(android.content.pm.PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+            params.setAppPackageName(packageName)
+            if (android.os.Build.VERSION.SDK_INT >= 34) params.setRequestUpdateOwnership(true)
+            val sessionId = installer.createSession(params)
+            try {
+              installer.openSession(sessionId).use { session ->
+                verified.forEachIndexed { index, file ->
+                  val archive = context.packageManager.getPackageArchiveInfo(file.absolutePath, 0)
+                    ?: throw IllegalArgumentException("F-Droid download is not a readable APK")
+                  require(archive.packageName == packageName) { "F-Droid APK package name does not match the catalogue" }
+                  val splitName = archive.splitNames?.firstOrNull()
+                  val apkName = if (splitName.isNullOrEmpty()) "base.apk" else "split_$splitName.apk"
+                  FileInputStream(file).use { input -> session.openWrite(apkName, 0, file.length()).use { output ->
+                    input.copyTo(output); session.fsync(output)
+                  } }
+                }
+                session.commit(packageResultIntent(context, operationId, "install").intentSender)
+              }
+            } catch (error: Exception) {
+              try { installer.abandonSession(sessionId) } catch (_: Exception) { }
+              throw error
+            }
+          }
+          promise.resolve(true)
+        } catch (error: Exception) {
+          emitFdroidResult(operationId, false, error.message ?: "F-Droid installation failed")
+          promise.reject("FDROID_INSTALL", error.message ?: "F-Droid installation failed", error)
+        } finally {
+          cache.deleteRecursively()
+        }
+      }.start()
+    }
+    AsyncFunction("fdroidUninstall") { packageName: String, operationId: String, promise: Promise ->
+      try {
+        requireNotNull(appContext.reactContext).packageManager.packageInstaller.uninstall(
+          packageName, packageResultIntent(requireNotNull(appContext.reactContext), operationId, "uninstall").intentSender)
+        promise.resolve(true)
+      } catch (error: Exception) {
+        emitFdroidResult(operationId, false, error.message ?: "F-Droid uninstall failed")
+        promise.reject("FDROID_UNINSTALL", error.message ?: "F-Droid uninstall failed", error)
+      }
+    }
+  }
+
+  private fun downloadApk(repository: String, name: String, destination: File, operationId: String, fileIndex: Int, fileCount: Int) {
+    val safeName = name.trimStart('/')
+    require(safeName.split('/').none { it == ".." }) { "Invalid F-Droid APK path" }
+    val connection = URL(repository.trimEnd('/') + "/" + safeName).openConnection() as HttpURLConnection
+    connection.connectTimeout = 20_000; connection.readTimeout = 60_000; connection.instanceFollowRedirects = true
+    connection.setRequestProperty("User-Agent", "MatonOS-Software-Center/1.0")
+    try {
+      val code = connection.responseCode
+      if (code !in 200..299) throw IllegalStateException("F-Droid returned HTTP $code for APK")
+      val total = connection.contentLengthLong
+      var done = 0L
+      connection.inputStream.use { input -> FileOutputStream(destination).use { output ->
+        val buffer = ByteArray(16 * 1024)
+        while (true) {
+          val count = input.read(buffer)
+          if (count < 0) break
+          output.write(buffer, 0, count); done += count
+          val percent = if (total > 0) ((fileIndex * 100L + done * 100L / total) / fileCount).toInt() else -1
+          emitFdroidProgress(operationId, "Downloading APK ${fileIndex + 1} of $fileCount", percent, done, total)
+        }
+        output.fd.sync()
+      } }
+    } finally { connection.disconnect() }
+  }
+
+  private fun packageResultIntent(context: android.content.Context, operationId: String, kind: String): android.app.PendingIntent {
+    val intent = android.content.Intent(context, FdroidInstallReceiver::class.java)
+      .putExtra(FdroidInstallReceiver.EXTRA_OPERATION_ID, operationId)
+      .putExtra(FdroidInstallReceiver.EXTRA_KIND, kind)
+    return android.app.PendingIntent.getBroadcast(context, (operationId + kind).hashCode(), intent,
+      android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE)
+  }
+
+  private fun emitFdroidProgress(id: String, phase: String, percent: Int, done: Long, total: Long) {
+    fdroidEventSink?.invoke(id, phase, percent, done, total, null)
+  }
+
+  private fun emitFdroidResult(id: String, ok: Boolean, error: String?) {
+    fdroidEventSink?.invoke(id, "complete", 100, -1, -1,
+      mapOf("ok" to ok, "error" to (error ?: ""), "operationId" to id))
   }
 
   private abstract inner class Callback : ILinuxAppStoreCallback.Stub() {
@@ -171,7 +295,8 @@ class MatonOSExpoModule : Module() {
     return true
   }
 
-  private companion object {
+  companion object {
+    @Volatile var fdroidEventSink: ((String, String, Int, Long, Long, Map<String, Any>?) -> Unit)? = null
     const val FLATHUB_URL = "https://dl.flathub.org/repo/flathub.flatpakrepo"
     const val STUB_INSTALL_ACTION = "org.matonos.linuxhost.INSTALL"
     const val STUB_UPDATE_ACTION = "org.matonos.linuxhost.UPDATE"

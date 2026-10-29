@@ -1,5 +1,5 @@
 import { MatonOS } from "../../modules/matonos-flathub/src/MatonOS";
-import { unsupported, type Source } from "./Source";
+import { unsupported, type Source, type SourceProgress } from "./Source";
 
 const REPOSITORY = "https://f-droid.org/repo";
 
@@ -13,9 +13,16 @@ export const FdroidSource: Source = {
     const result = await MatonOS.fdroidDetails(REPOSITORY, app.id);
     return { ...result, source: "F-Droid" };
   },
-  async installed() { return []; },
+  async installed() {
+    const result = await MatonOS.fdroidInstalled(REPOSITORY);
+    return result.map((app) => ({ ...app, source: "F-Droid" as const }));
+  },
   async updates() { throw unsupported("Updates"); },
-  async install() { throw unsupported("Install"); },
-  async uninstall() { throw unsupported("Uninstall"); },
-  progress() { return { remove() { /* Read-only source has no operations. */ } }; },
+  async install(app, operationId) { await MatonOS.fdroidInstall(REPOSITORY, app.id, operationId); },
+  async uninstall(app, operationId) { await MatonOS.fdroidUninstall(app.id, operationId); },
+  progress(listener: (event: SourceProgress) => void) {
+    return MatonOS.addStoreListener((event) => {
+      if (event.source === "F-Droid") listener(event);
+    });
+  },
 };

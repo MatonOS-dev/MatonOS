@@ -1,5 +1,7 @@
 <permissions>
     <privapp-permissions package="org.matonos.flathub">
         <permission name="org.matonos.permission.INSTALL_LINUX_APPS" />
+        <permission name="android.permission.INSTALL_PACKAGES" />
+        <permission name="android.permission.DELETE_PACKAGES" />
     </privapp-permissions>
 </permissions>

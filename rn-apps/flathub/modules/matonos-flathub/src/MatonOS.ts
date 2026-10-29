@@ -17,11 +17,14 @@ type NativeApi = {
   storeListRemotes(): Promise<string>;
   fdroidSearch(repository: string, query: string): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
   fdroidDetails(repository: string, packageName: string): Promise<Omit<import("../../../src/sources/Source").StoreApp, "source">>;
+  fdroidInstalled(repository: string): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
+  fdroidInstall(repository: string, packageName: string, operationId: string): Promise<boolean>;
+  fdroidUninstall(packageName: string, operationId: string): Promise<boolean>;
   startStubInstall(ref: string, operationId: string | null): Promise<boolean>;
   startStubUpdate(ref: string, operationId: string | null): Promise<boolean>;
   launchStub(appId: string): Promise<boolean>;
 };
-export type StoreEvent = { operationId: string; phase: string; percent?: number; bytesDone?: number; bytesTotal?: number; result?: { ok?: boolean; error?: string; output?: string; operationId?: string } };
+export type StoreEvent = { source?: "F-Droid"; operationId: string; phase: string; percent?: number; bytesDone?: number; bytesTotal?: number; result?: { ok?: boolean; error?: string; output?: string; operationId?: string } };
 const Native = requireNativeModule<NativeApi>("MatonOSClient");
 let subscriptionIndex = 1;
 export const MatonOS = {
@@ -37,6 +40,9 @@ export const MatonOS = {
   storeListRemotes: () => Native.storeListRemotes(),
   fdroidSearch: (repository: string, query: string) => Native.fdroidSearch(repository, query),
   fdroidDetails: (repository: string, packageName: string) => Native.fdroidDetails(repository, packageName),
+  fdroidInstalled: (repository: string) => Native.fdroidInstalled(repository),
+  fdroidInstall: (repository: string, packageName: string, operationId: string) => Native.fdroidInstall(repository, packageName, operationId),
+  fdroidUninstall: (packageName: string, operationId: string) => Native.fdroidUninstall(packageName, operationId),
   addStoreListener: (listener: (event: StoreEvent) => void) => Native.addListener("linuxAppStoreEvent", listener),
   subscribe: (target: string, topic: string, listener: (event: MatonAreaEvent) => void) => {
     const id = `${target}:${topic}:${subscriptionIndex++}`;

@@ -27,15 +27,32 @@ public final class FdroidIndexClientTest {
     expectFailure(() -> client.verifyEntryJar(bytes(damaged), fingerprint), "damaged JAR signature");
     expectFailure(() -> client.verifyIndexHash("index data".getBytes(StandardCharsets.UTF_8), "00".repeat(32)), "index hash mismatch");
 
-    String fixture = "{\"packages\":{\"org.example.demo\":{\"metadata\":{\"name\":{\"en-US\":\"Demo App\"},\"summary\":{\"en-US\":\"A small fixture\"},\"icon\":{\"en-US\":{\"name\":\"/icons/demo.png\"}}},\"versions\":{\"abc\":{\"file\":{\"name\":\"/demo.apk\",\"sha256\":\"abc123\"},\"manifest\":{\"versionName\":\"1.2\",\"versionCode\":12}}}}}}";
+    String fixture = "{\"packages\":{\"org.example.demo\":{\"metadata\":{\"name\":{\"en-US\":\"Demo App\"},\"summary\":{\"en-US\":\"A small fixture\"},\"icon\":{\"en-US\":{\"name\":\"/icons/demo.png\"}}},\"versions\":{\"abc\":{\"file\":[{\"name\":\"/demo.apk\",\"sha256\":\"abc123\"},{\"name\":\"/demo-split.apk\",\"sha256\":\"def456\"}],\"manifest\":{\"versionName\":\"1.2\",\"versionCode\":12}}}}}}";
     java.util.Map<String, Object> parsed = client.parseIndex(fixture);
     java.util.Map<String, Object> app = client.detailsFromParsedIndex(parsed, "org.example.demo");
     check("Demo App".equals(app.get("name")), "parser name");
     check("A small fixture".equals(app.get("summary")), "parser summary");
     check("/demo.apk".equals(app.get("apkName")), "parser APK name");
     check("abc123".equals(app.get("apkSha256")), "parser APK hash");
+    check(((java.util.List<?>) app.get("apkFiles")).size() == 2, "parser split APK files");
     check(((Number) app.get("versionCode")).longValue() == 12, "parser version code");
-    System.out.println("PASS: signed JAR, signer pin, index hash, index parser");
+    testApkHashBeforeCommit(signedJar.getParentFile());
+    System.out.println("PASS: signed JAR, signer pin, index hash, index parser, APK hash before commit");
+  }
+
+  private static void testApkHashBeforeCommit(File directory) throws Exception {
+    File apk = new File(directory, "download.apk");
+    try (FileOutputStream output = new FileOutputStream(apk)) { output.write("verified APK bytes".getBytes(StandardCharsets.UTF_8)); }
+    String goodHash = fingerprint(bytes(apk));
+    FdroidApkInstaller installer = new FdroidApkInstaller();
+    final int[] commits = {0};
+    installer.verifyThenCommit(java.util.Collections.singletonList(apk), java.util.Collections.singletonList(goodHash), files -> commits[0]++);
+    check(commits[0] == 1, "valid APK reaches session commit");
+    try {
+      installer.verifyThenCommit(java.util.Arrays.asList(apk, apk), java.util.Arrays.asList(goodHash, "00".repeat(32)), files -> commits[0]++);
+      throw new AssertionError("Accepted APK hash mismatch");
+    } catch (SecurityException expected) { }
+    check(commits[0] == 1, "hash mismatch aborts before session commit");
   }
 
   private static void damageSignedContent(File original, File damaged) throws Exception {

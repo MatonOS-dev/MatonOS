@@ -21,6 +21,14 @@
    `buildinfra/privapp-permissions/`, and `tools/build-apps.sh` has registered
    the app certificate.
 
+4. Phase 2 requests `android.permission.INSTALL_PACKAGES` and
+   `android.permission.DELETE_PACKAGES`; both must be granted in the app's
+   privileged permission XML. `QUERY_ALL_PACKAGES` is declared in the app
+   manifest as a normal permission and must not be listed as a privileged
+   grant. Include the updated permission XML in the image. No bridge method is
+   needed: the privileged Software Center owns the APK PackageInstaller
+   session.
+
 No bridge implementation change is needed. The current successful image was
 checked and contains no Flathub APK, so QEMU UI verification must wait until
 the shared packaging entries above are included in an image.
