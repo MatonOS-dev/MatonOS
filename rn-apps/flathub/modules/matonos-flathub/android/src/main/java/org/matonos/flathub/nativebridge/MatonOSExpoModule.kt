@@ -12,6 +12,8 @@ import org.matonos.flathub.fdroid.FdroidIndexClient
 import org.matonos.flathub.fdroid.FdroidApkInstaller
 import org.matonos.flathub.fdroid.FdroidUpdateChecker
 import org.matonos.flathub.fdroid.FdroidUpdateWorker
+import org.matonos.flathub.fdroid.FdroidRepositories
+import org.matonos.flathub.fdroid.FdroidRepository
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -115,27 +117,56 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("storeListInstalled") { promise: Promise -> withStore(promise) { promise.resolve(it.listInstalled()) } }
     AsyncFunction("storeListRemotes") { promise: Promise -> withStore(promise) { promise.resolve(it.listRemotes()) } }
     AsyncFunction("fdroidSearch") { repository: String, query: String ->
-      fdroidIndex.search(requireNotNull(appContext.reactContext).filesDir, repository, query)
+      val context = requireNotNull(appContext.reactContext)
+      val fingerprint = repositoryFingerprint(context, repository)
+      try { fdroidIndex.search(context.filesDir, repository, fingerprint, query).onEach { it["repository"] = repository }.also { FdroidRepositories.setBroken(context, repository, false) } }
+      catch (error: Exception) { FdroidRepositories.setBroken(context, repository, true); throw error }
     }
     AsyncFunction("fdroidDetails") { repository: String, packageName: String ->
-      fdroidIndex.details(requireNotNull(appContext.reactContext).filesDir, repository, packageName)
+      val context = requireNotNull(appContext.reactContext)
+      val result = try { fdroidIndex.details(context.filesDir, repository, repositoryFingerprint(context, repository), packageName) }
+      catch (error: Exception) { FdroidRepositories.setBroken(context, repository, true); throw error }
+      result?.set("repository", repository)
+      result
         ?: throw IllegalArgumentException("F-Droid app not found: $packageName")
     }
     AsyncFunction("fdroidInstalled") { repository: String ->
       val context = requireNotNull(appContext.reactContext)
       @Suppress("DEPRECATION")
       val packageNames = context.packageManager.getInstalledPackages(0).map { it.packageName }
-      fdroidIndex.installedCatalogue(context.filesDir, repository, packageNames)
+      try { fdroidIndex.installedCatalogue(context.filesDir, repository, repositoryFingerprint(context, repository), packageNames).onEach { it["repository"] = repository }.also { FdroidRepositories.setBroken(context, repository, false) } }
+      catch (error: Exception) { FdroidRepositories.setBroken(context, repository, true); throw error }
     }
     AsyncFunction("fdroidUpdates") {
       FdroidUpdateChecker.updates(requireNotNull(appContext.reactContext))
+    }
+    AsyncFunction("fdroidRepositories") { FdroidRepositories.list(requireNotNull(appContext.reactContext)) }
+    AsyncFunction("fdroidAddRepository") { repository: String, fingerprint: String ->
+      FdroidRepositories.add(requireNotNull(appContext.reactContext), repository, fingerprint)
+      true
+    }
+    AsyncFunction("fdroidRemoveRepository") { repository: String ->
+      FdroidRepositories.remove(requireNotNull(appContext.reactContext), repository)
+      true
+    }
+    AsyncFunction("fdroidHostDisplay") { repository: String -> FdroidRepository.displayHost(repository) }
+    AsyncFunction("fdroidVerifyRepository") { repository: String ->
+      val context = requireNotNull(appContext.reactContext)
+      try {
+        fdroidIndex.search(context.filesDir, repository, repositoryFingerprint(context, repository), "")
+        FdroidRepositories.setBroken(context, repository, false)
+        mapOf("ok" to true, "error" to "")
+      } catch (error: Exception) {
+        FdroidRepositories.setBroken(context, repository, true)
+        mapOf("ok" to false, "error" to (error.message ?: "Repository verification failed"))
+      }
     }
     AsyncFunction("fdroidInstall") { repository: String, packageName: String, operationId: String, promise: Promise ->
       val context = requireNotNull(appContext.reactContext)
       Thread {
         val cache = File(context.cacheDir, "fdroid-install/$operationId")
         try {
-          val app = fdroidIndex.details(context.filesDir, repository, packageName)
+          val app = fdroidIndex.details(context.filesDir, repository, repositoryFingerprint(context, repository), packageName)
             ?: throw IllegalArgumentException("F-Droid app not found: $packageName")
           @Suppress("UNCHECKED_CAST")
           val apkFiles = app["apkFiles"] as? List<Map<String, String>> ?: emptyList()
@@ -218,6 +249,10 @@ class MatonOSExpoModule : Module() {
       } }
     } finally { connection.disconnect() }
   }
+
+  private fun repositoryFingerprint(context: android.content.Context, repository: String): String =
+    FdroidRepositories.list(context).firstOrNull { it["url"] == FdroidRepository.normalizeUrl(repository) }
+      ?.get("fingerprint")?.toString() ?: throw IllegalArgumentException("F-Droid repository is not trusted")
 
   private fun packageResultIntent(context: android.content.Context, operationId: String, kind: String): android.app.PendingIntent {
     val intent = android.content.Intent(context, FdroidInstallReceiver::class.java)

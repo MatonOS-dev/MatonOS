@@ -13,5 +13,5 @@ keytool -genkeypair -alias fixture -keyalg RSA -keysize 2048 -validity 2 \
 jar --create --file "$TMP/entry.jar" -C "$TMP/payload" .
 jarsigner -keystore "$TMP/test.p12" -storepass changeit -keypass changeit "$TMP/entry.jar" fixture >/dev/null
 keytool -exportcert -alias fixture -keystore "$TMP/test.p12" -storepass changeit -file "$TMP/cert.der" >/dev/null 2>&1
-javac -d "$TMP/classes" "$SRC/Json.java" "$SRC/FdroidIndexClient.java" "$SRC/FdroidApkInstaller.java" "$TEST/FdroidIndexClientTest.java"
+javac -d "$TMP/classes" "$SRC/Json.java" "$SRC/FdroidRepository.java" "$SRC/FdroidIndexClient.java" "$SRC/FdroidApkInstaller.java" "$TEST/FdroidIndexClientTest.java"
 java -cp "$TMP/classes" org.matonos.flathub.fdroid.FdroidIndexClientTest "$TMP/entry.jar" "$TMP/cert.der"

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { FlatList, View } from "react-native";
-import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Text, RNHostView } from "@expo/ui/jetpack-compose";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { FlatList, Linking, View } from "react-native";
+import { Image as ComposeImage, Button, Column, Host, LazyColumn, LinearProgressIndicator, OutlinedTextField, Row, Text, RNHostView, useNativeState } from "@expo/ui/jetpack-compose";
 import { useMaterialColors } from "@expo/ui/jetpack-compose";
 import { clickable, height, padding, paddingAll, size, weight, width } from "@expo/ui/jetpack-compose/modifiers";
 import { getCollection, type StoreApp } from "./FlathubApi";
+import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
 import { runApp } from "./FlatpakBridge";
 import { FlathubSource } from "./sources/FlathubSource";
 import { FdroidSource } from "./sources/FdroidSource";
@@ -142,6 +143,15 @@ export default function App() {
   const themeColors = useMaterialColors({ colorScheme: "dark", seedColor: "#79c75b" });
   const [page, setPage] = useState<Page>("browse");
   const [feed, setFeed] = useState<Feed>("popular");
+  const [repoManager, setRepoManager] = useState(false);
+  const [repositories, setRepositories] = useState<Array<{ url: string; fingerprint: string; official: boolean; broken: boolean }>>([]);
+  const [repoUrl, setRepoUrl] = useState("");
+  const [repoFingerprint, setRepoFingerprint] = useState("");
+  const repoUrlInput = useNativeState("");
+  const repoFingerprintInput = useNativeState("");
+  const [repoHost, setRepoHost] = useState("");
+  const [repoError, setRepoError] = useState("");
+  const [repoChecking, setRepoChecking] = useState(false);
   const [apps, setApps] = useState<StoreApp[]>([]);
   const [installedApps, setInstalledApps] = useState<StoreApp[]>([]);
   const [updateApps, setUpdateApps] = useState<StoreApp[]>([]);
@@ -156,6 +166,44 @@ export default function App() {
   const [operationKind, setOperationKind] = useState<"install" | "update" | "uninstall">("install");
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
   const updateIds = useMemo(() => new Set(updateApps.map((app) => `${app.source}:${app.id}`)), [updateApps]);
+
+  async function refreshRepositories() {
+    try { setRepositories(await MatonOS.fdroidRepositories()); } catch (error) { setRepoError(errorText(error)); }
+  }
+
+  const reviewRepository = useCallback(async (url: string, fingerprint: string) => {
+    setRepoError(""); setRepoUrl(url); setRepoFingerprint(fingerprint); repoUrlInput.set(url); repoFingerprintInput.set(fingerprint);
+    try { setRepoHost(await MatonOS.fdroidHostDisplay(url)); }
+    catch (error) { setRepoHost(""); setRepoError(errorText(error)); }
+  }, [repoUrlInput, repoFingerprintInput]);
+
+  const handleRepositoryLink = useCallback(async (value: string) => {
+    try {
+      const link = new URL(value);
+      if (link.protocol !== "fdroidrepos:") return;
+      const url = link.searchParams.get("url") || `https://${link.host}${link.pathname}`.replace(/\/$/, "");
+      setRepoManager(true); setSelected(null);
+      await reviewRepository(url, link.searchParams.get("fingerprint") || "");
+    } catch { setRepoError("This F-Droid repository link is invalid."); }
+  }, [reviewRepository]);
+
+  async function saveRepository() {
+    if (!repoHost || repoChecking) return;
+    setRepoChecking(true); setRepoError("");
+    try {
+      await MatonOS.fdroidAddRepository(repoUrl, repoFingerprint);
+      const status = await MatonOS.fdroidVerifyRepository(repoUrl);
+      await refreshRepositories();
+      setRepoError(status.ok ? "Repository verified and added." : `Repository added as broken: ${status.error}`);
+      if (status.ok) { setRepoUrl(""); setRepoFingerprint(""); setRepoHost(""); repoUrlInput.set(""); repoFingerprintInput.set(""); }
+    } catch (error) { setRepoError(errorText(error)); }
+    finally { setRepoChecking(false); }
+  }
+
+  async function removeRepository(repository: string) {
+    try { await MatonOS.fdroidRemoveRepository(repository); await refreshRepositories(); await runSearch(""); }
+    catch (error) { setRepoError(errorText(error)); }
+  }
 
   async function refreshInstalled() {
     setInstalledError("");
@@ -225,9 +273,11 @@ export default function App() {
   }
 
   useEffect(() => {
-    const timer = setTimeout(() => { void loadCollection("popular"); void refreshInstalled(); void refreshUpdates(); }, 0);
-    return () => clearTimeout(timer);
-  }, []);
+    const timer = setTimeout(() => { void loadCollection("popular"); void refreshInstalled(); void refreshUpdates(); void refreshRepositories(); }, 0);
+    const initialLink = Linking.getInitialURL().then((url) => { if (url) void handleRepositoryLink(url); });
+    const subscription = Linking.addEventListener("url", (event) => void handleRepositoryLink(event.url));
+    return () => { clearTimeout(timer); subscription.remove(); void initialLink; };
+  }, [handleRepositoryLink]);
   useEffect(() => {
     const handleProgress = (payload: SourceProgress) => {
       if (payload.phase === "complete") {
@@ -284,7 +334,29 @@ export default function App() {
   const keyApp = (app: StoreApp) => `${app.source}:${app.id}`;
 
   let content: ReactNode;
-  if (selected) {
+  if (repoManager) {
+    content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
+      <Button onClick={() => { setRepoManager(false); setRepoError(""); }}><Text>‹  Back to apps</Text></Button>
+      <Text style={{ typography: "headlineSmall" }}>F-Droid repositories</Text>
+      <Text style={{ typography: "bodyMedium" }}>The Software Center verifies each repository's signed index using the fingerprint you confirm.</Text>
+      {repositories.map((repository) => <Column key={repository.url} modifiers={[paddingAll(10)]}>
+        <Text style={{ typography: "titleMedium" }}>{repository.official ? "F-Droid (built in)" : repository.url}</Text>
+        <Text style={{ typography: "bodySmall" }}>SHA-256: {repository.fingerprint}</Text>
+        <Text style={{ typography: "bodySmall" }}>{repository.broken ? "Broken: index verification or download failed." : "Verified repository"}</Text>
+        {!repository.official ? <Button onClick={() => void removeRepository(repository.url)}><Text>Remove repository</Text></Button> : null}
+      </Column>)}
+      <OutlinedTextField value={repoUrlInput} onValueChange={(value) => { setRepoUrl(value); repoUrlInput.set(value); }}><OutlinedTextField.Label>HTTPS repository URL</OutlinedTextField.Label></OutlinedTextField>
+      <OutlinedTextField value={repoFingerprintInput} onValueChange={(value) => { setRepoFingerprint(value); repoFingerprintInput.set(value); }}><OutlinedTextField.Label>Signing fingerprint (SHA-256)</OutlinedTextField.Label></OutlinedTextField>
+      <Button onClick={() => void reviewRepository(repoUrl, repoFingerprint)}><Text>Review repository</Text></Button>
+      {repoHost ? <Column modifiers={[paddingAll(12)]}>
+        <Text style={{ typography: "titleMedium" }}>Trust repository at {repoHost}?</Text>
+        <Text style={{ typography: "bodySmall" }}>Fingerprint: {repoFingerprint.replace(/(.{2})/g, "$1:").replace(/:$/, "").toUpperCase()}</Text>
+        <Text style={{ typography: "bodySmall" }}>Review the host and fingerprint before trusting this repository.</Text>
+        <Button enabled={!repoChecking} onClick={() => void saveRepository()}><Text>{repoChecking ? "Checking…" : "Trust and add"}</Text></Button>
+      </Column> : null}
+      <Show when={Boolean(repoError)}><Text style={{ typography: "bodyMedium" }}>{repoError}</Text></Show>
+    </LazyColumn></Host>;
+  } else if (selected) {
     const currentDetail = selected;
     content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><DetailContent app={currentDetail} installed={installedIds.has(`${currentDetail.source}:${currentDetail.id}`)} updateAvailable={updateIds.has(`${currentDetail.source}:${currentDetail.id}`)} busy={Boolean(busyRef)}
       busyLabel={busyButtonLabel(operationKind)} progress={busyRef === currentDetail.ref ? progress : ""} percent={busyRef === currentDetail.ref ? percent : null}
@@ -327,6 +399,7 @@ export default function App() {
           <Button onClick={() => void selectPage("browse")}><Text>Browse</Text></Button>
           <Button onClick={() => void selectPage("installed")}><Text>Installed</Text></Button>
           <Button onClick={() => void selectPage("updates")}><Text>Updates</Text></Button>
+          <Button onClick={() => { setRepoManager(true); setSelected(null); setRepoError(""); void refreshRepositories(); }}><Text>Repositories</Text></Button>
         </Row>
         <Show when={Boolean(busyRef)}>
           <Column modifiers={[padding(14, 0, 14, 14)]}>

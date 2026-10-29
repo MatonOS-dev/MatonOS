@@ -26,7 +26,11 @@ public final class FdroidIndexClient {
   private static final String DEFAULT_REPO = "https://f-droid.org/repo";
 
   public List<Map<String, Object>> search(File cacheRoot, String repository, String query) throws Exception {
-    Map<String, Object> catalogue = load(cacheRoot, repository);
+    return search(cacheRoot, repository, OFFICIAL_FINGERPRINT, query);
+  }
+
+  public List<Map<String, Object>> search(File cacheRoot, String repository, String fingerprint, String query) throws Exception {
+    Map<String, Object> catalogue = load(cacheRoot, repository, fingerprint);
     Object packagesValue = catalogue.get("packages");
     if (!(packagesValue instanceof Map)) return Collections.emptyList();
     String needle = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
@@ -40,12 +44,20 @@ public final class FdroidIndexClient {
   }
 
   public Map<String, Object> details(File cacheRoot, String repository, String packageName) throws Exception {
-    Map<String, Object> packages = map(load(cacheRoot, repository).get("packages"));
+    return details(cacheRoot, repository, OFFICIAL_FINGERPRINT, packageName);
+  }
+
+  public Map<String, Object> details(File cacheRoot, String repository, String fingerprint, String packageName) throws Exception {
+    Map<String, Object> packages = map(load(cacheRoot, repository, fingerprint).get("packages"));
     return app(packageName, map(packages.get(packageName)));
   }
 
   public List<Map<String, Object>> installedCatalogue(File cacheRoot, String repository, List<String> installedPackages) throws Exception {
-    Map<String, Object> packages = map(load(cacheRoot, repository).get("packages"));
+    return installedCatalogue(cacheRoot, repository, OFFICIAL_FINGERPRINT, installedPackages);
+  }
+
+  public List<Map<String, Object>> installedCatalogue(File cacheRoot, String repository, String fingerprint, List<String> installedPackages) throws Exception {
+    Map<String, Object> packages = map(load(cacheRoot, repository, fingerprint).get("packages"));
     List<Map<String, Object>> installed = new ArrayList<>();
     for (String packageName : installedPackages) {
       Map<String, Object> value = app(packageName, map(packages.get(packageName)));
@@ -56,7 +68,11 @@ public final class FdroidIndexClient {
   }
 
   public List<Map<String, Object>> updatesCatalogue(File cacheRoot, String repository, List<Map<String, Object>> installedPackages) throws Exception {
-    return updatesFromParsedIndex(load(cacheRoot, repository), installedPackages);
+    return updatesCatalogue(cacheRoot, repository, OFFICIAL_FINGERPRINT, installedPackages);
+  }
+
+  public List<Map<String, Object>> updatesCatalogue(File cacheRoot, String repository, String fingerprint, List<Map<String, Object>> installedPackages) throws Exception {
+    return updatesFromParsedIndex(load(cacheRoot, repository, fingerprint), installedPackages);
   }
 
   List<Map<String, Object>> updatesFromParsedIndex(Map<String, Object> catalogue, List<Map<String, Object>> installedPackages) {
@@ -108,12 +124,13 @@ public final class FdroidIndexClient {
     if (!fingerprint(index).equals(normalizeFingerprint(expectedHash))) throw new SecurityException("F-Droid index SHA-256 mismatch");
   }
 
-  private Map<String, Object> load(File cacheRoot, String repository) throws Exception {
+  private Map<String, Object> load(File cacheRoot, String repository, String expectedFingerprint) throws Exception {
     String repo = (repository == null || repository.isEmpty()) ? DEFAULT_REPO : repository;
-    File repoCache = new File(cacheRoot, fingerprint(repo.getBytes("UTF-8")));
+    String signer = FdroidRepository.normalizeFingerprint(expectedFingerprint);
+    File repoCache = new File(cacheRoot, fingerprint((repo + "\n" + signer).getBytes("UTF-8")));
     File indexFile = new File(repoCache, "index-v2.json");
     byte[] entryJar = download(repo + "/entry.jar");
-    verifyEntryJar(entryJar, OFFICIAL_FINGERPRINT);
+    verifyEntryJar(entryJar, signer);
     byte[] entryBytes = verifiedEntryJson(entryJar);
     Map<String, Object> entry = parseIndex(new String(entryBytes, "UTF-8"));
     Map<String, Object> indexInfo = map(entry.get("index"));
@@ -181,13 +198,14 @@ public final class FdroidIndexClient {
     if (apkFiles.isEmpty()) return null;
     String icon = localized(metadata.get("icon"));
     Map<String, Object> result = new LinkedHashMap<>();
-    result.put("id", packageName); result.put("name", fallback(localized(metadata.get("name")), packageName));
+    result.put("id", packageName); result.put("packageName", packageName); result.put("name", fallback(localized(metadata.get("name")), packageName));
     result.put("summary", localized(metadata.get("summary"))); result.put("icon", icon.isEmpty() ? "" : absolutePath(icon));
     result.put("developer", ""); result.put("ref", packageName); result.put("description", localized(metadata.get("description")));
     result.put("screenshots", Collections.emptyList()); result.put("permissions", Collections.emptyList());
     result.put("versionName", text(manifest.get("versionName"))); result.put("versionCode", number(manifest.get("versionCode")));
     result.put("signerSha256", strings(map(manifest.get("signer")).get("sha256")));
     result.put("apkName", text(file.get("name"))); result.put("apkSha256", text(file.get("sha256"))); result.put("apkFiles", apkFiles);
+    result.put("repository", "");
     return result;
   }
 

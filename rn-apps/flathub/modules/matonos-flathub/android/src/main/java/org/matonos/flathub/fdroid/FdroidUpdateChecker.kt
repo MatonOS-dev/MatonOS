@@ -11,7 +11,17 @@ object FdroidUpdateChecker {
 
   fun updates(context: Context): List<Map<String, Any>> {
     val installed = installedVersions(context)
-    return FdroidIndexClient().updatesCatalogue(context.filesDir, OFFICIAL_REPOSITORY, installed)
+    val client = FdroidIndexClient()
+    return FdroidRepositories.list(context).flatMap { repository ->
+      val url = repository["url"].toString()
+      val fingerprint = repository["fingerprint"].toString()
+      try {
+        client.updatesCatalogue(context.filesDir, url, fingerprint, installed).onEach { it["repository"] = url }.also { FdroidRepositories.setBroken(context, url, false) }
+      } catch (error: Exception) {
+        FdroidRepositories.setBroken(context, url, true)
+        emptyList()
+      }
+    }.distinctBy { it["id"] }
   }
 
   fun checkInBackground(context: Context) {

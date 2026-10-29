@@ -21,6 +21,11 @@ type NativeApi = {
   fdroidUpdates(): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
   fdroidInstall(repository: string, packageName: string, operationId: string): Promise<boolean>;
   fdroidUninstall(packageName: string, operationId: string): Promise<boolean>;
+  fdroidRepositories(): Promise<Array<{ url: string; fingerprint: string; official: boolean; broken: boolean }>>;
+  fdroidAddRepository(repository: string, fingerprint: string): Promise<boolean>;
+  fdroidRemoveRepository(repository: string): Promise<boolean>;
+  fdroidHostDisplay(repository: string): Promise<string>;
+  fdroidVerifyRepository(repository: string): Promise<{ ok: boolean; error: string }>;
   startStubInstall(ref: string, operationId: string | null): Promise<boolean>;
   startStubUpdate(ref: string, operationId: string | null): Promise<boolean>;
   launchStub(appId: string): Promise<boolean>;
@@ -45,6 +50,11 @@ export const MatonOS = {
   fdroidUpdates: () => Native.fdroidUpdates(),
   fdroidInstall: (repository: string, packageName: string, operationId: string) => Native.fdroidInstall(repository, packageName, operationId),
   fdroidUninstall: (packageName: string, operationId: string) => Native.fdroidUninstall(packageName, operationId),
+  fdroidRepositories: () => Native.fdroidRepositories(),
+  fdroidAddRepository: (repository: string, fingerprint: string) => Native.fdroidAddRepository(repository, fingerprint),
+  fdroidRemoveRepository: (repository: string) => Native.fdroidRemoveRepository(repository),
+  fdroidHostDisplay: (repository: string) => Native.fdroidHostDisplay(repository),
+  fdroidVerifyRepository: (repository: string) => Native.fdroidVerifyRepository(repository),
   addStoreListener: (listener: (event: StoreEvent) => void) => Native.addListener("linuxAppStoreEvent", listener),
   subscribe: (target: string, topic: string, listener: (event: MatonAreaEvent) => void) => {
     const id = `${target}:${topic}:${subscriptionIndex++}`;

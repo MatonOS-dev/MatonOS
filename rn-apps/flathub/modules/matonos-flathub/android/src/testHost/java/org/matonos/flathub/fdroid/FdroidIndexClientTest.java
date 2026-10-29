@@ -38,7 +38,19 @@ public final class FdroidIndexClientTest {
     check(((Number) app.get("versionCode")).longValue() == 12, "parser version code");
     testApkHashBeforeCommit(signedJar.getParentFile());
     testUpdateEligibility(client, parsed);
-    System.out.println("PASS: signed JAR, signer pin, index hash, index parser, APK hash before commit, update signer/version checks");
+    testRepositoryChanges();
+    System.out.println("PASS: signed JAR, signer pin, index hash, index parser, APK hash before commit, update signer/version checks, repository trust/removal");
+  }
+
+  private static void testRepositoryChanges() throws Exception {
+    String fingerprint = "ab".repeat(32);
+    check(fingerprint.equals(FdroidRepository.normalizeFingerprint(fingerprint.toUpperCase(Locale.ROOT))), "repository fingerprint is normalized");
+    expectIllegalArgument(() -> FdroidRepository.normalizeFingerprint(""), "fingerprint is required");
+    check("xn--bcher-kva.example".equals(FdroidRepository.displayHost("https://bücher.example/repo")), "non-ASCII host is shown as punycode");
+    java.util.Map<String, Object> removedRepoApp = new java.util.LinkedHashMap<>();
+    removedRepoApp.put("id", "org.example.removed"); removedRepoApp.put("repository", "https://repo.example/fdroid");
+    check(FdroidRepository.visibleApps(java.util.Collections.singletonList(removedRepoApp), java.util.Collections.emptySet()).isEmpty(),
+        "removed repository apps disappear from search results");
   }
 
   private static void testUpdateEligibility(FdroidIndexClient client, java.util.Map<String, Object> index) {
@@ -83,6 +95,9 @@ public final class FdroidIndexClientTest {
   private interface Checked { void run() throws Exception; }
   private static void expectFailure(Checked action, String label) throws Exception {
     try { action.run(); throw new AssertionError("Accepted " + label); } catch (SecurityException expected) { }
+  }
+  private static void expectIllegalArgument(Checked action, String label) throws Exception {
+    try { action.run(); throw new AssertionError("Accepted " + label); } catch (IllegalArgumentException expected) { }
   }
   private static void check(boolean condition, String label) { if (!condition) throw new AssertionError("Failed " + label); }
   private static byte[] bytes(File file) throws Exception { try (FileInputStream in = new FileInputStream(file)) { return read(in); } }

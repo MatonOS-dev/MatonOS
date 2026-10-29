@@ -16,6 +16,7 @@ export type StoreApp = {
   apkName?: string;
   apkSha256?: string;
   apkFiles?: Array<{ name: string; sha256: string }>;
+  repository?: string;
 };
 
 export type SourceProgress = { source?: SourceName; operationId?: string; phase?: string; percent?: number; bytesDone?: number; bytesTotal?: number; result?: { ok?: boolean; error?: string; output?: string; operationId?: string } };
