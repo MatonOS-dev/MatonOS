@@ -274,13 +274,14 @@ meson setup "$AND_BUILD" "$MESA" \
   --force-fallback-for=libdrm,zlib,expat -Dallow-fallback-for=libdrm \
   -Dlibdrm:default_library=static -Dzlib:default_library=static -Dexpat:default_library=static \
   -Dplatforms=android -Dandroid-stub=true -Dandroid-libbacktrace=disabled \
+  -Dandroid-strict=false \
   -Dplatform-sdk-version=$API \
   -Dgallium-drivers=iris,crocus,radeonsi,r600,r300,nouveau,virgl,svga,zink,llvmpipe,softpipe \
   -Dvulkan-drivers=intel,intel_hasvk,amd,nouveau,virtio,swrast \
   -Degl=enabled -Dgles1=enabled -Dgles2=enabled -Dopengl=true \
   -Degl-lib-suffix=_mesa -Dgles-lib-suffix=_mesa \
   -Dglx=disabled -Dgbm=enabled \
-  -Dllvm=enabled -Dshared-llvm=disabled -Damd-use-llvm=false \
+  -Dllvm=enabled -Dshared-llvm=disabled -Damd-options= \
   -Dmesa-clc=system -Dprecomp-compiler=system \
   -Dintel-rt=disabled \
   -Dgallium-va=disabled -Dvideo-codecs= -Dgallium-rusticl=false \

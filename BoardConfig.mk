@@ -133,8 +133,9 @@ SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy/system_ext/private
 # stable-C mapper: native virtgpu for virtio_gpu, GBM Mesa for other DRM drivers.
 # The gbm_mesa Soong backend links this library (vendorforks/README.md).
 $(call soong_config_set,minigbm,backend,gbm_mesa)
-# HWUI renders with GL for v1 (sets ro.hwui.use_vulkan=false): Vulkan
-# availability varies per PC.
+# HWUI renders with GL for v1 (sets ro.hwui.use_vulkan=false). The Vulkan
+# features are still declared in graphics.mk: lavapipe guarantees Vulkan on
+# every PC.
 TARGET_USES_VULKAN := false
 
 # OEM AIDs generate vendor/etc/passwd and vendor/etc/group.

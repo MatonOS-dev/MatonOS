@@ -39,6 +39,13 @@ PRODUCT_COPY_FILES += \
     $(foreach f,$(shell test -d $(PC_MESA_PREBUILT) && cd $(PC_MESA_PREBUILT) && find . -type f -printf '%P\n'),\
         $(PC_MESA_PREBUILT)/$(f):$(TARGET_COPY_OUT_VENDOR)/$(f))
 
+# Every PC has Vulkan (hardware Mesa driver or the swrast/lavapipe fallback);
+# declare the floor all of them meet so apps find it.
+PRODUCT_COPY_FILES += \
+    frameworks/native/data/etc/android.hardware.vulkan.version-1_1.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.vulkan.version.xml \
+    frameworks/native/data/etc/android.hardware.vulkan.level-0.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.vulkan.level.xml \
+    frameworks/native/data/etc/android.hardware.vulkan.compute-0.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.vulkan.compute.xml
+
 # Vendor-owned Mesa hardware selectors are in /odm/etc/build.prop, staged by
 # tools/build-bundle.sh. The system-owned OpenGL version and debug renderer
 # defaults remain product properties. ro.hardware.vulkan is selected at boot.
