@@ -281,7 +281,7 @@ meson setup "$AND_BUILD" "$MESA" \
   -Degl=enabled -Dgles1=enabled -Dgles2=enabled -Dopengl=true \
   -Degl-lib-suffix=_mesa -Dgles-lib-suffix=_mesa \
   -Dglx=disabled -Dgbm=enabled \
-  -Dllvm=enabled -Dshared-llvm=disabled -Damd-options= \
+  -Dllvm=enabled -Dshared-llvm=disabled -Damd-options=virtio \
   -Dmesa-clc=system -Dprecomp-compiler=system \
   -Dintel-rt=disabled \
   -Dgallium-va=disabled -Dvideo-codecs= -Dgallium-rusticl=false \

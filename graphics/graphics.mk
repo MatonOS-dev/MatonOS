@@ -24,6 +24,7 @@ PRODUCT_PACKAGES += \
     libmaton_mesa_sphal_deps \
     android.hardware.composer.hwc3-service.drm \
     pc-gpu-detect.sh \
+    pc-virtgpu-caps \
     init.pc_x86_64.graphics.rc
 
 # ---------------------------------------------------------------- Mesa

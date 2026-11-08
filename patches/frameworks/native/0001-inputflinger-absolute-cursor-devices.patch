@@ -1,0 +1,126 @@
+diff --git a/services/inputflinger/reader/mapper/CursorInputMapper.cpp b/services/inputflinger/reader/mapper/CursorInputMapper.cpp
+index da0901b2a2..f6fa863571 100644
+--- a/services/inputflinger/reader/mapper/CursorInputMapper.cpp
++++ b/services/inputflinger/reader/mapper/CursorInputMapper.cpp
+@@ -211,6 +211,17 @@ CursorInputMapper::Parameters CursorInputMapper::computeParameters(
+ 
+     parameters.orientationAware = config.getBool("cursor.orientationAware").value_or(false);
+ 
++    parameters.absolute = false;
++    if (config.getBool("cursor.absolute").value_or(false)) {
++        if (parameters.mode == Parameters::Mode::POINTER &&
++            deviceContext.hasAbsoluteAxis(ABS_X) && deviceContext.hasAbsoluteAxis(ABS_Y)) {
++            parameters.absolute = true;
++        } else {
++            ALOGE("cursor.absolute set on '%s' but it is not a pointer with ABS_X/ABS_Y; "
++                  "ignoring", deviceContext.getName().c_str());
++        }
++    }
++
+     parameters.hasAssociatedDisplay = false;
+     if (parameters.mode == Parameters::Mode::POINTER || parameters.orientationAware) {
+         parameters.hasAssociatedDisplay = true;
+@@ -224,6 +235,7 @@ void CursorInputMapper::dumpParameters(std::string& dump) {
+                          toString(mParameters.hasAssociatedDisplay));
+     dump += StringPrintf(INDENT4 "Mode: %s\n", ftl::enum_string(mParameters.mode).c_str());
+     dump += StringPrintf(INDENT4 "OrientationAware: %s\n", toString(mParameters.orientationAware));
++    dump += StringPrintf(INDENT4 "Absolute: %s\n", toString(mParameters.absolute));
+ }
+ 
+ std::list<NotifyArgs> CursorInputMapper::reset(nsecs_t when) {
+@@ -247,6 +259,10 @@ std::list<NotifyArgs> CursorInputMapper::process(const RawEvent& rawEvent) {
+     mCursorButtonAccumulator.process(rawEvent);
+     mCursorMotionAccumulator.process(rawEvent);
+     mCursorScrollAccumulator.process(rawEvent);
++    if (mParameters.absolute && rawEvent.type == EV_ABS) {
++        if (rawEvent.code == ABS_X) { mAbsX = rawEvent.value; mAbsChanged = true; }
++        if (rawEvent.code == ABS_Y) { mAbsY = rawEvent.value; mAbsChanged = true; }
++    }
+ 
+     if (rawEvent.type == EV_SYN && rawEvent.code == SYN_REPORT) {
+         const auto [eventTime, readTime] =
+@@ -316,6 +332,33 @@ std::list<NotifyArgs> CursorInputMapper::sync(nsecs_t when, nsecs_t readTime) {
+     float xCursorPosition = AMOTION_EVENT_INVALID_CURSOR_POSITION;
+     float yCursorPosition = AMOTION_EVENT_INVALID_CURSOR_POSITION;
+ 
++    // MatonOS absolute cursor: map the device range onto the pointer viewport. In POINTER
++    // mode PointerChoreographer places the cursor at xCursorPosition; under pointer capture
++    // the position change is reported as an unaccelerated relative delta.
++    if (mAbsChanged) {
++        mAbsChanged = false;
++        const float w = mBoundsInLogicalDisplay.right - mBoundsInLogicalDisplay.left;
++        const float h = mBoundsInLogicalDisplay.bottom - mBoundsInLogicalDisplay.top;
++        const float x = mBoundsInLogicalDisplay.left +
++                float(mAbsX - mAbsXInfo->minValue) * w / float(mAbsXInfo->maxValue - mAbsXInfo->minValue);
++        const float y = mBoundsInLogicalDisplay.top +
++                float(mAbsY - mAbsYInfo->minValue) * h / float(mAbsYInfo->maxValue - mAbsYInfo->minValue);
++        if (mParameters.mode == Parameters::Mode::POINTER) {
++            xCursorPosition = x;
++            yCursorPosition = y;
++            deltaX = mAbsKnown ? x - mAbsLastX : 0;
++            deltaY = mAbsKnown ? y - mAbsLastY : 0;
++            moved = true;
++        } else if (mAbsKnown) {
++            deltaX += x - mAbsLastX;
++            deltaY += y - mAbsLastY;
++            moved = deltaX != 0 || deltaY != 0;
++        }
++        mAbsLastX = x;
++        mAbsLastY = y;
++        mAbsKnown = true;
++    }
++
+     // Moving an external trackball or mouse should wake the device.
+     // We don't do this for internal cursor devices to prevent them from waking up
+     // the device in your pocket.
+@@ -339,6 +382,10 @@ std::list<NotifyArgs> CursorInputMapper::sync(nsecs_t when, nsecs_t readTime) {
+         moveCoords.clear();
+         moveCoords.setAxisValue(AMOTION_EVENT_AXIS_RELATIVE_X, deltaX);
+         moveCoords.setAxisValue(AMOTION_EVENT_AXIS_RELATIVE_Y, deltaY);
++        if (MotionEvent::isValidCursorPosition(xCursorPosition, yCursorPosition)) {
++            moveCoords.setAxisValue(AMOTION_EVENT_AXIS_X, xCursorPosition);
++            moveCoords.setAxisValue(AMOTION_EVENT_AXIS_Y, yCursorPosition);
++        }
+         if (mSource != AINPUT_SOURCE_MOUSE) {
+             // Pointer capture and navigation modes
+             moveCoords.setAxisValue(AMOTION_EVENT_AXIS_X, deltaX);
+@@ -464,6 +511,16 @@ void CursorInputMapper::configureBasicParams() {
+ 
+     // Configure basic parameters.
+     mParameters = computeParameters(getDeviceContext());
++    if (mParameters.absolute) {
++        mAbsXInfo = getDeviceContext().getAbsoluteAxisInfo(ABS_X);
++        mAbsYInfo = getDeviceContext().getAbsoluteAxisInfo(ABS_Y);
++        if (!mAbsXInfo || !mAbsYInfo || mAbsXInfo->maxValue <= mAbsXInfo->minValue ||
++            mAbsYInfo->maxValue <= mAbsYInfo->minValue) {
++            ALOGE("cursor.absolute: '%s' has an empty ABS_X/ABS_Y range; ignoring",
++                  getDeviceContext().getName().c_str());
++            mParameters.absolute = false;
++        }
++    }
+ 
+     // Configure device mode.
+     switch (mParameters.mode) {
+diff --git a/services/inputflinger/reader/mapper/CursorInputMapper.h b/services/inputflinger/reader/mapper/CursorInputMapper.h
+index 7215403de2..e4e05745e1 100644
+--- a/services/inputflinger/reader/mapper/CursorInputMapper.h
++++ b/services/inputflinger/reader/mapper/CursorInputMapper.h
+@@ -88,8 +88,18 @@ private:
+         Mode mode;
+         bool hasAssociatedDisplay;
+         bool orientationAware;
++        // MatonOS: device also reports ABS_X/ABS_Y as an absolute cursor position
++        // (VM tablet/vmmouse). Opt-in with cursor.absolute = 1 in the IDC file.
++        bool absolute;
+     } mParameters;
+ 
++    // MatonOS absolute cursor state.
++    std::optional<RawAbsoluteAxisInfo> mAbsXInfo, mAbsYInfo;
++    int32_t mAbsX{0}, mAbsY{0};
++    bool mAbsChanged{false};
++    bool mAbsKnown{false};
++    float mAbsLastX{0}, mAbsLastY{0};
++
+     CursorButtonAccumulator mCursorButtonAccumulator;
+     CursorMotionAccumulator mCursorMotionAccumulator;
+     CursorScrollAccumulator mCursorScrollAccumulator;

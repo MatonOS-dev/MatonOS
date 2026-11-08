@@ -44,6 +44,9 @@ on boot
 # cannot be opened; both autosuspend and forceSuspend then cannot suspend.
 # Platform on-init permissions run first; early_hal starts later at boot.
 on init
+    # Like systemd: no system-wide open-file cap. The compat-proxy serves this
+    # exact value to Linux apps (linux/compat-proxy/proxy.c) - keep them in sync.
+    write /proc/sys/fs/file-max 9223372036854775807
     chown root root /sys/power/state
     chmod 0600 /sys/power/state
     chown root root /sys/power/wakeup_count

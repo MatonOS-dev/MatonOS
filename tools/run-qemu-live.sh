@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # run-qemu-live.sh: boot the live image in QEMU (UEFI via OVMF).
 #
-# Usage: ./run-qemu-live.sh [-i <live image>] [-g virgl|venus|std|none] [-m <MiB>]
+# Usage: ./run-qemu-live.sh [-i <live image>] [-g virgl|venus|native|std|none] [-m <MiB>]
 #                           [-r <WxH>] [-s <serial log>] [-a <adb port>]
 #                           [-x "<extra QEMU args>"] [-n] [-S] [-V <vars file>]
 #
 #   -i  image       (default: <aosp>/out/target/product/pc_x86_64/matonos-live-x86_64.img)
 #   -g  graphics    virgl: virtio-gpu with host GL (default)
+#                   native: venus + DRM native context (guest Mesa radeonsi/radv
+#                           drive the host amdgpu directly; QEMU >= 10.2,
+#                           virglrenderer drm-renderers=amdgpu-experimental)
 #                   venus: virgl + Vulkan passthrough (Mesa venus in the guest;
 #                          needs QEMU >= 9.2, venus-enabled virglrenderer and
 #                          host Vulkan)
@@ -78,6 +81,12 @@ QEMU=${MATON_QEMU:-qemu-system-x86_64}
 command -v "$QEMU" >/dev/null || die "install qemu-system-x86 (or set MATON_QEMU)"
 qemu_lib=$(dirname "$(command -v "$QEMU")")/../lib
 [[ -n ${MATON_QEMU:-} && -d $qemu_lib ]] && export LD_LIBRARY_PATH=$qemu_lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+if [[ $GFX == native ]]; then
+  # DRM native context passthrough: QEMU >= 10.2 with the device property, and
+  # a virglrenderer built with -Ddrm-renderers (see ~/matonos/qemu-venus/build.sh).
+  "$QEMU" -device virtio-vga-gl,help 2>/dev/null | grep -q drm_native_context ||
+    die "$QEMU has no DRM native context (need QEMU >= 10.2; use -g venus or set MATON_QEMU)"
+fi
 
 OVMF_CODE=""
 # secureboot: select enrolled-Microsoft-key OVMF and retain VARS for MOK enrollment.
@@ -113,8 +122,8 @@ else
 fi
 
 machine=q35,vmport=on  # vmport: VMware absolute mouse (see input below)
-if [[ $GFX == venus ]]; then
-  # venus needs blob resources, which need guest RAM in a shareable memfd.
+if [[ $GFX == venus || $GFX == native ]]; then
+  # venus/native need blob resources, which need guest RAM in a shareable memfd.
   machine+=",memory-backend=mem0"
 fi
 
@@ -192,6 +201,9 @@ case $GFX in
   virgl) args+=(-device "virtio-vga-gl,edid=on,xres=$XRES,yres=$YRES" -display "$gtk_gl") ;;
   venus) args+=(-object "memory-backend-memfd,id=mem0,size=${MEM}M,share=on"
                 -device "virtio-vga-gl,edid=on,hostmem=4G,blob=true,venus=true,xres=$XRES,yres=$YRES"
+                -display "$gtk_gl") ;;
+  native) args+=(-object "memory-backend-memfd,id=mem0,size=${MEM}M,share=on"
+                -device "virtio-vga-gl,edid=on,hostmem=4G,blob=true,venus=true,drm_native_context=on,xres=$XRES,yres=$YRES"
                 -display "$gtk_gl") ;;
   std)   args+=(-vga std -display "$gtk_plain") ;;
   none)  args+=(-vga none -display none) ;;

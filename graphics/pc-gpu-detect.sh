@@ -96,9 +96,7 @@ if [ -n "$primary" ]; then
             [ "$vk" = "none" ] && vk="" ;;
         0x1002) vk=radeon ;;
         0x10de) vk=nouveau ;;
-        0x1af4)
-            # virtio-gpu (0x1050); Mesa's venus needs host Vulkan (QEMU venus=on)
-            [ "$device" = "0x1050" ] && vk=virtio ;;
+        0x1af4) ;;  # virtio-gpu: chosen from its render node below
     esac
 fi
 
@@ -111,6 +109,29 @@ while [ -n "$supported_drivers" ] && [ "$attempt" -lt 15 ] &&
     sleep 0.1
     attempt=$((attempt + 1))
 done
+
+# virtio-gpu: ask the render node which contexts the host offers. DRM native
+# context runs the host GPU's own Mesa driver; venus forwards host Vulkan.
+if [ "$vendor" = "0x1af4" ] && [ "$device" = "0x1050" ] &&
+   find_render_node virtio_gpu; then
+    # early-init: ueventd may still be creating /dev/dri during coldboot.
+    node_dev="/dev/dri/${render_node##*/}"
+    attempt=0
+    while [ ! -e "$node_dev" ] && [ "$attempt" -lt 30 ]; do
+        sleep 0.1
+        attempt=$((attempt + 1))
+    done
+    for ctx in $(/vendor/bin/pc-virtgpu-caps "$node_dev"); do
+        case $ctx in
+            native:amdgpu) vk=radeon; break ;;
+            native:i915) vk=intel; break ;;
+            native:msm) vk=freedreno; break ;;
+            native:asahi) vk=asahi; break ;;
+            native:panfrost) vk=panfrost; break ;;
+            venus) vk=virtio ;;
+        esac
+    done
+fi
 
 # A GPU-specific Vulkan HAL cannot create a device without its kernel render
 # node. Match the software EGL fallback in that case.

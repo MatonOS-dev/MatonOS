@@ -21,6 +21,15 @@ Builds and tools use the whole CPU: default to `$(nproc)`, validate only that a 
 Any job/thread/worker cap you find (fixed defaults like 4, "between 1 and N" checks, hard-coded worker counts) is to
 be removed when you touch that code, not worked around. Lower `-j` by hand only for a measured RAM problem.
 
+## Rule: unexpected errors and crashes are loud (user, 2026-11-06)
+Every unexpected error or crash path in our code (proxy, Vulkan forwarder/WSI, Xwayland patches,
+subsystem, daemons) gets a permanent log line with context: what failed, fd/pid, errno. Never
+silently return, close, retry or swallow. Only expected outcomes stay quiet (EAGAIN, EINTR, a normal
+fallback such as xcb's refused abstract-socket connect). Why: silent failure paths cost days of
+temporary diagnostics during the Steam webhelper hunt.
+Every close() of an fd in our code leaves a gravestone: a log line naming the call site and fd,
+e.g. `close fd=17 at wsi_x11.c:192` (use a CLOSE macro with __FILE__/__LINE__, not bare close()).
+
 ## Principle: the Linux layer is not a security sandbox (user, 2026-10-19)
 
 This is not a security sandbox/solution. It may use parts of Linux that were

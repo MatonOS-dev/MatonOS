@@ -2,9 +2,10 @@
 /*
  * MatonOS input proxy. Physical keyboards and pointer-like devices are
  * grabbed and merged into stable uinput keyboard and mouse devices. Relative
- * devices pass through unchanged; absolute tablet and touchpad motion is
- * converted to relative mouse deltas because stock InputReader does not
- * classify a bare ABS_X/ABS_Y mouse as a cursor.
+ * devices pass through unchanged; touchpad motion becomes relative deltas.
+ * Absolute VM/tablet positions are forwarded as ABS_X/ABS_Y on the pointer,
+ * which the patched CursorInputMapper (cursor.absolute in the IDC) places
+ * 1:1 on the display.
  */
 #define _GNU_SOURCE
 #include <android/log.h>
@@ -44,6 +45,7 @@
  * settings only while this is non-zero, so real mice keep Android defaults. */
 #define PROP_ABSOLUTE "vendor.maton.input.absolute"
 #define DRM_DIR "/sys/class/drm"
+#define POINTER_ABS_MAX 65535
 
 struct source {
     int fd;
@@ -77,8 +79,6 @@ static bool pointer_wheel_hi_res, pointer_hwheel_hi_res;
 static _Atomic uint64_t requested_display_size;
 static int display_width = 1200, display_height = 1200;
 static float density_correction = 1.0f;
-static float absolute_cursor_correction = 1.0f;
-static float pointer_pos_x = 600.0f, pointer_pos_y = 600.0f;
 
 /* Connector `mode` is the currently programmed DRM mode. `modes` is only the
  * advertised list and can disagree with Android's scanout after boot. */
@@ -134,8 +134,6 @@ static void refresh_display_geometry(void) {
         have_size = read_display_geometry(&width, &height);
     }
     if (have_size && (width != display_width || height != display_height)) {
-        pointer_pos_x = pointer_pos_x * (float)width / (float)display_width;
-        pointer_pos_y = pointer_pos_y * (float)height / (float)display_height;
         display_width = width; display_height = height;
         ALOGI("active scanout changed to %dx%d", width, height);
     }
@@ -144,10 +142,6 @@ static void refresh_display_geometry(void) {
         int dpi = atoi(density);
         if (dpi > 0) {
             density_correction = 240.0f / (float)dpi;
-            /* CursorInputMapper applies viewport density / XHIGH (320 dpi)
-             * to REL deltas. Invert that scale for absolute-position deltas;
-             * keep touchpad conversion on its existing scale. */
-            absolute_cursor_correction = 320.0f / (float)dpi;
         }
     }
 }
@@ -252,6 +246,12 @@ static bool configure_pointer(int fd) {
         if (ioctl(fd, UI_SET_RELBIT, required_axes[i]) < 0) return false;
     pointer_wheel_hi_res = ioctl(fd, UI_SET_RELBIT, REL_WHEEL_HI_RES) == 0;
     pointer_hwheel_hi_res = ioctl(fd, UI_SET_RELBIT, REL_HWHEEL_HI_RES) == 0;
+    if (ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0) return false;
+    for (unsigned int code = ABS_X; code <= ABS_Y; code++) {
+        struct uinput_abs_setup abs = {.code = code,
+                                       .absinfo = {.minimum = 0, .maximum = POINTER_ABS_MAX}};
+        if (ioctl(fd, UI_SET_ABSBIT, code) < 0 || ioctl(fd, UI_ABS_SETUP, &abs) < 0) return false;
+    }
     struct uinput_setup setup = {0};
     setup.id.bustype = BUS_VIRTUAL; setup.id.vendor = 0x4d54; setup.id.product = 2; setup.id.version = 1;
     snprintf(setup.name, UINPUT_MAX_NAME_SIZE, "MatonOS Pointer");
@@ -430,40 +430,14 @@ static void flush_legacy_wheel(struct source *s) {
     s->wheel_hi_res_this_frame = s->hwheel_hi_res_this_frame = false;
 }
 
-/* Absolute VM/tablet coordinates describe the desired guest position, not a
- * velocity. Track the last requested position and emit only its difference;
- * this corrects accumulated integer rounding and edge-clamp drift. */
+/* Absolute VM/tablet coordinates: rescale to the pointer's fixed ABS range
+ * and forward; InputReader maps that range onto the display. */
 static void emit_absolute_axis(unsigned int code, int value, int min, int max) {
     if (max <= min) return;
-    int extent = code == ABS_X ? display_width : display_height;
-    float *position = code == ABS_X ? &pointer_pos_x : &pointer_pos_y;
-    if (extent < 2) return;
-    float target_f = (float)(value - min) * (float)(extent - 1) /
-                     (float)(max - min);
-    int target = (int)(target_f + 0.5f);
-    if (target < 0) target = 0;
-    if (target >= extent) target = extent - 1;
-    unsigned int rel = code == ABS_X ? REL_X : REL_Y;
-    /* Re-sync: Android keeps its own cursor position and only sees our REL
-     * deltas, so anything it clamps (host cursor leaving the window, edges)
-     * or drops leaves a permanent offset. Android clamps at the screen edge,
-     * so over-driving into the edge puts both sides at a known point: do it
-     * when the target is on an edge, or on a big jump (window re-entry),
-     * then move to the exact target from there. */
-    bool at_edge = target == 0 || target == extent - 1;
-    bool jump = fabsf((float)target - *position) > (float)extent / 4.0f;
-    if (at_edge || jump) {
-        int push = (int)((float)extent * absolute_cursor_correction) + 2;
-        bool to_max = target == extent - 1;
-        (void)emit(pointer_fd, EV_REL, rel, to_max ? push : -push);
-        *position = to_max ? (float)(extent - 1) : 0.0f;
-    }
-    float scaled_delta = (float)(target - *position) * absolute_cursor_correction;
-    int delta = scaled_delta >= 0.0f ? (int)(scaled_delta + 0.5f) : (int)(scaled_delta - 0.5f);
-    *position += (float)delta / absolute_cursor_correction;
-    if (*position < 0.0f) *position = 0.0f;
-    if (*position > (float)(extent - 1)) *position = (float)(extent - 1);
-    if (delta) (void)emit(pointer_fd, EV_REL, rel, delta);
+    int64_t v = (int64_t)(value - min) * POINTER_ABS_MAX / (max - min);
+    if (v < 0) v = 0;
+    if (v > POINTER_ABS_MAX) v = POINTER_ABS_MAX;
+    (void)emit(pointer_fd, EV_ABS, (unsigned short)code, (int)v);
 }
 
 static void forward_event(struct source *s, const struct input_event *e) {
@@ -514,14 +488,6 @@ static void forward_event(struct source *s, const struct input_event *e) {
             return;
         }
         (void)emit(pointer_fd, EV_REL, e->code, e->value);
-        /* CursorInputMapper moves a REL count by viewport dpi / 320, the
-         * inverse of absolute_cursor_correction (not the touchpad scale). */
-        if (e->code == REL_X) pointer_pos_x += (float)e->value / absolute_cursor_correction;
-        if (e->code == REL_Y) pointer_pos_y += (float)e->value / absolute_cursor_correction;
-        if (pointer_pos_x < 0.0f) pointer_pos_x = 0.0f;
-        if (pointer_pos_y < 0.0f) pointer_pos_y = 0.0f;
-        if (pointer_pos_x > display_width - 1) pointer_pos_x = (float)(display_width - 1);
-        if (pointer_pos_y > display_height - 1) pointer_pos_y = (float)(display_height - 1);
         return;
     }
     if (e->type == EV_ABS) {
@@ -531,18 +497,12 @@ static void forward_event(struct source *s, const struct input_event *e) {
             if (had && s->finger_down) {
                 int delta = scaled_delta(s->x-old,s->min_x,s->max_x, display_width);
                 (void)emit(pointer_fd, EV_REL, REL_X, delta);
-                pointer_pos_x += (float)delta / density_correction;
-                if (pointer_pos_x < 0.0f) pointer_pos_x = 0.0f;
-                if (pointer_pos_x > display_width - 1) pointer_pos_x = (float)(display_width - 1);
             }
         } else if (s->mt && e->code == ABS_MT_POSITION_Y && s->slot == 0) {
             int old=s->y; bool had=s->have_y; s->y=e->value; s->have_y=true;
             if (had && s->finger_down) {
                 int delta = scaled_delta(s->y-old,s->min_y,s->max_y, display_height);
                 (void)emit(pointer_fd, EV_REL, REL_Y, delta);
-                pointer_pos_y += (float)delta / density_correction;
-                if (pointer_pos_y < 0.0f) pointer_pos_y = 0.0f;
-                if (pointer_pos_y > display_height - 1) pointer_pos_y = (float)(display_height - 1);
             }
         } else if (!s->mt && (e->code == ABS_X || e->code == ABS_Y)) {
             int *coord = e->code == ABS_X ? &s->x : &s->y;

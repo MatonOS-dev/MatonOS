@@ -38,3 +38,8 @@ domain_auto_trans(pc_gpu_detect, matonos_modprobe_exec, vendor_modprobe)
 allow pc_gpu_detect vendor_toolbox_exec:file execute_no_trans;
 # The detector's timeout/fallback loop may terminate only its loader child.
 allow pc_gpu_detect vendor_modprobe:process { signal sigkill };
+
+# pc-virtgpu-caps (plain vendor_file, runs in this domain) queries the
+# virtio-gpu render node's capsets to choose the Vulkan HAL.
+allow pc_gpu_detect gpu_device:dir search;
+allow pc_gpu_detect gpu_device:chr_file { open read write ioctl };

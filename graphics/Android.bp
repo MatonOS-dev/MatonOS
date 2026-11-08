@@ -24,3 +24,11 @@ cc_library_shared {
     srcs: ["sphal-deps/sphal_deps.c"],
     shared_libs: ["libhardware"],
 }
+
+// Lists the contexts (DRM native / venus) a virtio-gpu render node offers;
+// pc-gpu-detect.sh selects the Vulkan HAL from it.
+cc_binary {
+    name: "pc-virtgpu-caps",
+    vendor: true,
+    srcs: ["virtgpu-caps/virtgpu_caps.c"],
+}

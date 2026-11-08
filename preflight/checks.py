@@ -212,6 +212,10 @@ APPROVED_PATCHES = {
     # (AVX) while C/C++ uses -march=corei7; makes Rust match (x86-64-v2 baseline).
     "build/soong/0001-rust-build-the-sandybridge-variant-for-corei7-x86-64.patch",
     "build/soong/0002-rust-build-the-x86-sandybridge-variant-for-corei7.patch",
+    # 2026-11-08: user-approved ("greenlighting a patch"): opt-in IDC flag
+    # cursor.absolute lets a mouse report ABS_X/ABS_Y cursor positions, so the
+    # VM pointer tracks the host cursor 1:1 instead of drifting.
+    "frameworks/native/0001-inputflinger-absolute-cursor-devices.patch",
 }
 
 
