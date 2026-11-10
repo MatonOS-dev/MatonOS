@@ -1,0 +1,692 @@
+diff --git a/Android.bp b/Android.bp
+index 46d199d1ca..e69195f730 100644
+--- a/Android.bp
++++ b/Android.bp
+@@ -55,6 +55,7 @@ filegroup {
+ filegroup {
+     name: "launcher-quickstep-src",
+     srcs: [
++        "quickstep/aidl/**/*.aidl",
+         "quickstep/src/**/*.kt",
+         "quickstep/src/**/*.java",
+     ],
+@@ -518,6 +519,9 @@ android_library {
+     platform_apis: true,
+     plugins: ["dagger2-compiler"],
+     min_sdk_version: "current",
++    aidl: {
++        local_include_dirs: ["quickstep/aidl"],
++    },
+     // TODO(b/319712088): re-enable use_resource_processor
+     use_resource_processor: false,
+     kotlincflags: [
+diff --git a/quickstep/aidl/org/matonos/tray/IPillCallback.aidl b/quickstep/aidl/org/matonos/tray/IPillCallback.aidl
+new file mode 100644
+index 0000000000..e1cc9d0e57
+--- /dev/null
++++ b/quickstep/aidl/org/matonos/tray/IPillCallback.aidl
+@@ -0,0 +1,5 @@
++package org.matonos.tray;
++
++oneway interface IPillCallback {
++    void onWidthChanged(int widthPx);
++}
+diff --git a/quickstep/aidl/org/matonos/tray/ITrayHost.aidl b/quickstep/aidl/org/matonos/tray/ITrayHost.aidl
+new file mode 100644
+index 0000000000..07a0e092cb
+--- /dev/null
++++ b/quickstep/aidl/org/matonos/tray/ITrayHost.aidl
+@@ -0,0 +1,17 @@
++package org.matonos.tray;
++
++import android.os.IBinder;
++import android.view.SurfaceControlViewHost.SurfacePackage;
++import android.graphics.Rect;
++import org.matonos.tray.ITrayListener;
++import org.matonos.tray.IPillCallback;
++
++interface ITrayHost {
++    void register(ITrayListener listener);
++    void unregister(ITrayListener listener);
++    oneway void activate(String key, in Rect anchor);
++    oneway void openMenu(String key, in Rect anchor);
++    SurfacePackage attachPill(int displayId, IBinder hostToken, int heightPx, IPillCallback callback);
++    void detachPill();
++    void setPillOrigin(int screenX, int screenY);
++}
+diff --git a/quickstep/aidl/org/matonos/tray/ITrayListener.aidl b/quickstep/aidl/org/matonos/tray/ITrayListener.aidl
+new file mode 100644
+index 0000000000..331314903f
+--- /dev/null
++++ b/quickstep/aidl/org/matonos/tray/ITrayListener.aidl
+@@ -0,0 +1,6 @@
++package org.matonos.tray;
++
++import android.os.Bundle;
++oneway interface ITrayListener {
++    void itemsChanged(in List<Bundle> items);
++}
+diff --git a/quickstep/src/com/android/launcher3/taskbar/TaskbarActivityContext.java b/quickstep/src/com/android/launcher3/taskbar/TaskbarActivityContext.java
+index c20622ff1e..0c0b73ab5c 100644
+--- a/quickstep/src/com/android/launcher3/taskbar/TaskbarActivityContext.java
++++ b/quickstep/src/com/android/launcher3/taskbar/TaskbarActivityContext.java
+@@ -140,6 +140,7 @@ import com.android.launcher3.popup.PopupContainer;
+ import com.android.launcher3.statehandlers.DesktopVisibilityController;
+ import com.android.launcher3.taskbar.TaskbarAutohideSuspendController.AutohideSuspendFlag;
+ import com.android.launcher3.taskbar.TaskbarTranslationController.TransitionCallback;
++import com.android.launcher3.taskbar.tray.TrayViewController;
+ import com.android.launcher3.taskbar.allapps.TaskbarAllAppsController;
+ import com.android.launcher3.taskbar.bubbles.BubbleBarController;
+ import com.android.launcher3.taskbar.bubbles.BubbleBarSwipeController;
+@@ -474,7 +475,8 @@ public class TaskbarActivityContext extends BaseTaskbarContext {
+                 new NudgeController(this),
+                 new NudgeViewController(this, nudgeView),
+                 new TaskbarHandoffController(this),
+-                new TaskbarViewDragDropController(this, taskbarView));
++                new TaskbarViewDragDropController(this, taskbarView),
++                new TrayViewController(this, navButtonsView));
+ 
+         mLauncherPrefs = LauncherPrefs.get(this);
+         onViewCreated();
+diff --git a/quickstep/src/com/android/launcher3/taskbar/TaskbarControllers.java b/quickstep/src/com/android/launcher3/taskbar/TaskbarControllers.java
+index 1bc193667a..66f1dae574 100644
+--- a/quickstep/src/com/android/launcher3/taskbar/TaskbarControllers.java
++++ b/quickstep/src/com/android/launcher3/taskbar/TaskbarControllers.java
+@@ -28,6 +28,7 @@ import com.android.launcher3.taskbar.bubbles.BubbleControllers;
+ import com.android.launcher3.taskbar.growth.NudgeController;
+ import com.android.launcher3.taskbar.handoff.TaskbarHandoffController;
+ import com.android.launcher3.taskbar.overlay.TaskbarOverlayController;
++import com.android.launcher3.taskbar.tray.TrayViewController;
+ import com.android.systemui.shared.rotation.RotationButtonController;
+ import com.android.wm.shell.shared.bubbles.BubbleBarLocation;
+ 
+@@ -74,6 +75,7 @@ public class TaskbarControllers {
+     public final NudgeController nudgeController;
+     public final NudgeViewController nudgeViewController;
+     public final TaskbarViewDragDropController taskbarViewDragDropController;
++    public final TrayViewController trayViewController;
+ 
+     @Nullable private LoggableTaskbarController[] mControllersToLog = null;
+     @Nullable private BackgroundRendererController[] mBackgroundRendererControllers = null;
+@@ -127,7 +129,8 @@ public class TaskbarControllers {
+             NudgeController nudgeController,
+             NudgeViewController nudgeViewController,
+             TaskbarHandoffController taskbarHandoffController,
+-            TaskbarViewDragDropController taskbarViewDragDropController) {
++            TaskbarViewDragDropController taskbarViewDragDropController,
++            TrayViewController trayViewController) {
+         this.taskbarActivityContext = taskbarActivityContext;
+         this.taskbarDragController = taskbarDragController;
+         this.navButtonController = navButtonController;
+@@ -160,6 +163,7 @@ public class TaskbarControllers {
+         this.nudgeViewController = nudgeViewController;
+         this.taskbarHandoffController = taskbarHandoffController;
+         this.taskbarViewDragDropController = taskbarViewDragDropController;
++        this.trayViewController = trayViewController;
+     }
+ 
+     /**
+@@ -174,6 +178,7 @@ public class TaskbarControllers {
+ 
+         taskbarDragController.init(this, taskbarUiState);
+         navbarButtonsViewController.init(this);
++        trayViewController.init(this);
+         rotationButtonController.init();
+         taskbarDragLayerController.init(this, startAnimation);
+         taskbarViewController.init(this, startAnimation);
+@@ -204,6 +209,7 @@ public class TaskbarControllers {
+ 
+         mControllersToLog = new LoggableTaskbarController[] {
+                 taskbarDragController, navButtonController, navbarButtonsViewController,
++                trayViewController,
+                 taskbarDragLayerController, taskbarScrimViewController, taskbarViewController,
+                 taskbarUnfoldAnimationController, taskbarKeyguardController,
+                 stashedHandleViewController, taskbarStashController,
+@@ -286,6 +292,7 @@ public class TaskbarControllers {
+ 
+         taskbarDragController.onDestroy();
+         navbarButtonsViewController.onDestroy();
++        trayViewController.onDestroy();
+         uiController.onDestroy();
+         rotationButtonController.onDestroy();
+         taskbarDragLayerController.onDestroy();
+diff --git a/quickstep/src/com/android/launcher3/taskbar/tray/TrayClient.java b/quickstep/src/com/android/launcher3/taskbar/tray/TrayClient.java
+new file mode 100644
+index 0000000000..fe1d71cb3c
+--- /dev/null
++++ b/quickstep/src/com/android/launcher3/taskbar/tray/TrayClient.java
+@@ -0,0 +1,335 @@
++/*
++ * Copyright (C) 2026 The Android Open Source Project
++ * Licensed under the Apache License, Version 2.0.
++ */
++package com.android.launcher3.taskbar.tray;
++
++import static com.android.launcher3.util.Executors.MAIN_EXECUTOR;
++import static com.android.launcher3.util.Executors.UI_HELPER_EXECUTOR;
++
++import android.content.ComponentName;
++import android.content.BroadcastReceiver;
++import android.content.Context;
++import android.content.Intent;
++import android.content.IntentFilter;
++import android.content.ServiceConnection;
++import android.graphics.Bitmap;
++import android.os.Bundle;
++import android.os.Handler;
++import android.os.IBinder;
++import android.os.RemoteException;
++import android.util.Log;
++import android.view.SurfaceControlViewHost;
++
++import org.matonos.tray.IPillCallback;
++import org.matonos.tray.ITrayHost;
++import org.matonos.tray.ITrayListener;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++import java.util.concurrent.CopyOnWriteArrayList;
++
++/** Process-wide client for the MatonOS StatusNotifier tray service. */
++public final class TrayClient {
++    private static final String TAG = "LauncherTrayClient";
++    private static final String ACTION_HOST = "org.matonos.tray.HOST";
++    private static final String PACKAGE = "org.matonos.tray";
++    private static final Handler WORKER = new Handler(UI_HELPER_EXECUTOR.getLooper());
++    private static TrayClient sInstance;
++
++    public static synchronized TrayClient get(Context context) {
++        if (sInstance == null) {
++            sInstance = new TrayClient(context.getApplicationContext());
++        }
++        return sInstance;
++    }
++
++    public interface ItemsListener {
++        void onTrayItemsChanged(List<Item> items);
++    }
++
++    /** Told on the main thread when the tray service connects or goes away. */
++    public interface HostListener {
++        void onTrayHostChanged(boolean connected);
++    }
++
++    public static final class Item {
++        public final String key;
++        public final String title;
++        public final String status;
++        public final Bitmap icon;
++        public final String iconName;
++
++        private Item(Bundle bundle) {
++            key = bundle.getString("key", "");
++            title = bundle.getString("title", "");
++            status = bundle.getString("status", "Active");
++            icon = bundle.getParcelable("icon", Bitmap.class);
++            iconName = bundle.getString("iconName");
++        }
++    }
++
++    private final Context mContext;
++    private final CopyOnWriteArrayList<ItemsListener> mListeners =
++            new CopyOnWriteArrayList<>();
++    private final ServiceConnection mConnection = new ServiceConnection() {
++        @Override
++        public void onServiceConnected(ComponentName name, IBinder service) {
++            ITrayHost host = ITrayHost.Stub.asInterface(service);
++            WORKER.post(() -> registerWithHost(host));
++        }
++
++        @Override
++        public void onServiceDisconnected(ComponentName name) {
++            WORKER.post(() -> forgetHost());
++        }
++
++        @Override
++        public void onBindingDied(ComponentName name) {
++            WORKER.post(() -> {
++                forgetHost();
++                rebind();
++            });
++        }
++
++        @Override
++        public void onNullBinding(ComponentName name) {
++            WORKER.post(() -> {
++                Log.e(TAG, "Tray service returned a null binding: " + name);
++                unbind();
++            });
++        }
++    };
++    private final ITrayListener.Stub mRemoteListener = new ITrayListener.Stub() {
++        @Override
++        public void itemsChanged(List<Bundle> bundles) {
++            ArrayList<Item> items = new ArrayList<>(bundles.size());
++            for (Bundle bundle : bundles) {
++                if (bundle != null) {
++                    items.add(new Item(bundle));
++                }
++            }
++            List<Item> snapshot = Collections.unmodifiableList(items);
++            WORKER.post(() -> dispatch(snapshot));
++        }
++    };
++
++    private final CopyOnWriteArrayList<HostListener> mHostListeners =
++            new CopyOnWriteArrayList<>();
++    private ITrayHost mHost;
++    private boolean mBound;
++    private boolean mMissingLogged;
++    private boolean mPackageReceiverRegistered;
++    private final BroadcastReceiver mPackageReceiver = new BroadcastReceiver() {
++        @Override
++        public void onReceive(Context context, Intent intent) {
++            if (!PACKAGE.equals(intent.getData() == null ? null
++                    : intent.getData().getSchemeSpecificPart())) {
++                return;
++            }
++            String action = intent.getAction();
++            boolean replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false);
++            WORKER.post(() -> {
++                if (Intent.ACTION_PACKAGE_REMOVED.equals(action) && !replacing) {
++                    unbind();
++                    dispatch(Collections.emptyList());
++                } else {
++                    rebind();
++                }
++            });
++        }
++    };
++
++    private TrayClient(Context context) {
++        mContext = context;
++    }
++
++    public void addListener(ItemsListener listener) {
++        mListeners.addIfAbsent(listener);
++        MAIN_EXECUTOR.execute(() -> listener.onTrayItemsChanged(Collections.emptyList()));
++        WORKER.post(this::bindIfNeeded);
++    }
++
++    public void removeListener(ItemsListener listener) {
++        mListeners.remove(listener);
++        if (mListeners.isEmpty() && mHostListeners.isEmpty()) {
++            WORKER.post(this::unbind);
++        }
++    }
++
++    public void addHostListener(HostListener listener) {
++        mHostListeners.addIfAbsent(listener);
++        WORKER.post(() -> {
++            boolean connected = mHost != null;
++            MAIN_EXECUTOR.execute(() -> listener.onTrayHostChanged(connected));
++            bindIfNeeded();
++        });
++    }
++
++    public void removeHostListener(HostListener listener) {
++        mHostListeners.remove(listener);
++        if (mListeners.isEmpty() && mHostListeners.isEmpty()) {
++            WORKER.post(this::unbind);
++        }
++    }
++
++    /** Asks the tray app for its rendered pill. Worker thread; null when there is no host. */
++    public SurfaceControlViewHost.SurfacePackage attachPill(int displayId, IBinder hostToken,
++            int heightPx, IPillCallback callback) {
++        ITrayHost host = mHost;
++        if (host == null) {
++            return null;
++        }
++        try {
++            return host.attachPill(displayId, hostToken, heightPx, callback);
++        } catch (RemoteException e) {
++            Log.e(TAG, "attachPill failed (display " + displayId + ")", e);
++            return null;
++        }
++    }
++
++    public void detachPill() {
++        callHost(ITrayHost::detachPill);
++    }
++
++    public void setPillOrigin(int screenX, int screenY) {
++        callHost(host -> host.setPillOrigin(screenX, screenY));
++    }
++
++    public static Handler worker() {
++        return WORKER;
++    }
++
++    public void activate(String key, android.graphics.Rect anchor) {
++        callHost(host -> host.activate(key, anchor));
++    }
++
++    public void openMenu(String key, android.graphics.Rect anchor) {
++        callHost(host -> host.openMenu(key, anchor));
++    }
++
++    private void bindIfNeeded() {
++        if (mBound || (mListeners.isEmpty() && mHostListeners.isEmpty())) {
++            return;
++        }
++        Intent intent = new Intent(ACTION_HOST).setPackage(PACKAGE);
++        registerPackageReceiver();
++        try {
++            mBound = mContext.bindService(intent, mConnection, Context.BIND_AUTO_CREATE
++                    | Context.BIND_ALLOW_ACTIVITY_STARTS);
++            if (!mBound && !mMissingLogged) {
++                mMissingLogged = true;
++                Log.i(TAG, "Tray service is not installed; tray strip remains empty");
++            }
++        } catch (RuntimeException e) {
++            Log.e(TAG, "Unable to bind tray service", e);
++        }
++    }
++
++    private void registerPackageReceiver() {
++        if (mPackageReceiverRegistered) {
++            return;
++        }
++        IntentFilter filter = new IntentFilter();
++        filter.addAction(Intent.ACTION_PACKAGE_ADDED);
++        filter.addAction(Intent.ACTION_PACKAGE_REMOVED);
++        filter.addAction(Intent.ACTION_PACKAGE_REPLACED);
++        filter.addDataScheme("package");
++        mContext.registerReceiver(mPackageReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
++        mPackageReceiverRegistered = true;
++    }
++
++    private void rebind() {
++        unbind();
++        bindIfNeeded();
++    }
++
++    private void registerWithHost(ITrayHost host) {
++        if (!mBound || (mListeners.isEmpty() && mHostListeners.isEmpty())) {
++            return;
++        }
++        try {
++            host.register(mRemoteListener);
++            mHost = host;
++            dispatchHost(true);
++        } catch (RemoteException e) {
++            Log.e(TAG, "Unable to register tray listener", e);
++            rebind();
++        }
++    }
++
++    private void clearHost() {
++        ITrayHost host = mHost;
++        mHost = null;
++        if (host != null) {
++            dispatchHost(false);
++            try {
++                host.unregister(mRemoteListener);
++            } catch (RemoteException e) {
++                Log.e(TAG, "Unable to unregister tray listener after service death", e);
++            }
++        }
++        dispatch(Collections.emptyList());
++    }
++
++    private void forgetHost() {
++        if (mHost != null) {
++            dispatchHost(false);
++        }
++        mHost = null;
++        dispatch(Collections.emptyList());
++    }
++
++    private void unbind() {
++        clearHost();
++        if (mBound) {
++            mBound = false;
++            try {
++                mContext.unbindService(mConnection);
++            } catch (IllegalArgumentException e) {
++                Log.e(TAG, "Unable to unbind tray service", e);
++            }
++        }
++        if (mPackageReceiverRegistered && mListeners.isEmpty() && mHostListeners.isEmpty()) {
++            mPackageReceiverRegistered = false;
++            mContext.unregisterReceiver(mPackageReceiver);
++        }
++    }
++
++    private void dispatch(List<Item> items) {
++        MAIN_EXECUTOR.execute(() -> {
++            for (ItemsListener listener : mListeners) {
++                listener.onTrayItemsChanged(items);
++            }
++        });
++    }
++
++    private void dispatchHost(boolean connected) {
++        MAIN_EXECUTOR.execute(() -> {
++            for (HostListener listener : mHostListeners) {
++                listener.onTrayHostChanged(connected);
++            }
++        });
++    }
++
++    private void callHost(HostCall call) {
++        WORKER.post(() -> {
++            ITrayHost host = mHost;
++            if (host == null) {
++                return;
++            }
++            try {
++                call.run(host);
++            } catch (RemoteException e) {
++                Log.e(TAG, "Tray command failed", e);
++                forgetHost();
++                rebind();
++            }
++        });
++    }
++
++    private interface HostCall {
++        void run(ITrayHost host) throws RemoteException;
++    }
++}
+diff --git a/quickstep/src/com/android/launcher3/taskbar/tray/TrayViewController.java b/quickstep/src/com/android/launcher3/taskbar/tray/TrayViewController.java
+new file mode 100644
+index 0000000000..5667399707
+--- /dev/null
++++ b/quickstep/src/com/android/launcher3/taskbar/tray/TrayViewController.java
+@@ -0,0 +1,193 @@
++/*
++ * Copyright (C) 2026 The Android Open Source Project
++ * Licensed under the Apache License, Version 2.0.
++ */
++package com.android.launcher3.taskbar.tray;
++
++import static com.android.launcher3.util.Executors.MAIN_EXECUTOR;
++
++import android.graphics.PixelFormat;
++import android.os.IBinder;
++import android.util.Log;
++import android.view.Gravity;
++import android.view.SurfaceControlViewHost;
++import android.view.SurfaceView;
++import android.view.View;
++import android.view.ViewGroup;
++import android.widget.FrameLayout;
++
++import com.android.launcher3.R;
++import com.android.launcher3.taskbar.TaskbarActivityContext;
++import com.android.launcher3.taskbar.TaskbarControllers;
++
++import org.matonos.tray.IPillCallback;
++
++/**
++ * Hosts the system tray pill at the left edge of the taskbar. The tray app renders the pill
++ * (icons, theme, input, menus) through SurfaceControlViewHost; this only provides the slot.
++ */
++public final class TrayViewController implements TaskbarControllers.LoggableTaskbarController,
++        TrayClient.HostListener {
++    private static final String TAG = "LauncherTray";
++
++    private final TaskbarActivityContext mContext;
++    private final ViewGroup mNavButtonsView;
++    private final ViewGroup mStartContextualContainer;
++    private final SurfaceView mSlot;
++    private final int mGap;
++    private final int[] mLocation = new int[2];
++    private final int[] mLastOrigin = {Integer.MIN_VALUE, Integer.MIN_VALUE};
++    private boolean mListening;
++    private boolean mAttached;
++    private int mWidth;
++
++    private final IPillCallback.Stub mCallback = new IPillCallback.Stub() {
++        @Override
++        public void onWidthChanged(int widthPx) {
++            MAIN_EXECUTOR.execute(() -> setSlotWidth(widthPx));
++        }
++    };
++
++    public TrayViewController(TaskbarActivityContext context, ViewGroup navButtonsView) {
++        mContext = context;
++        mNavButtonsView = navButtonsView;
++        mStartContextualContainer = navButtonsView.findViewById(R.id.start_contextual_buttons);
++        mGap = Math.round(8 * context.getResources().getDisplayMetrics().density);
++        mSlot = new SurfaceView(context);
++        mSlot.setZOrderOnTop(true);
++        mSlot.getHolder().setFormat(PixelFormat.TRANSLUCENT);
++        mSlot.setVisibility(View.GONE);
++        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(0,
++                ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START | Gravity.CENTER_VERTICAL);
++        navButtonsView.addView(mSlot, params);
++        navButtonsView.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> positionSlot());
++        mStartContextualContainer.addOnLayoutChangeListener(
++                (v, l, t, r, b, ol, ot, or, ob) -> positionSlot());
++        mSlot.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
++            positionSlot();
++            if (mAttached && b - t != ob - ot) {
++                reattach();
++            }
++        });
++        // Nav buttons move by translation (no layout pass), so follow them before each draw.
++        mSlot.getViewTreeObserver().addOnPreDrawListener(() -> {
++            positionSlot();
++            return true;
++        });
++    }
++
++    public void init(TaskbarControllers controllers) {
++        if (mContext.isTransientTaskbar() || mContext.isPhoneMode()) {
++            return;
++        }
++        mListening = true;
++        mSlot.setVisibility(View.VISIBLE);
++        TrayClient.get(mContext).addHostListener(this);
++    }
++
++    @Override
++    public void onTrayHostChanged(boolean connected) {
++        if (!mListening) {
++            return;
++        }
++        if (connected) {
++            reattach();
++        } else {
++            mAttached = false;
++            mSlot.clearChildSurfacePackage();
++            setSlotWidth(0);
++        }
++    }
++
++    /** (Re)requests the pill; needs the slot attached so it has a host token and a height. */
++    private void reattach() {
++        if (!mListening) {
++            return;
++        }
++        IBinder hostToken = mSlot.getHostToken();
++        int height = mSlot.getHeight() > 0 ? mSlot.getHeight() : mNavButtonsView.getHeight();
++        if (hostToken == null || height <= 0) {
++            mSlot.post(this::reattach);
++            return;
++        }
++        int displayId = mContext.getDisplayId();
++        TrayClient client = TrayClient.get(mContext);
++        TrayClient.worker().post(() -> {
++            SurfaceControlViewHost.SurfacePackage pkg =
++                    client.attachPill(displayId, hostToken, height, mCallback);
++            MAIN_EXECUTOR.execute(() -> {
++                if (!mListening) {
++                    if (pkg != null) {
++                        pkg.release();
++                    }
++                    return;
++                }
++                if (pkg == null) {
++                    Log.e(TAG, "Tray app returned no pill (display " + displayId
++                            + ", height " + height + ")");
++                    return;
++                }
++                mSlot.setChildSurfacePackage(pkg);
++                mAttached = true;
++                mLastOrigin[0] = Integer.MIN_VALUE;
++                positionSlot();
++            });
++        });
++    }
++
++    private void setSlotWidth(int widthPx) {
++        mWidth = Math.max(0, widthPx);
++        ViewGroup.LayoutParams lp = mSlot.getLayoutParams();
++        if (lp.width != mWidth) {
++            lp.width = mWidth;
++            mSlot.setLayoutParams(lp);
++        }
++    }
++
++    private void positionSlot() {
++        if (mSlot.getVisibility() != View.VISIBLE) {
++            return;
++        }
++        // Left edge of the taskbar, after any start contextual buttons.
++        int left = mGap;
++        if (mStartContextualContainer.getVisibility() == View.VISIBLE
++                && mStartContextualContainer.getWidth() > 0) {
++            left = mStartContextualContainer.getRight() + mGap;
++        }
++        float target = left - mSlot.getLeft();
++        if (mSlot.getTranslationX() != target) {
++            mSlot.setTranslationX(target);
++        }
++        if (!mAttached) {
++            return;
++        }
++        // Menus anchor at screen coordinates, so the tray app needs our origin.
++        mSlot.getLocationOnScreen(mLocation);
++        int x = mLocation[0];
++        if (x != mLastOrigin[0] || mLocation[1] != mLastOrigin[1]) {
++            mLastOrigin[0] = x;
++            mLastOrigin[1] = mLocation[1];
++            TrayClient.get(mContext).setPillOrigin(x, mLocation[1]);
++        }
++    }
++
++    public void onDestroy() {
++        if (mListening) {
++            mListening = false;
++            TrayClient client = TrayClient.get(mContext);
++            client.removeHostListener(this);
++            if (mAttached) {
++                client.detachPill();
++            }
++        }
++        mAttached = false;
++        mSlot.clearChildSurfacePackage();
++        mSlot.setVisibility(View.GONE);
++        mNavButtonsView.removeView(mSlot);
++    }
++
++    @Override
++    public void dumpLogs(String prefix, java.io.PrintWriter pw) {
++        pw.println(prefix + "trayPillAttached=" + mAttached + " width=" + mWidth);
++    }
++}
