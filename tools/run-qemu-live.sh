@@ -220,6 +220,11 @@ if [[ $EXTRA != *hda* ]]; then
   # boot) onto the host stream -> silent VM. Android scales volume itself.
   # MATON_QEMU_SOUND=hda (default: Intel HDA like real PCs, same driver/HAL
   # path) or virtio (paravirtual virtio-sound, guest module virtio_snd).
+  # Guest Android mixes at 48 kHz: run the host stream at 48 kHz too (QEMU
+  # otherwise opens 44.1 kHz and resamples with tiny buffers -> clicks), and
+  # give the pa backend 40 ms of headroom against host scheduling jitter.
+  [[ $snd == pa ]] && snd+=",out.frequency=48000,out.buffer-length=40000,out.latency=40000"
+  [[ $snd == none ]] || snd+=",timer-period=5000"
   case ${MATON_QEMU_SOUND:-hda} in
     virtio) args+=(-audiodev "$snd,id=snd0" -device "virtio-sound-pci,audiodev=snd0") ;;
     *)      args+=(-audiodev "$snd,id=snd0" -device ich9-intel-hda -device "hda-duplex,audiodev=snd0,mixer=off") ;;
