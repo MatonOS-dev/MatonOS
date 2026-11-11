@@ -210,7 +210,7 @@ case $GFX in
   *)     die "unknown graphics mode: $GFX" ;;
 esac
 
-# Sound card (Intel HDA, like most PCs) unless -x brings its own: windowed VMs
+# Sound card (virtio-sound by default) unless -x brings its own: windowed VMs
 # play through the host's PipeWire, headless ones into a null backend.
 if [[ $EXTRA != *hda* ]]; then
   # pa (via pipewire-pulse on PipeWire hosts) is QEMU's best-tested backend;
@@ -218,14 +218,15 @@ if [[ $EXTRA != *hda* ]]; then
   [[ $GFX == none || $gtk_gl == egl-headless ]] && snd=none || snd=${MATON_QEMU_AUDIO:-pa}
   # mixer=off: QEMU would otherwise mirror the guest codec mixer (muted/0 at
   # boot) onto the host stream -> silent VM. Android scales volume itself.
-  # MATON_QEMU_SOUND=hda (default: Intel HDA like real PCs, same driver/HAL
-  # path) or virtio (paravirtual virtio-sound, guest module virtio_snd).
+  # MATON_QEMU_SOUND=virtio (default: paravirtual virtio-sound, guest module
+  # virtio_snd; QEMU's HDA emulation clicks audibly) or hda (Intel HDA like
+  # real PCs, same driver/HAL path).
   # Guest Android mixes at 48 kHz: run the host stream at 48 kHz too (QEMU
   # otherwise opens 44.1 kHz and resamples with tiny buffers -> clicks), and
   # give the pa backend 40 ms of headroom against host scheduling jitter.
   [[ $snd == pa ]] && snd+=",out.frequency=48000,out.buffer-length=40000,out.latency=40000"
   [[ $snd == none ]] || snd+=",timer-period=5000"
-  case ${MATON_QEMU_SOUND:-hda} in
+  case ${MATON_QEMU_SOUND:-virtio} in
     virtio) args+=(-audiodev "$snd,id=snd0" -device "virtio-sound-pci,audiodev=snd0") ;;
     *)      args+=(-audiodev "$snd,id=snd0" -device ich9-intel-hda -device "hda-duplex,audiodev=snd0,mixer=off") ;;
   esac
