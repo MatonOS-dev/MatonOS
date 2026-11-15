@@ -18,10 +18,19 @@ All calls return JSON strings. `info()` returns
 `{"version":1,"name":..,"label":..,"capabilities":[..]}`; the store skips a
 plugin whose version differs.
 
-Capabilities:
-- `HAS_REPOSITORIES`: the source has user-managed repositories; the store
-  shows repository management and calls `repos/addRepo/delRepo` only for
-  sources with it (Flatpak and F-Droid have it, an Aurora backend would not).
+Capabilities (the store shows a feature only for sources that declare it):
+- `HAS_REPOSITORIES`: user-managed repositories; `repos/addRepo/delRepo`.
+- `HAS_AGE_RATINGS`: details carry `ageRating`.
+- `HAS_REVIEWS`: `reviews(id)` returns reviews (others are never asked).
+- `HAS_ANTI_FEATURES`: details carry `antiFeatures`.
+- `HAS_PERMISSIONS`: details carry `permissions` / `safety`.
+- `HAS_LOGIN`: the source supports signing in. Reserved; this version does
+  nothing with it.
+- `REQUIRES_SETUP`: the user must configure the source before it is useful.
+  Reserved for a future version.
+
+Flatpak: REPOSITORIES, AGE_RATINGS, REVIEWS, PERMISSIONS. F-Droid:
+REPOSITORIES, ANTI_FEATURES, PERMISSIONS.
 
 - `search`, `installed`, `updates`: arrays of AppListing
   (`id, name, summary, icon, developer, rating?, installed?, versionName?,
