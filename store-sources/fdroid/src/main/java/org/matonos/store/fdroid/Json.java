@@ -1,4 +1,4 @@
-package org.matonos.flathub.fdroid;
+package org.matonos.store.fdroid;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

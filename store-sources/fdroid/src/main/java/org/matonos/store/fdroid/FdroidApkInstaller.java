@@ -1,23 +1,13 @@
-package org.matonos.flathub.fdroid;
+package org.matonos.store.fdroid;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.security.MessageDigest;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 
-/** Verifies every downloaded APK before handing any bytes to PackageInstaller. */
+/** Verifies every downloaded APK before handing any bytes to the store. */
 public final class FdroidApkInstaller {
-  public interface CommitAction { void commit(List<File> verifiedApks) throws Exception; }
-
-  public void verifyThenCommit(List<File> apks, List<String> hashes, CommitAction action) throws Exception {
-    if (apks.isEmpty() || apks.size() != hashes.size()) throw new IllegalArgumentException("APK files and hashes do not match");
-    for (int i = 0; i < apks.size(); i++) verify(apks.get(i), hashes.get(i));
-    action.commit(new ArrayList<>(apks));
-  }
-
   public void verify(File apk, String expectedHash) throws Exception {
     if (expectedHash == null || !expectedHash.matches("(?i)[0-9a-f]{64}")) throw new IllegalArgumentException("Invalid F-Droid APK SHA-256");
     MessageDigest digest = MessageDigest.getInstance("SHA-256");

@@ -60,36 +60,6 @@ export function flatpakSafety(permissions: FlatpakPermissions | undefined, freeL
   return safetyOf(items);
 }
 
-// F-Droid's standard anti-feature ids (https://f-droid.org/docs/Anti-Features/).
-const ANTI_FEATURES: Record<string, { title: string; description: string; severity: SafetySeverity }> = {
-  Ads: { title: "Advertising", description: "This app contains advertising", severity: "warning" },
-  Tracking: { title: "Tracks you", description: "This app tracks and reports your activity", severity: "danger" },
-  NonFreeNet: { title: "Non-free network services", description: "This app promotes or depends on non-free network services", severity: "warning" },
-  TetheredNet: { title: "Tied to one service", description: "This app depends entirely on a certain instance of a network service", severity: "warning" },
-  NonFreeAdd: { title: "Promotes non-free add-ons", description: "This app promotes non-free add-ons", severity: "warning" },
-  NonFreeDep: { title: "Needs non-free apps", description: "This app depends on other non-free apps", severity: "warning" },
-  UpstreamNonFree: { title: "Upstream is non-free", description: "The upstream source code is not entirely free", severity: "warning" },
-  NonFreeAssets: { title: "Non-free assets", description: "This app contains non-free assets", severity: "neutral" },
-  KnownVuln: { title: "Known vulnerability", description: "This app contains a known security vulnerability", severity: "danger" },
-  DisabledAlgorithm: { title: "Insecure signature", description: "This app has a weak security signature", severity: "danger" },
-  NoSourceSince: { title: "Source no longer available", description: "The source code is no longer available", severity: "warning" },
-  NSFW: { title: "Adult content", description: "This app contains content that may not be suitable for all audiences", severity: "neutral" },
-};
-
-export function antiFeaturesOf(raw: Array<{ id: string; reason: string }> | undefined): AntiFeature[] {
-  return (raw ?? []).map(({ id, reason }) => ({ id, reason, title: ANTI_FEATURES[id]?.title ?? id, description: ANTI_FEATURES[id]?.description ?? "" }));
-}
-
-/** F-Droid builds from source, so code is auditable; anti-features add warnings. */
-export function fdroidSafety(antiFeatures: AntiFeature[]): Safety {
-  const items: SafetyItem[] = antiFeatures.map((anti) => ({
-    id: anti.id, title: anti.title, description: anti.reason || anti.description, severity: ANTI_FEATURES[anti.id]?.severity ?? "warning",
-  }));
-  if (!antiFeatures.some((anti) => anti.id === "UpstreamNonFree" || anti.id === "NoSourceSince"))
-    items.push({ id: "auditable", title: "Auditable code", description: "Built by F-Droid from public source code", severity: "good" });
-  return safetyOf(items);
-}
-
 // Age rating (OARS, as Flathub publishes it in appstream content_rating_details).
 export type ContentLevel = "none" | "mild" | "moderate" | "intense";
 export type AgeRatingCategory = { id: string; title: string; description: string; level: ContentLevel };

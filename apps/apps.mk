@@ -27,3 +27,6 @@ PRODUCT_COPY_FILES += \
     $(foreach m,$(MATON_APPS),\
         $(foreach f,$(notdir $(wildcard $(MATON_APPS_DIR)/$(m).lib/x86_64/*.so)),\
             $(MATON_APPS_DIR)/$(m).lib/x86_64/$(f):$(TARGET_COPY_OUT_PRODUCT)/app/$(m)/lib/x86_64/$(f)))
+
+# fdroid-source: system source plugins start enabled in the Software Center.
+PRODUCT_PACKAGES += MatonFdroidSource

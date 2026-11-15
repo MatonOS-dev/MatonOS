@@ -15,17 +15,6 @@ type NativeApi = {
   storeUninstall(ref: string, operationId: string): Promise<boolean>;
   storeListInstalled(): Promise<string>;
   storeListRemotes(): Promise<string>;
-  fdroidSearch(repository: string, query: string): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
-  fdroidDetails(repository: string, packageName: string): Promise<Omit<import("../../../src/sources/Source").StoreApp, "source" | "antiFeatures"> & { rawAntiFeatures?: Array<{ id: string; reason: string }> }>;
-  fdroidInstalled(repository: string): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
-  fdroidUpdates(): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
-  fdroidInstall(repository: string, packageName: string, operationId: string): Promise<boolean>;
-  fdroidUninstall(packageName: string, operationId: string): Promise<boolean>;
-  fdroidRepositories(): Promise<Array<{ url: string; fingerprint: string; official: boolean; broken: boolean }>>;
-  fdroidAddRepository(repository: string, fingerprint: string): Promise<boolean>;
-  fdroidRemoveRepository(repository: string): Promise<boolean>;
-  fdroidHostDisplay(repository: string): Promise<string>;
-  fdroidVerifyRepository(repository: string): Promise<{ ok: boolean; error: string }>;
   startStubInstall(ref: string, operationId: string | null): Promise<boolean>;
   startStubUpdate(ref: string, operationId: string | null): Promise<boolean>;
   launchStub(appId: string): Promise<boolean>;
@@ -59,17 +48,6 @@ export const MatonOS = {
   storeUninstall: (ref: string, operationId: string) => Native.storeUninstall(ref, operationId),
   storeListInstalled: () => Native.storeListInstalled(),
   storeListRemotes: () => Native.storeListRemotes(),
-  fdroidSearch: (repository: string, query: string) => Native.fdroidSearch(repository, query),
-  fdroidDetails: (repository: string, packageName: string) => Native.fdroidDetails(repository, packageName),
-  fdroidInstalled: (repository: string) => Native.fdroidInstalled(repository),
-  fdroidUpdates: () => Native.fdroidUpdates(),
-  fdroidInstall: (repository: string, packageName: string, operationId: string) => Native.fdroidInstall(repository, packageName, operationId),
-  fdroidUninstall: (packageName: string, operationId: string) => Native.fdroidUninstall(packageName, operationId),
-  fdroidRepositories: () => Native.fdroidRepositories(),
-  fdroidAddRepository: (repository: string, fingerprint: string) => Native.fdroidAddRepository(repository, fingerprint),
-  fdroidRemoveRepository: (repository: string) => Native.fdroidRemoveRepository(repository),
-  fdroidHostDisplay: (repository: string) => Native.fdroidHostDisplay(repository),
-  fdroidVerifyRepository: (repository: string) => Native.fdroidVerifyRepository(repository),
   sourcePlugins: () => Native.sourcePlugins(),
   setSourceEnabled: (pkg: string, enabled: boolean) => Native.setSourceEnabled(pkg, enabled),
   sourceInfo: (pkg: string) => Native.sourceInfo(pkg),

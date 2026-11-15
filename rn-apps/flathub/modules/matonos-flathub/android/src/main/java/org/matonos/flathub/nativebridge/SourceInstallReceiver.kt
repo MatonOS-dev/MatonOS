@@ -5,11 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 
-class FdroidInstallReceiver : BroadcastReceiver() {
+class SourceInstallReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
-    val operationId = intent.getStringExtra(EXTRA_OPERATION_ID) ?: return
+    val operationId = intent.getStringExtra(EXTRA_OPERATION_ID) ?: run { android.util.Log.e("SourceInstallReceiver", "Missing operation ID"); return }
     val kind = intent.getStringExtra(EXTRA_KIND) ?: "install"
-    val source = intent.getStringExtra(EXTRA_SOURCE) ?: "F-Droid"
+    val source = intent.getStringExtra(EXTRA_SOURCE) ?: ""
     val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
     if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
       val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
@@ -17,12 +17,13 @@ class FdroidInstallReceiver : BroadcastReceiver() {
         confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(confirm)
       }
-      MatonOSExpoModule.fdroidEventSink?.invoke(operationId, "Waiting for package confirmation", -1, -1, -1, null)
+      MatonOSExpoModule.packageEventSink?.invoke(operationId, "Waiting for package confirmation", -1, -1, -1, null)
       return
     }
     val ok = status == PackageInstaller.STATUS_SUCCESS
+    if (!ok) android.util.Log.e("SourceInstallReceiver", "Package operation failed source=$source op=$operationId status=$status")
     val error = if (ok) "" else intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Package operation failed (status $status)"
-    MatonOSExpoModule.fdroidEventSink?.invoke(operationId, "complete", 100, -1, -1,
+    MatonOSExpoModule.packageEventSink?.invoke(operationId, "complete", 100, -1, -1,
       mapOf("ok" to ok, "error" to error, "operationId" to operationId, "kind" to kind, "source" to source))
   }
 

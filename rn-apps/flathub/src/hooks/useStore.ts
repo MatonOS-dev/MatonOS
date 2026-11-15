@@ -1,11 +1,33 @@
-import { useEffect, useState } from "react";
-import { FdroidSource } from "../sources/FdroidSource";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { pluginSources } from "../sources/PluginSource";
+import { MatonOS } from "../../modules/matonos-flathub/src/MatonOS";
 import { FlathubSource } from "../sources/FlathubSource";
 import { toDetails, toListing, type AppDetails, type AppListing, type Review, type Source, type SourceName, type StoreApp } from "../sources/Source";
 
 export type * from "../sources/Source";
 
-const SOURCES: Source[] = [FlathubSource, FdroidSource];
+let SOURCES: Source[] = [FlathubSource];
+let sourceLoad: Promise<void> | null = null;
+const sourceListeners = new Set<() => void>();
+let progressSubscriptions: Array<{ remove(): void }> = [];
+export function loadSources(): Promise<void> {
+  sourceLoad ??= pluginSources().then((plugins) => {
+    progressSubscriptions.forEach((subscription) => subscription.remove());
+    SOURCES = [FlathubSource, ...plugins]; installedIds = null;
+    progressSubscriptions = SOURCES.map((source) => source.progress((event) => { if (event.result) installedIds = null; }));
+    sourceListeners.forEach((listener) => listener());
+  }).catch((error) => { sourceLoad = null; console.error("Loading source plugins failed", error); throw error; });
+  return sourceLoad;
+}
+export async function setPluginEnabled(pkg: string, enabled: boolean): Promise<void> {
+  await MatonOS.setSourceEnabled(pkg, enabled); sourceLoad = null; await loadSources();
+}
+function subscribeSources(listener: () => void) { sourceListeners.add(listener); return () => { sourceListeners.delete(listener); }; }
+export function useSources(): Source[] {
+  const sources = useSyncExternalStore(subscribeSources, () => SOURCES);
+  useEffect(() => { void loadSources().catch((error) => console.error("Source discovery failed", error)); }, []);
+  return sources;
+}
 const SEARCH_DEBOUNCE_MS = 300;
 
 function sourceFor(name: SourceName): Source {
@@ -17,9 +39,10 @@ function sourceFor(name: SourceName): Source {
 // Installed ids per source, cached for the session and dropped whenever an
 // install/uninstall finishes so the next search sees the new state.
 let installedIds: Promise<Set<string>> | null = null;
-SOURCES.forEach((source) => source.progress((event) => { if (event.result) installedIds = null; }));
 
-function installed(): Promise<Set<string>> {
+
+async function installed(): Promise<Set<string>> {
+  await loadSources();
   installedIds ??= Promise.all(SOURCES.map((source) => source.installed().catch((error) => {
     console.warn(`${source.name}: listing installed apps failed`, error);
     return [] as StoreApp[];
@@ -45,6 +68,7 @@ export type SearchState = {
 
 /** Searches every source (debounced). An empty term returns no apps. */
 export function useAppSearch(term: string): SearchState {
+  const sources = useSources();
   const query = term.trim();
   const [result, setResult] = useState<{ query: string; apps: AppListing[]; errors: SearchState["errors"] }>({ query: "", apps: [], errors: [] });
 
@@ -67,7 +91,7 @@ export function useAppSearch(term: string): SearchState {
       setResult({ query, apps, errors });
     }, SEARCH_DEBOUNCE_MS);
     return () => { stale = true; clearTimeout(timer); };
-  }, [query]);
+  }, [query, sources]);
 
   if (!query) return { apps: [], loading: false, errors: [] };
   // Keep the previous results on screen while the new search runs.

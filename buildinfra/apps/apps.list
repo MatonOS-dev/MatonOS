@@ -3,3 +3,4 @@ matonos-settings	rn-apps/settings	expo	Settings.apk
 matonos-flathub	rn-apps/flathub	expo	Flathub.apk
 matonos-audio-tone-test	audio/testapp	:app:assembleRelease	AudioToneTest.apk
 # linux runtimes: owns the UID for Flatpak SYSTEM installations, no privileged access
+matonos-fdroid-source	store-sources/fdroid	assembleRelease	FdroidSource.apk

@@ -1,4 +1,4 @@
-package org.matonos.flathub.fdroid;
+package org.matonos.store.fdroid;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -24,6 +24,24 @@ public final class FdroidIndexClient {
   // Official repository index signer; source: https://f-droid.org/docs/Release_Channels_and_Signing_Keys/
   public static final String OFFICIAL_FINGERPRINT = "43238d512c1e5eb2d6569f4a3afbf5523418b82e0a3ed1552770abb9a9c9ccab";
   private static final String DEFAULT_REPO = "https://f-droid.org/repo";
+
+  private final int sdk;
+  private final List<String> abis;
+  private final java.util.Set<String> features;
+  public FdroidIndexClient() { this(37, Collections.singletonList("x86_64"), null); }
+  public FdroidIndexClient(int sdk, List<String> abis, java.util.Set<String> features) { this.sdk = sdk; this.abis = abis; this.features = features; }
+  private boolean compatible(Map<String, Object> version) {
+    Map<String, Object> manifest = map(version.get("manifest"));
+    Map<String, Object> usesSdk = map(manifest.get("usesSdk"));
+    if (number(usesSdk.get("minSdkVersion")) > sdk) return false;
+    long max = number(usesSdk.get("maxSdkVersion")); if (max > 0 && max < sdk) return false;
+    Object nativeCode = manifest.get("nativecode");
+    if (nativeCode == null) nativeCode = manifest.get("nativeCode");
+    if (nativeCode instanceof List && !((List<?>) nativeCode).isEmpty() && Collections.disjoint((List<?>) nativeCode, abis)) return false;
+    Object required = manifest.get("features");
+    if (features != null && required instanceof List) for (Object feature : (List<?>) required) if (!features.contains(text(feature))) return false;
+    return true;
+  }
 
   public List<Map<String, Object>> search(File cacheRoot, String repository, String query) throws Exception {
     return search(cacheRoot, repository, OFFICIAL_FINGERPRINT, query);
@@ -173,6 +191,7 @@ public final class FdroidIndexClient {
     Map<String, Object> latest = null;
     for (Object value : versions.values()) {
       Map<String, Object> version = map(value);
+      if (!compatible(version)) continue;
       if (latest == null || number(map(version.get("manifest")).get("versionCode")) > number(map(latest.get("manifest")).get("versionCode"))) latest = version;
     }
     if (latest == null) return null;

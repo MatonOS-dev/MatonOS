@@ -1,4 +1,4 @@
-package org.matonos.flathub.fdroid;
+package org.matonos.store.fdroid;
 
 import java.net.IDN;
 import java.net.URI;
@@ -25,7 +25,8 @@ public final class FdroidRepository {
         throw new IllegalArgumentException("Repository URL must be an HTTPS URL without credentials, query, or fragment");
       String path = uri.getPath() == null ? "" : uri.getPath().replaceAll("/+", "/");
       while (path.endsWith("/")) path = path.substring(0, path.length() - 1);
-      return "https://" + IDN.toASCII(host(uri)).toLowerCase(Locale.ROOT) + path;
+      String ascii = host(uri).contains(":") ? host(uri) : IDN.toASCII(host(uri)).toLowerCase(Locale.ROOT);
+      return new URI("https", null, ascii, uri.getPort(), path, null, null).toASCIIString();
     } catch (IllegalArgumentException error) { throw error; }
     catch (Exception error) { throw new IllegalArgumentException("Invalid repository URL", error); }
   }

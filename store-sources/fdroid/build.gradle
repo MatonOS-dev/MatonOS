@@ -1,0 +1,24 @@
+plugins { id 'com.android.application' version '9.2.0' }
+android {
+    namespace 'org.matonos.store.fdroid'
+    compileSdk 37
+    defaultConfig {
+        applicationId 'org.matonos.store.fdroid'
+        minSdk 37
+        targetSdk 37
+        versionCode 1
+        versionName '1.0'
+    }
+    buildFeatures { aidl true }
+    signingConfigs {
+        release {
+            if (System.getenv('MATON_SIGNING_STORE_FILE')) {
+                storeFile file(System.getenv('MATON_SIGNING_STORE_FILE'))
+                storePassword System.getenv('MATON_SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('MATON_SIGNING_KEY_ALIAS')
+                keyPassword System.getenv('MATON_SIGNING_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes { release { signingConfig signingConfigs.release } }
+}
