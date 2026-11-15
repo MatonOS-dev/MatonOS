@@ -65,12 +65,27 @@ Living doc; updated through the night.
 - Disk: /home hit 97% (ostree test failed on min-free-space); deleted nine
   finished build dirs → 59 GB free.
 
+## Store follow-ups (done, pushed, VM-checked)
+- Store 2133b50: progress + Cancel live in the app's row (no list shift),
+  latest search/collection request wins, refresh on foreground (luna's
+  e7bc4fb only added the import; listener added by me).
+- F-Droid 9655a0c: ranking exact name > prefix > word > substring > id >
+  summary > description; "newpipe" now lists NewPipe first on the VM.
+- Device tree 43e4428 bumps both submodules.
+
 ## Running
-- store-followups (luna): banner layout shift, stale install state, startup search race.
-- fdroid-ranking (luna): exact-name-first search ranking.
+- phase2-retire (luna, worktree ~/matonos/repos/linux-subsystem-app-phase2):
+  delete ILinuxAppStore/LinuxAppStoreService/stub InstallActivity, app
+  INSTALL_PACKAGES if unused (bootstrap keeps it).
 
 ## Decisions taken
 - (none yet)
 
-## Parked
-- (none yet)
+## Parked (needs you)
+- Duplicate Flathub rows: the store's built-in FlathubSource also feeds
+  Browse (Popular/New via Flathub web API) and ODRS ratings; the Flatpak
+  plugin only does search/install from AppStream. Retiring the built-in
+  source drops Browse collections unless the plugin grows a collections
+  call (contract change). Your pick: (a) contract `collection(kind)` on
+  plugins, built-in source deleted — my recommendation; (b) keep built-in
+  for Browse only, search/install via plugin.
