@@ -1,5 +1,5 @@
 import {MatonOS} from '../bridge/MatonOS';
-import type {InstallDrive, InstallerApi, OperationProgress, OperationRequestV1} from '../service/InstallerApi';
+import type {InstallDrive, InstallerApi, OperationProgress, OperationRequestV1} from './InstallerApi';
 
 function decode<T>(value: string): T {
   try { return JSON.parse(value) as T; } catch { throw new Error('Install service returned an invalid response.'); }

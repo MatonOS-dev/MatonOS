@@ -1,6 +1,7 @@
 #include "InstallerService.h"
 #include "LpMetadata.h"
 
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <unistd.h>
@@ -9,7 +10,9 @@
 #include <cerrno>
 #include <cctype>
 #include <climits>
+#include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <filesystem>
 #include <fstream>
@@ -208,8 +211,33 @@ std::string Transport(const std::string& sys_path, const std::string& name) {
     return "Storage";
 }
 
+// Ventoy marks its sticks with a small FAT partition labelled VTOYEFI (GPT
+// name in GPT mode, FAT volume label in both modes).
+bool IsVentoyPartition(const Partition& partition) {
+    if (partition.name == "VTOYEFI") return true;
+    const int fd = ::open(partition.path.c_str(), O_RDONLY | O_CLOEXEC);
+    if (fd < 0) {
+        if (errno != ENOENT)
+            std::fprintf(stderr, "installer: cannot open %s to check for Ventoy: %s\n",
+                         partition.path.c_str(), std::strerror(errno));
+        return false;
+    }
+    unsigned char sector[512];
+    const ssize_t got = ::pread(fd, sector, sizeof(sector), 0);
+    const int read_errno = errno;
+    ::close(fd);
+    if (got != static_cast<ssize_t>(sizeof(sector))) {
+        if (got < 0)
+            std::fprintf(stderr, "installer: cannot read %s to check for Ventoy: %s\n",
+                         partition.path.c_str(), std::strerror(read_errno));
+        return false;
+    }
+    return FatVolumeLabel(sector) == "VTOYEFI";
+}
+
 std::string UnsafeReason(const Drive& drive) {
     if (drive.live_medium) return "This is the drive MatonOS booted from.";
+    if (drive.ventoy) return "This is a Ventoy drive; installing would erase it and its images.";
     if (drive.mounted) return "One or more partitions on this drive are mounted or in use.";
     if (drive.in_use) return "This drive has an active block-device holder.";
     if (drive.read_only) return "This drive is read-only.";
@@ -276,6 +304,20 @@ bool CheckGpt(const WriteGpt& gpt, const Drive& disk, std::string* error) {
 
 }  // namespace
 
+std::string FatVolumeLabel(const unsigned char (&sector)[512]) {
+    if (sector[510] != 0x55 || sector[511] != 0xAA) return {};
+    auto field = [&](size_t offset, size_t length) {
+        return std::string(reinterpret_cast<const char*>(sector + offset), length);
+    };
+    size_t label_offset;
+    if (field(82, 5) == "FAT32") label_offset = 71;
+    else if (field(54, 3) == "FAT") label_offset = 43;
+    else return {};
+    std::string label = field(label_offset, 11);
+    while (!label.empty() && (label.back() == ' ' || label.back() == '\0')) label.pop_back();
+    return label;
+}
+
 std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
                                    const std::string& dev_block_path,
                                    const std::string& mountinfo,
@@ -315,6 +357,7 @@ std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
         if (!SectorsToBytes(entry.path() / "size", &drive.size_bytes)) continue;
         drive.read_only = ReadBool(entry.path() / "ro");
         drive.removable = ReadBool(entry.path() / "removable");
+        drive.rotational = ReadBool(entry.path() / "queue" / "rotational");
         drive.model = Read(entry.path() / "device" / "model");
         if (drive.model.empty()) drive.model = name;
         drive.serial = Read(entry.path() / "device" / "serial");
@@ -356,7 +399,9 @@ std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
                 else if (key == "PARTUUID") partition.part_guid = value;
                 else if (key == "PARTTYPE") partition.type_guid = value;
             }
-            if (partition.size_bytes != 0) drive.partitions.push_back(std::move(partition));
+            if (partition.size_bytes == 0) continue;
+            if (IsVentoyPartition(partition)) drive.ventoy = true;
+            drive.partitions.push_back(std::move(partition));
         }
         // Read LP metadata from an unmounted physical super partition. The
         // executor addresses its validated linear extents directly through

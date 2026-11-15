@@ -16,10 +16,18 @@ export type InstallDrive = {
   sizeBytes: number;
   transport: string;
   removable: boolean;
+  rotational: boolean;
   safe: boolean;
   reason?: string;
   partitions: DrivePartition[];
 };
+
+export type UserdataFilesystem = "ext4" | "f2fs";
+
+/** f2fs for flash (SSD, NVMe, eMMC, USB flash), ext4 for spinning disks. */
+export function defaultUserdataFilesystem(drive: InstallDrive): UserdataFilesystem {
+  return drive.rotational ? "ext4" : "f2fs";
+}
 
 export type PartitionRef =
   | { partGuid: string; logicalName?: never }

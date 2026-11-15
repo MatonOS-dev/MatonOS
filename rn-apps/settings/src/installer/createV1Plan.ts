@@ -2,7 +2,8 @@ import type {
   GptPartition,
   InstallerOperation,
   OperationRequestV1,
-} from "../service/InstallerApi";
+  UserdataFilesystem,
+} from "./InstallerApi";
 
 const MiB = 1024 ** 2;
 const GiB = 1024 ** 3;
@@ -68,6 +69,7 @@ export function createV1Plan(
   diskId: string,
   diskIdentity: string,
   diskBytes: number,
+  userdataFilesystem: UserdataFilesystem,
 ): V1Plan {
   if (!diskIdentity)
     throw new Error("Refresh the drive list before confirming this target.");
@@ -169,7 +171,7 @@ export function createV1Plan(
     {
       kind: "format" as const,
       target: { partGuid: userdata.partGuid },
-      filesystem: "ext4" as const,
+      filesystem: userdataFilesystem,
       label: "userdata",
     },
     {

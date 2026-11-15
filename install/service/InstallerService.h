@@ -36,10 +36,12 @@ struct Drive {
     std::string transport;
     uint64_t size_bytes = 0;
     bool removable = false;
+    bool rotational = false;  // sysfs queue/rotational: spinning disk
     bool read_only = false;
     bool mounted = false;
     bool in_use = false;
     bool live_medium = false;
+    bool ventoy = false;  // carries a VTOYEFI partition: a Ventoy boot stick
     bool safe = false;
     std::string unsafe_reason;
     std::vector<Partition> partitions;
@@ -87,6 +89,10 @@ using PrimitiveExecutor = std::function<bool(const Operation&, const Drive&, Pro
 bool ExecutePrimitive(const Operation& operation, const Drive& target,
                       ProgressCallback progress, CancelCallback cancelled,
                       std::string* error);
+
+// FAT volume label from a boot sector (FAT12/16 or FAT32 layout), trailing
+// spaces removed; empty when the sector is not a FAT boot sector.
+std::string FatVolumeLabel(const unsigned char (&sector)[512]);
 
 std::vector<Drive> EnumerateDrives(const std::string& sys_block_path,
                                    const std::string& dev_block_path,

@@ -128,7 +128,7 @@ std::string DrivesJson() {
     for (size_t i=0;i<drives.size();++i) {
         const auto& d=drives[i]; if (i) out << ',';
         out << "{\"id\":"<<Escape(d.id)<<",\"identity\":"<<Escape(d.identity)<<",\"path\":"<<Escape(d.path)<<",\"model\":"<<Escape(d.model)<<",\"serial\":"<<Escape(d.serial)
-            <<",\"sizeBytes\":"<<d.size_bytes<<",\"transport\":"<<Escape(d.transport)<<",\"removable\":"<<(d.removable?"true":"false")
+            <<",\"sizeBytes\":"<<d.size_bytes<<",\"transport\":"<<Escape(d.transport)<<",\"removable\":"<<(d.removable?"true":"false")<<",\"rotational\":"<<(d.rotational?"true":"false")
             <<",\"safe\":"<<(d.safe?"true":"false")<<",\"reason\":"<<Escape(d.unsafe_reason)<<",\"partitions\":[";
         for (size_t j=0;j<d.partitions.size();++j) { const auto& p=d.partitions[j]; if(j)out<<',';
             out<<"{\"name\":"<<Escape(p.name)<<",\"partGuid\":"<<Escape(p.part_guid)<<",\"typeGuid\":"<<Escape(p.type_guid)

@@ -2,11 +2,12 @@ import { Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { FlatList } from "react-native";
 import {
   ActionButton,
+  ModeRow,
   SettingsCard,
   StatusRow,
   ToggleRow,
 } from "../../components/SettingsUI";
-import type { InstallDrive, OperationProgress } from "../../installer/InstallerApi";
+import type { InstallDrive, OperationProgress, UserdataFilesystem } from "../../installer/InstallerApi";
 import { copy } from "../../strings";
 
 export type InstallStep =
@@ -236,17 +237,51 @@ export function InstallDrivesStep({
   );
 }
 
+function FilesystemChoice({
+  drive,
+  value,
+  onChange,
+}: {
+  drive: InstallDrive;
+  value: UserdataFilesystem;
+  onChange: (value: UserdataFilesystem) => void;
+}) {
+  const recommended = drive.rotational ? "ext4" : "f2fs";
+  const note = (fs: UserdataFilesystem) => (fs === recommended ? " Recommended for this drive." : "");
+  return (
+    <>
+      <Text style={{ typography: "titleSmall" }}>Format user data as</Text>
+      <ModeRow
+        title="F2FS"
+        description={`Built for flash storage: SSD, NVMe, eMMC and USB sticks.${note("f2fs")}`}
+        selected={value === "f2fs"}
+        onSelect={() => onChange("f2fs")}
+      />
+      <ModeRow
+        title="ext4"
+        description={`The classic Linux filesystem; best on spinning hard disks.${note("ext4")}`}
+        selected={value === "ext4"}
+        onSelect={() => onChange("ext4")}
+      />
+    </>
+  );
+}
+
 function ConfirmBody({
   drive,
   preview,
   confirmed,
   onConfirmChange,
+  userdataFilesystem,
+  onUserdataFilesystemChange,
   formatSize,
 }: {
   drive: InstallDrive | null;
   preview: boolean;
   confirmed: boolean;
   onConfirmChange: (value: boolean) => void;
+  userdataFilesystem: UserdataFilesystem;
+  onUserdataFilesystemChange: (value: UserdataFilesystem) => void;
   formatSize: (bytes: number) => string;
 }) {
   const colors = useMaterialColors();
@@ -266,6 +301,7 @@ function ConfirmBody({
       </Text>
       <StatusRow label={copy.device} value={drive.path} />
       <StatusRow label={copy.capacity} value={formatSize(drive.sizeBytes)} />
+      <FilesystemChoice drive={drive} value={userdataFilesystem} onChange={onUserdataFilesystemChange} />
       <ToggleRow
         title="I understand this drive will be erased"
         supporting="This confirmation is required before installation starts."
@@ -281,6 +317,8 @@ export function InstallConfirmStep({
   confirmed,
   preview,
   onConfirmChange,
+  userdataFilesystem,
+  onUserdataFilesystemChange,
   onBack,
   onStart,
   formatSize,
@@ -289,6 +327,8 @@ export function InstallConfirmStep({
   confirmed: boolean;
   preview: boolean;
   onConfirmChange: (value: boolean) => void;
+  userdataFilesystem: UserdataFilesystem;
+  onUserdataFilesystemChange: (value: UserdataFilesystem) => void;
   onBack: () => void;
   onStart: () => void;
   formatSize: (bytes: number) => string;
@@ -302,6 +342,8 @@ export function InstallConfirmStep({
         preview={preview}
         confirmed={confirmed}
         onConfirmChange={onConfirmChange}
+        userdataFilesystem={userdataFilesystem}
+        onUserdataFilesystemChange={onUserdataFilesystemChange}
         formatSize={formatSize}
       />
       <ActionButton label={copy.goBack} variant="text" onClick={onBack} />
