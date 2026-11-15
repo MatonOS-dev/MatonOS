@@ -196,7 +196,9 @@ static int mount_candidates(void) {
         if (e->d_name[0] == '.') continue;
         char part[PATH_MAX], devpath[PATH_MAX], mnt[PATH_MAX], dev[PATH_MAX];
         snprintf(part, sizeof(part), "/sys/class/block/%s/partition", e->d_name);
-        if (access(part, F_OK)) continue;
+        /* Optical drives carry the ISO9660 filesystem on the whole device. */
+        int optical = !strncmp(e->d_name, "sr", 2);
+        if (!optical && access(part, F_OK)) continue;
         snprintf(devpath, sizeof(devpath), "/sys/class/block/%s/dev", e->d_name);
         FILE *f = fopen(devpath, "re");
         unsigned maj = 0, min = 0;
@@ -207,12 +209,14 @@ static int mount_candidates(void) {
         snprintf(mnt, sizeof(mnt), "/mnt/ventoyboot/%s", e->d_name);
         mkdir(mnt, 0700);
         const char *types[] = { "exfat", "ntfs3", "vfat" };
-        for (size_t i = 0; i < sizeof(types)/sizeof(types[0]); ++i) {
-            if (!mount(dev, mnt, types[i], MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL)) {
-                mounted++;
-                break;
-            }
-        }
+        const char *optical_types[] = { "iso9660" };
+        const char **list = optical ? optical_types : types;
+        size_t count = optical ? 1 : sizeof(types)/sizeof(types[0]);
+        int ok = 0;
+        for (size_t i = 0; i < count && !ok; ++i)
+            ok = !mount(dev, mnt, list[i], MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, NULL);
+        mounted += ok;
+        if (optical && !ok) logmsg("optical %s did not mount as iso9660: %s", e->d_name, strerror(errno));
     }
     closedir(d);
     return mounted;
@@ -296,6 +300,12 @@ static int ventoy_work(void) {
     if (module_load("/ventoy/modules/nls_utf8.ko") && errno != EEXIST) logmsg("UTF-8 NLS module unavailable: %s", strerror(errno));
     if (module_load("/ventoy/modules/exfat.ko") && errno != EEXIST) logmsg("exFAT module unavailable: %s", strerror(errno));
     if (module_load("/ventoy/modules/ntfs3.ko") && errno != EEXIST) logmsg("NTFS3 module unavailable: %s", strerror(errno));
+    if (module_load("/ventoy/modules/cdrom.ko") && errno != EEXIST) logmsg("cdrom module unavailable: %s", strerror(errno));
+    if (module_load("/ventoy/modules/sr_mod.ko") && errno != EEXIST) logmsg("SCSI CD-ROM module unavailable: %s", strerror(errno));
+    if (module_load("/ventoy/modules/isofs.ko") && errno != EEXIST) logmsg("ISO9660 module unavailable: %s", strerror(errno));
+    /* sr devices register asynchronously after sr_mod binds. */
+    uint64_t sr_until = monotonic_ms() + 2000;
+    while (monotonic_ms() < sr_until && access("/sys/class/block/sr0", F_OK)) sleep_ms(100);
 
     int mounted = mount_candidates();
     char image[PATH_MAX] = {0};

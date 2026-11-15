@@ -55,3 +55,11 @@ installer cannot be run unattended here. QEMU validation should use a
 Ventoy-installed raw disk when privileged access is available; until then, a
 raw-disk image-file fixture can validate the helper's scan/loop handoff without
 validating Ventoy's own UEFI menu and chainloader.
+
+## Optical media (ISO)
+
+`tools/make-iso.sh` wraps the live image in a UEFI ISO: the El Torito EFI
+image is a copy of the live ESP, and the live `.img` sits as a file in the
+ISO9660 root. A CD-ROM exposes no partitions, so the boot PARTUUID never
+appears; the helper then loads `cdrom`, `sr_mod` and `isofs`, mounts `sr*`
+whole devices as iso9660 and finds the image with the same PARTUUID search.
