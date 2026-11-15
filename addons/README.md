@@ -90,7 +90,11 @@ Before an OS A/B update switches slots, the updater reads installed add-ons,
 fetches matching packages and complete slot images from the target release's
 `addons/` directory, validates signatures and kernel releases, and stages
 them to the inactive add-on slot. It switches the OS and add-on slots together;
-the previous pair remains available for rollback. A missing target-release
+the previous pair remains available for rollback.
+This staging runs as the OTA's postinstall step (decided 2026-11-15):
+`addons` is not in `AB_OTA_PARTITIONS`, because a stock payload is identical
+for every machine while add-on sets are per machine. If staging fails,
+postinstall fails and update_engine does not switch slots. A missing target-release
 package leaves that add-on disabled after upgrade instead of carrying a
 module with stale vermagic across kernels. The current native service
 implements signed local intake and slot writing; release-index download,
