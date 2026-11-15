@@ -41,8 +41,33 @@ Living doc; updated through the night.
   - Search submitted while the first collection is loading stays on
     "Loading apps…" until resubmitted.
 
+## Flatpak source
+- Round 4 (sol) done: contract submodule, typed paging, remotes as repos,
+  cancel + running(), launch repair via IStore.update, ISA baseline fix
+  (BoringSSL scalar paths, xz CLMUL off).
+- Review fix abb9621: stub resolves the store service among system apps only.
+- Merged into subsystem main 8d415f3 (prebuilt conflict → branch build,
+  superset of main's sources, matches SOURCE).
+- VM fix d2ad0c1: AppStream reader rewritten DOM → SAX. On Android the DOM
+  path failed twice: KXml rejects the JDK hardening flags, then Flathub's
+  catalogue as a DOM ran the subsystem out of heap (crash loop on search).
+  DOCTYPE/external entities still refused (LexicalHandler/EntityResolver).
+- VM verified (v1171): plugin search, uninstall, install + Cancel
+  ("cancelled", no package left), full install (~280 s), app launches
+  (MediathekView). Pushed subsystem main d2ad0c1.
+- Not VM-tested: launch repair after a runtime is removed (host test covers).
+- Open: every Flathub app is listed twice (built-in store Flathub source +
+  "Flatpak" plugin); both rows share the package → phase 2 retires the
+  built-in source. After a plugin install the rows kept "Install" until the
+  store regained focus (luna's refresh-on-focus covers part of this).
+- Device tree: AIDL copy-drift check removed from tools/build-subsystem.sh
+  (subsystem now uses the contract submodule).
+- Disk: /home hit 97% (ostree test failed on min-free-space); deleted nine
+  finished build dirs → 59 GB free.
+
 ## Running
-- flatpak-source4 (sol): Flatpak source on contract c21e8d9 + launch repair via IStore.update + ISA fix.
+- store-followups (luna): banner layout shift, stale install state, startup search race.
+- fdroid-ranking (luna): exact-name-first search ranking.
 
 ## Decisions taken
 - (none yet)
