@@ -28,7 +28,7 @@ Capabilities (the store shows a feature only for sources that declare it):
   store offers "Sign in", which starts the plugin's activity for action
   `org.matonos.store.SOURCE_LOGIN` (resolved inside the plugin package).
   Reserved: not wired in this version.
-- `REQUIRES_SETUP`: the user must configure the source before it is useful.
+- `REQUIRES_SETUP`: the user must configure the source before it is useful. Example: a Huawei AppGallery source.
   When the user enables it, the store starts the plugin's activity for action
   `org.matonos.store.SOURCE_SETUP` (an installation wizard) for a result and
   enables the source only on RESULT_OK. Reserved: future version.
