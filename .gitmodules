@@ -4,3 +4,6 @@
 [submodule "store-sources/contract"]
 	path = store-sources/contract
 	url = https://github.com/MatonOS-dev/store-source-contract.git
+[submodule "store-sources/fdroid"]
+	path = store-sources/fdroid
+	url = https://github.com/MatonOS-dev/store-source-fdroid
