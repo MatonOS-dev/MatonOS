@@ -14,10 +14,10 @@ fi
 
 mkdir -p "$(dirname "$OUTPUT")"
 cp --reflink=auto "$SOURCE" "$OUTPUT"
-truncate -s "$(( $(stat -c %s "$OUTPUT") + 1024*1024*1024 ))" "$OUTPUT"
+truncate -s "$(( $(stat -c %s "$OUTPUT") + 3*1024*1024*1024 + 4*1024*1024 ))" "$OUTPUT"
 sgdisk -e "$OUTPUT" >/dev/null
-sgdisk -n 3:0:+512M -t 3:8300 -c 3:addons_a \
-       -n 4:0:+512M -t 4:8300 -c 4:addons_b "$OUTPUT" >/dev/null
+sgdisk -n 3:0:+1536M -t 3:8300 -c 3:addons_a \
+       -n 4:0:+1536M -t 4:8300 -c 4:addons_b "$OUTPUT" >/dev/null
 
 ESP_START=$(sgdisk -i 1 "$OUTPUT" | awk '/First sector:/ {print $3}')
 [[ $ESP_START =~ ^[0-9]+$ ]] || die "cannot find the ESP start sector"

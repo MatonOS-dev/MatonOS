@@ -70,8 +70,8 @@ boot=add("boot","bc13c2ff-59e6-4262-a352-b275fd6f7172",GiB)
 add("misc",linux,4*MiB)
 metadata=add("metadata",linux,64*MiB)
 superp=add("super",linux,6*GiB)
-addons_a=add("addons_a",linux,512*MiB)
-addons_b=add("addons_b",linux,512*MiB)
+addons_a=add("addons_a",linux,1536*MiB)
+addons_b=add("addons_b",linux,1536*MiB)
 user_start=math.ceil(cursor/MiB)*MiB
 disk_bytes=64*GiB
 userdata=add("userdata",linux,(disk_bytes-MiB)//MiB*MiB-user_start)

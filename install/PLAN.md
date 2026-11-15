@@ -13,7 +13,7 @@ image contains only slot A and boots with its existing live-specific fstab
 suffix, slot A, and the live marker. The installed image has slot-select fstab
 entries and signed A/B UKIs with installed fstab suffix, their respective slot
 suffix, and live marker zero. The installer creates ESP, XBOOTLDR, misc,
-metadata, 10.5 GiB super, 512 MiB addons_a, 512 MiB addons_b, and userdata.
+metadata, 10.5 GiB super, 1.5 GiB addons_a, 1.5 GiB addons_b, and userdata.
 Super contains two 5 GiB groups with system, system_ext, product, vendor, and
 odm members. It copies each live A member to target A and clones A to B.
 

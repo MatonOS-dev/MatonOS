@@ -113,12 +113,12 @@ export function createV1Plan(
   const addonsA = addPartition(
     "addons_a",
     "0fc63daf-8483-4772-8e79-3d69d8477de4",
-    512 * MiB,
+    1536 * MiB,
   );
   const addonsB = addPartition(
     "addons_b",
     "0fc63daf-8483-4772-8e79-3d69d8477de4",
-    512 * MiB,
+    1536 * MiB,
   );
   const userdataStart = align(cursor);
   const userdataEnd =

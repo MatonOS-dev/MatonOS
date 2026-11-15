@@ -20,13 +20,13 @@ space at the disk end, and assigns all remaining space to userdata.
 | 3 | `misc` | Linux filesystem `0fc63daf-8483-4772-8e79-3d69d8477de4` | 4 MiB | Cleared boot-control compatibility state; no filesystem required. |
 | 4 | `metadata` | Linux filesystem | 64 MiB | Android metadata. |
 | 5 | `super` | Linux filesystem | 10.5 GiB | Two LP groups, LP metadata and headroom. |
-| 6 | `addons_a` | Linux filesystem | 512 MiB | Writable ext4 partition for signed add-on ZIPs and per-add-on folders matching slot A's kernel. |
-| 7 | `addons_b` | Linux filesystem | 512 MiB | Writable ext4 partition for signed add-on ZIPs and per-add-on folders matching slot B's kernel. |
+| 6 | `addons_a` | Linux filesystem | 1.5 GiB | Writable ext4 partition for signed add-on ZIPs and per-add-on folders matching slot A's kernel. |
+| 7 | `addons_b` | Linux filesystem | 1.5 GiB | Writable ext4 partition for signed add-on ZIPs and per-add-on folders matching slot B's kernel. |
 | 8 | `userdata` | Linux filesystem | Remainder | ext4, formatted for Android userdata initialization; starts empty. |
 
-V1 app minimum is **16 GiB**. Nominal fixed allocation is about 13.2 GiB
-including the 1.5 GiB ESP/boot, 10.5 GiB super, both 512 MiB add-on slots,
-misc/metadata and alignment; about 2.9 GiB remains for userdata on a 16 GiB
+V1 app minimum is **16 GiB**. Nominal fixed allocation is about 10.6 GiB
+including the 1.5 GiB ESP/boot, 6 GiB super (VAB), both 1.5 GiB add-on slots,
+misc/metadata and alignment; about 5.4 GiB remains for userdata on a 16 GiB
 disk after GPT tail reserve. Exact userdata bytes are computed from the
 freshly enumerated disk capacity by the app and shown before confirmation.
 The executor does not enforce 16 GiB or any of these partition sizes; it
@@ -79,7 +79,7 @@ Firmware boots the fallback EFI path; no EFI NVRAM writes are used.
 
 The live image stays bootable with its live-specific fstab selection. Its
 compact super contains only *_a logical images; installation copies A and
-clones A to B. The installed GPT includes addons_a and addons_b, each 512 MiB.
+clones A to B. The installed GPT includes addons_a and addons_b, each 1.5 GiB.
 
 ## Generic operation API v1
 

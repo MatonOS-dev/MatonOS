@@ -25,7 +25,7 @@ Area-owned init mounts `/dev/block/by-name/addons${ro.boot.slot_suffix}`
 read-only without a `wait` flag. A missing partition therefore does not delay
 boot. The service verifies the signed package and module metadata, then checks
 the repository-signed image hash before writing the raw slot block device.
-The installer layout supplies writable 512 MiB ext4 partitions at GPT entries
+The installer layout supplies writable 1.5 GiB ext4 partitions at GPT entries
 6 and 7. Discovery follows `androidboot.boot_devices` and ueventd by-name links.
 
 Coordinator integration (applied for the 2026-09-28 06:18 image):

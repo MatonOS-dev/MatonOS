@@ -22,7 +22,7 @@ The live image keeps its separate live fstab and boot path.
   are created as target metadata and COW snapshots during an OTA; the
   installer does not clone full `_a` images into permanent `_b` copies. Keep
   `addons_a` and
-  `addons_b` as the separately user-decided 512 MiB per-slot partitions.
+  `addons_b` as the separately user-decided 1.5 GiB per-slot partitions.
 - Keep the installed boot A/B entries, `androidboot.slot_suffix`, systemd-boot
   attempt counting, and misc-backed boot selection. The installed fstab retains
   `slotselect`, so A mounts `_a` and B mounts snapshot-backed `_b` after OTA.

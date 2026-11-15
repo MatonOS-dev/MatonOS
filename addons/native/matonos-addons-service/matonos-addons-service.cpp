@@ -39,7 +39,7 @@ namespace fs = std::filesystem;
 namespace {
 constexpr char kSlot[] = "/mnt/vendor/addons";
 constexpr char kData[] = "/data/vendor/matonos-addons";
-constexpr uint64_t kSlotImageBytes = 512ULL * 1024ULL * 1024ULL;
+constexpr uint64_t kSlotImageBytes = 1536ULL * 1024ULL * 1024ULL;
 constexpr char kRepoPublicKey[] = "/odm/etc/addons/repo.pub";
 constexpr size_t kMaxPackage = 128U * 1024U * 1024U;
 constexpr size_t kChunkDecoded = 32U * 1024U;
@@ -393,7 +393,7 @@ bool WriteImageToSelectedPartition(const fs::path& image,std::string* error){
     // by-name entries are trusted ueventd symlinks; the dedicated SELinux
     // label and BLKGETSIZE64 check below validate their block-device target.
     int out=open(block.c_str(),O_WRONLY|O_CLOEXEC);if(out<0){*error=std::string("cannot open selected add-on block device: ")+strerror(errno);return false;}
-    uint64_t capacity=0;if(ioctl(out,BLKGETSIZE64,&capacity)!=0||capacity!=kSlotImageBytes){close(out);*error="selected add-on partition does not match the supported 512 MiB slot size";return false;}
+    uint64_t capacity=0;if(ioctl(out,BLKGETSIZE64,&capacity)!=0||capacity!=kSlotImageBytes){close(out);*error="selected add-on partition does not match the supported 1.5 GiB slot size";return false;}
     int in=open(image.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW);if(in<0){close(out);*error="staged slot image disappeared";return false;}
     // Channel callbacks run on a bounded binder worker stack. Keep the
     // streaming buffer small; a MiB stack allocation can crash the daemon.

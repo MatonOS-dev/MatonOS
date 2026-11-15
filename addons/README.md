@@ -2,7 +2,7 @@
 
 ## Slot and update design
 
-The installer layout reserves two 512 MiB GPT partitions, `addons_a` and
+The installer layout reserves two 1.5 GiB GPT partitions, `addons_a` and
 `addons_b` (entries 6 and 7). Each partition stores a complete ext4 image for
 the matching OS slot. Init mounts the selected partition read-only at
 `/mnt/vendor/addons`, with no `wait` flag. It discovers the block node through
@@ -29,7 +29,7 @@ no-daemon fallback; add daemon package tests before enabling it. All image
 paths are read-only at runtime.
 
 The ZIP carries the same module metadata plus an outer signed manifest that
-binds the full 512 MiB image SHA-256. The filesystem image carries an inner
+binds the full 1.5 GiB image SHA-256. The filesystem image carries an inner
 signed manifest that binds each module/firmware path, size and SHA-256 without
 self-referencing the image hash. The device verifies the repository signature,
 ELF metadata and exact running `uname -r` before accepting the image, then
@@ -51,7 +51,7 @@ force-load a module when release or vermagic differs.
 
 `addons/build/make-package.sh` accepts module and firmware inputs and
 produces `<package>.zip`, `<package>.zip.img`, and a public-key sidecar. The
-image is exactly 512 MiB and is signed into the outer manifest by SHA-256. The
+image is exactly 1.5 GiB and is signed into the outer manifest by SHA-256. The
 inner manifest in the image includes:
 
 - exact kernel release and module vermagic;
