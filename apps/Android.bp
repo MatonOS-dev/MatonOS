@@ -48,11 +48,3 @@ android_app_import {
     product_specific: true,
     preprocessed: true,
 }
-
-// Built outside Soong with its own user-local key (buildinfra/apps/apps.list).
-android_app_import {
-    name: "MatonFdroidSource",
-    apk: "../buildinfra/apps-built/FdroidSource.apk",
-    product_specific: true,
-    preprocessed: true,
-}

@@ -59,6 +59,14 @@ android_app_import {
     required: ["privapp-permissions-org.matonos.flathub"],
 }
 
+// Store source plugin (buildinfra/apps/apps.list); unprivileged, own key.
+android_app_import {
+    name: "MatonFdroidSource",
+    apk: "apps-built/FdroidSource.apk",
+    product_specific: true,
+    preprocessed: true,
+}
+
 prebuilt_etc {
     name: "privapp-permissions-org.matonos.settings",
     src: "privapp-permissions/privapp-permissions-org.matonos.settings.xml",
