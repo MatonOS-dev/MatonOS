@@ -15,6 +15,7 @@ object FdroidRepositories {
     "https://apt.izzysoft.de/fdroid/repo" to "3bf0d6abfeae2f401707b6d966be743bf0eee49c2561b9ba39073711f628937a",
     "https://microg.org/fdroid/repo" to "9bd06727e62796c0130eb6dab39b73157451582cbd138e86c468acc395d14165",
     "https://guardianproject.info/fdroid/repo" to "b7c2eefd8dac7806af67dfcd92eb18126bc08312a7f2d6f3862e46013c7a6135",
+    "https://cdn.kde.org/android/stable-releases/fdroid/repo" to "13784ba6c80ff4e2181e55c56f961eed5844cea16870d3b38d58780b85e1158f",
   )
 
   private fun seedPresets(context: Context) {
