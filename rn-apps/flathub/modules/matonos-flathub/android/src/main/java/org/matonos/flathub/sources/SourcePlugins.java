@@ -17,7 +17,6 @@ import org.matonos.store.source.ICommitResult;
 import org.matonos.store.source.IInstallCallback;
 import org.matonos.store.source.ISoftwareSource;
 
-import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -120,7 +119,10 @@ public final class SourcePlugins {
           Log.e(TAG, pkg + ": committing " + packageName + " failed", error);
           reply(result, false, pkg + ": " + error.getMessage());
         } finally {
-          if (files != null) for (ParcelFileDescriptor file : files) try { file.close(); } catch (Exception ignored) { }
+          if (files != null) for (ParcelFileDescriptor file : files) if (file != null) {
+            try { Log.i(TAG, "close fd=" + file.getFd() + " at SourcePlugins.install.commit"); file.close(); }
+            catch (Exception error) { Log.e(TAG, "Closing source APK descriptor op=" + op, error); }
+          }
         }
       }
       @Override public void done(String op) { events.result(pkg, op, true, null); }
@@ -147,19 +149,20 @@ public final class SourcePlugins {
     try (PackageInstaller.Session session = installer.openSession(sessionId)) {
       for (int i = 0; i < count; i++) {
         if (!names[i].matches("[A-Za-z0-9._-]+\\.apk")) throw new IllegalArgumentException("Invalid APK name " + names[i]);
-        try (InputStream in = new FileInputStream(files[i].getFileDescriptor());
+        try (InputStream in = new ParcelFileDescriptor.AutoCloseInputStream(ParcelFileDescriptor.dup(files[i].getFileDescriptor()));
              OutputStream out = session.openWrite(names[i], 0, files[i].getStatSize())) {
           byte[] buffer = new byte[64 * 1024];
           int read;
           while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
           session.fsync(out);
+          Log.i(TAG, "close duplicated APK descriptor at SourcePlugins.commit session=" + sessionId + " name=" + names[i]);
         }
       }
       if (removeSplits != null) for (String split : removeSplits) session.removeSplit(split);
       events.progress(source, operationId, "Installing " + packageName, -1, -1, -1);
       session.commit(resultSender(sessionId, result));
     } catch (Exception error) {
-      try { installer.abandonSession(sessionId); } catch (Exception ignored) { }
+      try { installer.abandonSession(sessionId); } catch (Exception abandon) { Log.e(TAG, "Abandoning session=" + sessionId + " failed", abandon); }
       throw error;
     }
   }
@@ -201,14 +204,14 @@ public final class SourcePlugins {
 
   private void disconnect(String pkg) {
     Connection connection = connections.remove(pkg);
-    if (connection != null) try { context.unbindService(connection); } catch (Exception ignored) { }
+    if (connection != null) try { context.unbindService(connection); } catch (Exception error) { Log.e(TAG, "Unbinding source " + pkg + " failed", error); }
   }
 
   private static final class Connection implements ServiceConnection {
     final CountDownLatch ready = new CountDownLatch(1);
     volatile IBinder binder;
     @Override public void onServiceConnected(ComponentName name, IBinder service) { binder = service; ready.countDown(); }
-    @Override public void onServiceDisconnected(ComponentName name) { binder = null; }
-    @Override public void onBindingDied(ComponentName name) { binder = null; }
+    @Override public void onServiceDisconnected(ComponentName name) { Log.e(TAG, "Source disconnected: " + name); binder = null; }
+    @Override public void onBindingDied(ComponentName name) { Log.e(TAG, "Source binding died: " + name); binder = null; }
   }
 }

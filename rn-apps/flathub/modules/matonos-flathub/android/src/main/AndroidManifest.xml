@@ -23,6 +23,6 @@
     </intent>
   </queries>
   <application>
-    <receiver android:name="org.matonos.flathub.nativebridge.FdroidInstallReceiver" android:exported="false" />
+    <receiver android:name="org.matonos.flathub.nativebridge.SourceInstallReceiver" android:exported="false" />
   </application>
 </manifest>

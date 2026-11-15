@@ -6,13 +6,13 @@ import { clickable, height, padding, paddingAll, size, weight, width } from "@ex
 import { getCollection, type StoreApp } from "./FlathubApi";
 import { MatonOS } from "../modules/matonos-flathub/src/MatonOS";
 import { runApp } from "./FlatpakBridge";
-import { FlathubSource } from "./sources/FlathubSource";
-import { FdroidSource } from "./sources/FdroidSource";
-import type { Source, SourceProgress } from "./sources/Source";
+import { useSources, setPluginEnabled } from "./hooks/useStore";
+import type { SourcePlugin } from "../modules/matonos-flathub/src/MatonOS";
+import type { SourceProgress } from "./sources/Source";
 
 type Page = "browse" | "installed" | "updates";
 type Feed = "popular" | "new";
-const sources: Source[] = [FlathubSource, FdroidSource];
+type Repository = { id: string; url: string; label: string; official: boolean; broken: boolean };
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong.";
@@ -128,23 +128,21 @@ function DetailContent({ app, installed, updateAvailable, busy, busyLabel, progr
       <Text style={{ typography: "bodyMedium" }}>{permissionText}</Text>
       <Text style={{ typography: "titleMedium" }}>About this app</Text>
       <Text style={{ typography: "bodyMedium" }}>{app.description.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() || app.summary}</Text>
-      {app.source === "F-Droid" ? <>
-        <Text style={{ typography: "titleMedium" }}>F-Droid package</Text>
-        <Text style={{ typography: "bodyMedium" }}>Version {app.versionName} ({app.versionCode})</Text>
-        <Text style={{ typography: "bodySmall" }}>{app.apkName}</Text>
-        <Text style={{ typography: "bodySmall" }}>SHA-256: {app.apkSha256}</Text>
-      </> : null}
       <Text style={{ typography: "bodySmall" }}>{app.id}</Text>
     </LazyColumn>
   );
 }
 
 export default function App() {
+  const sources = useSources();
+  const [plugins, setPlugins] = useState<SourcePlugin[]>([]);
+  const [repoSource, setRepoSource] = useState("");
+  const repositorySources = sources.filter((source) => source.capabilities?.includes("HAS_REPOSITORIES"));
   const themeColors = useMaterialColors({ colorScheme: "dark", seedColor: "#79c75b" });
   const [page, setPage] = useState<Page>("browse");
   const [feed, setFeed] = useState<Feed>("popular");
   const [repoManager, setRepoManager] = useState(false);
-  const [repositories, setRepositories] = useState<Array<{ url: string; fingerprint: string; official: boolean; broken: boolean }>>([]);
+  const [repositories, setRepositories] = useState<Repository[]>([]);
   const [repoUrl, setRepoUrl] = useState("");
   const [repoFingerprint, setRepoFingerprint] = useState("");
   const repoUrlInput = useNativeState("");
@@ -167,41 +165,47 @@ export default function App() {
   const installedIds = useMemo(() => new Set(installedApps.map((app) => `${app.source}:${app.id}`)), [installedApps]);
   const updateIds = useMemo(() => new Set(updateApps.map((app) => `${app.source}:${app.id}`)), [updateApps]);
 
-  async function refreshRepositories() {
-    try { setRepositories(await MatonOS.fdroidRepositories()); } catch (error) { setRepoError(errorText(error)); }
+  async function refreshRepositories(pkg = repoSource) {
+    if (!pkg) { setRepositories([]); return; }
+    try { setRepositories(JSON.parse(await MatonOS.sourceRepos(pkg)) as Repository[]); } catch (error) { console.error("Repository operation failed", error); setRepoError(errorText(error)); }
   }
 
   const reviewRepository = useCallback(async (url: string, fingerprint: string) => {
     setRepoError(""); setRepoUrl(url); setRepoFingerprint(fingerprint); repoUrlInput.set(url); repoFingerprintInput.set(fingerprint);
-    try { setRepoHost(await MatonOS.fdroidHostDisplay(url)); }
+    try { setRepoHost(new URL(url).hostname); }
     catch (error) { setRepoHost(""); setRepoError(errorText(error)); }
-  }, [repoUrlInput, repoFingerprintInput]);
+  }, [repoUrlInput, repoFingerprintInput, setRepoError, setRepoUrl, setRepoFingerprint, setRepoHost]);
 
   const handleRepositoryLink = useCallback(async (value: string) => {
     try {
       const link = new URL(value);
       if (link.protocol !== "fdroidrepos:") return;
+      const pkg = "org.matonos.store.fdroid";
+      const info = JSON.parse(await MatonOS.sourceInfo(pkg)) as { capabilities?: string[] };
+      if (!info.capabilities?.includes("HAS_REPOSITORIES")) throw new Error("The F-Droid plugin does not manage repositories");
       const url = link.searchParams.get("url") || `https://${link.host}${link.pathname}`.replace(/\/$/, "");
-      setRepoManager(true); setSelected(null);
+      setRepoSource("org.matonos.store.fdroid"); setRepoManager(true); setSelected(null);
+      setRepositories(JSON.parse(await MatonOS.sourceRepos(pkg)) as Repository[]);
       await reviewRepository(url, link.searchParams.get("fingerprint") || "");
-    } catch { setRepoError("This F-Droid repository link is invalid."); }
-  }, [reviewRepository]);
+    } catch (error) { console.error("Invalid repository link", error); setRepoError("This F-Droid repository link is invalid."); }
+  }, [reviewRepository, setRepoManager, setSelected, setRepoError, setRepoSource, setRepositories]);
 
   async function saveRepository() {
     if (!repoHost || repoChecking) return;
     setRepoChecking(true); setRepoError("");
     try {
-      await MatonOS.fdroidAddRepository(repoUrl, repoFingerprint);
-      const status = await MatonOS.fdroidVerifyRepository(repoUrl);
+      const share = new URL(repoUrl);
+      if (repoFingerprint) share.searchParams.set("fingerprint", repoFingerprint);
+      await MatonOS.sourceAddRepo(repoSource, share.toString());
       await refreshRepositories();
-      setRepoError(status.ok ? "Repository verified and added." : `Repository added as broken: ${status.error}`);
-      if (status.ok) { setRepoUrl(""); setRepoFingerprint(""); setRepoHost(""); repoUrlInput.set(""); repoFingerprintInput.set(""); }
-    } catch (error) { setRepoError(errorText(error)); }
+      setRepoError("Repository verified and added.");
+      setRepoUrl(""); setRepoFingerprint(""); setRepoHost(""); repoUrlInput.set(""); repoFingerprintInput.set("");
+    } catch (error) { console.error("Adding repository failed", error); setRepoError(errorText(error)); await refreshRepositories(); }
     finally { setRepoChecking(false); }
   }
 
   async function removeRepository(repository: string) {
-    try { await MatonOS.fdroidRemoveRepository(repository); await refreshRepositories(); await runSearch(""); }
+    try { await MatonOS.sourceDelRepo(repoSource, repository); await refreshRepositories(); await runSearch(""); }
     catch (error) { setRepoError(errorText(error)); }
   }
 
@@ -219,7 +223,7 @@ export default function App() {
     try {
       const entries = (await Promise.all(sources.map((source) => source.updates()))).flat();
       setUpdateApps(entries);
-    } catch { setUpdateApps([]); }
+    } catch (error) { console.error("Listing updates failed", error); setUpdateApps([]); setMessage(errorText(error)); }
   }
 
   async function loadCollection(nextFeed: Feed) {
@@ -277,6 +281,7 @@ export default function App() {
     const initialLink = Linking.getInitialURL().then((url) => { if (url) void handleRepositoryLink(url); });
     const subscription = Linking.addEventListener("url", (event) => void handleRepositoryLink(event.url));
     return () => { clearTimeout(timer); subscription.remove(); void initialLink; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial collection and links; registry changes refresh app lists below
   }, [handleRepositoryLink]);
   useEffect(() => {
     const handleProgress = (payload: SourceProgress) => {
@@ -301,7 +306,34 @@ export default function App() {
     };
     const subscriptions = sources.map((source) => source.progress(handleProgress));
     return () => subscriptions.forEach((subscription) => subscription.remove());
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resubscribe only when source registry changes
+  }, [sources]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => { void refreshInstalled(); void refreshUpdates(); }, 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh when the source registry changes
+  }, [sources]);
+  async function togglePlugin(plugin: SourcePlugin) {
+    try {
+      await setPluginEnabled(plugin.package, !plugin.enabled); setPlugins(await MatonOS.sourcePlugins());
+      if (plugin.enabled) {
+        setApps((current) => current.filter((app) => app.source !== plugin.package));
+        if (selected?.source === plugin.package) setSelected(null);
+        if (repoSource === plugin.package) setRepoManager(false);
+      }
+    }
+    catch (error) { console.error("Toggling plugin failed", error); setMessage(errorText(error)); }
+  }
+  async function openRepositorySource(pkg: string) { setRepoSource(pkg); setRepoManager(true); setSelected(null); setRepoError(""); await refreshRepositories(pkg); }
+  const repositoryButtons = repositorySources.map((source) => <Button key={source.name} onClick={() => void openRepositorySource(source.name)}><Text>{source.label ?? source.name} repositories</Text></Button>);
+  const pluginButtons = plugins.map((plugin) => <Button key={plugin.package} onClick={() => void togglePlugin(plugin)}><Text>{plugin.enabled ? "Disable" : "Enable"} {plugin.label}</Text></Button>);
+  const repositoryRows = repositories.map((repository) => <Column key={repository.id} modifiers={[paddingAll(10)]}>
+    <Text style={{ typography: "titleMedium" }}>{repository.label}</Text>
+    <Text style={{ typography: "bodySmall" }}>{repository.url}</Text>
+    <Text style={{ typography: "bodySmall" }}>{repository.broken ? "Broken: index verification or download failed." : "Trusted repository"}</Text>
+    <Show when={!repository.official}><Button onClick={() => void removeRepository(repository.id)}><Text>Remove repository</Text></Button></Show>
+  </Column>);
 
   async function selectFeed(next: Feed) {
     setFeed(next); await loadCollection(next);
@@ -337,14 +369,9 @@ export default function App() {
   if (repoManager) {
     content = <Host style={{ flex: 1 }} colorScheme="dark" seedColor="#79c75b"><LazyColumn contentPadding={{ start: 20, top: 20, end: 20, bottom: 20 }} verticalArrangement={{ spacedBy: 12 }}>
       <Button onClick={() => { setRepoManager(false); setRepoError(""); }}><Text>‹  Back to apps</Text></Button>
-      <Text style={{ typography: "headlineSmall" }}>F-Droid repositories</Text>
+      <Text style={{ typography: "headlineSmall" }}>Repositories</Text>
       <Text style={{ typography: "bodyMedium" }}>The Software Center verifies each repository's signed index using the fingerprint you confirm.</Text>
-      {repositories.map((repository) => <Column key={repository.url} modifiers={[paddingAll(10)]}>
-        <Text style={{ typography: "titleMedium" }}>{repository.official ? "F-Droid (built in)" : repository.url}</Text>
-        <Text style={{ typography: "bodySmall" }}>SHA-256: {repository.fingerprint}</Text>
-        <Text style={{ typography: "bodySmall" }}>{repository.broken ? "Broken: index verification or download failed." : "Verified repository"}</Text>
-        {!repository.official ? <Button onClick={() => void removeRepository(repository.url)}><Text>Remove repository</Text></Button> : null}
-      </Column>)}
+      {repositoryRows}
       <OutlinedTextField value={repoUrlInput} onValueChange={(value) => { setRepoUrl(value); repoUrlInput.set(value); }}><OutlinedTextField.Label>HTTPS repository URL</OutlinedTextField.Label></OutlinedTextField>
       <OutlinedTextField value={repoFingerprintInput} onValueChange={(value) => { setRepoFingerprint(value); repoFingerprintInput.set(value); }}><OutlinedTextField.Label>Signing fingerprint (SHA-256)</OutlinedTextField.Label></OutlinedTextField>
       <Button onClick={() => void reviewRepository(repoUrl, repoFingerprint)}><Text>Review repository</Text></Button>
@@ -399,7 +426,9 @@ export default function App() {
           <Button onClick={() => void selectPage("browse")}><Text>Browse</Text></Button>
           <Button onClick={() => void selectPage("installed")}><Text>Installed</Text></Button>
           <Button onClick={() => void selectPage("updates")}><Text>Updates</Text></Button>
-          <Button onClick={() => { setRepoManager(true); setSelected(null); setRepoError(""); void refreshRepositories(); }}><Text>Repositories</Text></Button>
+          {repositoryButtons}
+          <Button onClick={() => { void MatonOS.sourcePlugins().then(setPlugins).catch((error) => { console.error("Listing plugins failed", error); setMessage(errorText(error)); }); }}><Text>Sources</Text></Button>
+          {pluginButtons}
         </Row>
         <Show when={Boolean(busyRef)}>
           <Column modifiers={[padding(14, 0, 14, 14)]}>

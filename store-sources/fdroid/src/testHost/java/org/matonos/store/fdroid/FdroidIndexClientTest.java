@@ -1,4 +1,4 @@
-package org.matonos.flathub.fdroid;
+package org.matonos.store.fdroid;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -39,7 +39,37 @@ public final class FdroidIndexClientTest {
     testApkHashBeforeCommit(signedJar.getParentFile());
     testUpdateEligibility(client, parsed);
     testRepositoryChanges();
+    testCompatibility();
+    testSafety();
+    testManifest(signedJar.getParentFile());
     System.out.println("PASS: signed JAR, signer pin, index hash, index parser, APK hash before commit, update signer/version checks, repository trust/removal");
+  }
+
+  private static void testCompatibility() {
+    FdroidIndexClient client = new FdroidIndexClient(37, java.util.List.of("x86_64"), java.util.Set.of("android.hardware.camera"));
+    String versions = "{\"packages\":{\"p\":{\"versions\":{"
+      + "\"good\":{\"file\":{\"name\":\"base.apk\",\"sha256\":\"abc\"},\"manifest\":{\"versionCode\":1,\"usesSdk\":{\"minSdkVersion\":37},\"nativecode\":[\"x86_64\"]}},"
+      + "\"badSdk\":{\"file\":{\"name\":\"base.apk\",\"sha256\":\"abc\"},\"manifest\":{\"versionCode\":3,\"usesSdk\":{\"minSdkVersion\":38}}},"
+      + "\"badAbi\":{\"file\":{\"name\":\"base.apk\",\"sha256\":\"abc\"},\"manifest\":{\"versionCode\":2,\"nativecode\":[\"arm64-v8a\"]}}}}}}";
+    check(((Number)client.detailsFromParsedIndex(client.parseIndex(versions), "p").get("versionCode")).intValue() == 1, "newest compatible version");
+  }
+  private static void testSafety() {
+    java.util.Map<String,Object> app = new java.util.LinkedHashMap<>();
+    app.put("rawAntiFeatures", java.util.List.of(java.util.Map.of("id", "Tracking", "reason", "Reports location")));
+    FdroidSafety.apply(app);
+    check("potentially-unsafe".equals(((java.util.Map<?,?>)app.get("safety")).get("level")), "tracking is dangerous");
+    app.put("rawAntiFeatures", java.util.List.of(java.util.Map.of("id", "UnknownFeature", "reason", "")));
+    FdroidSafety.apply(app);
+    check("probably-safe".equals(((java.util.Map<?,?>)app.get("safety")).get("level")), "unknown anti feature warns");
+  }
+  private static void testManifest(File directory) throws Exception {
+    // Real aapt2-produced manifests, including a standalone split.
+    for (String name : new String[]{"base", "split"}) {
+      File apk = new File(directory, name + ".apk");
+      if (!apk.isFile()) throw new AssertionError("Missing aapt2 fixture " + apk);
+      check((name.equals("base") ? "base.apk" : "split_config.en.apk").equals(ApkManifest.sessionName(apk, "org.example.demo")), "manifest " + name);
+      try { ApkManifest.sessionName(apk, "org.example.other"); throw new AssertionError("Accepted wrong package"); } catch (java.io.IOException expected) { }
+    }
   }
 
   private static void testRepositoryChanges() throws Exception {
@@ -72,14 +102,8 @@ public final class FdroidIndexClientTest {
     try (FileOutputStream output = new FileOutputStream(apk)) { output.write("verified APK bytes".getBytes(StandardCharsets.UTF_8)); }
     String goodHash = fingerprint(bytes(apk));
     FdroidApkInstaller installer = new FdroidApkInstaller();
-    final int[] commits = {0};
-    installer.verifyThenCommit(java.util.Collections.singletonList(apk), java.util.Collections.singletonList(goodHash), files -> commits[0]++);
-    check(commits[0] == 1, "valid APK reaches session commit");
-    try {
-      installer.verifyThenCommit(java.util.Arrays.asList(apk, apk), java.util.Arrays.asList(goodHash, "00".repeat(32)), files -> commits[0]++);
-      throw new AssertionError("Accepted APK hash mismatch");
-    } catch (SecurityException expected) { }
-    check(commits[0] == 1, "hash mismatch aborts before session commit");
+    installer.verify(apk, goodHash);
+    expectFailure(() -> installer.verify(apk, "00".repeat(32)), "APK hash mismatch");
   }
 
   private static void damageSignedContent(File original, File damaged) throws Exception {

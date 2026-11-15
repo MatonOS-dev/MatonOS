@@ -21,11 +21,11 @@ function toApp(plugin: string, app: PluginApp): StoreApp {
 }
 
 /** Wraps one enabled plugin app as a Source. Data is the plugin's JSON, stamped with its package as source. */
-export function pluginSource(plugin: SourcePlugin): Source {
+export function pluginSource(plugin: SourcePlugin, capabilities: string[] = [], label = plugin.label): Source {
   const pkg = plugin.package;
   const list = async (call: string, json: Promise<string>) => parse<PluginApp[]>(pkg, call, await json).map((app) => toApp(pkg, app));
   return {
-    name: pkg,
+    name: pkg, label, capabilities,
     search: (term) => list("search", MatonOS.sourceSearch(pkg, term)),
     async details(app) { return toApp(pkg, parse<PluginApp>(pkg, "details", await MatonOS.sourceDetails(pkg, app.id))); },
     async reviews(app) {
@@ -47,9 +47,9 @@ export async function pluginSources(): Promise<Source[]> {
   const plugins = (await MatonOS.sourcePlugins()).filter((plugin) => plugin.enabled);
   const checked = await Promise.all(plugins.map(async (plugin) => {
     try {
-      const info = parse<{ version?: number }>(plugin.package, "info", await MatonOS.sourceInfo(plugin.package));
+      const info = parse<{ version?: number; label?: string; capabilities?: string[] }>(plugin.package, "info", await MatonOS.sourceInfo(plugin.package));
       if (info.version !== CONTRACT_VERSION) throw new Error(`speaks contract ${info.version}, store speaks ${CONTRACT_VERSION}`);
-      return pluginSource(plugin);
+      return pluginSource(plugin, info.capabilities ?? [], info.label);
     } catch (error) {
       console.error(`Store source ${plugin.package} unusable`, error);
       return null;

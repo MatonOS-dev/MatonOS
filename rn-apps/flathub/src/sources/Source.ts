@@ -78,6 +78,8 @@ export type SourceProgress = { source?: SourceName; operationId?: string; phase?
 
 export interface Source {
   readonly name: SourceName;
+  readonly label?: string;
+  readonly capabilities?: string[];
   search(query: string): Promise<StoreApp[]>;
   details(app: StoreApp): Promise<StoreApp>;
   installed(): Promise<StoreApp[]>;
