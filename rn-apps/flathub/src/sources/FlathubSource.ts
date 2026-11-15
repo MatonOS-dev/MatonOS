@@ -2,6 +2,7 @@ import { getAppDetails, searchApps, type StoreApp as FlathubApp } from "../Flath
 import { getInstalledRefs, installApp, uninstallApp, type ProgressEvent } from "../FlatpakBridge";
 import { MatonOS } from "../../modules/matonos-flathub/src/MatonOS";
 import type { Source, StoreApp } from "./Source";
+import { fetchReviews, withRatings } from "./Odrs";
 
 function fromFlathub(app: FlathubApp): StoreApp {
   return { ...app, source: "Flathub" };
@@ -22,6 +23,8 @@ export const FlathubSource: Source = {
   async updates() { return []; },
   async install(app, operationId) { await installApp(app.ref, operationId); },
   async uninstall(app, operationId) { await uninstallApp(app.ref, operationId); },
+  reviews: fetchReviews,
+  ratings: withRatings,
   progress(listener) {
     const subscription = MatonOS.addStoreListener((event: ProgressEvent) => {
       if (event.source !== "F-Droid") listener(event);

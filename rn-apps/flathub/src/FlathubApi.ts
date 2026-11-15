@@ -20,7 +20,11 @@ type AppStream = {
   bundle?: { value?: string };
   screenshots?: Array<{ sizes?: Array<{ src?: string; width?: string }> }>;
   metadata?: Record<string, unknown>;
+  project_license?: string;
+  urls?: { homepage?: string };
+  releases?: Array<{ version?: string }>;
 };
+type Summary = { download_size?: number; installed_size?: number };
 
 const API = "https://flathub.org/api/v2";
 const FALLBACK_REF = (id: string) => `app/${id}/x86_64/stable`;
@@ -81,7 +85,12 @@ function permissionList(metadata: Record<string, unknown> | undefined): string[]
 }
 
 export async function getAppDetails(app: StoreApp): Promise<StoreApp> {
-  const result = await request<AppStream>(`/appstream/${encodeURIComponent(app.id)}`);
+  const id = encodeURIComponent(app.id);
+  // Sizes are a nice-to-have: a missing /summary must not hide the details page.
+  const [result, summary] = await Promise.all([
+    request<AppStream>(`/appstream/${id}`),
+    request<Summary>(`/summary/${id}`).catch((error) => { console.warn(`Flathub summary for ${app.id} failed`, error); return {} as Summary; }),
+  ]);
   const screenshots: string[] = [];
   for (const shot of result.screenshots || []) {
     const sizes = shot.sizes || [];
@@ -99,6 +108,11 @@ export async function getAppDetails(app: StoreApp): Promise<StoreApp> {
     screenshots,
     permissions: permissionList(result.metadata),
     source: "Flathub",
+    versionName: result.releases?.[0]?.version || app.versionName,
+    license: result.project_license,
+    homepage: result.urls?.homepage,
+    downloadSize: summary.download_size,
+    installedSize: summary.installed_size,
   };
 }
 
