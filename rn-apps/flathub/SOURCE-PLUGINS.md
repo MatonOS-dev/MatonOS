@@ -24,10 +24,14 @@ Capabilities (the store shows a feature only for sources that declare it):
 - `HAS_REVIEWS`: `reviews(id)` returns reviews (others are never asked).
 - `HAS_ANTI_FEATURES`: details carry `antiFeatures`.
 - `HAS_PERMISSIONS`: details carry `permissions` / `safety`.
-- `HAS_LOGIN`: the source supports signing in. Reserved; this version does
-  nothing with it.
+- `HAS_LOGIN`: the source supports signing in (e.g. an Aurora backend). The
+  store offers "Sign in", which starts the plugin's activity for action
+  `org.matonos.store.SOURCE_LOGIN` (resolved inside the plugin package).
+  Reserved: not wired in this version.
 - `REQUIRES_SETUP`: the user must configure the source before it is useful.
-  Reserved for a future version.
+  When the user enables it, the store starts the plugin's activity for action
+  `org.matonos.store.SOURCE_SETUP` (an installation wizard) for a result and
+  enables the source only on RESULT_OK. Reserved: future version.
 
 Flatpak: REPOSITORIES, AGE_RATINGS, REVIEWS, PERMISSIONS. F-Droid:
 REPOSITORIES, ANTI_FEATURES, PERMISSIONS.
