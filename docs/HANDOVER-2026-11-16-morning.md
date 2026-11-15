@@ -99,3 +99,9 @@ Living doc; updated through the night.
   call (contract change). Your pick: (a) contract `collection(kind)` on
   plugins, built-in source deleted — my recommendation; (b) keep built-in
   for Browse only, search/install via plugin.
+- Separate user-files location (/data/media on its own partition): not
+  started. FBE keys are only installed by vold on userdata; a second
+  partition mounted at /data/media would hold user files unencrypted
+  (CDD/certifiability break). Options: (a) drop the feature — my
+  recommendation; (b) metadata-encryption-only media partition (dm-default-key
+  via fstab keydirectory) — weaker than per-user FBE, needs vold/fstab work.
