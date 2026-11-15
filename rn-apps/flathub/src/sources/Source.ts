@@ -1,5 +1,5 @@
-import type { AntiFeature, Safety } from "./Safety";
-export type { AntiFeature, Safety, SafetyItem, SafetyLevel, SafetySeverity } from "./Safety";
+import type { AgeRating, AntiFeature, Safety } from "./Safety";
+export type { AgeRating, AgeRatingCategory, ContentLevel, AntiFeature, Safety, SafetyItem, SafetyLevel, SafetySeverity } from "./Safety";
 
 export type SourceName = "Flathub" | "F-Droid";
 
@@ -32,6 +32,8 @@ export type StoreApp = {
   safety?: Safety;
   /** F-Droid anti-features; [] when the repo lists none, undefined for other sources. */
   antiFeatures?: AntiFeature[];
+  /** Flathub only (OARS); undefined when the app declares none. */
+  ageRating?: AgeRating;
 };
 
 export type Rating = { average: number; count: number; histogram: [number, number, number, number, number] };

@@ -3,7 +3,7 @@ import { FdroidSource } from "../sources/FdroidSource";
 import { FlathubSource } from "../sources/FlathubSource";
 import type { Review, Source, SourceName, StoreApp } from "../sources/Source";
 
-export type { Rating, Review, SourceName, StoreApp } from "../sources/Source";
+export type * from "../sources/Source";
 
 const SOURCES: Source[] = [FlathubSource, FdroidSource];
 const SEARCH_DEBOUNCE_MS = 300;

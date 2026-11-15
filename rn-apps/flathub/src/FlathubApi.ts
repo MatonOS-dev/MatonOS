@@ -1,5 +1,5 @@
 import type { StoreApp } from "./sources/Source";
-import { flatpakSafety, type FlatpakPermissions } from "./sources/Safety";
+import { ageRatingOf, flatpakSafety, type FlatpakPermissions } from "./sources/Safety";
 export type { StoreApp } from "./sources/Source";
 
 type SearchHit = {
@@ -25,6 +25,7 @@ type AppStream = {
   urls?: { homepage?: string };
   releases?: Array<{ version?: string }>;
   is_free_license?: boolean;
+  content_rating_details?: Parameters<typeof ageRatingOf>[0];
 };
 type Summary = { download_size?: number; installed_size?: number; metadata?: { permissions?: FlatpakPermissions; extraData?: unknown } };
 
@@ -109,6 +110,7 @@ export async function getAppDetails(app: StoreApp): Promise<StoreApp> {
     screenshots,
     // Flatpak permissions live in /summary metadata, not in appstream.
     permissions: permissionList(summary.metadata?.permissions),
+    ageRating: ageRatingOf(result.content_rating_details),
     safety: flatpakSafety(summary.metadata?.permissions, result.is_free_license, Boolean(summary.metadata?.extraData)),
     source: "Flathub",
     versionName: result.releases?.[0]?.version || app.versionName,
