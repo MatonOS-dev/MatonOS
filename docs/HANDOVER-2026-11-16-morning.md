@@ -25,7 +25,21 @@ Living doc; updated through the night.
   store now interleaves sources round-robin and shows the label.
 - Open: F-Droid ranking — "newpipe" ranks BendyStraw above NewPipe (exact
   name match should come first; plugin-side).
-- Still to test: install, cancel, two parallel installs, uninstall, keep-alive.
+- Verified on VM: F-Droid install (BendyStraw, LocalTube, Organic Maps),
+  uninstall, Flathub + F-Droid installs running in parallel with separate
+  progress banners.
+- Fixed: Cancel was shown for the built-in Flathub source, which has no
+  cancel (dead button). Now shown only when the source implements cancel;
+  the Flatpak plugin (round 4) brings real cancel.
+- Not verified on VM: F-Droid cancel — downloads finish in < 10 s on the VM
+  link (tc only shapes egress). Host tests cover it.
+- Follow-ups (small, store):
+  - Banners above the list shift every row when an operation starts/ends;
+    taps land on the wrong app. Put progress in the row or a fixed-height area.
+  - Package removed outside the store (pm uninstall / Settings) keeps showing
+  "Uninstall" until the store restarts; listen for package changes.
+  - Search submitted while the first collection is loading stays on
+    "Loading apps…" until resubmitted.
 
 ## Running
 - flatpak-source4 (sol): Flatpak source on contract c21e8d9 + launch repair via IStore.update + ISA fix.
