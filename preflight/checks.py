@@ -194,6 +194,9 @@ def check_bundle_registry() -> None:
 # User-approved exceptions to the zero-patches rule (CLAUDE.md), by path
 # relative to patches/. Each needs an explicit user decision.
 APPROVED_PATCHES = {
+    # 2026-11-15: user-approved ("The launcher3 change is approved"): taskbar
+    # slot hosting the Linux status tray pill (org.matonos.tray).
+    "packages/apps/Launcher3/0001-linux-status-tray.patch",
     # 2026-09-26: small upstreamable fix for an obvious AOSP bug.
     "frameworks/base/0001-SystemUI-hide-unified-battery-without-battery.patch",
     # 2026-09-27: user-approved GMS-replacement support (microG, NOTES.md v3).
