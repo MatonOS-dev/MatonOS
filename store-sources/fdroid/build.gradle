@@ -10,6 +10,8 @@ android {
         versionName '1.0'
     }
     buildFeatures { aidl true }
+    // Contract lives in one place: store-sources/contract.
+    sourceSets { main { aidl.srcDirs += ['../contract/aidl'] } }
     signingConfigs {
         release {
             if (System.getenv('MATON_SIGNING_STORE_FILE')) {

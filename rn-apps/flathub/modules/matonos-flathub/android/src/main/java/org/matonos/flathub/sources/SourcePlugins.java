@@ -18,6 +18,7 @@ import org.matonos.store.source.IInstallCallback;
 import org.matonos.store.source.ISoftwareSource;
 
 import java.io.InputStream;
+import java.util.Arrays;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -111,10 +112,10 @@ public final class SourcePlugins {
       @Override public void progress(String op, String phase, int percent, long done, long total) {
         events.progress(pkg, op, phase, percent, done, total);
       }
-      @Override public void commit(String op, String packageName, boolean inherit, String[] names,
+      @Override public void commit(String op, String packageName, String[] names,
           ParcelFileDescriptor[] files, String[] removeSplits, ICommitResult result) {
         try {
-          SourcePlugins.this.commit(pkg, op, packageName, inherit, names, files, removeSplits, result);
+          SourcePlugins.this.commit(pkg, op, packageName, names, files, removeSplits, result);
         } catch (Exception error) {
           Log.e(TAG, pkg + ": committing " + packageName + " failed", error);
           reply(result, false, pkg + ": " + error.getMessage());
@@ -133,11 +134,13 @@ public final class SourcePlugins {
     });
   }
 
-  private void commit(String source, String operationId, String packageName, boolean inherit, String[] names,
+  private void commit(String source, String operationId, String packageName, String[] names,
       ParcelFileDescriptor[] files, String[] removeSplits, ICommitResult result) throws Exception {
     int count = files == null ? 0 : files.length;
     if (names == null || names.length != count) throw new IllegalArgumentException("APK names and files do not match");
     if (count == 0 && (removeSplits == null || removeSplits.length == 0)) throw new IllegalArgumentException("Empty commit for " + packageName);
+    // No base.apk: change the installed package, keeping its other splits.
+    boolean inherit = !Arrays.asList(names).contains("base.apk");
     PackageInstaller installer = context.getPackageManager().getPackageInstaller();
     PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(
         inherit ? PackageInstaller.SessionParams.MODE_INHERIT_EXISTING : PackageInstaller.SessionParams.MODE_FULL_INSTALL);

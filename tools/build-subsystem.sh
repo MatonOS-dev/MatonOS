@@ -19,6 +19,12 @@ for f in "$KEY_DIR/matonos-linux-subsystem.jks" "$KEY_DIR/matonos-linux-subsyste
   [[ -s $f ]] || die "missing subsystem signing input: $f"
 done
 
+# The store-source AIDL contract has one home (store-sources/contract/aidl);
+# the subsystem repo carries a copy that must match it byte for byte.
+contract=$DEVICE_DIR/store-sources/contract/aidl/org/matonos/store/source
+while IFS= read -r copy; do
+  diff -r "$contract" "$copy" >&2 || die "store-source AIDL in $copy drifted from $contract; copy the contract over"
+done < <(find "$REPO" -path '*/build' -prune -o -path '*/aidl/org/matonos/store/source' -type d -print)
 info "Linux subsystem ($REPO @ $(git -C "$REPO" rev-parse --short HEAD))"
 MATON_SUBSYSTEM_OUT=$OUT \
   MATON_SIGNING_STORE_FILE=$KEY_DIR/matonos-linux-subsystem.jks \

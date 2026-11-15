@@ -5,7 +5,7 @@
 
 The built-in source is Flathub. Enabled backend apps are loaded through
 `SourcePlugins` and wrapped by `PluginSource`, using the contract in
-[SOURCE-PLUGINS.md](SOURCE-PLUGINS.md). System plugins start enabled; the
+[SOURCE-PLUGINS.md](../../store-sources/contract/SOURCE-PLUGINS.md). System plugins start enabled; the
 Sources controls can toggle them and refresh the session source registry.
 Only plugins advertising `HAS_REPOSITORIES` get repository management.
 

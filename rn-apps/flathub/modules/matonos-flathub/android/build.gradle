@@ -6,6 +6,8 @@ group = 'org.matonos.flathub.nativebridge'
 version = '0.1.0'
 android {
   buildFeatures { aidl true }
+  // Contract lives in one place: store-sources/contract.
+  sourceSets { main { aidl.srcDirs += ['../../../../../store-sources/contract/aidl'] } }
   namespace 'org.matonos.flathub.nativebridge'
   defaultConfig { minSdk 32; versionCode 1; versionName '0.1.0' }
 }

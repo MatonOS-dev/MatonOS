@@ -1,6 +1,6 @@
 # F-Droid store source
 
-`org.matonos.store.fdroid` is a Java-only, API 37+ backend for the MatonOS Software Center. It has no activity or installer privilege. Its exported service requires the store's signature bind permission and implements the three unchanged AIDL interfaces from `rn-apps/flathub/SOURCE-PLUGINS.md`. `info()` advertises `HAS_REPOSITORIES`; reviews are empty.
+`org.matonos.store.fdroid` is a Java-only, API 37+ backend for the MatonOS Software Center. It has no activity or installer privilege. Its exported service requires the store's signature bind permission and implements the AIDL contract in `store-sources/contract/` (SOURCE-PLUGINS.md). `info()` advertises `HAS_REPOSITORIES`; reviews are empty.
 
 The original Java index client, repository validation, JSON reader, SHA-256 verifier and host test moved from the store module. Repository preferences and installed-package signer/version inspection were ported from Kotlin to Java. All 17 preset URLs and signing fingerprints are preserved, as is the official fingerprint. Presets seed once; the official repository cannot be removed. Additions require a signing fingerprint in the share URL. Failed verification leaves the repository visibly broken and logs the cause; removing a preset keeps it removed.
 

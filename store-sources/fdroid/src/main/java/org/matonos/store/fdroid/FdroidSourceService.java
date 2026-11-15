@@ -148,7 +148,7 @@ public final class FdroidSourceService extends Service {
       }
       if (!names.contains("base.apk")) throw new IllegalArgumentException("F-Droid package has no base APK");
       callback.progress(op, "Verified APKs", 100, 0, 0);
-      callback.commit(op, id, false, names.toArray(new String[0]), descriptors.toArray(new ParcelFileDescriptor[0]), new String[0], new ICommitResult.Stub() {
+      callback.commit(op, id, names.toArray(new String[0]), descriptors.toArray(new ParcelFileDescriptor[0]), new String[0], new ICommitResult.Stub() {
         @Override public void result(boolean ok, String error) {
           if (!terminal.compareAndSet(false, true)) { Log.e(TAG, "Duplicate commit result op=" + op); return; }
           try { if (ok) callback.done(op); else { Log.e(TAG, "Commit failed op=" + op + " package=" + id + ": " + error); callback.failed(op, error); } }

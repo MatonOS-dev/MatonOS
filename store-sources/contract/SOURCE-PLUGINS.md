@@ -6,8 +6,9 @@ A store backend is an app with a bound service that:
 - requires `android:permission="org.matonos.permission.BIND_STORE_SOURCE"`
   (signature permission defined by the store; services without it are ignored),
 - implements `org.matonos.store.source.ISoftwareSource`
-  (`modules/matonos-flathub/android/src/main/aidl/org/matonos/store/source/`;
-  copy both AIDL files unchanged, method order is the transaction order).
+  (`aidl/` next to this file — the single copy of the contract: in-tree
+  builds add it as an AIDL source dir; out-of-tree plugins copy it unchanged
+  and are checked against it. Method order is the transaction order).
 
 Preinstalled (system) plugins are enabled by default. Any other plugin stays
 off until the user enables it in the store.
@@ -51,10 +52,11 @@ REPOSITORIES, ANTI_FEATURES, PERMISSIONS.
 `install(id, operationId, callback)` is used for both and returns at once; the
 work runs in the background. The source downloads and verifies, reports
 `progress`, and hands every package to the store with
-`commit(operationId, packageName, inherit, names, files, removeSplits, result)`:
+`commit(operationId, packageName, names, files, removeSplits, result)`:
 one PackageInstaller session per call, `names[i]` the APK name of read-only
-`files[i]` (base.apk plus split APKs), `inherit` keeps the installed package's
-other splits, `removeSplits` drops splits. The session is pinned to
+`files[i]` (base.apk plus split APKs), `removeSplits` drops splits. A commit
+with base.apk is a full install or update; one without it (splits and/or
+`removeSplits` only) changes the installed package and keeps its other splits. The session is pinned to
 `packageName` and requests update ownership. The store answers on
 `result.result(ok, error)` once the session is final; the source commits a
 dependent package only after its dependencies succeeded. When everything is
