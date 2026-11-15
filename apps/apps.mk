@@ -17,9 +17,6 @@ PRODUCT_PACKAGES += $(MATON_APPS)
 # This checkout has no stock Calculator or Notes module.
 PRODUCT_PACKAGES += Camera2 Gallery2
 
-# Empty, MatonOS-signed placeholders reserve these package names for store updates.
-PRODUCT_PACKAGES += MatonYoutubePlaceholder
-
 # Native libraries that an APK stores compressed (e.g. Fennec): preinstalled
 # apps get no extraction at install time, so tools/fetch-apps.sh extracts them
 # to apks/<module>.lib/ and they go next to the APK, where the package

@@ -20,21 +20,6 @@ package {
 // (compressed JNI libraries; for priv-apps also compressed dex), since Soong
 // rejects it elsewhere; tools/fetch-apps.sh checks it matches.
 
-// Empty, versionCode 1 package reservations allow stores to offer their
-// upstream signed packages as updates. The signer transitions are pinned in
-// patches/frameworks/base/0003-pinned-gms-update.patch.
-android_app_import {
-    name: "MatonYoutubePlaceholder",
-    apk: "placeholders/com.google.android.youtube.apk",
-    product_specific: true,
-    privileged: true,
-    preprocessed: true,
-    // Package reservation only: this manifest-only APK contains no classes.dex.
-    dex_preopt: {
-        enabled: false,
-    },
-}
-
 android_app_import {
     name: "MatonFennec",
     optional_uses_libs: [
