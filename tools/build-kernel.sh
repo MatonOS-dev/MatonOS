@@ -6,7 +6,7 @@
 #   ./build-kernel.sh [-s <linux src>] [-a <aosp dir>] [-f <linux-firmware dir>]
 #                     [-o <build dir>] [-j <jobs>] [-n] [-c] [-S]
 #
-#   -s  mainline kernel source    (default: $LINUX_DIR or ~/Documents/linux)
+#   -s  mainline kernel source    (default: $LINUX_DIR or ~/Documents/linux-7.3)
 #   -a  AOSP checkout             (default: derived from this script's location)
 #   -f  linux-firmware checkout   (default: ~/Documents/linux-firmware; sparse-
 #                                  cloned on demand with only the needed dirs)
@@ -35,7 +35,7 @@ DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
 AOSP=$(readlink -f "$DEVICE_DIR/../../..")
 # secureboot: pinned CPU microcode is staged on every kernel build, with or without -S.
 source "$DEVICE_DIR/secureboot/microcode.sh"
-LINUX=${LINUX_DIR:-$HOME/Documents/linux}
+LINUX=${LINUX_DIR:-$HOME/Documents/linux-7.3}
 FIRMWARE=${LINUX_FIRMWARE_DIR:-$HOME/Documents/linux-firmware}
 KOUT=""
 JOBS=$(nproc)
@@ -76,7 +76,7 @@ fi
 
 # ---------------------------------------------------------------- preflight
 [[ -f $LINUX/Makefile && -f $LINUX/arch/x86/configs/x86_64_defconfig ]] ||
-  die "no kernel source at $LINUX (-s); e.g. git clone --depth 1 -b linux-7.2.y https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+  die "no kernel source at $LINUX (-s); e.g. git clone --depth 1 -b linux-7.3.y https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
 [[ -s $BASE_CFG ]] || die "android base fragment missing or empty: $BASE_CFG"
 [[ -f $PC_CFG ]]   || die "missing $PC_CFG"
 [[ -f $BASE ]]     || die "missing $BASE"
