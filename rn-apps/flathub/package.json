@@ -7,7 +7,8 @@
     "start": "expo start --dev-client --port 8088",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src app --max-warnings=0",
-    "check:release-linkage": "node scripts/check-release-linkage.mjs"
+    "check:release-linkage": "node scripts/check-release-linkage.mjs",
+    "test:stub-names": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/check-stub-package-names.mts"
   },
   "dependencies": {
     "@expo/ui": "57.0.20",
@@ -33,5 +34,8 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.1"
   },
-  "engines": { "node": "22.x", "npm": "9.x" }
+  "engines": {
+    "node": "22.x",
+    "npm": "9.x"
+  }
 }
