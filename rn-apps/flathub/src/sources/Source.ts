@@ -1,3 +1,6 @@
+import type { AntiFeature, Safety } from "./Safety";
+export type { AntiFeature, Safety, SafetyItem, SafetyLevel, SafetySeverity } from "./Safety";
+
 export type SourceName = "Flathub" | "F-Droid";
 
 export type StoreApp = {
@@ -25,6 +28,10 @@ export type StoreApp = {
   /** Bytes; undefined when the source does not say. */
   downloadSize?: number;
   installedSize?: number;
+  /** Filled by details(): what the app can do and how risky that is. */
+  safety?: Safety;
+  /** F-Droid anti-features; [] when the repo lists none, undefined for other sources. */
+  antiFeatures?: AntiFeature[];
 };
 
 export type Rating = { average: number; count: number; histogram: [number, number, number, number, number] };

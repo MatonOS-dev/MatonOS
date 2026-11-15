@@ -16,7 +16,7 @@ type NativeApi = {
   storeListInstalled(): Promise<string>;
   storeListRemotes(): Promise<string>;
   fdroidSearch(repository: string, query: string): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
-  fdroidDetails(repository: string, packageName: string): Promise<Omit<import("../../../src/sources/Source").StoreApp, "source">>;
+  fdroidDetails(repository: string, packageName: string): Promise<Omit<import("../../../src/sources/Source").StoreApp, "source" | "antiFeatures"> & { rawAntiFeatures?: Array<{ id: string; reason: string }> }>;
   fdroidInstalled(repository: string): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
   fdroidUpdates(): Promise<Array<Omit<import("../../../src/sources/Source").StoreApp, "source">>>;
   fdroidInstall(repository: string, packageName: string, operationId: string): Promise<boolean>;

@@ -1,5 +1,6 @@
 import { MatonOS } from "../../modules/matonos-flathub/src/MatonOS";
 import type { Source, SourceProgress } from "./Source";
+import { antiFeaturesOf, fdroidSafety } from "./Safety";
 
 export const FdroidSource: Source = {
   name: "F-Droid",
@@ -14,7 +15,8 @@ export const FdroidSource: Source = {
   },
   async details(app) {
     const result = await MatonOS.fdroidDetails(app.repository || "https://f-droid.org/repo", app.id);
-    return { ...result, source: "F-Droid" };
+    const antiFeatures = antiFeaturesOf(result.rawAntiFeatures);
+    return { ...result, antiFeatures, safety: fdroidSafety(antiFeatures), source: "F-Droid" };
   },
   async installed() {
     const repositories = await MatonOS.fdroidRepositories();

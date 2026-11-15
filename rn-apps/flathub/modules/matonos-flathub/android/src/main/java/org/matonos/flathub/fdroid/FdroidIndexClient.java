@@ -200,12 +200,30 @@ public final class FdroidIndexClient {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("id", packageName); result.put("packageName", packageName); result.put("name", fallback(localized(metadata.get("name")), packageName));
     result.put("summary", localized(metadata.get("summary"))); result.put("icon", icon.isEmpty() ? "" : absolutePath(icon));
-    result.put("developer", ""); result.put("ref", packageName); result.put("description", localized(metadata.get("description")));
-    result.put("screenshots", Collections.emptyList()); result.put("permissions", Collections.emptyList());
+    result.put("ref", packageName); result.put("description", localized(metadata.get("description")));
+    result.put("screenshots", Collections.emptyList());
     result.put("versionName", text(manifest.get("versionName"))); result.put("versionCode", number(manifest.get("versionCode")));
     result.put("signerSha256", strings(map(manifest.get("signer")).get("sha256")));
     result.put("apkName", text(file.get("name"))); result.put("apkSha256", text(file.get("sha256"))); result.put("apkFiles", apkFiles);
     result.put("repository", "");
+    // index-v2: per-version antiFeatures {id: {locale: reason}}; usesPermission [{name}].
+    List<Map<String, String>> antiFeatures = new ArrayList<>();
+    for (Map.Entry<String, Object> entry : map(latest.get("antiFeatures")).entrySet()) {
+      Map<String, String> anti = new LinkedHashMap<>();
+      anti.put("id", entry.getKey()); anti.put("reason", localized(entry.getValue())); antiFeatures.add(anti);
+    }
+    result.put("rawAntiFeatures", antiFeatures);
+    List<String> permissions = new ArrayList<>();
+    Object uses = manifest.get("usesPermission");
+    if (uses instanceof List) for (Object value : (List<?>) uses) {
+      String name = text(map(value).get("name"));
+      if (!name.isEmpty()) permissions.add(name);
+    }
+    result.put("permissions", permissions);
+    result.put("developer", text(metadata.get("authorName")));
+    result.put("license", text(metadata.get("license")));
+    result.put("homepage", fallback(text(metadata.get("webSite")), text(metadata.get("sourceCode"))));
+    if (file.get("size") instanceof Number) result.put("downloadSize", number(file.get("size")));
     return result;
   }
 

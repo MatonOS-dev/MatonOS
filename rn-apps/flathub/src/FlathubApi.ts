@@ -1,4 +1,5 @@
 import type { StoreApp } from "./sources/Source";
+import { flatpakSafety, type FlatpakPermissions } from "./sources/Safety";
 export type { StoreApp } from "./sources/Source";
 
 type SearchHit = {
@@ -23,8 +24,9 @@ type AppStream = {
   project_license?: string;
   urls?: { homepage?: string };
   releases?: Array<{ version?: string }>;
+  is_free_license?: boolean;
 };
-type Summary = { download_size?: number; installed_size?: number };
+type Summary = { download_size?: number; installed_size?: number; metadata?: { permissions?: FlatpakPermissions; extraData?: unknown } };
 
 const API = "https://flathub.org/api/v2";
 const FALLBACK_REF = (id: string) => `app/${id}/x86_64/stable`;
@@ -70,8 +72,7 @@ export async function searchApps(query: string): Promise<StoreApp[]> {
   return (result.hits || []).map(toApp).filter((app): app is StoreApp => app !== null);
 }
 
-function permissionList(metadata: Record<string, unknown> | undefined): string[] {
-  const raw = metadata?.permissions;
+function permissionList(raw: FlatpakPermissions | undefined): string[] {
   if (!raw || typeof raw !== "object") return [];
   const permissions: string[] = [];
   for (const [group, entries] of Object.entries(raw as Record<string, unknown>)) {
@@ -106,7 +107,9 @@ export async function getAppDetails(app: StoreApp): Promise<StoreApp> {
     ref: result.bundle?.value || app.ref,
     description: result.description || "",
     screenshots,
-    permissions: permissionList(result.metadata),
+    // Flatpak permissions live in /summary metadata, not in appstream.
+    permissions: permissionList(summary.metadata?.permissions),
+    safety: flatpakSafety(summary.metadata?.permissions, result.is_free_license, Boolean(summary.metadata?.extraData)),
     source: "Flathub",
     versionName: result.releases?.[0]?.version || app.versionName,
     license: result.project_license,
