@@ -73,10 +73,20 @@ Living doc; updated through the night.
   summary > description; "newpipe" now lists NewPipe first on the VM.
 - Device tree 43e4428 bumps both submodules.
 
-## Running
-- phase2-retire (luna, worktree ~/matonos/repos/linux-subsystem-app-phase2):
-  delete ILinuxAppStore/LinuxAppStoreService/stub InstallActivity, app
-  INSTALL_PACKAGES if unused (bootstrap keeps it).
+## Phase 2 (done, pushed, VM-checked)
+- Subsystem main 8ab85a8: ILinuxAppStore, LinuxAppStoreService (933 lines),
+  stub Install/Update/ConfirmInstall activities, DebugExtraInstallActivity
+  and DELETE_PACKAGES removed (-1281 lines). INSTALL_PACKAGES stays: the
+  extra-data temporary base stub still uses PackageInstaller.
+- VM v1174: search across Flathub/Flatpak/F-Droid; plugin install of
+  Curo Calculator completed (~300 s).
+- Worktrees phase2 + lsa-flatpak-source removed (merged).
+
+## Installer (device tree 8fae004, not yet image-tested)
+- Ventoy drives refused (VTOYEFI GPT name or FAT label).
+- Drive JSON reports rotational; confirm step offers F2FS / ext4 with the
+  per-drive default (flash → F2FS, rotational → ext4); make_f2fs format op;
+  fstab f2fs userdata entry after ext4.
 
 ## Decisions taken
 - (none yet)
