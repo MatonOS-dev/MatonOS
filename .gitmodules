@@ -1,0 +1,6 @@
+[submodule "rn-apps/flathub"]
+	path = rn-apps/flathub
+	url = https://github.com/MatonOS-dev/software-centre.git
+[submodule "store-sources/contract"]
+	path = store-sources/contract
+	url = https://github.com/MatonOS-dev/store-source-contract.git
