@@ -9,6 +9,7 @@ class FdroidInstallReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     val operationId = intent.getStringExtra(EXTRA_OPERATION_ID) ?: return
     val kind = intent.getStringExtra(EXTRA_KIND) ?: "install"
+    val source = intent.getStringExtra(EXTRA_SOURCE) ?: "F-Droid"
     val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
     if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
       val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
@@ -22,11 +23,12 @@ class FdroidInstallReceiver : BroadcastReceiver() {
     val ok = status == PackageInstaller.STATUS_SUCCESS
     val error = if (ok) "" else intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Package operation failed (status $status)"
     MatonOSExpoModule.fdroidEventSink?.invoke(operationId, "complete", 100, -1, -1,
-      mapOf("ok" to ok, "error" to error, "operationId" to operationId, "kind" to kind))
+      mapOf("ok" to ok, "error" to error, "operationId" to operationId, "kind" to kind, "source" to source))
   }
 
   companion object {
     const val EXTRA_OPERATION_ID = "org.matonos.flathub.OPERATION_ID"
+    const val EXTRA_SOURCE = "org.matonos.flathub.OPERATION_SOURCE"
     const val EXTRA_KIND = "org.matonos.flathub.OPERATION_KIND"
   }
 }

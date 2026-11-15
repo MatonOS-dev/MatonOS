@@ -1,7 +1,8 @@
 import type { AgeRating, AntiFeature, Safety } from "./Safety";
 export type { AgeRating, AgeRatingCategory, ContentLevel, AntiFeature, Safety, SafetyItem, SafetyLevel, SafetySeverity } from "./Safety";
 
-export type SourceName = "Flathub" | "F-Droid";
+/** Built-in source name, or a plugin's package name. */
+export type SourceName = string;
 
 /** What search(), installed() and updates() return: just enough for a list row. */
 export type AppListing = {
@@ -46,6 +47,8 @@ export type StoreApp = AppDetails & {
   apkSha256?: string;
   apkFiles?: Array<{ name: string; sha256: string }>;
   repository?: string;
+  /** Android package to uninstall when it differs from id (plugin sources). */
+  packageName?: string;
 };
 
 export function toListing(app: StoreApp): AppListing {

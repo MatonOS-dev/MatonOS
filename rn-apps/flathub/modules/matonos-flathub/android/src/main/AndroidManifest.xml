@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Store source plugins must require this on their service, so only the store can bind them. -->
+  <permission android:name="org.matonos.permission.BIND_STORE_SOURCE" android:protectionLevel="signature" />
+  <uses-permission android:name="org.matonos.permission.BIND_STORE_SOURCE" />
   <uses-permission android:name="org.matonos.permission.QUERY_LINUX_APPS" />
   <uses-permission android:name="org.matonos.permission.INSTALL_LINUX_APPS" />
   <uses-permission android:name="android.permission.INSTALL_PACKAGES" />
@@ -8,6 +11,9 @@
   <queries>
     <package android:name="org.matonos.linux" />
     <package android:name="org.matonos.flathub" />
+    <intent>
+      <action android:name="org.matonos.store.SOURCE" />
+    </intent>
     <intent>
       <action android:name="org.matonos.linuxhost.INSTALL" />
     </intent>

@@ -14,6 +14,7 @@ import org.matonos.flathub.fdroid.FdroidUpdateChecker
 import org.matonos.flathub.fdroid.FdroidUpdateWorker
 import org.matonos.flathub.fdroid.FdroidRepositories
 import org.matonos.flathub.fdroid.FdroidRepository
+import org.matonos.flathub.sources.SourcePlugins
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -26,6 +27,7 @@ class MatonOSExpoModule : Module() {
   private val listeners = ConcurrentHashMap<String, MatonosClient.EventListener>()
   private val storeConnections = ConcurrentHashMap.newKeySet<android.content.ServiceConnection>()
   private val fdroidIndex = FdroidIndexClient()
+  private var plugins: SourcePlugins? = null
 
   override fun definition() = ModuleDefinition {
     Name("MatonOSClient")
@@ -34,7 +36,7 @@ class MatonOSExpoModule : Module() {
       client = MatonOS.init(requireNotNull(appContext.reactContext), BridgeMode.OPTIONAL)
       FdroidUpdateWorker.schedule(requireNotNull(appContext.reactContext))
       fdroidEventSink = { operationId, phase, percent, bytesDone, bytesTotal, result ->
-        val event = mutableMapOf<String, Any>("source" to "F-Droid", "operationId" to operationId, "phase" to phase, "percent" to percent)
+        val event = mutableMapOf<String, Any>("source" to (result?.get("source") ?: "F-Droid"), "operationId" to operationId, "phase" to phase, "percent" to percent)
         if (bytesDone >= 0) event["bytesDone"] = bytesDone
         if (bytesTotal >= 0) event["bytesTotal"] = bytesTotal
         if (result != null) event["result"] = result
@@ -45,6 +47,8 @@ class MatonOSExpoModule : Module() {
       val context = appContext.reactContext
       if (context != null) storeConnections.forEach { try { context.unbindService(it) } catch (_: Exception) { } }
       storeConnections.clear()
+      plugins?.close()
+      plugins = null
       fdroidEventSink = null
       client?.let { current ->
         listeners.forEach { (id, listener) ->
@@ -76,6 +80,22 @@ class MatonOSExpoModule : Module() {
     }
     AsyncFunction("startStubUpdate") { ref: String, operationId: String? ->
       startStubActivity(STUB_UPDATE_ACTION, ref, operationId)
+    }
+    // Store source plugins (SOURCE-PLUGINS.md). Calls return the plugin's JSON as-is.
+    AsyncFunction("sourcePlugins") { requirePlugins().list() }
+    AsyncFunction("setSourceEnabled") { pkg: String, enabled: Boolean -> requirePlugins().setEnabled(pkg, enabled) }
+    AsyncFunction("sourceInfo") { pkg: String -> requirePlugins().source(pkg).info() }
+    AsyncFunction("sourceSearch") { pkg: String, term: String -> requirePlugins().source(pkg).search(term) }
+    AsyncFunction("sourceDetails") { pkg: String, id: String -> requirePlugins().source(pkg).details(id) }
+    AsyncFunction("sourceReviews") { pkg: String, id: String -> requirePlugins().source(pkg).reviews(id) }
+    AsyncFunction("sourceInstalled") { pkg: String -> requirePlugins().source(pkg).installed() }
+    AsyncFunction("sourceUpdates") { pkg: String -> requirePlugins().source(pkg).updates() }
+    AsyncFunction("sourceRepos") { pkg: String -> requirePlugins().source(pkg).repos() }
+    AsyncFunction("sourceAddRepo") { pkg: String, url: String -> requirePlugins().source(pkg).addRepo(url) }
+    AsyncFunction("sourceDelRepo") { pkg: String, id: String -> requirePlugins().source(pkg).delRepo(id) }
+    AsyncFunction("sourceInstall") { pkg: String, id: String, operationId: String -> requirePlugins().install(pkg, id, operationId) }
+    AsyncFunction("sourceUninstall") { pkg: String, packageName: String, operationId: String ->
+      requirePlugins().uninstall(pkg, packageName, operationId)
     }
     AsyncFunction("launchStub") { appId: String -> launchStub(appId) }
     AsyncFunction("subscribe") { target: String, topic: String, id: String ->
@@ -254,10 +274,11 @@ class MatonOSExpoModule : Module() {
     FdroidRepositories.list(context).firstOrNull { it["url"] == FdroidRepository.normalizeUrl(repository) }
       ?.get("fingerprint")?.toString() ?: throw IllegalArgumentException("F-Droid repository is not trusted")
 
-  private fun packageResultIntent(context: android.content.Context, operationId: String, kind: String): android.app.PendingIntent {
+  private fun packageResultIntent(context: android.content.Context, operationId: String, kind: String, source: String = "F-Droid"): android.app.PendingIntent {
     val intent = android.content.Intent(context, FdroidInstallReceiver::class.java)
       .putExtra(FdroidInstallReceiver.EXTRA_OPERATION_ID, operationId)
       .putExtra(FdroidInstallReceiver.EXTRA_KIND, kind)
+      .putExtra(FdroidInstallReceiver.EXTRA_SOURCE, source)
     return android.app.PendingIntent.getBroadcast(context, (operationId + kind).hashCode(), intent,
       android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_MUTABLE)
   }
@@ -343,6 +364,21 @@ class MatonOSExpoModule : Module() {
     const val STUB_UPDATE_ACTION = "org.matonos.linuxhost.UPDATE"
     const val STUB_OPERATION_EXTRA = "org.matonos.linuxhost.OPERATION_ID"
     const val STUB_REF_META = "org.matonos.linuxhost.FLATPAK_REF"
+  }
+
+  private fun requirePlugins(): SourcePlugins = plugins ?: synchronized(this) {
+    plugins ?: SourcePlugins(requireNotNull(appContext.reactContext), object : SourcePlugins.Events {
+      override fun progress(source: String, operationId: String, phase: String, percent: Int, done: Long, total: Long) {
+        sendEvent("linuxAppStoreEvent", mapOf("source" to source, "operationId" to operationId, "phase" to phase,
+          "percent" to percent, "bytesDone" to done, "bytesTotal" to total))
+      }
+      override fun result(source: String, operationId: String, ok: Boolean, error: String?) {
+        sendEvent("linuxAppStoreEvent", mapOf("source" to source, "operationId" to operationId, "phase" to "complete", "percent" to 100,
+          "result" to mapOf("ok" to ok, "error" to (error ?: ""), "operationId" to operationId, "source" to source)))
+      }
+      override fun commitTarget(source: String, operationId: String) =
+        packageResultIntent(requireNotNull(appContext.reactContext), operationId, "install", source).intentSender
+    }).also { plugins = it }
   }
 
   private fun requireClient() = requireNotNull(client) { "MatonOS client is not initialized" }
