@@ -31,7 +31,7 @@ public final class FdroidSourceService extends Service {
     catch (Exception error) { Log.e(TAG, context + " failed", error); throw new IllegalStateException(context + ": " + error.getMessage(), error); }
   }
   private final ISoftwareSource.Stub binder = new ISoftwareSource.Stub() {
-    @Override public String info() { return "{\"version\":1,\"name\":\"F-Droid\",\"label\":\"F-Droid\",\"capabilities\":[\"HAS_REPOSITORIES\"]}"; }
+    @Override public String info() { return "{\"version\":1,\"name\":\"F-Droid\",\"label\":\"F-Droid\",\"capabilities\":[\"HAS_REPOSITORIES\",\"HAS_ANTI_FEATURES\",\"HAS_PERMISSIONS\"]}"; }
     @Override public String search(String term) { return call("search " + term, () -> new JSONArray(listings(catalogue("search", term))).toString()); }
     @Override public String details(String id) { return call("details " + id, () -> new JSONObject(find(id)).toString()); }
     @Override public String reviews(String id) { return "[]"; }
