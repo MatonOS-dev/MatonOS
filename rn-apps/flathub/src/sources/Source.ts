@@ -3,38 +3,61 @@ export type { AgeRating, AgeRatingCategory, ContentLevel, AntiFeature, Safety, S
 
 export type SourceName = "Flathub" | "F-Droid";
 
-export type StoreApp = {
+/** What search(), installed() and updates() return: just enough for a list row. */
+export type AppListing = {
   id: string;
+  source: SourceName;
   name: string;
   summary: string;
   icon: string;
   developer: string;
-  ref: string;
-  description: string;
-  screenshots: string[];
-  permissions: string[];
-  source: SourceName;
-  versionName?: string;
-  versionCode?: number;
-  apkName?: string;
-  apkSha256?: string;
-  apkFiles?: Array<{ name: string; sha256: string }>;
-  repository?: string;
   /** Average 1–5 and vote count; undefined when the source has no ratings. */
   rating?: Rating;
   installed?: boolean;
+  /** Latest version the source offers. */
+  versionName?: string;
+  /** Repository the listing came from (F-Droid repo URL, Flatpak remote). */
+  origin?: string;
+};
+
+/** What details() returns: everything known about one app. */
+export type AppDetails = AppListing & {
+  description: string;
+  screenshots: string[];
+  permissions: string[];
   license?: string;
   homepage?: string;
   /** Bytes; undefined when the source does not say. */
   downloadSize?: number;
   installedSize?: number;
-  /** Filled by details(): what the app can do and how risky that is. */
+  /** What the app can do and how risky that is. */
   safety?: Safety;
   /** F-Droid anti-features; [] when the repo lists none, undefined for other sources. */
   antiFeatures?: AntiFeature[];
   /** Flathub only (OARS); undefined when the app declares none. */
   ageRating?: AgeRating;
 };
+
+/** Source-internal app record: details plus what install needs. Not part of the hook API. */
+export type StoreApp = AppDetails & {
+  ref: string;
+  versionCode?: number;
+  apkName?: string;
+  apkSha256?: string;
+  apkFiles?: Array<{ name: string; sha256: string }>;
+  repository?: string;
+};
+
+export function toListing(app: StoreApp): AppListing {
+  return { id: app.id, source: app.source, name: app.name, summary: app.summary, icon: app.icon, developer: app.developer,
+    rating: app.rating, installed: app.installed, versionName: app.versionName, origin: app.origin ?? app.repository };
+}
+
+export function toDetails(app: StoreApp): AppDetails {
+  return { ...toListing(app), description: app.description, screenshots: app.screenshots, permissions: app.permissions,
+    license: app.license, homepage: app.homepage, downloadSize: app.downloadSize, installedSize: app.installedSize,
+    safety: app.safety, antiFeatures: app.antiFeatures, ageRating: app.ageRating };
+}
 
 export type Rating = { average: number; count: number; histogram: [number, number, number, number, number] };
 
