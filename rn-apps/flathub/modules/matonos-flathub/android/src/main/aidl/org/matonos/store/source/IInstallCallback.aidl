@@ -1,9 +1,24 @@
 package org.matonos.store.source;
 
-/** The store commits the APKs itself; sources never install. */
+import org.matonos.store.source.ICommitResult;
+
+/**
+ * Install progress from a source. The store commits every APK itself; sources
+ * never install. One install may commit several packages (dependencies
+ * first): the source sends one commit per package and waits for its result
+ * before committing anything that depends on it.
+ */
 oneway interface IInstallCallback {
     void progress(String operationId, String phase, int percent, long bytesDone, long bytesTotal);
-    /** All APKs of one package (base first, then splits), ready to commit. */
-    void apks(String operationId, String packageName, in ParcelFileDescriptor[] files);
+    /**
+     * One PackageInstaller session for packageName. names[i] is the APK file
+     * name of files[i] in the session (base.apk, split_<name>.apk). inherit:
+     * keep the installed package's other splits (MODE_INHERIT_EXISTING);
+     * removeSplits are split names to drop in the same session.
+     */
+    void commit(String operationId, String packageName, boolean inherit, in String[] names,
+            in ParcelFileDescriptor[] files, in String[] removeSplits, ICommitResult result);
+    /** The whole install or update finished. */
+    void done(String operationId);
     void failed(String operationId, String error);
 }

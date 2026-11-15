@@ -13,6 +13,7 @@ import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
+import org.matonos.store.source.ICommitResult;
 import org.matonos.store.source.IInstallCallback;
 import org.matonos.store.source.ISoftwareSource;
 
@@ -30,7 +31,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Finds, enables and talks to store source plugins. Preinstalled plugins are
  * enabled by default; any other plugin stays off until the user enables it.
- * Only the store commits APKs: plugins hand them over through IInstallCallback.
+ * Only the store commits APKs: plugins hand them over through IInstallCallback.commit.
  */
 public final class SourcePlugins {
   public static final String ACTION = "org.matonos.store.SOURCE";
@@ -111,16 +112,18 @@ public final class SourcePlugins {
       @Override public void progress(String op, String phase, int percent, long done, long total) {
         events.progress(pkg, op, phase, percent, done, total);
       }
-      @Override public void apks(String op, String packageName, ParcelFileDescriptor[] files) {
+      @Override public void commit(String op, String packageName, boolean inherit, String[] names,
+          ParcelFileDescriptor[] files, String[] removeSplits, ICommitResult result) {
         try {
-          commit(pkg, op, packageName, files);
+          SourcePlugins.this.commit(pkg, op, packageName, inherit, names, files, removeSplits, result);
         } catch (Exception error) {
           Log.e(TAG, pkg + ": committing " + packageName + " failed", error);
-          events.result(pkg, op, false, String.valueOf(error.getMessage()));
+          reply(result, false, pkg + ": " + error.getMessage());
         } finally {
-          for (ParcelFileDescriptor file : files) try { file.close(); } catch (Exception ignored) { }
+          if (files != null) for (ParcelFileDescriptor file : files) try { file.close(); } catch (Exception ignored) { }
         }
       }
+      @Override public void done(String op) { events.result(pkg, op, true, null); }
       @Override public void failed(String op, String error) {
         Log.e(TAG, pkg + ": install " + id + " failed: " + error);
         events.result(pkg, op, false, error);
@@ -128,32 +131,64 @@ public final class SourcePlugins {
     });
   }
 
-  private void commit(String source, String operationId, String packageName, ParcelFileDescriptor[] files) throws Exception {
-    if (files == null || files.length == 0) throw new IllegalArgumentException(source + " sent no APKs for " + packageName);
+  private void commit(String source, String operationId, String packageName, boolean inherit, String[] names,
+      ParcelFileDescriptor[] files, String[] removeSplits, ICommitResult result) throws Exception {
+    int count = files == null ? 0 : files.length;
+    if (names == null || names.length != count) throw new IllegalArgumentException("APK names and files do not match");
+    if (count == 0 && (removeSplits == null || removeSplits.length == 0)) throw new IllegalArgumentException("Empty commit for " + packageName);
     PackageInstaller installer = context.getPackageManager().getPackageInstaller();
-    PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+    PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(
+        inherit ? PackageInstaller.SessionParams.MODE_INHERIT_EXISTING : PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+    // PackageInstaller rejects APKs naming another package than this, so a
+    // source cannot slip a different app into the session.
     params.setAppPackageName(packageName);
     params.setRequestUpdateOwnership(true);
     int sessionId = installer.createSession(params);
     try (PackageInstaller.Session session = installer.openSession(sessionId)) {
-      for (int i = 0; i < files.length; i++) {
-        long size = files[i].getStatSize();
+      for (int i = 0; i < count; i++) {
+        if (!names[i].matches("[A-Za-z0-9._-]+\\.apk")) throw new IllegalArgumentException("Invalid APK name " + names[i]);
         try (InputStream in = new FileInputStream(files[i].getFileDescriptor());
-             OutputStream out = session.openWrite(i == 0 ? "base.apk" : "split_" + i + ".apk", 0, size)) {
+             OutputStream out = session.openWrite(names[i], 0, files[i].getStatSize())) {
           byte[] buffer = new byte[64 * 1024];
-          int count;
-          while ((count = in.read(buffer)) != -1) out.write(buffer, 0, count);
+          int read;
+          while ((read = in.read(buffer)) != -1) out.write(buffer, 0, read);
           session.fsync(out);
         }
       }
-      // PackageInstaller rejects a session whose APKs name another package
-      // than setAppPackageName, so a plugin cannot slip in a different app.
-      events.progress(source, operationId, "Installing", -1, -1, -1);
-      session.commit(events.commitTarget(source, operationId));
+      if (removeSplits != null) for (String split : removeSplits) session.removeSplit(split);
+      events.progress(source, operationId, "Installing " + packageName, -1, -1, -1);
+      session.commit(resultSender(sessionId, result));
     } catch (Exception error) {
       try { installer.abandonSession(sessionId); } catch (Exception ignored) { }
       throw error;
     }
+  }
+
+  /** One-shot receiver for a session's terminal status, relayed to the source. */
+  private android.content.IntentSender resultSender(int sessionId, ICommitResult result) {
+    String action = context.getPackageName() + ".SOURCE_COMMIT." + sessionId;
+    context.registerReceiver(new android.content.BroadcastReceiver() {
+      @Override public void onReceive(Context ignored, Intent intent) {
+        int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
+        if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+          Intent confirm = intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent.class);
+          if (confirm != null) context.startActivity(confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+          return;
+        }
+        context.unregisterReceiver(this);
+        boolean ok = status == PackageInstaller.STATUS_SUCCESS;
+        String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
+        if (!ok) Log.e(TAG, "Session " + sessionId + " failed: status " + status + " " + message);
+        reply(result, ok, ok ? null : (message != null ? message : "Package install failed (status " + status + ")"));
+      }
+    }, new android.content.IntentFilter(action), Context.RECEIVER_NOT_EXPORTED);
+    Intent intent = new Intent(action).setPackage(context.getPackageName());
+    return android.app.PendingIntent.getBroadcast(context, sessionId, intent,
+        android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_MUTABLE).getIntentSender();
+  }
+
+  private static void reply(ICommitResult result, boolean ok, String error) {
+    try { result.result(ok, error); } catch (Exception gone) { Log.e(TAG, "Source went away before its commit result", gone); }
   }
 
   public void uninstall(String source, String packageName, String operationId) {

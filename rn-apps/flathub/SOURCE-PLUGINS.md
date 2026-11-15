@@ -18,6 +18,11 @@ All calls return JSON strings. `info()` returns
 `{"version":1,"name":..,"label":..,"capabilities":[..]}`; the store skips a
 plugin whose version differs.
 
+Capabilities:
+- `HAS_REPOSITORIES`: the source has user-managed repositories; the store
+  shows repository management and calls `repos/addRepo/delRepo` only for
+  sources with it (Flatpak and F-Droid have it, an Aurora backend would not).
+
 - `search`, `installed`, `updates`: arrays of AppListing
   (`id, name, summary, icon, developer, rating?, installed?, versionName?,
   origin?`, plus `packageName` when the Android package differs from `id`).
@@ -30,10 +35,15 @@ plugin whose version differs.
 
 ## Install and update
 
-`install(id, operationId, callback)` is used for both. The plugin downloads
-and verifies, reports `progress`, then calls `apks(operationId, packageName,
-files)` with the base APK and every split APK of that one package as read-only
-file descriptors. The store commits them in one PackageInstaller session
-(split APKs supported; the session is pinned to `packageName`), and requests
-update ownership. On error the plugin calls `failed`. Plugins never install
-or uninstall; the store uninstalls by package name.
+`install(id, operationId, callback)` is used for both and returns at once; the
+work runs in the background. The source downloads and verifies, reports
+`progress`, and hands every package to the store with
+`commit(operationId, packageName, inherit, names, files, removeSplits, result)`:
+one PackageInstaller session per call, `names[i]` the APK name of read-only
+`files[i]` (base.apk plus split APKs), `inherit` keeps the installed package's
+other splits, `removeSplits` drops splits. The session is pinned to
+`packageName` and requests update ownership. The store answers on
+`result.result(ok, error)` once the session is final; the source commits a
+dependent package only after its dependencies succeeded. When everything is
+in, the source calls `done(operationId)`, or `failed(operationId, error)`.
+Sources never install or uninstall; the store uninstalls by package name.

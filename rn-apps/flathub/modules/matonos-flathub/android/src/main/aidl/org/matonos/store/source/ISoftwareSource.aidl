@@ -8,7 +8,7 @@ import org.matonos.store.source.IInstallCallback;
  * Keep the method order: it is the transaction order.
  */
 interface ISoftwareSource {
-    /** {"version":1,"name","label","capabilities":[...]} */
+    /** {"version":1,"name","label","capabilities":[...]}; see SOURCE-PLUGINS.md. */
     String info();
     /** JSON array of AppListing. */
     String search(String term);
