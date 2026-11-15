@@ -18,7 +18,7 @@ PRODUCT_PACKAGES += $(MATON_APPS)
 PRODUCT_PACKAGES += Camera2 Gallery2
 
 # Empty, MatonOS-signed placeholders reserve these package names for store updates.
-PRODUCT_PACKAGES += MatonAuroraPlaceholder MatonYoutubePlaceholder
+PRODUCT_PACKAGES += MatonYoutubePlaceholder
 
 # Native libraries that an APK stores compressed (e.g. Fennec): preinstalled
 # apps get no extraction at install time, so tools/fetch-apps.sh extracts them

@@ -56,8 +56,7 @@ Work in progress, not yet ready for daily use.
   - F-Droid Basic was removed on 2026-10-05 under the GPLv3 rule; the
     MatonOS software centre will replace its role.
   - microG uses LineageOS-style signature spoofing.
-  - Aurora Store and YouTube ship as placeholders that the real apps install
-    over. Aurora is in the MatonOS F-Droid repo.
+  - YouTube ships as a placeholder that the real app installs over.
 - **In progress:** an A/B installer (install from the live image to a
   disk), Secure Boot via shim with our own keys, signed driver add-ons, and
   v4 Linux app support (Flatpak tools bundled in the subsystem APK plus a

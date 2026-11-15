@@ -21,7 +21,7 @@ diff --git a/services/core/java/com/android/server/pm/PackageManagerServiceUtils
 index 291027365119..126bbd4e6bda 100644
 --- a/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
 +++ b/services/core/java/com/android/server/pm/PackageManagerServiceUtils.java
-@@ -469,6 +469,69 @@ public class PackageManagerServiceUtils {
+@@ -469,6 +469,65 @@ public class PackageManagerServiceUtils {
          }
      }
  
@@ -46,10 +46,6 @@ index 291027365119..126bbd4e6bda 100644
 +        {"com.google.android.gsf",
 +            "9bd06727e62796c0130eb6dab39b73157451582cbd138e86c468acc395d14165",
 +            "F0FD6C5B410F25CB25C3B53346C8972FAE30F8EE7411DF910480AD6B2D60DB83"},
-+        // Aurora Store placeholder -> upstream Aurora preload signer.
-+        {"com.aurora.store",
-+            "34dbdec66bae372f92fd7a8a0eaa8b565f8fa0a6c48ad2bf15dc8ecba577d74c",
-+            "4C626157AD02BDA3401A7263555F68A79663FC3E13A4D4369A12570941AA280F"},
 +        // YouTube placeholder -> Google Play signing cert and its lineage.
 +        {"com.google.android.youtube",
 +            "09c3278bec1adfed5b89aa2c33f8e4c039861b65a78fc0f53474f172ebe40b63",

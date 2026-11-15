@@ -24,19 +24,6 @@ package {
 // upstream signed packages as updates. The signer transitions are pinned in
 // patches/frameworks/base/0003-pinned-gms-update.patch.
 android_app_import {
-    name: "MatonAuroraPlaceholder",
-    apk: "placeholders/com.aurora.store.apk",
-    product_specific: true,
-    privileged: true,
-    preprocessed: true,
-    // Package reservation only: this manifest-only APK contains no classes.dex.
-    dex_preopt: {
-        enabled: false,
-    },
-    required: ["privapp-permissions-com.aurora.store.xml"],
-}
-
-android_app_import {
     name: "MatonYoutubePlaceholder",
     apk: "placeholders/com.google.android.youtube.apk",
     product_specific: true,
@@ -46,13 +33,6 @@ android_app_import {
     dex_preopt: {
         enabled: false,
     },
-}
-
-prebuilt_etc {
-    name: "privapp-permissions-com.aurora.store.xml",
-    src: "privapp-permissions-com.aurora.store.xml",
-    sub_dir: "permissions",
-    product_specific: true,
 }
 
 android_app_import {
