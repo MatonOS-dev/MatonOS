@@ -434,7 +434,8 @@ export function InstallDoneStep({
   const title = preview ? "Preview complete" : "Installation complete";
   const message = preview
     ? "This preview finished without calling the installer. No drive was changed."
-    : "Every install operation completed successfully. Reboot from the system power menu and remove the live USB or other live media to start the installed system.";
+    : "Every install operation completed successfully. Remove the live USB or other live media, then reboot to start the installed system.";
+  const finishLabel = preview ? "Start again" : "Reboot";
   return (
     <SettingsCard title={title}>
       <Text style={{ typography: "bodyMedium" }}>
@@ -447,7 +448,7 @@ export function InstallDoneStep({
           onClick={onPreviewError}
         />
       ) : null}
-      <ActionButton label="Install another drive" variant="text" onClick={onFinish} />
+      <ActionButton label={finishLabel} onClick={onFinish} />
     </SettingsCard>
   );
 }

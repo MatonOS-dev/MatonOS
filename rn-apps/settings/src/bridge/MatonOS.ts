@@ -32,6 +32,7 @@ type MatonOSClientModule = NativeEvents<EventMap> & {
   }>;
   openTrustedApps(): Promise<boolean>;
   finishActivity(): Promise<boolean>;
+  reboot(): Promise<boolean>;
   subscribe(
     target: string,
     topic: string,
@@ -55,6 +56,7 @@ export const MatonOS = {
   getSystemInfo: () => Native.getSystemInfo(),
   openTrustedApps: () => Native.openTrustedApps(),
   finishActivity: () => Native.finishActivity(),
+  reboot: () => Native.reboot(),
   subscribe: (
     target: string,
     topic: string,

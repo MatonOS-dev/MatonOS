@@ -236,6 +236,14 @@ export function InstallSection() {
     setStep("done");
   };
 
+  const rebootNow = useCallback(() => {
+    MatonOS.reboot().catch((error: unknown) => {
+      console.error("Reboot after install failed", error);
+      setFailedOperation("Reboot");
+      setFailureMessage(String(error));
+      setStep("error");
+    });
+  }, []);
   const restartWizard = () => {
     previewModeRef.current = false;
     setSelected(null);
@@ -336,7 +344,7 @@ export function InstallSection() {
     ),
     done: () => (
       <InstallDoneStep
-        onFinish={restartWizard}
+        onFinish={previewMode ? restartWizard : rebootNow}
         preview={previewMode}
         onPreviewError={() => {
           setFailedOperation("Copy a system partition");

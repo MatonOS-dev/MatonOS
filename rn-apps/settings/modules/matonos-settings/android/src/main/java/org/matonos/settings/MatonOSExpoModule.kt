@@ -81,6 +81,11 @@ class MatonOSExpoModule : Module() {
       context.startActivity(intent)
       true
     }
+    AsyncFunction("reboot") {
+      val context = requireNotNull(appContext.reactContext)
+      context.getSystemService(android.os.PowerManager::class.java).reboot(null)
+      true
+    }
     AsyncFunction("finishActivity") {
       appContext.currentActivity?.finish()
       true
