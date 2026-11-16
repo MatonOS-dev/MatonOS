@@ -149,3 +149,11 @@ Living doc; updated through the night.
   (DELETE_PACKAGES checklist), SOFTWARE-CENTRE.md (pre-plugin model),
   FLATPAK-STUB-HANDOVER.md (InstallActivity flow), subsystem README
   "confirm priv_app" check. AGENTS.md edits left for you (shared agent rules).
+
+## Audit sweep (luna, report-only; out/pc-logs/agents/sweep-night1115.last.md)
+- "F2FS loses to earlier ext4 fstab entry": false — fs_mgr formats only when
+  partition_wiped() (blank superblock), else tries the next entry.
+- Fixed: bootstrap manifest still requested DELETE_PACKAGES (subsystem main, built OK).
+- Open (medium, F-Droid plugin): after HTTP 304 the cached index is parsed
+  without re-checking it against the signed entry's hash; a corrupt cache
+  would be trusted/fail until the cache is cleared.
