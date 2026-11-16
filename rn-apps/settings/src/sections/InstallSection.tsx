@@ -33,7 +33,8 @@ import {
 type ReadyState = "loading" | "ready" | "unavailable";
 
 function sizeLabel(bytes: number) {
-  return `${numberFormat.format(bytes / 1024 ** 3)} GiB`;
+  const gib = bytes / 1024 ** 3;
+  return gib >= 0.1 ? `${numberFormat.format(gib)} GiB` : `${numberFormat.format(bytes / 1024 ** 2)} MiB`;
 }
 
 function parse<T>(value: string): T | null {
