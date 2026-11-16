@@ -42,7 +42,7 @@ checkout with the NDK and stages it into `prebuilt/mesa/` (see
 
 | Path | Repository | Based on | What we change |
 | --- | --- | --- | --- |
-| `~/matonos/repos/mesa` (build input) | [mesa](https://github.com/MatonOS-dev/mesa) | upstream [mesa](https://gitlab.freedesktop.org/mesa/mesa) tag `mesa-26.2.3`, branch `matonos/v26.10` | EGL accepts `EGL_OPENGL_API` on Android (desktop GL passthrough) |
+| `~/matonos/repos/mesa` (build input, system Mesa only) | [mesa](https://github.com/MatonOS-dev/mesa) | upstream [mesa](https://gitlab.freedesktop.org/mesa/mesa) main at `b381eaf8596`, branch `matonos/v26.10` | libvdrm depends on libdrm_amdgpu (drm_hw.h include). The Linux subsystem does not use this fork: its Zink builds from pinned upstream Mesa plus its own patches. |
 
 ## Dependency bumps for wlroots
 
