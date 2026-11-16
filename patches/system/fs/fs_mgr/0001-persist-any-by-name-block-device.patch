@@ -1,0 +1,63 @@
+diff --git a/libfiemap/utility.cpp b/libfiemap/utility.cpp
+index cdd137b3..357651af 100644
+--- a/libfiemap/utility.cpp
++++ b/libfiemap/utility.cpp
+@@ -16,6 +16,12 @@
+ 
+ #include "utility.h"
+ 
++#include <algorithm>
++#include <dirent.h>
++#include <memory>
++#include <string>
++#include <vector>
++
+ #include <stdint.h>
+ #include <sys/stat.h>
+ #include <sys/sysmacros.h>
+@@ -35,8 +41,6 @@ namespace fiemap {
+ using namespace std::string_literals;
+ using android::base::unique_fd;
+ 
+-static constexpr char kUserdataDevice[] = "/dev/block/by-name/userdata";
+-
+ FiemapStatus DetermineMaximumFileSize(const std::string& file_path, uint64_t* result) {
+     // Create the smallest file possible (one block).
+     FiemapUniquePtr writer;
+@@ -79,13 +83,31 @@ FiemapStatus DetermineMaximumFileSize(const std::string& file_path, uint64_t* re
+ std::string GetDevicePathForFile(SplitFiemap* file) {
+     auto bdev_path = file->bdev_path();
+ 
+-    struct stat userdata, given;
+-    if (!stat(bdev_path.c_str(), &given) && !stat(kUserdataDevice, &userdata)) {
+-        if (S_ISBLK(given.st_mode) && S_ISBLK(userdata.st_mode) &&
+-            given.st_rdev == userdata.st_rdev) {
+-            return kUserdataDevice;
++    struct stat given;
++    if (stat(bdev_path.c_str(), &given) || !S_ISBLK(given.st_mode)) {
++        return bdev_path;
++    }
++
++    // A kernel disk name such as sda3 is not stable across boots. Persist the
++    // GPT by-name alias for any partition, not only userdata, when available.
++    std::unique_ptr<DIR, decltype(&closedir)> dir(opendir("/dev/block/by-name"), closedir);
++    if (!dir) return bdev_path;
++
++    std::vector<std::string> matches;
++    struct dirent* entry;
++    while ((entry = readdir(dir.get())) != nullptr) {
++        if (entry->d_name[0] == '.') continue;
++        auto candidate = "/dev/block/by-name/" + std::string(entry->d_name);
++        struct stat candidate_stat;
++        if (!stat(candidate.c_str(), &candidate_stat) && S_ISBLK(candidate_stat.st_mode) &&
++            candidate_stat.st_rdev == given.st_rdev) {
++            matches.emplace_back(candidate);
+         }
+     }
++    if (!matches.empty()) {
++        std::sort(matches.begin(), matches.end());
++        return matches.front();
++    }
+     return bdev_path;
+ }
+ 
