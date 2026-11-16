@@ -257,3 +257,7 @@ the pool lacks room), then boots it; snapshot merge after a successful boot so
 rollback still works. /data grows back online (LP extend, dm reload incl.
 dm-default-key, resize2fs) when space frees. Rejected: dm-thin (custom first-stage,
 GPLv3 thin tools, hard ENOSPC), faking free space.
+Final (user): bigger update → offline /data shrink at reboot, boot from snapshot in
+/data, merge over system after a successful boot, old system deleted. Smaller
+update → no shrink; after merge the partition is trimmed and /data reclaims the
+freed blocks online.
