@@ -1,8 +1,5 @@
 # Installer stays in the fixed matonos_driver domain and uses the existing
 # fixed sepolicy file set. Do not add an area-specific sepolicy directory.
-# install: one populated A slot plus COW room; B is created by an OTA.
-# The base BoardConfig declares the group members and AB_OTA_UPDATER.
-BOARD_SUPER_PARTITION_SIZE := 6442450944
 # Our ODM driver bundle (Mesa selectors, daemons, /odm/etc) is built outside
 # Soong by tools/build-bundle.sh into THIS path before the AOSP build; AOSP
 # copies it as odm.img. Without this, PRODUCT_BUILD_ODM_IMAGE made AOSP
