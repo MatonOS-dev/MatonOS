@@ -173,3 +173,14 @@ Living doc; updated through the night.
 - Downgraded to low, not fixed: F-Droid plugin parses its cached index on
   a 304 without re-hashing. The cache is only ever written hash-verified via
   temp+rename in app-private storage, so only disk corruption hits this.
+
+## Store collections (merged, pushed, VM-checked on 7.3r live)
+- contract 22355f4 (`collection(kind, offset, limit)`), store 3e36e7d, F-Droid
+  d0d2200, subsystem 6919826: Browse Popular/New come from plugins; built-in
+  FlathubSource/FlathubApi/Odrs deleted (ratings now from the Flatpak plugin).
+- Review fix 3e36e7d: one page (50) per source — F-Droid "new" is the whole
+  index and would have buried Flathub.
+- VM: Popular shows Flathub with ratings; New interleaves Flatpak + F-Droid.
+  First load ~1–2 min on a fresh system (index downloads). IronFox repo
+  returned HTTP 502 (upstream; logged loudly).
+- Seen on 7.3r: com.android.bluetooth native crash at boot (not looked at yet).
