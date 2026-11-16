@@ -115,7 +115,7 @@ contract; enums are shown as strings):
 | `listDrives` | Read-only drive and partition snapshot method (not a destructive operation). |
 | `write_gpt` | Exact disk byte count, disk GUID and all partition names/type GUIDs/PARTUUIDs/start/size extents. |
 | `create_lp_metadata` | super PARTUUID, metadata size/slot count, group capacities and logical member names/sizes. |
-| `format` | Partition reference, `vfat`, `ext4` or `f2fs`, label. |
+| `format` | Partition reference, `vfat` or `ext4`, label. |
 | `copy_partition` | Source is a named read-only live image member or an identified target partition; destination is an identified target partition/logical member. |
 | `clone_partition` | Identified target source and destination; destination must contain source extent. |
 | `write_files` | Target ESP/XBOOTLDR, safe relative directory, files with safe relative names and a service-approved live payload ID or inline bytes plus hash. No caller path is accepted. |

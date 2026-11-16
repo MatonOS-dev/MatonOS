@@ -87,7 +87,6 @@ bool ParseOperation(const js::Value& value, mi::Operation* out, std::string* err
         const auto name = S(value,"filesystem");
         if (name == "vfat") fs=mi::Filesystem::kVfat;
         else if (name == "ext4") fs=mi::Filesystem::kExt4;
-        else if (name == "f2fs") fs=mi::Filesystem::kF2fs;
         else { *error = "Unsupported filesystem."; return false; }
         const auto* target=Get(value,"target"); if (!target) { *error="Format target missing."; return false; }
         *out=mi::Format{ParseRef(*target),fs,S(value,"label")}; return true;
@@ -221,7 +220,7 @@ int HelperMain(int argc,char** argv) {
     if(argc<5||std::strcmp(argv[1],"--exec-helper")!=0)return -1;
     const uint64_t expected=std::strtoull(argv[2],nullptr,10);
     const std::string command=argv[3];
-    if(command!="/system/bin/sgdisk"&&command!="/system/bin/mke2fs"&&command!="/system/bin/newfs_msdos"&&command!="/system/bin/make_f2fs") {
+    if(command!="/system/bin/sgdisk"&&command!="/system/bin/mke2fs"&&command!="/system/bin/newfs_msdos") {
         __android_log_print(ANDROID_LOG_ERROR,kTag,"storage helper: refusing unlisted tool %s",command.c_str());
         return 126;
     }

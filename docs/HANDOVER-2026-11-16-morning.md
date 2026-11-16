@@ -249,3 +249,11 @@ Two physical blocks: EFI (2 GiB) and Super (all remaining space). Super holds
 system, addons, vendor and userdata. Add-ons get no preallocated space; their
 partition grows only when an add-on is installed. The installer's partition
 summary shows it this way: the two blocks, with super's contents nested under it.
+
+## Update design (user, 2026-11-16 afternoon)
+Virtual A/B with COW files in /data; userdata keeps the whole pool. Update reboot:
+first stage resizes system to the new image size (offline /data shrink only if
+the pool lacks room), then boots it; snapshot merge after a successful boot so
+rollback still works. /data grows back online (LP extend, dm reload incl.
+dm-default-key, resize2fs) when space frees. Rejected: dm-thin (custom first-stage,
+GPLv3 thin tools, hard ENOSPC), faking free space.

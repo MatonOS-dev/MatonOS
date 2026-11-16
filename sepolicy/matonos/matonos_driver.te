@@ -316,7 +316,7 @@ allow init matonos_addon_mount_file:dir mounton;
 # use; init starts it only when ro.boot.matonos.live=1). The daemon enumerates
 # /dev/block and reads super/swap nodes to refuse in-use disks; its re-exec'd
 # helper inherits the daemon's fds and runs the fixed system tools on the
-# validated target fd (sgdisk, mke2fs/make_f2fs, newfs_msdos, e2fsck/fsck.f2fs).
+# validated target fd (sgdisk, mke2fs, newfs_msdos, e2fsck).
 allow init matonos_driver:process2 nosuid_transition;
 allow matonos_driver matonos_driver_helper:process2 nosuid_transition;
 allow matonos_driver block_device:dir r_dir_perms;

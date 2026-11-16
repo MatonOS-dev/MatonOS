@@ -22,13 +22,6 @@ export type InstallDrive = {
   partitions: DrivePartition[];
 };
 
-export type UserdataFilesystem = "ext4" | "f2fs";
-
-/** f2fs for flash (SSD, NVMe, eMMC, USB flash), ext4 for spinning disks. */
-export function defaultUserdataFilesystem(drive: InstallDrive): UserdataFilesystem {
-  return drive.rotational ? "ext4" : "f2fs";
-}
-
 export type PartitionRef =
   | { partGuid: string; logicalName?: never }
   | { logicalName: string; partGuid?: never };
@@ -62,7 +55,7 @@ export type InstallerOperation =
   | {
       kind: "format";
       target: PartitionRef;
-      filesystem: "vfat" | "ext4" | "f2fs";
+      filesystem: "vfat" | "ext4";
       label: string;
     }
   | {

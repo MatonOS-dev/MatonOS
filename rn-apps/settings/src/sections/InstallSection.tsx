@@ -11,11 +11,9 @@ import { fillMaxWidth } from "@expo/ui/jetpack-compose/modifiers";
 import { MatonOS } from "../bridge/MatonOS";
 import { bridgeInstallerApi } from "../installer/BridgeInstallerApi";
 import {
-  defaultUserdataFilesystem,
   type InstallDrive,
   type InstallerOperation,
   type OperationProgress,
-  type UserdataFilesystem,
 } from "../installer/InstallerApi";
 import { createV1Plan, V1_MINIMUM_DISK_BYTES } from "../installer/createV1Plan";
 import { useMatonSettings } from "../context/MatonSettingsContext";
@@ -91,7 +89,6 @@ export function InstallSection() {
   const [drives, setDrives] = useState<InstallDrive[]>([]);
   const [selected, setSelected] = useState<InstallDrive | null>(null);
   const [eraseConfirmed, setEraseConfirmed] = useState(false);
-  const [userdataFilesystem, setUserdataFilesystem] = useState<UserdataFilesystem>("f2fs");
   const [readiness, setReadiness] = useState<ReadyState>("loading");
   const [loadError, setLoadError] = useState("");
   const [operationStates, setOperationStates] = useState<OperationState[]>([]);
@@ -162,7 +159,6 @@ export function InstallSection() {
         selected.id,
         selected.identity,
         selected.sizeBytes,
-        userdataFilesystem,
       ).operations;
     } catch (problem) {
       setFailedOperation("Prepare the install plan");
@@ -293,7 +289,6 @@ export function InstallSection() {
         selectedId={selected?.id ?? ""}
         onSelect={(drive) => {
           setSelected(drive);
-          setUserdataFilesystem(defaultUserdataFilesystem(drive));
           setStep("confirm");
         }}
         onRefresh={() => void refreshDrives()}
@@ -306,8 +301,6 @@ export function InstallSection() {
         confirmed={eraseConfirmed}
         preview={previewMode}
         onConfirmChange={setEraseConfirmed}
-        userdataFilesystem={userdataFilesystem}
-        onUserdataFilesystemChange={setUserdataFilesystem}
         onBack={() => setStep("drives")}
         onStart={() => void startInstall()}
         formatSize={sizeLabel}

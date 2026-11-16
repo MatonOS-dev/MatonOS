@@ -64,7 +64,7 @@ struct CreateLpMetadata {
     std::vector<LogicalGroupSpec> groups;
 };
 struct PartitionRef { std::string part_guid; std::string logical_name; };
-enum class Filesystem { kVfat, kExt4, kF2fs };
+enum class Filesystem { kVfat, kExt4 };
 struct Format { PartitionRef target; Filesystem filesystem; std::string label; };
 enum class CopySourceKind { kLiveImagePartition, kTargetPartition };
 struct CopyPartition { CopySourceKind source_kind; std::string live_partition_name; PartitionRef source; PartitionRef target; };

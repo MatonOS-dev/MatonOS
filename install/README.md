@@ -29,7 +29,7 @@ or target disk does not block boot. It fails closed if mount, swap, or kernel
 command-line or disk identity state cannot be read before a write.
 It uses the fixed `matonos_driver` SELinux domain from the device policy.
 
-The executor implements GPT writes through the shipped `sgdisk`, ext4/f2fs/FAT
+The executor implements GPT writes through the shipped `sgdisk`, ext4/FAT
 formatting through shipped system tools, bounded block copies and clones with
 readback verification, an ODM-side A/B LP metadata writer, and direct FAT32
 file reads/writes for the fixed boot-file catalog. The LP metadata writer was
