@@ -131,6 +131,18 @@ Living doc; updated through the night.
   7.2.7; the live image has prebuilt kernel 7.3.4 (bzImage 11-15 16:41,
   same as 7.3p). Prime suspect: the 7.3 kernel bump + its modules, not
   tonight's userspace changes. Unverified whether 7.3p ever booted.
+- ROOT CAUSE NARROWED (morning debug): the hang is init waiting forever in
+  wait_for_coldboot_done because EVERY property set is denied
+  (`avc: denied { set } ... tclass=property_service permissive=0`, also
+  init.svc.*, ro.cold_boot_done from ueventd), even with
+  androidboot.selinux=permissive. Same live image with the old 7.2.7
+  bzImage + old initrd (ukify UKI on the debug entry) boots past it: zero
+  property denials, surfaceflinger + zygote start. → the 7.3.4 kernel is
+  the cause (no local SELinux patches; SELinux Kconfig unchanged). Next:
+  diff security/selinux 7.2.7→7.3.4 (class/perm mapping, status page,
+  selinuxfs access) or bisect; meanwhile 7.2.7 is a working fallback.
+- Debug UKI on ~/matonos/vm/claude/inst/live.img is currently the 7.2.7
+  one (dbg72.efi); original saved as dbg.efi there.
 - Installer VM test (Ventoy, f2fs) blocked on this.
 - quick-image.sh refused (graph env differs) → full `build.sh -K -M`.
 - Store 3b49490: search field single-line; VM-checked on disk VM (Enter keeps one line, results show).
