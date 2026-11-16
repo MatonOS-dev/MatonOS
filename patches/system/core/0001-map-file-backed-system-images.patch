@@ -1,0 +1,164 @@
+diff --git a/init/block_dev_initializer.cpp b/init/block_dev_initializer.cpp
+index 70ca0e495..72ec7f50e 100644
+--- a/init/block_dev_initializer.cpp
++++ b/init/block_dev_initializer.cpp
+@@ -79,6 +79,25 @@ bool BlockDevInitializer::InitBootDevicesFromPartUuid() {
+     return true;
+ }
+ 
++bool BlockDevInitializer::HasBootDevicePartition(const std::string& partition_name) {
++    bool found = false;
++    auto callback = [this, &partition_name, &found](const Uevent& uevent) {
++        if (uevent.subsystem != "block") return ListenerAction::kContinue;
++        auto name = uevent.partition_name;
++        if (name.empty()) {
++            const auto slash = uevent.path.rfind('/');
++            name = slash == std::string::npos ? uevent.path : uevent.path.substr(slash + 1);
++        }
++        if (name == partition_name && device_handler_->IsBootDevice(uevent)) {
++            found = true;
++            return ListenerAction::kStop;
++        }
++        return ListenerAction::kContinue;
++    };
++    uevent_listener_.RegenerateUevents(callback);
++    return found;
++}
++
+ // Second_stage_init requires loop-control before ueventd starts.
+ void BlockDevInitializer::InitLoopDevices() {
+     (void)InitMiscDevice("loop-control");
+diff --git a/init/block_dev_initializer.h b/init/block_dev_initializer.h
+index bbd70bc72..e000beffd 100644
+--- a/init/block_dev_initializer.h
++++ b/init/block_dev_initializer.h
+@@ -30,6 +30,7 @@ class BlockDevInitializer final {
+     BlockDevInitializer();
+ 
+     bool InitBootDevicesFromPartUuid();
++    bool HasBootDevicePartition(const std::string& partition_name);
+     bool InitDeviceMapper();
+     bool InitDmUser(const std::string& name);
+     bool InitDevices(std::set<std::string> devices);
+diff --git a/init/first_stage_mount.cpp b/init/first_stage_mount.cpp
+index 8a00aa41d..4c1d61d95 100644
+--- a/init/first_stage_mount.cpp
++++ b/init/first_stage_mount.cpp
+@@ -123,6 +123,7 @@ bool FirstStageMount::InitDevices() {
+     std::set<std::string> devices;
+     GetSuperDeviceName(&devices);
+     GetExtraBlockDevices(&devices);
++    const bool has_super = devices.find(super_partition_name_) != devices.end();
+ 
+     if (!GetDmVerityDevices(&devices)) {
+         return false;
+@@ -139,7 +140,7 @@ bool FirstStageMount::InitDevices() {
+         }
+     }
+ 
+-    if (IsDmLinearEnabled()) {
++    if (has_super) {
+         auto super_symlink = "/dev/block/by-name/"s + super_partition_name_;
+         if (!android::base::Realpath(super_symlink, &super_path_)) {
+             PLOG(ERROR) << "realpath failed: " << super_symlink;
+@@ -167,7 +168,13 @@ void FirstStageMount::GetSuperDeviceName(std::set<std::string>* devices) {
+         return;
+     }
+ 
+-    devices->emplace(super_partition_name_);
++    if (HasBootDevicePartition(super_partition_name_)) {
++        devices->emplace(super_partition_name_);
++    }
++}
++
++bool FirstStageMount::HasBootDevicePartition(const std::string& partition_name) {
++    return block_dev_init_.HasBootDevicePartition(partition_name);
+ }
+ 
+ // Creates devices with uevent->partition_name matching ones in the given set.
+diff --git a/init/first_stage_mount.h b/init/first_stage_mount.h
+index 495bbdec7..dc54c9873 100644
+--- a/init/first_stage_mount.h
++++ b/init/first_stage_mount.h
+@@ -53,6 +53,7 @@ class FirstStageMount {
+ 
+     bool InitDevices();
+     bool InitRequiredDevices(std::set<std::string> devices);
++    bool HasBootDevicePartition(const std::string& partition_name);
+     bool MountPartition(const Fstab::iterator& begin, bool erase_same_mounts,
+                         Fstab::iterator* end = nullptr);
+ 
+diff --git a/init/first_stage_mount_android.cpp b/init/first_stage_mount_android.cpp
+index 09222de69..40f223413 100644
+--- a/init/first_stage_mount_android.cpp
++++ b/init/first_stage_mount_android.cpp
+@@ -16,6 +16,8 @@
+ 
+ #include "first_stage_mount_android.h"
+ 
++#include <unistd.h>
++
+ #include <android-base/strings.h>
+ #include <com_android_apex_flags.h>
+ #include <fs_mgr.h>
+@@ -109,12 +111,31 @@ bool FirstStageMountAndroid::DoCreateDevices() {
+         }
+     }
+ 
++    // File-backed system images live on maton_system. Mount it before asking
++    // libfiemap to map the images; old super-based installs have no such GPT
++    // partition and retain the normal path.
++    if (IsDmLinearEnabled() && super_path_.empty()) {
++        auto image_store = GetEntryForMountPoint(&fstab_, "/maton_system");
++        if (image_store == fstab_.end() || !MountPartition(image_store, true)) {
++            LOG(ERROR) << "Could not mount maton_system for file-backed partitions";
++            return false;
++        }
++        fstab_.erase(image_store);
++    }
++
+     if (!CreateLogicalPartitions()) return false;
+ 
+     return true;
+ }
+ 
+ void FirstStageMountAndroid::GetExtraBlockDevices(std::set<std::string>* devices) {
++    if (IsDmLinearEnabled() && !HasBootDevicePartition(super_partition_name_)) {
++        auto image_store = GetEntryForMountPoint(&fstab_, "/maton_system");
++        if (image_store != fstab_.end()) {
++            devices->emplace(android::base::Basename(image_store->blk_device));
++        }
++    }
++
+     if constexpr (com::android::apex::flags::mount_before_data()) {
+         // Even before /data is mounted, apexd needs to access the block device backing /data. Let's
+         // initialize "userdata" so that apexd can avoid waiting for the symlink
+@@ -148,9 +169,25 @@ bool FirstStageMountAndroid::CreateLogicalPartitions() {
+         return true;
+     }
+     if (super_path_.empty()) {
+-        LOG(ERROR) << "Could not locate logical partition tables in partition "
+-                   << super_partition_name_;
+-        return false;
++        if (access("/metadata/maton/images", F_OK) != 0 ||
++            access("/maton_system/images", F_OK) != 0) {
++            PLOG(ERROR) << "Missing file-backed partition metadata or image directory";
++            return false;
++        }
++        auto images = android::fiemap::ImageManager::Open("/metadata/maton/images",
++                                                          "/maton_system/images");
++        if (!images) {
++            LOG(ERROR) << "Could not open file-backed partition images";
++            return false;
++        }
++        auto init_devices = [this](std::set<std::string> devices) {
++            return InitRequiredDevices(std::move(devices));
++        };
++        if (!images->MapAllImages(init_devices)) {
++            LOG(ERROR) << "File-backed partition layout could not be instantiated";
++            return false;
++        }
++        return true;
+     }
+ 
+     if (!IsMicrodroid() && SnapshotManager::IsSnapshotManagerNeeded()) {

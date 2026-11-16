@@ -20,6 +20,10 @@ product                    /product     erofs  ro                               
 vendor                     /vendor      erofs  ro                                  wait,logical,first_stage_mount,slotselect
 odm                        /odm         erofs  ro                                  wait,logical,first_stage_mount,slotselect
 
+# Installed image files. First-stage init mounts this only when the boot disk
+# has no super partition; legacy super-based installations can omit it.
+/dev/block/by-name/maton_system /maton_system ext4 nodev,noatime,nosuid    wait,check,first_stage_mount,nofail
+
 /dev/block/by-name/metadata /metadata   ext4   nodev,noatime,nosuid                wait,check,formattable,first_stage_mount
 # fsverity remains for PackageInstallerSession v4 APK integrity (idsig).
 /dev/block/by-name/userdata /data       ext4   nodev,noatime,nosuid,errors=panic   latemount,wait,check,quota,fsverity,formattable,reservedsize=128M,fileencryption=aes-256-xts:aes-256-cts:v2
