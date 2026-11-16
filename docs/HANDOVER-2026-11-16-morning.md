@@ -124,7 +124,7 @@ Living doc; updated through the night.
   first check: rebuild at 7.3p's commit, or test the installed disk VM.
 - Installer VM test (Ventoy, f2fs) blocked on this.
 - quick-image.sh refused (graph env differs) → full `build.sh -K -M`.
-- Store 3b49490 (pushed): search field single-line; not VM-checked.
+- Store 3b49490: search field single-line; VM-checked on disk VM (Enter keeps one line, results show).
 
 ## Image trim (measured)
 - 6243 modules, 552 MB, already stripped (INSTALL_MOD_STRIP); module
