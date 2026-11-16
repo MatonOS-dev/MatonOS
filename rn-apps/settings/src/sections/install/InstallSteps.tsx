@@ -114,11 +114,6 @@ export function InstallWelcomeStep({
         The live system remains available until you reboot.
       </Text>
       <StatusRow label={copy.minimumDrive} value={minimumSize} />
-      <StatusRow
-        label={copy.slotPlan}
-        value={copy.slotLabels}
-        supporting={copy.slotDescription}
-      />
       <Text style={{ typography: "bodySmall" }}>
         User files are not copied. The installed system starts with empty user
         storage.

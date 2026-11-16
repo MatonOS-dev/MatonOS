@@ -143,7 +143,6 @@ const rowSymbols: Record<string, AndroidSymbol> = {
   [copy.systemState]: "monitor_heart",
   [copy.suspendSupport]: "bolt",
   [copy.minimumDrive]: "storage",
-  [copy.slotPlan]: "splitscreen",
   [copy.capacity]: "database",
   [copy.connection]: "cable",
   [copy.device]: "devices",

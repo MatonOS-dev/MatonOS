@@ -45,9 +45,6 @@ const en = {
   refreshHardware: "Refresh hardware",
   installProfile: "Install profile",
   minimumDrive: "Minimum drive",
-  slotPlan: "Slot plan",
-  slotLabels: "A then B",
-  slotDescription: "Copies the live system to A, then clones A to B.",
   abNotIncluded:
     "Selected media files are staged during install and imported after the first boot.",
   availableDrives: "Available drives",
