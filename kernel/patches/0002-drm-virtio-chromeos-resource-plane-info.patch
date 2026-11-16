@@ -11,13 +11,13 @@ are unaffected. Hosts that reply OK_NODATA leave the plane info empty.
 
 ---
 diff --git a/drivers/gpu/drm/virtio/virtgpu_drv.h b/drivers/gpu/drm/virtio/virtgpu_drv.h
-index f3bbbe446..5d19391f9 100644
+index 88fb4be92..264a4110c 100644
 --- a/drivers/gpu/drm/virtio/virtgpu_drv.h
 +++ b/drivers/gpu/drm/virtio/virtgpu_drv.h
-@@ -125,6 +125,13 @@ struct virtio_gpu_object {
- 	/* for restoration of objects after hibernation */
- 	struct virtio_gpu_object_params params;
- 	struct list_head restore_node;
+@@ -119,6 +119,13 @@ struct virtio_gpu_object {
+ 
+ 	int uuid_state;
+ 	uuid_t uuid;
 +
 +	/* Host plane layout from RESOURCE_CREATE_3D (ChromeOS protocol). */
 +	bool created_3d, create_callback_done;
@@ -29,7 +29,7 @@ index f3bbbe446..5d19391f9 100644
  #define gem_to_virtio_gpu_obj(gobj) \
  	container_of((gobj), struct virtio_gpu_object, base.base)
 diff --git a/drivers/gpu/drm/virtio/virtgpu_ioctl.c b/drivers/gpu/drm/virtio/virtgpu_ioctl.c
-index 81e70a12b..06d05118f 100644
+index 3d8e4ccdb..7adf6b805 100644
 --- a/drivers/gpu/drm/virtio/virtgpu_ioctl.c
 +++ b/drivers/gpu/drm/virtio/virtgpu_ioctl.c
 @@ -206,9 +206,19 @@ static int virtio_gpu_resource_create_ioctl(struct drm_device *dev, void *data,
@@ -86,7 +86,7 @@ index 81e70a12b..06d05118f 100644
  }
  
  static int virtio_gpu_transfer_from_host_ioctl(struct drm_device *dev,
-@@ -761,7 +789,7 @@ struct drm_ioctl_desc virtio_gpu_ioctls[DRM_VIRTIO_NUM_IOCTLS] = {
+@@ -718,7 +746,7 @@ struct drm_ioctl_desc virtio_gpu_ioctls[DRM_VIRTIO_NUM_IOCTLS] = {
  			  virtio_gpu_resource_create_ioctl,
  			  DRM_RENDER_ALLOW),
  
@@ -96,10 +96,10 @@ index 81e70a12b..06d05118f 100644
  
  	/* make transfer async to the main ring? - no sure, can we
 diff --git a/drivers/gpu/drm/virtio/virtgpu_vq.c b/drivers/gpu/drm/virtio/virtgpu_vq.c
-index d99fb9e32..4a130ba32 100644
+index 2b7af8e4e..5ec12331a 100644
 --- a/drivers/gpu/drm/virtio/virtgpu_vq.c
 +++ b/drivers/gpu/drm/virtio/virtgpu_vq.c
-@@ -1225,6 +1225,30 @@ void virtio_gpu_cmd_context_detach_resource(struct virtio_gpu_device *vgdev,
+@@ -1143,6 +1143,30 @@ void virtio_gpu_cmd_context_detach_resource(struct virtio_gpu_device *vgdev,
  	virtio_gpu_queue_ctrl_buffer(vgdev, vbuf);
  }
  
@@ -130,7 +130,7 @@ index d99fb9e32..4a130ba32 100644
  void
  virtio_gpu_cmd_resource_create_3d(struct virtio_gpu_device *vgdev,
  				  struct virtio_gpu_object *bo,
-@@ -1234,8 +1258,20 @@ virtio_gpu_cmd_resource_create_3d(struct virtio_gpu_device *vgdev,
+@@ -1152,8 +1176,20 @@ virtio_gpu_cmd_resource_create_3d(struct virtio_gpu_device *vgdev,
  {
  	struct virtio_gpu_resource_create_3d *cmd_p;
  	struct virtio_gpu_vbuffer *vbuf;
