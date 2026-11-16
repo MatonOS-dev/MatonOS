@@ -184,3 +184,29 @@ Living doc; updated through the night.
   First load ~1–2 min on a fresh system (index downloads). IronFox repo
   returned HTTP 502 (upstream; logged loudly).
 - Seen on 7.3r: com.android.bluetooth native crash at boot (not looked at yet).
+
+## Installer VM test (7.3r live, port 5557)
+- Fixed 80fcb12: drive list was empty — RN FlatList renders nothing inside
+  the Compose host tree; rows now rendered directly (drive + progress lists).
+- Verified: NVMe listed as safe; boot drive and Ventoy stick refused with
+  reasons; F2FS preselected for NVMe, ext4 offered.
+- Enforcing install fails at "Write the target partition table": helper
+  killed after exec (`matonos_driver_helper` denied fd use on
+  `matonos_driver`). Policy unchanged since import, so this path only ever
+  ran permissive. Collecting the full helper denial set in a permissive run.
+- Bluetooth crash at boot = BT HCI AIDL HAL reports init failure (VM has no
+  controller); abort is in com.android.bluetooth's assert.
+
+## Installer: system repair (decided by user 2026-11-16, not started)
+- Offered only when an existing MatonOS install is detected on the drive.
+- Rewrites super (live system into slot A, B left empty for the next OTA),
+  /boot (XBOOTLDR) and the ESP boot images/entries (kernel must match the
+  modules in super) and the add-on partitions (their per-kernel folders
+  must match the new kernel). Keeps userdata and metadata, but runs a
+  filesystem check on both (e2fsck or fsck.f2fs for userdata by its
+  filesystem; e2fsck for metadata) and reports problems before writing.
+- Downgrade check: repair is refused when the live build is older than the
+  installed build (say so in the UI).
+- Installer has no slot choice; OTA stays the only update path.
+- Confirm step now lists each new partition with size + purpose (uncommitted
+  until the current install test passes).

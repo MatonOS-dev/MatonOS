@@ -16,4 +16,4 @@ trap 'rm -rf "$build_dir"' EXIT
   -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
   -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-35 \
   -DCMAKE_BUILD_TYPE=Release
-"$CMAKE" --build "$build_dir" --parallel 2
+"$CMAKE" --build "$build_dir" --parallel "$(nproc)"

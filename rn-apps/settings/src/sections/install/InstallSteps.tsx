@@ -7,6 +7,7 @@ import {
   ToggleRow,
 } from "../../components/SettingsUI";
 import type { InstallDrive, OperationProgress, UserdataFilesystem } from "../../installer/InstallerApi";
+import { createV1Plan } from "../../installer/createV1Plan";
 import { copy } from "../../strings";
 
 export type InstallStep =
@@ -227,6 +228,50 @@ export function InstallDrivesStep({
   );
 }
 
+const PARTITION_PURPOSE: Record<string, string> = {
+  esp: "Boot menu and the signed MatonOS boot images.",
+  boot: "Extra boot space shared by both system copies.",
+  misc: "Small record of which system copy to boot.",
+  metadata: "Encryption and update bookkeeping.",
+  super: "The MatonOS system itself (read-only), with room for the update copy.",
+  addons_a: "Add-ons for the current system copy.",
+  addons_b: "Add-ons for the next system copy, filled by updates.",
+  userdata: "Your apps, files and settings.",
+};
+
+function PartitionSummary({
+  drive,
+  userdataFilesystem,
+  formatSize,
+}: {
+  drive: InstallDrive;
+  userdataFilesystem: UserdataFilesystem;
+  formatSize: (bytes: number) => string;
+}) {
+  // Same pure plan the install runs, so sizes shown here are the sizes written.
+  let partitions: ReturnType<typeof createV1Plan>["partitions"];
+  try {
+    partitions = createV1Plan(drive.id, drive.identity, drive.sizeBytes, userdataFilesystem).partitions;
+  } catch (problem) {
+    const message = problem instanceof Error ? problem.message : String(problem);
+    return <TextError message={message} />;
+  }
+  const rows = partitions.map((part) => (
+    <StatusRow
+      key={part.name}
+      label={part.name}
+      value={formatSize(part.sizeBytes)}
+      supporting={PARTITION_PURPOSE[part.name] ?? ""}
+    />
+  ));
+  return (
+    <>
+      <Text style={{ typography: "titleSmall" }}>New partitions on this drive</Text>
+      {rows}
+    </>
+  );
+}
+
 function FilesystemChoice({
   drive,
   value,
@@ -292,6 +337,7 @@ function ConfirmBody({
       <StatusRow label={copy.device} value={drive.path} />
       <StatusRow label={copy.capacity} value={formatSize(drive.sizeBytes)} />
       <FilesystemChoice drive={drive} value={userdataFilesystem} onChange={onUserdataFilesystemChange} />
+      <PartitionSummary drive={drive} userdataFilesystem={userdataFilesystem} formatSize={formatSize} />
       <ToggleRow
         title="I understand this drive will be erased"
         supporting="This confirmation is required before installation starts."

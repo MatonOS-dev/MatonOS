@@ -175,31 +175,69 @@ int Execute(const char* json, char* result, size_t capacity, void*) {
 }
 }  // namespace
 
+namespace {
+int HelperFail(const char* what,const char* path,int err) {
+    __android_log_print(ANDROID_LOG_ERROR,kTag,"storage helper: %s %s: %s",what,path,err?strerror(err):"check failed");
+    return 1;
+}
+
+// BLKRRPART returns before ueventd has created the new partition nodes; the
+// next operation opens them by path, so wait until sysfs and /dev agree.
+bool WaitForPartitionNodes(const char* disk_path) {
+    const std::string disk=std::string(disk_path).substr(std::string(disk_path).rfind('/')+1);
+    const std::string sys="/sys/block/"+disk;
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
+    for(;;) {
+        bool all=true;
+        if(DIR* dir=opendir(sys.c_str())) {
+            while(dirent* e=readdir(dir)) {
+                if(std::strncmp(e->d_name,disk.c_str(),disk.size())!=0)continue;
+                if(access((sys+"/"+e->d_name+"/partition").c_str(),F_OK)!=0)continue;
+                if(access((std::string("/dev/block/")+e->d_name).c_str(),F_OK)!=0){all=false;break;}
+            }
+            closedir(dir);
+        } else return HelperFail("open sysfs",sys.c_str(),errno),false;
+        if(all)return true;
+        if(std::chrono::steady_clock::now()>deadline) {
+            __android_log_print(ANDROID_LOG_ERROR,kTag,"storage helper: partition nodes for %s did not appear within 10 s",disk_path);
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+}
+}  // namespace
+
 int HelperMain(int argc,char** argv) {
     if(argc==4&&std::strcmp(argv[1],"--rescan")==0) {
         const uint64_t expected=std::strtoull(argv[2],nullptr,10);
         const int fd=open(argv[3],O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
-        if(fd<0)return 1;
+        if(fd<0)return HelperFail("open",argv[3],errno);
         uint64_t actual=0;
-        const int rc=expected&&ioctl(fd,BLKGETDISKSEQ,&actual)==0&&actual==expected?ioctl(fd,BLKRRPART):-1;
-        close(fd);return rc==0?0:1;
+        if(!expected||ioctl(fd,BLKGETDISKSEQ,&actual)!=0||actual!=expected){close(fd);return HelperFail("disk sequence changed for",argv[3],0);}
+        if(ioctl(fd,BLKRRPART)!=0){const int err=errno;close(fd);return HelperFail("BLKRRPART",argv[3],err);}
+        close(fd);
+        return WaitForPartitionNodes(argv[3])?0:1;
     }
     if(argc<5||std::strcmp(argv[1],"--exec-helper")!=0)return -1;
     const uint64_t expected=std::strtoull(argv[2],nullptr,10);
     const std::string command=argv[3];
-    if(command!="/system/bin/sgdisk"&&command!="/system/bin/mke2fs"&&command!="/system/bin/newfs_msdos")return 126;
+    if(command!="/system/bin/sgdisk"&&command!="/system/bin/mke2fs"&&command!="/system/bin/newfs_msdos"&&command!="/system/bin/make_f2fs") {
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"storage helper: refusing unlisted tool %s",command.c_str());
+        return 126;
+    }
     // Keep the verified block fd open across exec and make the tool address
     // that exact kernel device object instead of reopening a reused node.
     const int target=open(argv[argc-1],O_RDWR|O_CLOEXEC|O_NOFOLLOW);
-    if(target<0)return 1;
+    if(target<0)return HelperFail("open",argv[argc-1],errno);
     uint64_t actual=0;struct stat st{};
     if(!expected||fstat(target,&st)!=0||!S_ISBLK(st.st_mode)||
-       ioctl(target,BLKGETDISKSEQ,&actual)!=0||actual!=expected)return 1;
-    if(dup2(target,198)<0)return 1;
-    if(fcntl(198,F_SETFD,0)<0)return 1;
+       ioctl(target,BLKGETDISKSEQ,&actual)!=0||actual!=expected)return HelperFail("not the verified block device:",argv[argc-1],0);
+    if(dup2(target,198)<0)return HelperFail("dup2",argv[argc-1],errno);
+    if(fcntl(198,F_SETFD,0)<0)return HelperFail("fcntl",argv[argc-1],errno);
     if(target!=198)close(target);
     argv[argc-1]=const_cast<char*>("/proc/self/fd/198");
     execv(command.c_str(),argv+3);
+    __android_log_print(ANDROID_LOG_ERROR,kTag,"storage helper: exec %s: %s",command.c_str(),strerror(errno));
     return 127;
 }
 
