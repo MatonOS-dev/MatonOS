@@ -1,0 +1,77 @@
+From cf4eb36db537495df24c81615d8d44fa4135ff68 Mon Sep 17 00:00:00 2001
+From: MatonOS <noreply@matonos>
+Date: Tue, 17 Nov 2026 00:32:12 +0200
+Subject: [PATCH] drm/virtio: accept host layout modifiers on 3D scanout
+
+---
+ drivers/gpu/drm/virtio/virtgpu_display.c |  8 ++++++--
+ drivers/gpu/drm/virtio/virtgpu_plane.c   | 19 ++++++++++++++++++-
+ 2 files changed, 24 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/gpu/drm/virtio/virtgpu_display.c b/drivers/gpu/drm/virtio/virtgpu_display.c
+index 5ff5435aa..940fb6fac 100644
+--- a/drivers/gpu/drm/virtio/virtgpu_display.c
++++ b/drivers/gpu/drm/virtio/virtgpu_display.c
+@@ -337,6 +337,12 @@ virtio_gpu_user_framebuffer_create(struct drm_device *dev,
+ 		drm_gem_object_put(obj);
+ 		return ERR_PTR(-ENOENT);
+ 	}
++	if ((mode_cmd->flags & DRM_MODE_FB_MODIFIERS) &&
++	    mode_cmd->modifier[0] != DRM_FORMAT_MOD_LINEAR &&
++	    !gem_to_virtio_gpu_obj(obj)->created_3d) {
++		drm_gem_object_put(obj);
++		return ERR_PTR(-EINVAL);
++	}
+ 
+ 	virtio_gpu_fb = kzalloc_obj(*virtio_gpu_fb);
+ 	if (virtio_gpu_fb == NULL) {
+@@ -379,8 +385,6 @@ int virtio_gpu_modeset_init(struct virtio_gpu_device *vgdev)
+ 	vgdev->ddev->mode_config.max_width = XRES_MAX;
+ 	vgdev->ddev->mode_config.max_height = YRES_MAX;
+ 
+-	vgdev->ddev->mode_config.fb_modifiers_not_supported = true;
+-
+ 	for (i = 0; i < vgdev->num_scanouts; ++i) {
+ 		ret = vgdev_output_init(vgdev, i);
+ 		if (ret)
+diff --git a/drivers/gpu/drm/virtio/virtgpu_plane.c b/drivers/gpu/drm/virtio/virtgpu_plane.c
+index 3c5729ef7..7041a53b6 100644
+--- a/drivers/gpu/drm/virtio/virtgpu_plane.c
++++ b/drivers/gpu/drm/virtio/virtgpu_plane.c
+@@ -145,7 +145,23 @@ drm_plane_state *virtio_gpu_plane_duplicate_state(struct drm_plane *plane)
+ 	return &new->base;
+ }
+ 
++/* Virgl scans out by host resource id; non-3D guest buffers are linear. */
++static bool virtio_gpu_format_mod_supported(struct drm_plane *plane,
++						   u32 format, u64 modifier)
++{
++	struct virtio_gpu_device *vgdev = plane->dev->dev_private;
++
++	return modifier == DRM_FORMAT_MOD_LINEAR ||
++	       (vgdev->has_virgl_3d && modifier != DRM_FORMAT_MOD_INVALID);
++}
++
++static const u64 virtio_gpu_modifiers[] = {
++	DRM_FORMAT_MOD_LINEAR,
++	DRM_FORMAT_MOD_INVALID,
++};
++
+ static const struct drm_plane_funcs virtio_gpu_plane_funcs = {
++	.format_mod_supported	= virtio_gpu_format_mod_supported,
+ 	.update_plane		= drm_atomic_helper_update_plane,
+ 	.disable_plane		= drm_atomic_helper_disable_plane,
+ 	.reset			= drm_atomic_helper_plane_reset,
+@@ -663,7 +679,8 @@ struct drm_plane *virtio_gpu_plane_init(struct virtio_gpu_device *vgdev,
+ 
+ 	plane = drmm_universal_plane_alloc(dev, struct drm_plane, dev,
+ 					   1 << index, &virtio_gpu_plane_funcs,
+-					   formats, nformats, NULL, type, NULL);
++					   formats, nformats, virtio_gpu_modifiers,
++					   type, NULL);
+ 	if (IS_ERR(plane))
+ 		return plane;
+ 
+-- 
+2.43.0
+

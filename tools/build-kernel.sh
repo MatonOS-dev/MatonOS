@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# build-kernel.sh: build the mainline kernel for pc_x86_64 and stage it for
+# build-kernel.sh: build a mainline or ACK kernel for pc_x86_64 and stage it for
 # the AOSP build and make-payload.sh.
 #
 # Usage:
 #   ./build-kernel.sh [-s <linux src>] [-a <aosp dir>] [-f <linux-firmware dir>]
 #                     [-o <build dir>] [-j <jobs>] [-n] [-c] [-S]
 #
-#   -s  mainline kernel source    (default: $LINUX_DIR or ~/Documents/linux)
+#   -s  kernel source             (default: $KERNEL_SRC, $LINUX_DIR, or ~/Documents/linux)
 #   -a  AOSP checkout             (default: derived from this script's location)
 #   -f  linux-firmware checkout   (default: ~/Documents/linux-firmware; sparse-
 #                                  cloned on demand with only the needed dirs)
@@ -20,7 +20,11 @@
 #          android-base.config + kernel/pc.config (merged in that order,
 #          later wins).
 #
-# Stages into <device dir>/prebuilt/ (git-ignored):
+# KERNEL_SRC selects an ACK tree: it starts from x86_64_defconfig and omits
+# the mainline-only android-base fragment. KERNEL_STAGE can redirect staging.
+# Mainline still stages into <device dir>/prebuilt/ by default; ACK defaults
+# to <aosp>/out/ack-kernel-stage so the coordinator can review/swap it.
+# Staged files:
 #   bzImage, kernel.config, kernel.release,
 #   modules/*.ko   -> BOARD_VENDOR_KERNEL_MODULES (-> /vendor/lib/modules)
 #   firmware/...   -> PRODUCT_COPY_FILES          (-> /vendor/firmware),
@@ -35,7 +39,13 @@ DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
 AOSP=$(readlink -f "$DEVICE_DIR/../../..")
 # secureboot: pinned CPU microcode is staged on every kernel build, with or without -S.
 source "$DEVICE_DIR/secureboot/microcode.sh"
-LINUX=${LINUX_DIR:-$HOME/Documents/linux}
+ACK_MODE=0
+if [[ -n ${KERNEL_SRC:-} ]]; then
+  LINUX=$KERNEL_SRC
+  ACK_MODE=1
+else
+  LINUX=${LINUX_DIR:-$HOME/Documents/linux}
+fi
 FIRMWARE=${LINUX_FIRMWARE_DIR:-$HOME/Documents/linux-firmware}
 KOUT=""
 JOBS=$(nproc)
@@ -64,8 +74,13 @@ while getopts "s:a:f:o:j:ncSh" opt; do
 done
 
 KOUT=${KOUT:-$AOSP/out/pc-kernel}
-STAGE=$DEVICE_DIR/prebuilt
-BASE_CFG=$AOSP/kernel/configs/$ANDROID_BASE_FRAGMENT
+if (( ACK_MODE )); then
+  STAGE=${KERNEL_STAGE:-$AOSP/out/ack-kernel-stage}
+  BASE_CFG=""
+else
+  STAGE=${KERNEL_STAGE:-$DEVICE_DIR/prebuilt}
+  BASE_CFG=$AOSP/kernel/configs/$ANDROID_BASE_FRAGMENT
+fi
 PC_CFG=$DEVICE_DIR/kernel/pc.config
 BASE=$DEVICE_DIR/kernel/base.config
 if (( SECURE_BOOT )); then
@@ -77,7 +92,9 @@ fi
 # ---------------------------------------------------------------- preflight
 [[ -f $LINUX/Makefile && -f $LINUX/arch/x86/configs/x86_64_defconfig ]] ||
   die "no kernel source at $LINUX (-s); e.g. git clone --depth 1 -b linux-7.2.y https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
-[[ -s $BASE_CFG ]] || die "android base fragment missing or empty: $BASE_CFG"
+if (( ! ACK_MODE )); then
+  [[ -s $BASE_CFG ]] || die "android base fragment missing or empty: $BASE_CFG"
+fi
 [[ -f $PC_CFG ]]   || die "missing $PC_CFG"
 [[ -f $BASE ]]     || die "missing $BASE"
 
@@ -125,14 +142,32 @@ kmake() {
 }
 
 # ---------------------------------------------------------------- patches
-# kernel/patches/*.patch are applied to the kernel source as uncommitted
-# changes (skipped when already applied), like tools/apply-patches.sh does
-# for AOSP projects.
+# Top-level patches are shared across kernel lines. Line-specific patches
+# live in mainline/ or android18-7.3/ so selecting an ACK tree cannot break
+# the existing mainline build.
 shopt -s nullglob
-for patch in "$DEVICE_DIR"/kernel/patches/*.patch; do
+if (( ACK_MODE )); then
+  kernel_patch_dir="$DEVICE_DIR/kernel/patches/android18-7.3"
+else
+  kernel_patch_dir="$DEVICE_DIR/kernel/patches/mainline"
+fi
+kernel_patches=("$DEVICE_DIR"/kernel/patches/*.patch "$kernel_patch_dir"/*.patch)
+declare -A applied_kernel_patches=()
+# Normalize existing patches in reverse order so later patches that edit
+# nearby lines are removed before checking their predecessors.
+for ((i=${#kernel_patches[@]} - 1; i >= 0; i--)); do
+  patch=${kernel_patches[$i]}
   if git -C "$LINUX" apply --reverse --check "$patch" 2>/dev/null; then
-    info "kernel patch already applied: $(basename "$patch")"
-  elif git -C "$LINUX" apply --check "$patch" 2>/dev/null; then
+    git -C "$LINUX" apply --reverse "$patch"
+    applied_kernel_patches[$patch]=1
+    info "removed previously applied kernel patch: $(basename "$patch")"
+  fi
+done
+for patch in "${kernel_patches[@]}"; do
+  if [[ ${applied_kernel_patches[$patch]:-0} == 1 ]]; then
+    : # It was reversed above; reapply all patches in their declared order.
+  fi
+  if git -C "$LINUX" apply --check "$patch" 2>/dev/null; then
     git -C "$LINUX" apply "$patch"
     info "applied kernel patch: $(basename "$patch")"
   else
@@ -144,7 +179,14 @@ shopt -u nullglob
 # ---------------------------------------------------------------- config
 info "Configuring ($KOUT)"
 mkdir -p "$KOUT"
-"$LINUX/scripts/kconfig/merge_config.sh" -m -O "$KOUT" "$BASE" "$BASE_CFG" "$PC_CFG" >/dev/null
+if (( ACK_MODE )); then
+  kmake -s x86_64_defconfig
+  "$LINUX/scripts/kconfig/merge_config.sh" -m -O "$KOUT" \
+    "$KOUT/.config" "$BASE" "$PC_CFG" >/dev/null
+else
+  "$LINUX/scripts/kconfig/merge_config.sh" -m -O "$KOUT" \
+    "$BASE" "$BASE_CFG" "$PC_CFG" >/dev/null
+fi
 # secureboot: module-sign enforcement is deliberately opt-in and uses the shared MatonOS key.
 if (( SECURE_BOOT )); then
   "$LINUX/scripts/config" --file "$KOUT/.config" \
@@ -178,8 +220,10 @@ check_fragment() {
     warn "$bad option(s) from $ANDROID_BASE_FRAGMENT not applied (see above)"
   fi
 }
-info "Checking android-base.config"
-check_fragment "$BASE_CFG" 0
+if (( ! ACK_MODE )); then
+  info "Checking android-base.config"
+  check_fragment "$BASE_CFG" 0
+fi
 info "Checking pc.config"
 check_fragment "$PC_CFG" 1
 if (( SECURE_BOOT )); then

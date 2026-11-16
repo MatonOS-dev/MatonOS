@@ -1,0 +1,76 @@
+From 7e6dd1aa2851545db667e36cc4d8bbb2cd9ae5e5 Mon Sep 17 00:00:00 2001
+From: MatonOS <noreply@matonos>
+Date: Tue, 17 Nov 2026 00:31:25 +0200
+Subject: [PATCH] drm/virtio: allow RGBA scanout with virgl on 7.3
+
+---
+ drivers/gpu/drm/virtio/virtgpu_display.c |  8 ++++++++
+ drivers/gpu/drm/virtio/virtgpu_plane.c   | 19 +++++++++++++++++--
+ 2 files changed, 25 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/gpu/drm/virtio/virtgpu_display.c b/drivers/gpu/drm/virtio/virtgpu_display.c
+index 30fad50f7..5ff5435aa 100644
+--- a/drivers/gpu/drm/virtio/virtgpu_display.c
++++ b/drivers/gpu/drm/virtio/virtgpu_display.c
+@@ -321,6 +321,7 @@ virtio_gpu_user_framebuffer_create(struct drm_device *dev,
+ 				   const struct drm_format_info *info,
+ 				   const struct drm_mode_fb_cmd2 *mode_cmd)
+ {
++	struct virtio_gpu_device *vgdev = dev->dev_private;
+ 	struct drm_gem_object *obj = NULL;
+ 	struct virtio_gpu_framebuffer *virtio_gpu_fb;
+ 	int ret;
+@@ -330,6 +331,13 @@ virtio_gpu_user_framebuffer_create(struct drm_device *dev,
+ 	if (!obj)
+ 		return ERR_PTR(-EINVAL);
+ 
++	if ((mode_cmd->pixel_format == DRM_FORMAT_ABGR8888 ||
++	     mode_cmd->pixel_format == DRM_FORMAT_XBGR8888) &&
++	    !vgdev->has_virgl_3d) {
++		drm_gem_object_put(obj);
++		return ERR_PTR(-ENOENT);
++	}
++
+ 	virtio_gpu_fb = kzalloc_obj(*virtio_gpu_fb);
+ 	if (virtio_gpu_fb == NULL) {
+ 		drm_gem_object_put(obj);
+diff --git a/drivers/gpu/drm/virtio/virtgpu_plane.c b/drivers/gpu/drm/virtio/virtgpu_plane.c
+index dc3518eef..3c5729ef7 100644
+--- a/drivers/gpu/drm/virtio/virtgpu_plane.c
++++ b/drivers/gpu/drm/virtio/virtgpu_plane.c
+@@ -42,6 +42,16 @@ static const uint32_t virtio_gpu_formats[] = {
+ 	DRM_FORMAT_BGRA8888,
+ 	DRM_FORMAT_RGBX8888,
+ 	DRM_FORMAT_RGBA8888,
++};
++
++/* Virgl host resources retain their RGBA byte ordering on scanout. */
++static const uint32_t virtio_gpu_formats_3d[] = {
++	DRM_FORMAT_XRGB8888,
++	DRM_FORMAT_ARGB8888,
++	DRM_FORMAT_BGRX8888,
++	DRM_FORMAT_BGRA8888,
++	DRM_FORMAT_RGBX8888,
++	DRM_FORMAT_RGBA8888,
+ 	DRM_FORMAT_XBGR8888,
+ 	DRM_FORMAT_ABGR8888,
+ };
+@@ -641,8 +651,13 @@ struct drm_plane *virtio_gpu_plane_init(struct virtio_gpu_device *vgdev,
+ 		nformats = ARRAY_SIZE(virtio_gpu_cursor_formats);
+ 		funcs = &virtio_gpu_cursor_helper_funcs;
+ 	} else {
+-		formats = virtio_gpu_formats;
+-		nformats = ARRAY_SIZE(virtio_gpu_formats);
++		if (vgdev->has_virgl_3d) {
++			formats = virtio_gpu_formats_3d;
++			nformats = ARRAY_SIZE(virtio_gpu_formats_3d);
++		} else {
++			formats = virtio_gpu_formats;
++			nformats = ARRAY_SIZE(virtio_gpu_formats);
++		}
+ 		funcs = &virtio_gpu_primary_helper_funcs;
+ 	}
+ 
+-- 
+2.43.0
+
