@@ -220,3 +220,10 @@ Living doc; updated through the night.
     (same operation; still refused on downgrade).
   - Approved: highest finding sets the rating, every finding listed; SMART =
     NVMe health log first (kernel, no tool), SATA reader added later.
+
+## Add-ons with services/domains/apps (user 2026-11-16)
+- Add-ons = separate images that may carry services, their own SELinux domains and apps.
+- Installer service becomes a live-only add-on (installed systems never carry it).
+- Blocker to spike first: init compiles SELinux policy before add-ons mount; add-on CIL has to be present at compile time and pass stock neverallows.
+- User: add-ons always do root-level driver work, so mount them early (first stage, before policy compile) — accepted.
+- Mesa fork HEAD 57a459de518 (revert of "vdrm meson tweak") fails the Android Mesa build: drm_hw.h cannot find amdgpu.h. Image built with -M (prebuilt Mesa 11-04). Fix pending.

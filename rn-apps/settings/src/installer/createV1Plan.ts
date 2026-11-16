@@ -7,15 +7,16 @@ import type {
 
 const MiB = 1024 ** 2;
 const GiB = 1024 ** 3;
-export const V1_MINIMUM_DISK_BYTES = 16 * GiB;
+export const V1_MINIMUM_DISK_BYTES = 32 * GiB;
 
 // These are installer-app policy. The primitive service deliberately knows none of them.
 const ESP_BYTES = 512 * MiB;
 const XBOOTLDR_BYTES = 1024 * MiB;
 const MISC_BYTES = 4 * MiB;
 const METADATA_BYTES = 64 * MiB;
-const SUPER_BYTES = 6 * GiB;
-const SLOT_CAPACITY = 5 * GiB;
+// Matches BOARD_SUPER_PARTITION_SIZE; OTA payloads carry the group size.
+const SUPER_BYTES = 16 * GiB;
+const SLOT_CAPACITY = 8 * GiB - 4 * MiB; // BOARD_PC_DYNAMIC_PARTITIONS_SIZE
 const ALIGNMENT = MiB;
 const GPT_BACKUP_RESERVE = MiB;
 
@@ -75,7 +76,7 @@ export function createV1Plan(
     throw new Error("Refresh the drive list before confirming this target.");
   const bootDevice = bootDeviceFromIdentity(diskIdentity);
   if (diskBytes < V1_MINIMUM_DISK_BYTES)
-    throw new Error("This installer profile requires a 16 GiB drive.");
+    throw new Error("This installer profile requires a 32 GiB drive.");
   let cursor = ALIGNMENT;
   const partitions: GptPartition[] = [];
   const addPartition = (name: string, typeGuid: string, sizeBytes: number) => {

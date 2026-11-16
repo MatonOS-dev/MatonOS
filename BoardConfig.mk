@@ -88,11 +88,12 @@ BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := ext4
 BOARD_USERDATAIMAGE_PARTITION_SIZE := 576716800
 
 # install: Installed systems use A/B dynamic partitions; make-live.sh packs
-# only slot A for the live USB image. Each 5 GiB group fits in half of super.
+# only slot A for the live USB image (compact super). Installed super is
+# 16 GiB (user 2026-11-16: play it safe); each group is half minus 4 MiB.
 AB_OTA_UPDATER := true
-BOARD_SUPER_PARTITION_SIZE := 11274289152
+BOARD_SUPER_PARTITION_SIZE := 17179869184
 BOARD_SUPER_PARTITION_GROUPS := pc_dynamic_partitions
-BOARD_PC_DYNAMIC_PARTITIONS_SIZE := 5368709120
+BOARD_PC_DYNAMIC_PARTITIONS_SIZE := 8585740288
 BOARD_PC_DYNAMIC_PARTITIONS_PARTITION_LIST := system system_ext product vendor odm
 BOARD_BUILD_SUPER_IMAGE_BY_DEFAULT := true
 
