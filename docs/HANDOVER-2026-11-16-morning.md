@@ -140,3 +140,12 @@ Living doc; updated through the night.
   compression off — skipped (Android modprobe .ko.zst support unverified).
 - EROFS partitions uncompressed → next: BOARD_EROFS_COMPRESSOR lz4hc after
   7.3q finishes, then size + boot comparison.
+
+## Docs drift scan (luna, report-only; full report out/pc-logs/agents/docs-drift.last.md)
+- Fixed: install/README.md formatting summary now lists f2fs.
+- Open (mostly linuxd/v2 text still reading as current): docs/LINUX-INSTALLER.md
+  (mark superseded), AGENTS.md v2 linuxd sections, FLATPAK-EXTRA-DATA.md,
+  PER-APP-RUNTIME.md, OWN-DBUS.md:20, rn-apps/flathub/SHARED-CHANGES.md
+  (DELETE_PACKAGES checklist), SOFTWARE-CENTRE.md (pre-plugin model),
+  FLATPAK-STUB-HANDOVER.md (InstallActivity flow), subsystem README
+  "confirm priv_app" check. AGENTS.md edits left for you (shared agent rules).
