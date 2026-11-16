@@ -1,5 +1,4 @@
 import { Text, useMaterialColors } from "@expo/ui/jetpack-compose";
-import { FlatList } from "react-native";
 import {
   ActionButton,
   ModeRow,
@@ -179,22 +178,18 @@ function DriveList({
   onSelect: (drive: InstallDrive) => void;
   formatSize: (bytes: number) => string;
 }) {
+  // Compose host tree: RN FlatList does not render here; build rows up front.
   const data = preview ? drives.slice(0, 1) : drives;
-  return (
-    <FlatList
-      style={{ height: 320 }}
-      data={data}
-      keyExtractor={(drive) => drive.id}
-      renderItem={({ item }) => (
-        <DriveCard
-          drive={item}
-          selected={item.id === selectedId}
-          onSelect={onSelect}
-          formatSize={formatSize}
-        />
-      )}
+  const rows = data.map((drive) => (
+    <DriveCard
+      key={drive.id}
+      drive={drive}
+      selected={drive.id === selectedId}
+      onSelect={onSelect}
+      formatSize={formatSize}
     />
-  );
+  ));
+  return <>{rows}</>;
 }
 
 export function InstallDrivesStep({
@@ -382,14 +377,10 @@ function OperationList({
   preview: boolean;
 }) {
   const data = preview ? operations.slice(0, 4) : operations;
-  return (
-    <FlatList
-      style={{ height: 240 }}
-      data={data}
-      keyExtractor={(operation, index) => `${index}:${operation.title}`}
-      renderItem={({ item }) => <OperationRow operation={item} />}
-    />
-  );
+  const rows = data.map((operation, index) => (
+    <OperationRow key={`${index}:${operation.title}`} operation={operation} />
+  ));
+  return <>{rows}</>;
 }
 
 export function InstallProgressStep({
