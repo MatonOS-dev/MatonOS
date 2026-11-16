@@ -175,7 +175,8 @@ allow matonos_driver block_device:dir search;
 # misc carries its own by-name label, unlike the ESP and disk nodes.
 allow matonos_driver misc_block_device:blk_file rw_file_perms;
 # BLKGETDISKSEQ (0x1280): the ESP writer checks the disk identity before writing.
-allowxperm matonos_driver matonos_install_block_device:blk_file ioctl 0x1280;
+# Block ioctls (BLK* = type 0x12, HDIO_GETGEO 0x0301) used by sgdisk, mke2fs, newfs_msdos, fsck.
+allowxperm { matonos_driver matonos_driver_helper } matonos_install_block_device:blk_file ioctl { 0x0301 0x1200-0x12ff };
 hal_server_domain(matonos_driver, hal_bootctl)
 get_prop(matonos_driver, exported_default_prop)
 
@@ -324,3 +325,8 @@ allow matonos_driver_helper block_device:dir r_dir_perms;
 allow matonos_driver_helper matonos_driver:fd use;
 allow matonos_driver_helper matonos_install_block_device:blk_file ioctl;
 allow matonos_driver_helper { sgdisk_exec e2fs_exec fsck_exec }:file { execute execute_no_trans getattr map open read };
+# mke2fs probes ext4 features and the target's block topology/zoned queue in sysfs.
+allow matonos_driver_helper sysfs_fs_ext4_features:dir search;
+allow matonos_driver_helper sysfs_fs_ext4_features:file r_file_perms;
+allow matonos_driver_helper sysfs:dir r_dir_perms;
+allow matonos_driver_helper sysfs:file r_file_perms;

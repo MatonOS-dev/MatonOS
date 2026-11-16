@@ -227,3 +227,25 @@ Living doc; updated through the night.
 - Blocker to spike first: init compiles SELinux policy before add-ons mount; add-on CIL has to be present at compile time and pass stock neverallows.
 - User: add-ons always do root-level driver work, so mount them early (first stage, before policy compile) — accepted.
 - Mesa fork HEAD 57a459de518 (revert of "vdrm meson tweak") fails the Android Mesa build: drm_hw.h cannot find amdgpu.h. Image built with -M (prebuilt Mesa 11-04). Fix pending.
+
+## Pooled super (user 2026-11-16)
+- Goal: userdata and system share one super pool; super grows when an update needs it.
+- F2FS dropped: ext4 only (ext4 grows online, shrinks offline at boot).
+- Next after the enforcing install test: VM spike (userdata as logical partition, OTA growing system, /data resize). Then remove F2FS from installer UI, fstab and helper allow-list.
+- 16 GiB fixed super (a3d33f3) is the interim layout.
+- User: by default /data (ext4) takes all unused pool space; shrunk only when an update needs room (offline at boot: fsck + resize2fs + LP resize, then the update applies). Not enough free in /data -> update refused with a clear message.
+- User update flow (pool): 1) download payload to /data; 2) reboot, early boot shrinks /data by what the new slot needs; 3) payload copied/applied into the other slot; 4) reboot into it; 5) after a successful boot the old slot is deleted from the pool; 6) next reboot /data regrows into the freed space. Payload download needs /data free space; no fallback slot after step 5 (repair covers that).
+- User: the update flow may be driven by the MatonOS Settings app.
+- User: lz4hc EROFS acceptable if boot is a few seconds slower (pre-approval to adopt once measured; still report numbers).
+- User: metadata may have a backup. Plan: pool (LP) metadata already keeps a backup copy at the end of super, repair restores from it; /metadata partition gets a backup copy refreshed after each successful boot, repair restores it when the check fails.
+- User: metadata and its backup both live in the pool (logical partitions in a non-slot group). Fixed physical partitions left: ESP, /boot, misc (+ addons until decided).
+- User: add-on partitions move into the pool; /boot stays physical. Physical layout = ESP, /boot, misc, super (pool: system slots, userdata, metadata, metadata backup, addons_a/b).
+- User: /boot (XBOOTLDR) dropped; ESP grows to 2 GiB. Physical layout = ESP (2 GiB), misc, super pool. Repair rewrites the ESP boot files instead of /boot.
+- User: misc becomes a file on the ESP (loop-attached as /dev/block/by-name/misc), plus misc.bak written at shutdown after misc. Boot: misc failing its CRC -> restore from misc.bak. Physical layout = ESP (2 GiB) + super pool only.
+- User: 32 GiB minimum stays. Add-on partitions resized as needed in the pool; ideally add-ons are EROFS images mounted at boot like system.
+
+## Pool layout, final shape (user, 2026-11-16 afternoon)
+Two physical blocks: EFI (2 GiB) and Super (all remaining space). Super holds
+system, addons, vendor and userdata. Add-ons get no preallocated space; their
+partition grows only when an add-on is installed. The installer's partition
+summary shows it this way: the two blocks, with super's contents nested under it.
