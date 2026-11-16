@@ -106,10 +106,25 @@ Living doc; updated through the night.
   recommendation; (b) metadata-encryption-only media partition (dm-default-key
   via fstab keydirectory) — weaker than per-user FBE, needs vold/fstab work.
 
-## Image build 7.3q (running, out/pc-logs/image-7.3q.log)
+## Image build 7.3q — BUILT, LIVE BOOT HANGS (blocker, parked)
+- Built 02:43 (34 min, ISA audit PASS) after two fixes: Zink stage env
+  must be exported for build.sh too; removing the phase2 worktree left
+  main-out/deps/pipewire/build + one cxx dir pointing at it (deleted).
+- Live image (copied to ~/matonos/vm/claude/inst/) never reaches adb
+  (device offline, no display surface). Debug + debug-permissive entries:
+  boot stops after `init: processing action (wait_for_coldboot_done)` at
+  ~4–7 s, nothing after for 5 min. Same with system QEMU 8.2 virgl,
+  -g std, and qemu-venus -g native; same with no extra disks.
+  Not SELinux (permissive hangs too). pc-gpu-detect also gets denials
+  setting vendor.maton.graphics.* (exits 1) — separate issue, see serial
+  logs in ~/matonos/vm/claude/inst/serial*.log.
+- No device-tree change since 7.3p touches ueventd/modules; uncommitted
+  input/native/matonos-inputd.c + inflinger patch (not mine) were in the
+  build. Unknown whether 7.3p's live image booted under this harness —
+  first check: rebuild at 7.3p's commit, or test the installed disk VM.
+- Installer VM test (Ventoy, f2fs) blocked on this.
 - quick-image.sh refused (graph env differs) → full `build.sh -K -M`.
-- Then VM: Ventoy filter, f2fs install + first f2fs boot (enforcing),
-  store search-field fix (store 3b49490, single-line).
+- Store 3b49490 (pushed): search field single-line; not VM-checked.
 
 ## Image trim (measured)
 - 6243 modules, 552 MB, already stripped (INSTALL_MOD_STRIP); module
