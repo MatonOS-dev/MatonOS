@@ -194,6 +194,10 @@ def check_bundle_registry() -> None:
 # User-approved exceptions to the zero-patches rule (CLAUDE.md), by path
 # relative to patches/. Each needs an explicit user decision.
 APPROVED_PATCHES = {
+    # 2026-11-16: user-approved layout work (ESP|SYSTEM image files|USER):
+    # first-stage maps image files from maton_system via libfiemap.
+    "system/core/0001-map-file-backed-system-images.patch",
+    "system/fs/fs_mgr/0001-persist-any-by-name-block-device.patch",
     # 2026-11-15: user-approved ("The launcher3 change is approved"): taskbar
     # slot hosting the Linux status tray pill (org.matonos.tray).
     "packages/apps/Launcher3/0001-linux-status-tray.patch",
