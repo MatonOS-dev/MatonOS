@@ -127,7 +127,10 @@ Living doc; updated through the night.
   never "Loaded" for them (earlier modules do get "Loaded") → coldboot
   probably blocked in a module load. Serial root shell never starts
   (stall precedes it); SysRq via monitor printed nothing.
-- Harness is fine: installed disk VM (older image) boots in 30 s.
+- Harness is fine: installed disk VM boots in 30 s — but it runs kernel
+  7.2.7; the live image has prebuilt kernel 7.3.4 (bzImage 11-15 16:41,
+  same as 7.3p). Prime suspect: the 7.3 kernel bump + its modules, not
+  tonight's userspace changes. Unverified whether 7.3p ever booted.
 - Installer VM test (Ventoy, f2fs) blocked on this.
 - quick-image.sh refused (graph env differs) → full `build.sh -K -M`.
 - Store 3b49490: search field single-line; VM-checked on disk VM (Enter keeps one line, results show).
