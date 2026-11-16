@@ -105,3 +105,14 @@ Living doc; updated through the night.
   (CDD/certifiability break). Options: (a) drop the feature — my
   recommendation; (b) metadata-encryption-only media partition (dm-default-key
   via fstab keydirectory) — weaker than per-user FBE, needs vold/fstab work.
+
+## Image build 7.3q (running, out/pc-logs/image-7.3q.log)
+- quick-image.sh refused (graph env differs) → full `build.sh -K -M`.
+- Then VM: Ventoy filter, f2fs install + first f2fs boot (enforcing),
+  store search-field fix (store 3b49490, single-line).
+
+## Image trim (measured)
+- 6243 modules, 552 MB, already stripped (INSTALL_MOD_STRIP); module
+  compression off — skipped (Android modprobe .ko.zst support unverified).
+- EROFS partitions uncompressed → next: BOARD_EROFS_COMPRESSOR lz4hc after
+  7.3q finishes, then size + boot comparison.
