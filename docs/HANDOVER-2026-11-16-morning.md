@@ -154,6 +154,6 @@ Living doc; updated through the night.
 - "F2FS loses to earlier ext4 fstab entry": false — fs_mgr formats only when
   partition_wiped() (blank superblock), else tries the next entry.
 - Fixed: bootstrap manifest still requested DELETE_PACKAGES (subsystem main, built OK).
-- Open (medium, F-Droid plugin): after HTTP 304 the cached index is parsed
-  without re-checking it against the signed entry's hash; a corrupt cache
-  would be trusted/fail until the cache is cleared.
+- Downgraded to low, not fixed: F-Droid plugin parses its cached index on
+  a 304 without re-hashing. The cache is only ever written hash-verified via
+  temp+rename in app-private storage, so only disk corruption hits this.
