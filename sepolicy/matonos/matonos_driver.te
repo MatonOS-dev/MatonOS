@@ -310,3 +310,17 @@ allow kernel device:dir create;
 # init owns the mount; vendor_init owns the optional ODM mountpoint mkdir.
 allow vendor_init matonos_addon_mount_file:dir create;
 allow init matonos_addon_mount_file:dir mounton;
+
+# install: one broad hardware-zone block for the disk installer (live-only in
+# use; init starts it only when ro.boot.matonos.live=1). The daemon enumerates
+# /dev/block and reads super/swap nodes to refuse in-use disks; its re-exec'd
+# helper inherits the daemon's fds and runs the fixed system tools on the
+# validated target fd (sgdisk, mke2fs/make_f2fs, newfs_msdos, e2fsck/fsck.f2fs).
+allow init matonos_driver:process2 nosuid_transition;
+allow matonos_driver matonos_driver_helper:process2 nosuid_transition;
+allow matonos_driver block_device:dir r_dir_perms;
+allow matonos_driver { super_block_device swap_block_device }:blk_file { getattr open read };
+allow matonos_driver_helper block_device:dir r_dir_perms;
+allow matonos_driver_helper matonos_driver:fd use;
+allow matonos_driver_helper matonos_install_block_device:blk_file ioctl;
+allow matonos_driver_helper { sgdisk_exec e2fs_exec fsck_exec }:file { execute execute_no_trans getattr map open read };

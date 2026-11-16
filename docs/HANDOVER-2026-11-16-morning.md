@@ -210,3 +210,13 @@ Living doc; updated through the night.
 - Installer has no slot choice; OTA stays the only update path.
 - Confirm step now lists each new partition with size + purpose (uncommitted
   until the current install test passes).
+- Risk rating shown before repair (user 2026-11-16); the highest finding wins:
+  - very high: /data missing key files / partly broken; metadata not as
+    expected and files had to be reconstructed
+  - high: severe fsck errors on /data or metadata; SMART drive alerts
+  - medium: super an unexpected size or empty
+  - low: EFI boot entries missing
+  - nothing found: the action is labelled "Upgrade" instead of "Repair"
+    (same operation; still refused on downgrade).
+  - Approved: highest finding sets the rating, every finding listed; SMART =
+    NVMe health log first (kernel, no tool), SATA reader added later.
