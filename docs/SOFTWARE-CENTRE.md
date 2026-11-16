@@ -1,5 +1,10 @@
 # Software Center
 
+> Current model: the store loads sources as plugin apps behind one AIDL
+> contract (Flathub built in; F-Droid = store-sources/fdroid; Flatpak plugin
+> in the Linux subsystem). See rn-apps/flathub/README.md. Text below that
+> describes one combined catalogue predates the plugins.
+
 The Software Center is the shipped Expo app in `rn-apps/flathub`. It presents
 two Sources in one catalogue: F-Droid APKs and Flathub Flatpaks. Search results
 carry a source badge; Installed, Updates, and operation progress are shared.

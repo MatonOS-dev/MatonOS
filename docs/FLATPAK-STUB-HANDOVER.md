@@ -2,6 +2,8 @@
 
 > Historical handover: v3.5 moved the Flatpak executables into the
 > subsystem APK; APEX references below record the former packaging.
+> The InstallActivity + linuxd install flow is also historical (phase 2
+> removed the stub install activities; the store plugin installs).
 
 Updated: 2026-10-06 (evening). Read this before touching Flatpak installs.
 

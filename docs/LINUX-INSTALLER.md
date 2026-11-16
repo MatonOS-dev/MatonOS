@@ -1,5 +1,8 @@
 # Compositor Flatpak installer
 
+> SUPERSEDED: linuxd is retired (v3.5, see RETIRE-LINUXD.md). Phases and
+> linuxd/ILinuxd transport below are historical design, not current behaviour.
+
 Design for the 2026-10-15 decision. This document specifies the replacement;
 it does not mean all phases have landed. Phase B now provides linuxd registration,
 verification and publication. Legacy inline install entry points fail closed
