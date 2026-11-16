@@ -89,7 +89,9 @@ Living doc; updated through the night.
   fstab f2fs userdata entry after ext4.
 
 ## Decisions taken
-- (none yet)
+- Store collections: plugin `collection(kind)`, built-in FlathubSource deleted.
+- Separate /data/media partition: dropped.
+- Kernel: ship 7.2.7 until the next LTS (7.3.4 denies all property sets).
 
 ## Parked (needs you)
 - Duplicate Flathub rows: the store's built-in FlathubSource also feeds
@@ -143,7 +145,9 @@ Living doc; updated through the night.
   selinuxfs access) or bisect; meanwhile 7.2.7 is a working fallback.
 - Debug UKI on ~/matonos/vm/claude/inst/live.img is currently the 7.2.7
   one (dbg72.efi); original saved as dbg.efi there.
-- Installer VM test (Ventoy, f2fs) blocked on this.
+- RESOLVED: kernel back to 7.2.7 (b397339, your call: stay until the next
+  LTS). Image 7.3r (63 min, ISA PASS) live boot → boot_completed in 15 s,
+  zero property denials.
 - quick-image.sh refused (graph env differs) → full `build.sh -K -M`.
 - Store 3b49490: search field single-line; VM-checked on disk VM (Enter keeps one line, results show).
 
