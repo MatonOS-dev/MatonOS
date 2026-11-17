@@ -31,6 +31,8 @@ TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 [[ -x $CMAKE ]] || die "CMake missing; expected AOSP prebuilt at $CMAKE"
 [[ -n $NINJA && -x $NINJA ]] || die "Ninja is required"
 AIDL=$AOSP/out/host/linux-x86/bin/aidl
+# Fresh trees have no out/ yet: fall back to the AOSP prebuilt.
+[[ -x $AIDL ]] || AIDL=$AOSP/prebuilts/build-tools/linux-x86/bin/aidl
 [[ -x $AIDL ]] || die "AOSP aidl host tool missing at $AIDL; build it once with m aidl"
 BINDER_NDK_CPP=$DEVICE_DIR/native/third_party/binder_ndk_cpp
 [[ -s $BINDER_NDK_CPP/android/binder_auto_utils.h &&
