@@ -7,6 +7,18 @@ Update it whenever a build fails on a missing tool.
 Paths are never hardcoded. Each machine sets them in its own `matonos.local.env` in the AOSP tree root;
 see "Path configuration" below.
 
+## Sourcing policy
+
+Every build input is sourced in this order:
+1. **Build it** from pinned sources when that is safe. Examples: the Flatpak stack, and the D-Bus broker's bionic GLib.
+2. **Fetch it** from a stable upstream, pinned by sha256, when it can't reasonably be built. Examples: the Alpine minirootfs
+   and apk repositories (`setup-scratch.sh`).
+3. **Commit an archive** with hashes when neither works. Example: the Microsoft-signed shim (`secureboot/shim.tar.xz`, made by
+   `fetch-shim.sh`).
+
+Never copy build outputs between machines to make a build pass: they carry the other machine's paths and can hide
+outputs that no script produces any more.
+
 ## Debian packages
 
 ```sh
