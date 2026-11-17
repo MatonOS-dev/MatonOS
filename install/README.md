@@ -531,12 +531,12 @@ target install remain unverified.
 
 ## SELinux neverallow follow-up (2026-11-17)
 
-The current direct mount and vendor-to-system_ext helper exec paths fail
-platform `domain.te` neverallows. The module build confirmed that `libfs_mgr`
-cannot be made vendor-available. The required replacement sequence and exact
-shared policy/rc integration are recorded in
-[`SHARED-CHANGES.md`](SHARED-CHANGES.md). Do not claim installer image-store
-population is policy-clean until init owns both mounts and unmounts, init
-starts the system_ext helper by request property, and the coordinator confirms
-`selinux_policy` plus `matonos-fiemap-helper` build clean. No AOSP neverallow
-exception is acceptable.
+The installer now asks init to mount and unmount the target ext4 filesystems.
+Init starts the system_ext helper from a request-id property action; the helper
+reads a bounded request and writes its result on the mounted store. The
+vendor installer waits for matching ids and verifies mountinfo/result files.
+`libfs_mgr` remains system_ext because AOSP explicitly disallows a vendor
+variant. The design and required fixed-policy integration are recorded in
+[`SHARED-CHANGES.md`](SHARED-CHANGES.md). Coordinator confirmation that
+`selinux_policy` and `matonos-fiemap-helper` build clean is still pending; no
+AOSP neverallow exception was added.

@@ -1,0 +1,25 @@
+service matonos-fiemap-helper /system_ext/bin/matonos-fiemap-helper
+    class late_start
+    user root
+    group root
+    disabled
+    oneshot
+
+# The system_ext helper is started by init so the vendor installer never
+# executes across the Treble boundary. Short image-store requests are serialized
+# in init; installation itself is user initiated after boot.
+on property:vendor.maton.install.fiemap.request=*
+    exec_start matonos-fiemap-helper
+    setprop vendor.maton.install.fiemap.done ${vendor.maton.install.fiemap.request}
+
+# Keep mount syscalls in init; the vendor installer only supplies verified
+# block paths and checks mountinfo before touching the filesystems.
+on property:vendor.maton.install.mount.request=*
+    mount ext4 ${vendor.maton.install.metadata_source} /mnt/matonos-install/metadata noatime
+    mount ext4 ${vendor.maton.install.system_source} /mnt/matonos-install/system noatime
+    setprop vendor.maton.install.mount.done ${vendor.maton.install.mount.request}
+
+on property:vendor.maton.install.unmount.request=*
+    umount /mnt/matonos-install/system
+    umount /mnt/matonos-install/metadata
+    setprop vendor.maton.install.unmount.done ${vendor.maton.install.unmount.request}

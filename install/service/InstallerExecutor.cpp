@@ -1,6 +1,7 @@
 #include "InstallerService.h"
 #include "LpMetadata.h"
 #include "FatFilesystem.h"
+#include <android-base/properties.h>
 
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -14,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
@@ -90,29 +92,29 @@ std::string PartitionPath(const Drive& drive,const PartitionRef& ref) {
 int OpenVerifiedTarget(const std::string& path, int flags, uint64_t disk_sequence);
 bool RunFiemap(const std::string& command, const std::string& name, uint64_t size,
                std::string* output, std::string* error) {
-    int pipefd[2];
-    if (pipe(pipefd) != 0) { *error = "Cannot create fiemap helper output pipe: " + std::string(strerror(errno)); return false; }
-    const pid_t pid = fork();
-    if (pid < 0) { const int e=errno; CLOSE_FD(pipefd[0]); CLOSE_FD(pipefd[1]); *error="Cannot start fiemap helper: "+std::string(strerror(e)); return false; }
-    if (pid == 0) {
-        CLOSE_FD(pipefd[0]);
-        if (dup2(pipefd[1], STDOUT_FILENO) < 0) _exit(126);
-        CLOSE_FD(pipefd[1]);
-        std::vector<std::string> args{"/system_ext/bin/matonos-fiemap-helper", command};
-        if (command != "list") args.push_back(name);
-        if (command == "create") args.push_back(std::to_string(size));
-        std::vector<char*> argv; for (auto& arg : args) argv.push_back(arg.data()); argv.push_back(nullptr);
-        execv(argv[0], argv.data());
-        _exit(127);
+    const std::string id=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const std::string request=id+"\n"+command+"\n"+name+"\n"+std::to_string(size)+"\n";
+    const char* request_path="/mnt/matonos-install/system/.matonos-fiemap-request";
+    const int request_fd=open(request_path,O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC|O_NOFOLLOW,0600);
+    if(request_fd<0){*error="Cannot open fiemap request file: "+std::string(strerror(errno));return false;}
+    size_t written=0;
+    while(written<request.size()){
+        const ssize_t n=write(request_fd,request.data()+written,request.size()-written);
+        if(n<0&&errno==EINTR)continue;
+        if(n<=0){const int e=errno;CLOSE_FD(request_fd);*error="Cannot write fiemap request: "+std::string(strerror(e));return false;}
+        written+=static_cast<size_t>(n);
     }
-    CLOSE_FD(pipefd[1]);
-    std::string result; char buf[256];
-    bool read_ok=true;
-    for (;;) { const ssize_t n=read(pipefd[0],buf,sizeof(buf)); if(n<0&&errno==EINTR)continue; if(n<0){*error="Read from fiemap helper pipe failed: "+std::string(strerror(errno));read_ok=false;break;} if(n==0)break; result.append(buf,static_cast<size_t>(n)); }
-    CLOSE_FD(pipefd[0]);
-    int status=0; while(waitpid(pid,&status,0)<0){if(errno==EINTR)continue;*error="Cannot wait for fiemap helper: "+std::string(strerror(errno));return false;}
-    if(!read_ok)return false;
-    if(!WIFEXITED(status)||WEXITSTATUS(status)!=0){*error="fiemap helper command failed: "+command;return false;}
+    if(fsync(request_fd)!=0){const int e=errno;CLOSE_FD(request_fd);*error="Cannot sync fiemap request: "+std::string(strerror(e));return false;}
+    CLOSE_FD(request_fd);
+    if(!android::base::SetProperty("vendor.maton.install.fiemap.request",id)||
+       !android::base::WaitForProperty("vendor.maton.install.fiemap.done",id,std::chrono::seconds(30))){
+        *error="Timed out waiting for init fiemap request "+id;return false;
+    }
+    std::ifstream response("/mnt/matonos-install/system/.matonos-fiemap-result");
+    std::string result_id,status_text,result;std::getline(response,result_id);std::getline(response,status_text);
+    if(!response||result_id!=id){*error="Missing or stale fiemap result for request "+id;return false;}
+    std::ostringstream rest;rest<<response.rdbuf();result=rest.str();
+    if(status_text!="0"){*error="fiemap helper "+command+" failed (status "+status_text+")";return false;}
     if(output)*output=std::move(result);
     return true;
 }

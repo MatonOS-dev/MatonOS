@@ -3,6 +3,7 @@
 #include "matonos_ipc.h"
 
 #include <android/log.h>
+#include <android-base/properties.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/fs.h>
@@ -91,9 +92,34 @@ bool RemoveDmDevice(const char* name) {
 }
 
 bool UnmountImagePath(const std::string& path) {
-    if (umount(path.c_str()) == 0) return true;
-    __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: unmount %s failed errno=%d",path.c_str(),errno);
-    return false;
+    (void)path;
+    const std::string id=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    if(!android::base::SetProperty("vendor.maton.install.unmount.request",id) ||
+       !android::base::WaitForProperty("vendor.maton.install.unmount.done",id,std::chrono::seconds(10))){
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: init unmount request %s timed out",id.c_str());return false;
+    }
+    std::ifstream mounts("/proc/self/mountinfo");std::string line;
+    while(std::getline(mounts,line))if(line.find(" /mnt/matonos-install/")!=std::string::npos){
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: target image-store mount remains after init unmount: %s",line.c_str());return false;
+    }
+    return true;
+}
+
+bool MountImageStore(const std::string& metadata,const std::string& system,std::string* error){
+    const std::string id=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    if(!android::base::SetProperty("vendor.maton.install.metadata_source",metadata)||
+       !android::base::SetProperty("vendor.maton.install.system_source",system)||
+       !android::base::SetProperty("vendor.maton.install.mount.request",id)||
+       !android::base::WaitForProperty("vendor.maton.install.mount.done",id,std::chrono::seconds(10))){
+        *error="init image-store mount request "+id+" timed out";return false;
+    }
+    std::ifstream mounts("/proc/self/mountinfo");std::string line;bool metadata_mounted=false,system_mounted=false;
+    while(std::getline(mounts,line)){
+        if(line.find(" /mnt/matonos-install/metadata ")!=std::string::npos)metadata_mounted=true;
+        if(line.find(" /mnt/matonos-install/system ")!=std::string::npos)system_mounted=true;
+    }
+    if(!metadata_mounted||!system_mounted){*error="init reported image-store mount complete but mountinfo is incomplete";UnmountImagePath("/mnt/matonos-install");return false;}
+    return true;
 }
 
 bool CreateLinearDm(int fd,const char* name,std::string* path,std::string* error) {
@@ -130,25 +156,23 @@ int PrepareImageStore(uint64_t expected,const char* system_path,const char* meta
     if(dir_error){RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("create metadata mount directory",dir_error.message().c_str(),dir_error.value());}
     std::filesystem::create_directories(std::string(kImageStoreRoot)+"/system",dir_error);
     if(dir_error){RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("create system mount directory",dir_error.message().c_str(),dir_error.value());}
-    if(mount(("/proc/self/fd/"+std::to_string(metadata_fd)).c_str(),(std::string(kImageStoreRoot)+"/metadata").c_str(),"ext4",MS_NOATIME,nullptr)!=0){const int e=errno;RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("mount target metadata",metadata_path,e);}
-    if(mount(mapped.c_str(),(std::string(kImageStoreRoot)+"/system").c_str(),"ext4",MS_NOATIME,nullptr)!=0){const int e=errno;UnmountImagePath(std::string(kImageStoreRoot)+"/metadata");RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("mount target maton_system",mapped.c_str(),e);}
+    CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);
+    if(!MountImageStore(metadata_path,mapped,&error)){RemoveDmDevice(kSystemMapper);return HelperFail("init mount target image store",error.c_str(),errno);}
     constexpr char label[]="u:object_r:matonos_install_mount_file:s0";
     for(const char* root:{"/mnt/matonos-install/metadata","/mnt/matonos-install/system"}){
         const int dir=open(root,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
-        if(dir<0){const int e=errno;UnmountImagePath(std::string(kImageStoreRoot)+"/system");UnmountImagePath(std::string(kImageStoreRoot)+"/metadata");RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("open mounted image-store root",root,e);}
-        if(fsetxattr(dir,"security.selinux",label,sizeof(label),0)!=0){const int e=errno;CLOSE_FD(dir);UnmountImagePath(std::string(kImageStoreRoot)+"/system");UnmountImagePath(std::string(kImageStoreRoot)+"/metadata");RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("label mounted image-store root",root,e);}
+        if(dir<0){const int e=errno;UnmountImagePath(std::string(kImageStoreRoot)+"/system");RemoveDmDevice(kSystemMapper);return HelperFail("open mounted image-store root",root,e);}
+        if(fsetxattr(dir,"security.selinux",label,sizeof(label),0)!=0){const int e=errno;CLOSE_FD(dir);UnmountImagePath(std::string(kImageStoreRoot)+"/system");RemoveDmDevice(kSystemMapper);return HelperFail("label mounted image-store root",root,e);}
         CLOSE_FD(dir);
     }
     std::filesystem::create_directories(std::string(kImageStoreRoot)+"/metadata/maton/images",dir_error);
     if(!dir_error)std::filesystem::create_directories(std::string(kImageStoreRoot)+"/system/images",dir_error);
-    if(dir_error){const int e=dir_error.value();UnmountImagePath(std::string(kImageStoreRoot)+"/system");UnmountImagePath(std::string(kImageStoreRoot)+"/metadata");RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("create image directories",dir_error.message().c_str(),e);}
-    CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return 0;
+    if(dir_error){const int e=dir_error.value();UnmountImagePath(std::string(kImageStoreRoot)+"/system");RemoveDmDevice(kSystemMapper);return HelperFail("create image directories",dir_error.message().c_str(),e);}
+    return 0;
 }
 
 int FinishImageStore() {
-    bool ok=true;
-    if(!UnmountImagePath(std::string(kImageStoreRoot)+"/system"))ok=false;
-    if(!UnmountImagePath(std::string(kImageStoreRoot)+"/metadata"))ok=false;
+    bool ok=UnmountImagePath(kImageStoreRoot);
     if(!RemoveDmDevice(kSystemMapper))ok=false;
     return ok?0:1;
 }

@@ -4,7 +4,6 @@
 /odm/etc(/.*)? u:object_r:vendor_configs_file:s0
 /odm/bin/matonos-addons-service u:object_r:matonos_addon_manager_exec:s0
 /odm/bin/(hw/)?(matonos|maton)-.* u:object_r:matonos_driver_exec:s0
-/system_ext/bin/matonos-fiemap-helper u:object_r:matonos_fiemap_helper_exec:s0
 /mnt/matonos-install(/.*)? u:object_r:matonos_install_mount_file:s0
 /odm/bin/maton-audio-select\.sh u:object_r:matonos_audio_select_exec:s0
 /odm/bin/(pipewire|wireplumber) u:object_r:matonos_driver_exec:s0

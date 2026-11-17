@@ -322,6 +322,12 @@ binary. The mount actions likewise keep all mount/unmount syscalls in init.
 The sector-zero dm-linear wrapper remains mandatory because libfiemap records
 the leaf block device and expects the filesystem to start at sector zero.
 
-This is a design/request only; the implementation and coordinator build
-confirmation are still pending. The current direct mount and fork/exec paths
-remain the neverallow failures until the sequence above is implemented.
+Implemented in this worktree: installer ext4 mount/unmount requests now go
+through init property actions; the system_ext helper is an init-started
+oneshot that consumes a request file and writes a matching result file; the
+vendor service waits for the request id and checks mountinfo/results. The
+helper's exec label and narrow mounted-store file access were added to the
+existing system_ext policy file set, and the old vendor-domain helper
+transition was removed. The fix is not yet build-confirmed; request
+`matonos-fiemap-helper,selinux_policy` from the coordinator after this branch
+is integrated.

@@ -6,7 +6,6 @@ type matonos_driver_exec, exec_type, vendor_file_type, file_type;
 type matonos_driver_helper, domain;
 type matonos_driver_helper_exec, exec_type, vendor_file_type, file_type;
 type matonos_install_mount_file, file_type;
-type matonos_fiemap_helper_exec, exec_type, system_file_type, file_type;
 type matonos_driver_data_file, file_type, data_file_type;
 type matonos_channel_service, protected_service, hal_service_type, service_manager_type;
 type matonos_install_block_device, dev_type;
@@ -26,7 +25,6 @@ type matonos_addon_firmware_lookup, file_type, vendor_file_type;
 type matonos_addon_firmware_overlay, file_type, vendor_file_type, contextmount_type;
 
 init_daemon_domain(matonos_driver)
-domain_auto_trans(matonos_driver, matonos_fiemap_helper_exec, matonos_driver_helper)
 init_daemon_domain(matonos_addon_manager)
 tmpfs_domain(hal_audio_default)
 # vendor_init runs property actions imported from the ODM bundle. The
@@ -75,6 +73,7 @@ allow matonos_driver_helper dm_device:chr_file { open read write ioctl getattr }
 allow matonos_driver_helper matonos_install_mount_file:dir { search getattr write add_name remove_name create mounton };
 allow matonos_driver_helper matonos_install_mount_file:dir { relabelto relabelfrom };
 allow matonos_driver_helper matonos_install_mount_file:file { create open read write getattr setattr unlink map relabelto relabelfrom ioctl };
+allow matonos_driver_helper matonos_install_mount_file:file rename;
 type_transition matonos_driver_helper matonos_install_mount_file:dir matonos_install_mount_file;
 type_transition matonos_driver_helper matonos_install_mount_file:file matonos_install_mount_file;
 allow matonos_driver_helper labeledfs:filesystem { mount unmount getattr };
@@ -82,14 +81,13 @@ allow matonos_install_mount_file labeledfs:filesystem associate;
 allow init matonos_install_mount_file:dir { create_dir_perms relabelto };
 allow init matonos_install_mount_file:dir { search open read getattr };
 allow init matonos_install_mount_file:file { open read getattr map };
+allow init matonos_install_block_device:blk_file { open read getattr ioctl };
 allow matonos_driver_helper unlabeled:dir { getattr relabelfrom };
 allow matonos_driver_helper matonos_install_block_device:blk_file ioctl;
 allow matonos_driver_helper dm_device:blk_file rw_file_perms;
 allow matonos_driver dm_device:blk_file r_file_perms;
 allow matonos_driver_helper self:capability sys_admin;
 typeattribute matonos_driver_helper vendor_executes_system_violators;
-allow matonos_driver_helper system_file:file { execute execute_no_trans getattr map open read };
-allow matonos_driver_helper system_file:dir r_dir_perms;
 
 # (No audio HAL of ours: BayLibre generic AIDL HAL runs as hal_audio_default.)
 # audioserver consumes the generic HAL's shared FMQ memfds.

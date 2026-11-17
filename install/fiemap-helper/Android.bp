@@ -5,6 +5,7 @@ cc_binary {
         "//system/fs/fs_mgr/libfiemap:libfiemap_srcs",
     ],
     system_ext_specific: true,
+    init_rc: ["matonos-fiemap-helper.rc"],
     cpp_std: "c++20",
     static_libs: [
         "libavb",

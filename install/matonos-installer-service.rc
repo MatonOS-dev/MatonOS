@@ -9,6 +9,7 @@ service matonos-installer-service /odm/bin/matonos-installer-service
 # The system image remains usable without installer support or target disks.
 on property:ro.boot.matonos.live=1
     mkdir /mnt/matonos-install 0700 root root
+    mkdir /mnt/matonos-install/metadata 0700 root root
+    mkdir /mnt/matonos-install/system 0700 root root
     restorecon_recursive /mnt/matonos-install
     start matonos-installer-service
-

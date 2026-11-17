@@ -5,6 +5,12 @@
 # DNS forwarder socket and pack-mount symlinks in its own data.
 
 # --- matonos-erofsd (erofsd/), 2026-10-25 ---
+type matonos_fiemap_helper, domain, coredomain;
+type matonos_fiemap_helper_exec, system_file_type, exec_type, file_type;
+init_daemon_domain(matonos_fiemap_helper)
+allow matonos_fiemap_helper matonos_install_mount_file:dir { search write add_name remove_name getattr };
+allow matonos_fiemap_helper matonos_install_mount_file:file { create open read write getattr setattr unlink rename map };
+
 # matonos-erofsd (erofsd/): validates requests to mount EROFS images embedded
 # in Linux stub/runtime APK splits read-only under /mnt/matonos; init performs
 # the mounts through matonos.erofs.* property triggers (matonos-erofsd.rc),
