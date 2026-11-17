@@ -16,7 +16,7 @@ sudo apt-get install -y \
   fontconfig python3 python-is-python3 ccache ninja-build cmake pkg-config cpio xz-utils zstd lz4 \
   libarchive-tools mtools dosfstools gdisk parted efibootmgr sbsigntool systemd-ukify patchelf \
   util-linux bubblewrap libexpat1-dev libxml2-dev libffi-dev gawk openjdk-21-jdk-headless \
-  ostree python3-gi gir1.2-ostree-1.0
+  ostree python3-gi gir1.2-ostree-1.0 libglib2.0-dev libwayland-dev libdbus-1-dev
 ```
 
 | Package(s) | Needed by |
@@ -33,6 +33,7 @@ sudo apt-get install -y \
 | `gawk` | libgpg-error `gen-lock-obj.sh` (Xwayland). **mawk ≥ 20250131 parses `0x28` as 0**, so the build stops with "cannot determine bionic pthread mutex size" |
 | `openjdk-21-jdk-headless` | subsystem tests (`javac`) and Gradle |
 | `ostree`, `python3-gi`, `gir1.2-ostree-1.0` | subsystem packs (`linux/packs/ostree_source.py`) and Flatpak tests |
+| `libglib2.0-dev`, `libwayland-dev`, `libdbus-1-dev` | host-side subsystem tests (D-Bus bus/portal tests use `gio-unix-2.0`, Wayland tests use `wayland-client`/`-server`) |
 
 ## Toolchains and sources outside apt
 
