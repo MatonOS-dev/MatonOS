@@ -3,7 +3,7 @@
 #include "matonos_ipc.h"
 
 #include <android/log.h>
-#include <android-base/properties.h>
+#include "Props.h"
 #include <dirent.h>
 #include <fcntl.h>
 #include <linux/fs.h>
@@ -94,8 +94,8 @@ bool RemoveDmDevice(const char* name) {
 bool UnmountImagePath(const std::string& path) {
     (void)path;
     const std::string id=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    if(!android::base::SetProperty("vendor.maton.install.unmount.request",id) ||
-       !android::base::WaitForProperty("vendor.maton.install.unmount.done",id,std::chrono::seconds(10))){
+    if(!matonos::props::Set("vendor.maton.install.unmount.request",id) ||
+       !matonos::props::WaitFor("vendor.maton.install.unmount.done",id,std::chrono::seconds(10))){
         __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: init unmount request %s timed out",id.c_str());return false;
     }
     std::ifstream mounts("/proc/self/mountinfo");std::string line;
@@ -107,10 +107,10 @@ bool UnmountImagePath(const std::string& path) {
 
 bool MountImageStore(const std::string& metadata,const std::string& system,std::string* error){
     const std::string id=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    if(!android::base::SetProperty("vendor.maton.install.metadata_source",metadata)||
-       !android::base::SetProperty("vendor.maton.install.system_source",system)||
-       !android::base::SetProperty("vendor.maton.install.mount.request",id)||
-       !android::base::WaitForProperty("vendor.maton.install.mount.done",id,std::chrono::seconds(10))){
+    if(!matonos::props::Set("vendor.maton.install.metadata_source",metadata)||
+       !matonos::props::Set("vendor.maton.install.system_source",system)||
+       !matonos::props::Set("vendor.maton.install.mount.request",id)||
+       !matonos::props::WaitFor("vendor.maton.install.mount.done",id,std::chrono::seconds(10))){
         *error="init image-store mount request "+id+" timed out";return false;
     }
     std::ifstream mounts("/proc/self/mountinfo");std::string line;bool metadata_mounted=false,system_mounted=false;

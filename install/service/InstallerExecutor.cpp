@@ -1,7 +1,7 @@
 #include "InstallerService.h"
 #include "LpMetadata.h"
 #include "FatFilesystem.h"
-#include <android-base/properties.h>
+#include "Props.h"
 
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -106,8 +106,8 @@ bool RunFiemap(const std::string& command, const std::string& name, uint64_t siz
     }
     if(fsync(request_fd)!=0){const int e=errno;CLOSE_FD(request_fd);*error="Cannot sync fiemap request: "+std::string(strerror(e));return false;}
     CLOSE_FD(request_fd);
-    if(!android::base::SetProperty("vendor.maton.install.fiemap.request",id)||
-       !android::base::WaitForProperty("vendor.maton.install.fiemap.done",id,std::chrono::seconds(30))){
+    if(!matonos::props::Set("vendor.maton.install.fiemap.request",id)||
+       !matonos::props::WaitFor("vendor.maton.install.fiemap.done",id,std::chrono::seconds(30))){
         *error="Timed out waiting for init fiemap request "+id;return false;
     }
     std::ifstream response("/mnt/matonos-install/system/.matonos-fiemap-result");
