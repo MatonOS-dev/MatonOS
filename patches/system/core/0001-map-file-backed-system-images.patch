@@ -89,7 +89,7 @@ index 495bbdec7..dc54c9873 100644
                          Fstab::iterator* end = nullptr);
  
 diff --git a/init/first_stage_mount_android.cpp b/init/first_stage_mount_android.cpp
-index 09222de69..40f223413 100644
+index 09222de69..769661c36 100644
 --- a/init/first_stage_mount_android.cpp
 +++ b/init/first_stage_mount_android.cpp
 @@ -16,6 +16,8 @@
@@ -110,11 +110,11 @@ index 09222de69..40f223413 100644
 +    // partition and retain the normal path.
 +    if (IsDmLinearEnabled() && super_path_.empty()) {
 +        auto image_store = GetEntryForMountPoint(&fstab_, "/maton_system");
-+        if (image_store == fstab_.end() || !MountPartition(image_store, true)) {
++        auto it = image_store ? fstab_.begin() + (image_store - fstab_.data()) : fstab_.end();
++        if (it == fstab_.end() || !MountPartition(it, true)) {
 +            LOG(ERROR) << "Could not mount maton_system for file-backed partitions";
 +            return false;
 +        }
-+        fstab_.erase(image_store);
 +    }
 +
      if (!CreateLogicalPartitions()) return false;
@@ -125,7 +125,7 @@ index 09222de69..40f223413 100644
  void FirstStageMountAndroid::GetExtraBlockDevices(std::set<std::string>* devices) {
 +    if (IsDmLinearEnabled() && !HasBootDevicePartition(super_partition_name_)) {
 +        auto image_store = GetEntryForMountPoint(&fstab_, "/maton_system");
-+        if (image_store != fstab_.end()) {
++        if (image_store != nullptr) {
 +            devices->emplace(android::base::Basename(image_store->blk_device));
 +        }
 +    }
