@@ -10,6 +10,13 @@ type matonos_fiemap_helper_exec, system_file_type, exec_type, file_type;
 init_daemon_domain(matonos_fiemap_helper)
 allow matonos_fiemap_helper matonos_install_mount_file:dir { search write add_name remove_name getattr };
 allow matonos_fiemap_helper matonos_install_mount_file:file { create open read write getattr setattr unlink rename map };
+# libfiemap creates and removes dm devices for the install images. Keep this
+# capability and raw block access scoped to the two install-store device types.
+allow matonos_fiemap_helper self:capability sys_admin;
+allow matonos_fiemap_helper dm_device:chr_file { open read write ioctl getattr };
+allow matonos_fiemap_helper dm_device:blk_file rw_file_perms;
+allow matonos_fiemap_helper matonos_install_block_device:blk_file rw_file_perms;
+allow matonos_fiemap_helper ext4:filesystem getattr;
 
 # matonos-erofsd (erofsd/): validates requests to mount EROFS images embedded
 # in Linux stub/runtime APK splits read-only under /mnt/matonos; init performs

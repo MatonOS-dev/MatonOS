@@ -156,8 +156,12 @@ int PrepareImageStore(uint64_t expected,const char* system_path,const char* meta
     if(dir_error){RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("create metadata mount directory",dir_error.message().c_str(),dir_error.value());}
     std::filesystem::create_directories(std::string(kImageStoreRoot)+"/system",dir_error);
     if(dir_error){RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("create system mount directory",dir_error.message().c_str(),dir_error.value());}
+    // Keep the verified metadata fd open while init mounts it. Passing the
+    // original /dev/block path would reopen a possibly replaced device after
+    // hot-unplug; the proc fd path pins the checked block device.
+    const std::string metadata_fd_path="/proc/"+std::to_string(getpid())+"/fd/"+std::to_string(metadata_fd);
+    if(!MountImageStore(metadata_fd_path,mapped,&error)){CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);RemoveDmDevice(kSystemMapper);return HelperFail("init mount target image store",error.c_str(),errno);}
     CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);
-    if(!MountImageStore(metadata_path,mapped,&error)){RemoveDmDevice(kSystemMapper);return HelperFail("init mount target image store",error.c_str(),errno);}
     constexpr char label[]="u:object_r:matonos_install_mount_file:s0";
     for(const char* root:{"/mnt/matonos-install/metadata","/mnt/matonos-install/system"}){
         const int dir=open(root,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
