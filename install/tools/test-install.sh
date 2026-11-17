@@ -98,7 +98,7 @@ ops.append({"kind":"write_files","target":{"partGuid":esp["partGuid"]},"relative
     {"relativePath":"Linux/matonos-a.efi","livePayloadPath":"live/esp/EFI/Linux/matonos-installed-a.efi"},
     {"relativePath":"Linux/matonos-b.efi","livePayloadPath":"live/esp/EFI/Linux/matonos-installed-b.efi"}]})
 ops.append({"kind":"write_files","target":{"partGuid":esp["partGuid"]},"relativeDirectory":"loader","files":[
-    {"relativePath":"loader.conf","inlineContents":"default A+3-0.conf\ntimeout 5\neditor no\n"}]})
+    {"relativePath":"loader.conf","inlineContents":"default A+3-0.conf\ntimeout 0\neditor no\n"}]})
 for name in ("system","system_ext","product","vendor","odm"):
     ops.append({"kind":"copy_partition","source":{"kind":"live_image","partitionName":name+"_a"},"target":{"logicalName":name+"_a"}})
 ops.append({"kind":"write_files","target":{"partGuid":esp["partGuid"]},"relativeDirectory":"loader/entries","files":[

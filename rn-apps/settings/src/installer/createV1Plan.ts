@@ -154,7 +154,7 @@ export function createV1Plan(
       kind: "write_files" as const,
       target: { partGuid: esp.partGuid },
       relativeDirectory: "loader",
-      files: [{ relativePath: "loader.conf", inlineContents: "default matonos.conf\ntimeout 5\neditor no\n" }],
+      files: [{ relativePath: "loader.conf", inlineContents: "default matonos.conf\ntimeout 0\neditor no\n" }],
     },
     {
       kind: "write_files" as const,

@@ -234,7 +234,7 @@ install_file_image() {
     initrds+=$'\n'"initrd  /android/ramdisk.img"
   fi
 
-  printf 'default A.conf\ntimeout 3\nconsole-mode keep\neditor no\n' > "$FILE_WORK/loader.conf"
+  printf 'default A.conf\ntimeout 0\nconsole-mode keep\neditor no\n' > "$FILE_WORK/loader.conf"
   mcopy -i "$fatdev" "$FILE_WORK/loader.conf" ::/loader/loader.conf
   if [[ ${SECURE_BOOT:-0} == 1 ]]; then
     for slot in a b; do
@@ -410,7 +410,7 @@ fi
 mkdir -p "$MNT/loader/entries"
 cat > "$MNT/loader/loader.conf" <<EOF
 default android.conf
-timeout 3
+timeout 0
 console-mode keep
 editor no
 EOF

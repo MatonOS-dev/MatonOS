@@ -540,3 +540,12 @@ variant. The design and required fixed-policy integration are recorded in
 [`SHARED-CHANGES.md`](SHARED-CHANGES.md). Coordinator confirmation that
 `selinux_policy` and `matonos-fiemap-helper` build clean is still pending; no
 AOSP neverallow exception was added.
+
+## Boot menu and fallback (user decision 2026-11-17)
+
+systemd-boot is a silent bootloader: `timeout 0` everywhere, so no menu is shown (holding a key at
+power-on still opens it for recovery). Installed slot entries carry no boot counter in normal
+operation, so a failing slot never silently switches. Only an update arms fallback: the updater
+writes the new slot's entry with a counter (`B+3.conf`) and makes it the default; if it fails three
+times systemd-boot falls back to the old slot. On `sys.boot_completed` the updater drops the counter
+(rename to `B.conf`), which ends the update state.

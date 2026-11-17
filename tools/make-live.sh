@@ -191,7 +191,7 @@ chmod 0755 "$stage/init" "$stage/init.android"
 
 cat > "$work/loader.conf" <<EOF
 default matonos-live.conf
-timeout 3
+timeout 0
 console-mode keep
 editor no
 EOF

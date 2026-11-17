@@ -165,7 +165,7 @@ export function createV1Plan(diskId: string, diskBytes: number): V1Plan {
       files: [
         {
           relativePath: "loader.conf",
-          inlineContents: "default matonos-a.conf\ntimeout 5\neditor no\n",
+          inlineContents: "default matonos-a.conf\ntimeout 0\neditor no\n",
         },
       ],
     },
