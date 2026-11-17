@@ -228,13 +228,9 @@ export function InstallDrivesStep({
 }
 
 const PARTITION_PURPOSE: Record<string, string> = {
-  esp: "Boot menu and the signed MatonOS boot images.",
-  boot: "Extra boot space shared by both system copies.",
-  misc: "Small record of which system copy to boot.",
-  metadata: "Encryption and update bookkeeping.",
-  super: "The MatonOS system itself (read-only), with room for the update copy.",
-  addons_a: "Add-ons for the current system copy.",
-  addons_b: "Add-ons for the next system copy, filled by updates.",
+  esp: "Boot menu and the signed MatonOS boot image.",
+  maton_system: "Read-only MatonOS system images.",
+  metadata: "Encryption and image extent bookkeeping.",
   userdata: "Your apps, files and settings.",
 };
 

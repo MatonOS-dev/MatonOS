@@ -3,6 +3,42 @@
 
 # Installer service
 
+## 2026-11-17 file-backed install implementation
+
+The active install path is `rn-apps/settings/src/sections/InstallSection.tsx`
+→ `createV1Plan.ts` → `MatonOS.call('install', 'execute_operation')` →
+`install/service/InstallerDaemon.cpp` → `InstallerService.cpp` and
+`InstallerExecutor.cpp`. Source search found no caller of
+`tools/installer.sh`; that file is a legacy host-side path and now refuses the
+new per-partition payload format.
+
+The new planner writes ESP, `maton_system`, metadata, and userdata GPT entries;
+formats userdata based on rotational state; and submits one image-population
+primitive. The executor creates a sector-zero dm-linear wrapper over the full
+`maton_system` partition, formats/mounts the target ext4 filesystems, calls the
+Soong `matonos-fiemap-helper` to create/map/unmap the five readonly libfiemap
+images, copies each live A mapper device, then unmounts and removes the
+temporary dm mapping. It then writes one installed UKI and one loader entry.
+`make-payload.sh` separately packages individual built EROFS images instead of
+one super image.
+
+Validation so far: `install/build-core.sh` passed; the installer daemon
+compiled and staged with the NDK; the standalone ISA audit passed for all
+eight staged x86 ELF files; the Settings Gradle build completed and staged its
+APK; and `tools/preflight.sh` passed. `tools/build-native.sh` itself returned
+nonzero only in its final ISA audit because this external worktree caused its
+clang path inference to look under `/home/hanro50/prebuilts`; the same audit
+passed when given AOSP's actual `llvm-objdump` path. The overall app script
+stopped later in the unrelated Flathub project because that project has no
+`package-lock.json`; Settings had already built successfully. The helper
+Soong module and `selinux_policy` target have not been built, and no image or
+VM test was run. First-stage permissions for the persisted file label and
+conditional F2FS userdata fstab support remain open; see
+`SHARED-CHANGES.md`.
+
+The sections below document the previous A/B dynamic-super installer and are
+historical evidence, not validation of the 2026-11-17 layout.
+
 The app-authored request contract is in [AB-LAYOUT.md](AB-LAYOUT.md), and the
 ordered v1 install sequence is in [PLAN.md](PLAN.md). MatonOS Settings remains
 the caller; its signed package is authorized for the `install` bridge target.
@@ -61,18 +97,10 @@ platform policy.
 - `native/matonos-installer-service/CMakeLists.txt` is the out-of-Soong NDK
   daemon target and reuses the core from `install/service/`.
 - `install/tools/test-install.sh --list` lists drives through the debug-only
-  bridge test call. `--install <major:minor>` submits the same
-  `OperationRequestV1` shapes as the Settings planner, but refuses to erase a
-  disk unless its QEMU serial is `MATONTGT`. The test hook requires a root
-  shell, a debuggable live image, and
-  `persist.vendor.maton.installer_test=1`. The script submits the planned
-  `OperationRequestV1` sequence: GPT, filesystem formats, A/B LP table, fixed
-  ESP payload, source A copies, A-to-B clones, UKI payloads and slot entries.
-  The target serial and captured sysfs identity are checked before each
-destructive request. The test harness closes ADB
-  stdin so the shell client cannot consume the remaining operation file. On a
-  fresh boot it connects to the ADB TCP endpoint, waits for the device, and
-  retries channel readiness for up to 30 seconds before sending writes.
+  bridge test call. Its destructive install mode still describes the old A/B
+  dynamic-super profile and must not be used with the file-backed installer.
+  The Settings planner is the current operation plan; the QEMU harness must be
+  rewritten and exercised before destructive test support is claimed.
 - Hotplug identity check: capture a disposable target's drive ID and identity,
   detach it, and attach a different qcow2 target until it receives the same
   `major:minor`. Submit the old `write_gpt` request; it must fail before
@@ -96,7 +124,10 @@ destructive request. The test harness closes ADB
 3. HP ProDesk 600 G1: check boot with no optional network devices and confirm
    the installer daemon cannot delay boot when it fails or no target exists.
 
-## Latest verification
+## Historical verification
+
+The following records concern the retired A/B dynamic-super installer and do
+not validate the current file-backed layout.
 
 - `install/build-core.sh`: passed after adding identity and opened-device
   `diskseq` verification (NDK r30, x86_64, API 35).

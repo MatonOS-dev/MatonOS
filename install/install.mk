@@ -11,3 +11,6 @@ PRODUCT_VENDOR_PROPERTIES += ro.virtual_ab.ublk.enabled=true
 # First-stage init needs this static binary before mounting a snapshotted
 # /system. The ordinary snapuserd package above is the second-stage copy.
 PRODUCT_PACKAGES += snapuserd_ramdisk
+
+# libfiemap-linked primitive used only by the live installer executor.
+PRODUCT_PACKAGES += matonos-fiemap-helper

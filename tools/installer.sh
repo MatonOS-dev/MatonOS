@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# installer.sh — wipe a disk and install Android (x86_64, UEFI).
+# installer.sh — legacy host-only installer; the live installer is MatonOS Settings.
 #
 # Expects a payload directory produced by make-payload.sh, by default
 # ./payload next to this script (override with PAYLOAD_DIR=...).
@@ -74,6 +74,9 @@ for t in "${REQUIRED_TOOLS[@]}"; do
   command -v "$t" >/dev/null || die "missing tool: $t"
 done
 [[ -f $PAYLOAD_DIR/payload.conf ]] || die "no payload found in $PAYLOAD_DIR"
+if [[ -f $PAYLOAD_DIR/system_a.erofs.zst ]]; then
+  die "This per-partition payload requires the live Settings installer and libfiemap; tools/installer.sh is not the live install path."
+fi
 # Parse only the documented scalar fields; never execute payload-controlled shell.
 declare -A conf=()
 while IFS= read -r line || [[ -n $line ]]; do

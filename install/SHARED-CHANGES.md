@@ -1,5 +1,20 @@
 # Install area shared integration
 
+## Pending for file-backed install
+
+- `fstab.pc_x86_64`: make `/data` mount the filesystem formatted by the
+  installer. The planner now selects F2FS for non-rotational userdata and
+  ext4 for rotational userdata, while the current fstab hardcodes ext4. A
+  config-only way to select either filesystem from the detected signature is
+  needed; the existing fs_mgr fstab parser has no `auto` filesystem type.
+- Platform-private first-stage policy: grant `first_stage_init` read/map access
+  to the persisted `matonos_install_mount_file` label on `/maton_system/images`
+  and `/metadata/maton/images`. Vendor policy cannot reference the private
+  `first_stage_init` domain, so this must be added in an existing system_ext
+  private policy file or handled through an existing public label. Without
+  this, the helper can create the images but first-stage init may not open
+  them on target boot.
+
 The overnight goal authorizes these shared additions. The UI caller is MatonOS
 Settings (`org.matonos.settings`), per the 2026-09-27 user note; no second
 Expo installer app is imported.

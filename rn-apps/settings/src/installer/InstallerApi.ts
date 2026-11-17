@@ -46,6 +46,12 @@ export type InstallerOperation =
       partitions: GptPartition[];
     }
   | {
+      kind: "populate_images";
+      matonSystemPartGuid: string;
+      metadataPartGuid: string;
+      images: { name: string; livePartitionName: string }[];
+    }
+  | {
       kind: "create_lp_metadata";
       superPartGuid: string;
       metadataSizeBytes: number;
@@ -55,7 +61,7 @@ export type InstallerOperation =
   | {
       kind: "format";
       target: PartitionRef;
-      filesystem: "vfat" | "ext4";
+      filesystem: "vfat" | "ext4" | "f2fs";
       label: string;
     }
   | {

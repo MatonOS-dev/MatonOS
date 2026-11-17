@@ -10,6 +10,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <cstdio>
 
 #include <algorithm>
 #include <array>
@@ -24,6 +25,14 @@
 #include <thread>
 #include <vector>
 
+#define CLOSE_FD(fd_value) do { \
+    const int close_fd_value = (fd_value); \
+    if (close_fd_value >= 0) { \
+        std::fprintf(stderr, "installer: close fd=%d at %s:%d\n", close_fd_value, __FILE__, __LINE__); \
+        if (::close(close_fd_value) != 0) std::fprintf(stderr, "installer: close fd=%d failed errno=%d at %s:%d\n", close_fd_value, errno, __FILE__, __LINE__); \
+    } \
+} while (0)
+
 namespace matonos::install {
 namespace fs = std::filesystem;
 namespace {
@@ -37,6 +46,12 @@ bool Run(const std::vector<std::string>& arguments, uint64_t disk_sequence, std:
         if(arguments[0]=="@rescan") {
             if(arguments.size()!=2)_exit(125);
             helper_args.push_back("--rescan");helper_args.push_back(std::to_string(disk_sequence));helper_args.push_back(arguments[1]);
+        } else if (arguments[0] == "@prepare-image-store" || arguments[0] == "@finish-image-store") {
+            if (arguments.size() != 3) _exit(125);
+            helper_args.push_back(arguments[0] == "@prepare-image-store" ? "--prepare-image-store" : "--finish-image-store");
+            helper_args.push_back(std::to_string(disk_sequence));
+            helper_args.push_back(arguments[1]);
+            helper_args.push_back(arguments[2]);
         } else {
             helper_args.push_back("--exec-helper");
             helper_args.push_back(std::to_string(disk_sequence));
@@ -73,6 +88,63 @@ std::string PartitionPath(const Drive& drive,const PartitionRef& ref) {
 }
 
 int OpenVerifiedTarget(const std::string& path, int flags, uint64_t disk_sequence);
+bool RunFiemap(const std::string& command, const std::string& name, uint64_t size,
+               std::string* output, std::string* error) {
+    int pipefd[2];
+    if (pipe(pipefd) != 0) { *error = "Cannot create fiemap helper output pipe: " + std::string(strerror(errno)); return false; }
+    const pid_t pid = fork();
+    if (pid < 0) { const int e=errno; CLOSE_FD(pipefd[0]); CLOSE_FD(pipefd[1]); *error="Cannot start fiemap helper: "+std::string(strerror(e)); return false; }
+    if (pid == 0) {
+        CLOSE_FD(pipefd[0]);
+        if (dup2(pipefd[1], STDOUT_FILENO) < 0) _exit(126);
+        CLOSE_FD(pipefd[1]);
+        std::vector<std::string> args{"/system_ext/bin/matonos-fiemap-helper", command};
+        if (command != "list") args.push_back(name);
+        if (command == "create") args.push_back(std::to_string(size));
+        std::vector<char*> argv; for (auto& arg : args) argv.push_back(arg.data()); argv.push_back(nullptr);
+        execv(argv[0], argv.data());
+        _exit(127);
+    }
+    CLOSE_FD(pipefd[1]);
+    std::string result; char buf[256];
+    bool read_ok=true;
+    for (;;) { const ssize_t n=read(pipefd[0],buf,sizeof(buf)); if(n<0&&errno==EINTR)continue; if(n<0){*error="Read from fiemap helper pipe failed: "+std::string(strerror(errno));read_ok=false;break;} if(n==0)break; result.append(buf,static_cast<size_t>(n)); }
+    CLOSE_FD(pipefd[0]);
+    int status=0; while(waitpid(pid,&status,0)<0){if(errno==EINTR)continue;*error="Cannot wait for fiemap helper: "+std::string(strerror(errno));return false;}
+    if(!read_ok)return false;
+    if(!WIFEXITED(status)||WEXITSTATUS(status)!=0){*error="fiemap helper command failed: "+command;return false;}
+    if(output)*output=std::move(result);
+    return true;
+}
+
+bool CopyToMappedImage(const std::string& source,const std::string& target,uint64_t bytes,
+                       ProgressCallback progress,CancelCallback cancelled,std::string* error) {
+    int in=open(source.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
+    if(in<0){*error="Cannot open approved live image: "+source+": "+strerror(errno);return false;}
+    int out=open(target.c_str(),O_RDWR|O_CLOEXEC|O_NOFOLLOW);
+    if(out<0){const int e=errno;CLOSE_FD(in);*error="Cannot open mapped install image: "+target+": "+strerror(e);return false;}
+    std::vector<unsigned char> buffer(4*1024*1024);uint64_t done=0;bool ok=true;
+    while(done<bytes){
+        if(cancelled&&cancelled()){*error="Image population cancelled between chunks.";ok=false;break;}
+        const size_t want=static_cast<size_t>(std::min<uint64_t>(buffer.size(),bytes-done));size_t got_total=0;
+        while(got_total<want){const ssize_t got=pread(in,buffer.data()+got_total,want-got_total,static_cast<off_t>(done+got_total));if(got<0&&errno==EINTR)continue;if(got<=0){*error="Live EROFS image ended during population.";ok=false;break;}got_total+=static_cast<size_t>(got);}
+        if(!ok)break;size_t put_total=0;while(put_total<want){const ssize_t put=write(out,buffer.data()+put_total,want-put_total);if(put<0&&errno==EINTR)continue;if(put<=0){*error="Mapped EROFS image write failed: "+std::string(strerror(errno));ok=false;break;}put_total+=static_cast<size_t>(put);}
+        if(!ok)break;done+=want;if(progress)progress({done,bytes,"Writing EROFS image " + std::to_string(done/bytes)});
+    }
+    if(ok&&fsync(out)!=0){*error="Unable to flush mapped EROFS image: "+std::string(strerror(errno));ok=false;}
+    if(ok){
+        uint64_t verified=0;std::vector<unsigned char> expected(buffer.size()),actual(buffer.size());
+        while(verified<bytes){
+            const size_t want=static_cast<size_t>(std::min<uint64_t>(buffer.size(),bytes-verified));size_t source_done=0,target_done=0;
+            while(source_done<want){const ssize_t n=pread(in,expected.data()+source_done,want-source_done,static_cast<off_t>(verified+source_done));if(n<0&&errno==EINTR)continue;if(n<=0){*error="Live EROFS image readback ended early: "+std::string(strerror(errno));ok=false;break;}source_done+=static_cast<size_t>(n);}
+            while(ok&&target_done<want){const ssize_t n=pread(out,actual.data()+target_done,want-target_done,static_cast<off_t>(verified+target_done));if(n<0&&errno==EINTR)continue;if(n<=0){*error="Mapped image readback ended early: "+std::string(strerror(errno));ok=false;break;}target_done+=static_cast<size_t>(n);}
+            if(!ok)break;if(std::memcmp(expected.data(),actual.data(),want)!=0){*error="Mapped EROFS image readback verification failed.";ok=false;break;}
+            verified+=want;if(progress)progress({verified,bytes,"Verifying EROFS image contents"});
+        }
+    }
+    CLOSE_FD(out);CLOSE_FD(in);return ok;
+}
+
 
 bool Copy(const std::string& source,const std::string& target,uint64_t disk_sequence,uint64_t bytes,
           uint64_t source_bytes,uint64_t source_offset,uint64_t target_offset,
@@ -80,7 +152,7 @@ bool Copy(const std::string& source,const std::string& target,uint64_t disk_sequ
     int in=open(source.c_str(),O_RDONLY|O_CLOEXEC);
     if(in<0){*error="Cannot open copy source: "+source;return false;}
     int out=OpenVerifiedTarget(target,O_RDWR,disk_sequence);
-    if(out<0){close(in);*error="Cannot open copy target: "+target;return false;}
+    if(out<0){CLOSE_FD(in);*error="Cannot open copy target: "+target;return false;}
     std::vector<unsigned char> buffer(4*1024*1024); uint64_t done=0; bool ok=true;
     while(done<bytes) {
         if(cancelled&&cancelled()){*error="Operation cancelled between block chunks.";ok=false;break;}
@@ -126,7 +198,7 @@ bool Copy(const std::string& source,const std::string& target,uint64_t disk_sequ
             if(progress)progress({done,bytes,"Verifying copied block data"});
         }
     }
-    close(out);close(in);return ok;
+    CLOSE_FD(out);CLOSE_FD(in);return ok;
 }
 
 uint64_t BlockBytes(int fd) {
@@ -143,7 +215,7 @@ int OpenVerifiedTarget(const std::string& path, int flags, uint64_t disk_sequenc
     if (fd < 0) return -1;
     uint64_t opened_sequence = 0;
     if (ioctl(fd, BLKGETDISKSEQ, &opened_sequence) != 0 || opened_sequence != disk_sequence) {
-        close(fd);
+        CLOSE_FD(fd);
         errno = ESTALE;
         return -1;
     }
@@ -201,7 +273,7 @@ bool ReadVerifiedGptType(const Drive& drive, const Partition& partition,
                          std::string* type_guid, std::string* error) {
     const int fd = OpenVerifiedTarget(drive.path, O_RDONLY, drive.disk_sequence);
     if (fd < 0) { *error = "Cannot open the selected GPT for readback verification."; return false; }
-    auto fail = [&](const char* message) { close(fd); *error = message; return false; };
+    auto fail = [&](const char* message) { CLOSE_FD(fd); *error = message; return false; };
 
     int sector_size = 0;
     if (ioctl(fd, BLKSSZGET, &sector_size) != 0 || sector_size < 512 ||
@@ -257,7 +329,7 @@ bool ReadVerifiedGptType(const Drive& drive, const Partition& partition,
             (last_lba - first_lba + 1) * static_cast<uint64_t>(sector_size) != partition.size_bytes)
             return fail("Selected partition bounds do not match its verified GPT entry.");
         *type_guid = GptGuid(entry);
-        close(fd);
+        CLOSE_FD(fd);
         return true;
     }
     return fail("Selected partition GUID is absent from the verified GPT.");
@@ -376,11 +448,37 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
             const auto super=std::find_if(target.partitions.begin(),target.partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==op.super_part_guid;});
             if(super==target.partitions.end()||super->path.empty()){*error="Selected super partition disappeared before LP metadata creation.";return false;}
             return WriteLpMetadata(super->path,super->size_bytes,super->name,op,target.disk_sequence,error);
+        } else if constexpr(std::is_same_v<T,PopulateImages>) {
+            const auto system=std::find_if(target.partitions.begin(),target.partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==op.maton_system_part_guid;});
+            const auto metadata=std::find_if(target.partitions.begin(),target.partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==op.metadata_part_guid;});
+            if(system==target.partitions.end()||metadata==target.partitions.end()){*error="Image-store partitions disappeared after validation.";return false;}
+            if(!Run({"@prepare-image-store",system->path,metadata->path},target.disk_sequence,error))return false;
+            bool ok=true;
+            for(size_t index=0;index<op.images.size()&&ok;++index){
+                if(cancelled&&cancelled()){*error="Image population cancelled between partitions.";ok=false;break;}
+                const auto& image=op.images[index];const std::string source="/dev/block/mapper/"+image.live_partition_name;
+                int source_fd=open(source.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
+                if(source_fd<0){*error="Approved live partition unavailable: "+source+": "+strerror(errno);ok=false;break;}
+                const uint64_t size=BlockBytes(source_fd);CLOSE_FD(source_fd);
+                if(size==0){*error="Cannot determine the live partition image size: "+source;ok=false;break;}
+                if(!RunFiemap("create",image.name,size,nullptr,error)){ok=false;break;}
+                std::string mapped;
+                if(!RunFiemap("map",image.name,0,&mapped,error)){ok=false;RunFiemap("unmap",image.name,0,nullptr,error);break;}
+                while(!mapped.empty()&&(mapped.back()=='\n'||mapped.back()=='\r'))mapped.pop_back();
+                if(mapped.empty()||mapped.front()!='/'){*error="fiemap helper returned an invalid mapped device path.";ok=false;}
+                else ok=CopyToMappedImage(source,mapped,size,progress,cancelled,error);
+                std::string unmap_error;
+                if(!RunFiemap("unmap",image.name,0,nullptr,&unmap_error)){if(ok){*error=unmap_error;ok=false;}}
+            }
+            std::string finish_error;
+            if(!Run({"@finish-image-store",system->path,metadata->path},target.disk_sequence,&finish_error)){if(ok){*error=finish_error;ok=false;}}
+            return ok;
         } else if constexpr(std::is_same_v<T,Format>) {
             const auto path=PartitionPath(target,op.target); if(path.empty()){*error="Format target disappeared after safety validation.";return false;}
             const auto* part=Find(target,op.target);if(!part||part->logical){*error="Filesystem format is supported only on a physical GPT partition.";return false;}
             if(op.filesystem==Filesystem::kExt4) return Run({"/system/bin/mke2fs","-t","ext4","-F","-L",op.label,path},target.disk_sequence,error);
             if(op.filesystem==Filesystem::kVfat) return Run({"/system/bin/newfs_msdos","-F","32","-c","8","-L",op.label,path},target.disk_sequence,error);
+            if(op.filesystem==Filesystem::kF2fs) return Run({"/system/bin/make_f2fs","-f","-l",op.label,path},target.disk_sequence,error);
             *error="Unknown filesystem in format operation.";return false;
         } else if constexpr(std::is_same_v<T,CopyPartition>) {
             const auto* dst=Find(target,op.target); const auto dest_path=PartitionPath(target,op.target);
@@ -401,7 +499,7 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
             if(op.source_kind==CopySourceKind::kLiveImagePartition) {
                 int source_fd=open(src_path.c_str(),O_RDONLY|O_CLOEXEC);
                 if(source_fd<0){*error="The approved live image source is unavailable.";return false;}
-                const uint64_t source_bytes=BlockBytes(source_fd);close(source_fd);
+                const uint64_t source_bytes=BlockBytes(source_fd);CLOSE_FD(source_fd);
                 if(source_bytes==0||source_bytes>dst->size_bytes){*error="Live image source size cannot be verified or exceeds its target.";return false;}
                 bytes=source_bytes;
             }

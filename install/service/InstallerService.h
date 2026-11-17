@@ -57,6 +57,8 @@ struct GptPartitionSpec {
 struct WriteGpt { uint64_t declared_disk_bytes = 0; std::string disk_guid; std::vector<GptPartitionSpec> partitions; };
 struct LogicalPartitionSpec { std::string name; uint64_t size_bytes = 0; };
 struct LogicalGroupSpec { std::string name; uint64_t maximum_size_bytes = 0; std::vector<LogicalPartitionSpec> partitions; };
+struct ImageToInstall { std::string name; std::string live_partition_name; };
+struct PopulateImages { std::string maton_system_part_guid; std::string metadata_part_guid; std::vector<ImageToInstall> images; };
 struct CreateLpMetadata {
     std::string super_part_guid;
     uint64_t metadata_size_bytes = 0;
@@ -64,14 +66,14 @@ struct CreateLpMetadata {
     std::vector<LogicalGroupSpec> groups;
 };
 struct PartitionRef { std::string part_guid; std::string logical_name; };
-enum class Filesystem { kVfat, kExt4 };
+enum class Filesystem { kVfat, kExt4, kF2fs };
 struct Format { PartitionRef target; Filesystem filesystem; std::string label; };
 enum class CopySourceKind { kLiveImagePartition, kTargetPartition };
 struct CopyPartition { CopySourceKind source_kind; std::string live_partition_name; PartitionRef source; PartitionRef target; };
 struct ClonePartition { PartitionRef source; PartitionRef target; };
 struct FilePayload { std::string relative_path; std::string live_payload_path; std::string inline_contents; std::string sha256; };
 struct WriteFiles { PartitionRef target; std::string relative_directory; std::vector<FilePayload> files; };
-using Operation = std::variant<WriteGpt, CreateLpMetadata, Format, CopyPartition,
+using Operation = std::variant<WriteGpt, CreateLpMetadata, PopulateImages, Format, CopyPartition,
                                ClonePartition, WriteFiles>;
 struct OperationRequest {
     uint32_t api_version = kOperationApiVersion;

@@ -23,6 +23,14 @@
 #include <type_traits>
 #include <utility>
 
+#define CLOSE_FD(fd_value) do { \
+    const int close_fd_value = (fd_value); \
+    if (close_fd_value >= 0) { \
+        std::fprintf(stderr, "installer: close fd=%d at %s:%d\n", close_fd_value, __FILE__, __LINE__); \
+        if (::close(close_fd_value) != 0) std::fprintf(stderr, "installer: close fd=%d failed errno=%d at %s:%d\n", close_fd_value, errno, __FILE__, __LINE__); \
+    } \
+} while (0)
+
 namespace matonos::install {
 namespace fs = std::filesystem;
 namespace {
@@ -225,7 +233,7 @@ bool IsVentoyPartition(const Partition& partition) {
     unsigned char sector[512];
     const ssize_t got = ::pread(fd, sector, sizeof(sector), 0);
     const int read_errno = errno;
-    ::close(fd);
+    CLOSE_FD(fd);
     if (got != static_cast<ssize_t>(sizeof(sector))) {
         if (got < 0)
             std::fprintf(stderr, "installer: cannot read %s to check for Ventoy: %s\n",
@@ -531,6 +539,14 @@ ValidationResult ValidateOperation(const OperationRequest& request,
             if (allocated_sum > super->size_bytes || op.metadata_size_bytes > super->size_bytes - allocated_sum) {
                 error = "LP metadata and groups exceed the declared super partition."; return false;
             }
+            return true;
+        } else if constexpr (std::is_same_v<T, PopulateImages>) {
+            const auto system=std::find_if(it->partitions.begin(),it->partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==op.maton_system_part_guid;});
+            const auto metadata=std::find_if(it->partitions.begin(),it->partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==op.metadata_part_guid;});
+            if(system==it->partitions.end()||metadata==it->partitions.end()||system->name!="maton_system"||metadata->name!="metadata"||system->mounted||metadata->mounted||op.images.size()!=5){error="Image population needs the verified maton_system and metadata partitions and five source images.";return false;}
+            static const std::set<std::string> allowed{"system_a","system_ext_a","product_a","vendor_a","odm_a"};
+            std::set<std::string> names;
+            for(const auto& image:op.images) if(!allowed.count(image.name)||image.live_partition_name!=image.name||!names.insert(image.name).second){error="Image population contains an unsupported or duplicate image.";return false;}
             return true;
         } else if constexpr (std::is_same_v<T, Format>) {
             if (!CheckRef(*it, op.target) || op.label.size() > 16) { error = "Invalid format target or label."; return false; }

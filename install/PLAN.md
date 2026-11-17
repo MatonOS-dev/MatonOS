@@ -1,72 +1,72 @@
-# Installer v1 plan
+# File-backed install plan
 
-The app owns layout policy and operation order. The install service executes one
-validated operation at a time and never chooses a disk or layout. Its bridge
-channel rechecks target identity, live mode, mounted state, bounds, and paths
-before each write. A failure stops the plan; installing erases the selected
-disk.
+## GPT profile
 
-## Product profile
+The Settings app owns layout policy. The installer service validates and runs
+each primitive against the confirmed physical disk; it does not choose a disk,
+slot, or partition layout.
 
-The installed system uses A/B logical partitions in dynamic super. The live
-image contains only slot A and boots with its existing live-specific fstab
-suffix, slot A, and the live marker. The installed image has slot-select fstab
-entries and signed A/B UKIs with installed fstab suffix, their respective slot
-suffix, and live marker zero. The installer creates ESP, XBOOTLDR, misc,
-metadata, 10.5 GiB super, 1.5 GiB addons_a, 1.5 GiB addons_b, and userdata.
-Super contains two 5 GiB groups with system, system_ext, product, vendor, and
-odm members. It copies each live A member to target A and clones A to B.
+| # | Name | Size | Purpose |
+|---:|---|---:|---|
+| 1 | `esp` | 2 GiB | FAT32 EFI system partition with fallback loader, systemd-boot, one installed UKI and one entry. |
+| 2 | `maton_system` | 16 GiB | ext4 container for libfiemap-backed EROFS images. |
+| 3 | `metadata` | 64 MiB | ext4 libfiemap extent metadata and Android metadata. |
+| 4 | `userdata` | Remainder | F2FS when the selected disk reports non-rotational; ext4 when rotational. |
 
-The ESP carries the fallback EFI path, systemd-boot, both installed UKIs,
-loader.conf, and boot-counted A/B entry files. systemd-boot counts attempts by
-renaming entry files. The MatonOS boot-control HAL persists state in misc,
-selects the loader default, marks the successful entry, and disables an
-unbootable entry. The AOSP AIDL default HAL was checked first; its generic
-boot-control implementation persists Android bootloader-message state but
-does not select systemd-boot entries, so a small PC-specific implementation is
-needed. It finds ESP and misc on the same physical disk as the
-currently mounted logical system partition; installed UKIs therefore do not
-need a build-time target PARTUUID. Firmware NVRAM is not modified.
+There is no physical `super`, boot, misc, add-on, or B slot in this profile.
+The live source uses A images; a fresh install writes only the `_a` logical
+image names. Slot selection and OTA writes are outside this task.
 
-User files are skipped by decision: the target has no staging partition or
-import service, and its `/data` is initialized empty on first boot with new FBE
-keys.
+## Install sequence
 
-## App operation order
+1. Re-enumerate the selected disk and verify its stable identity, capacity,
+   in-use state and safety before each destructive operation.
+2. Write GPT with the four partitions above.
+3. Format the ESP as FAT32, metadata as ext4, and userdata as the selected
+   ext4/F2FS filesystem.
+4. Open and verify the target `maton_system` and `metadata` block devices.
+   Create a dm-linear mapping covering the entire `maton_system` partition
+   from sector zero, format ext4 through that mapping, then mount both ext4
+   filesystems under `/mnt/matonos-install/`.
+5. Call `ImageManager::Open("/mnt/matonos-install/metadata/maton/images",
+   "/mnt/matonos-install/system/images")`. For each of `system_a`,
+   `system_ext_a`, `product_a`, `vendor_a`, and `odm_a`, create the readonly
+   backing image, map it, copy the complete live mapper image, fsync and
+   read back the bytes, then unmap it.
+6. Unmount the target filesystems and remove the temporary dm-linear device.
+7. Write the fallback loader, installed UKI and one loader entry. The entry
+   selects `_a`, carries the target ESP PARTUUID and the selected disk's
+   firmware boot-device path, and marks the image as installed.
 
-The Settings plan sends these independent requests through the install bridge:
+The ext4 target filesystems must be mounted through the full-disk dm-linear
+wrapper because libfiemap records the leaf block device and expects the
+backing partition to start at sector zero. Formatting/mounting directly from
+the GPT partition offset would create an incompatible extent map.
 
-1. Write the user-confirmed GPT table.
-2. Format ESP, XBOOTLDR, add-on A/B, and userdata.
-3. Write three-slot LP metadata for both groups.
-4. Copy the live slot-A system partitions to installed slot A.
-5. Write the installed A/B UKIs and select initial boot-counted entry A.
-6. Clone every A logical partition to its B counterpart.
-7. Write the B boot-counted entry and complete loader files.
+`tools/make-payload.sh` packages the five built images individually. The live
+Settings flow currently copies its live `_a` mapper sources directly; it does
+not consume the compressed host payload.
 
-The live fstab remains selected on the source image. Installed UKIs carry
-ro.boot.matonos.live=0; init starts the installer daemon only for live=1, and
-the Settings Install activity alias is hidden unless the live property is 1.
-There is no installed-image marker operation or user-file importer. The
-installer daemon starts only for live boots, and the Settings Install activity
-alias is hidden on installed boots.
+## Scope and verification
 
-## Implementation and verification state
+The current planner always writes a fresh four-partition layout and erases
+the selected disk. It does not yet detect an existing MatonOS installation or
+offer a distinct repair action. It has no slot chooser and does not implement
+an image downgrade check. Those behaviors need to be completed before this
+can be presented as a finished repair/fresh-install workflow.
 
-The operation service, stable install channel, Settings request plan, A/B
-BoardConfig/fstab conversion, NDK boot-control HAL, and signed UKI packager
-have been implemented. Earlier QEMU install operations completed GPT, format, LP
-metadata, copy and clone operations on the 64 GiB target. A target-only boot
-found the ESP and started slot A's UKI, but first-stage init failed to resolve
-its default fstab. The per-entry hardware/fstab/slot/boot-device options and
-the fstab configuration now needs verification in a fresh image, including
-home-screen boot.
+See `README.md` for build evidence and `SHARED-CHANGES.md` for the required
+fstab and first-stage policy integration. No VM or installed-target boot was
+performed for this change, so the layout is not yet verified end to end.
 
-## Real hardware test checklist
+## Real hardware validation after integration
 
-- Ryzen 5800X / RX 6600 / Intel 7265: identify the selected internal disk by
-  model and serial; install to a blank disk and boot it alone.
-- Surface Pro 3: verify the Marvell device is not selected as the target by
-  mistake; install to a blank external disk and verify A/B boot.
-- HP ProDesk 600 G1: verify boot and installation without optional network
-  devices. Installer or boot-control failures must not block boot.
+1. On the Ryzen 5800X / RX 6600 PC, inspect the selected disk and rotational
+   state, install only to a disposable disk, then check GPT names, sizes and
+   filesystem types.
+2. Inspect `/metadata/maton/images`, `/maton_system/images`, libfiemap's
+   partition metadata, mapped `_a` names and EROFS hashes before first boot.
+3. Cold boot the target disk alone. Confirm first-stage mapping reaches
+   `sys.boot_completed=1` and `/data` mounts using the selected filesystem.
+4. Repeat on the Surface Pro 3 and HP ProDesk 600 G1, including a machine
+   without optional Wi-Fi/Bluetooth hardware and a rotational userdata disk.

@@ -21,6 +21,10 @@ elif [[ $MODE == --list && $# -eq 1 ]]; then
 else
   echo "Usage: $0 --list | --install <target-major:minor> | --install-from <target-major:minor> <first-operation-number>" >&2; exit 2;
 fi
+if [[ $MODE != --list ]]; then
+  echo "Destructive test plan still targets the retired A/B dynamic-super layout; use the Settings planner only after the file-backed test plan is implemented." >&2
+  exit 2
+fi
 adb_cmd() { "$ADB" -s "$SERIAL" "$@" </dev/null; }
 bridge_call() {
   local command=$1 json=$2 encoded output

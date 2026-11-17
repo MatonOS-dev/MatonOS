@@ -49,6 +49,7 @@ function operationTitle(operation: InstallerOperation) {
   const labels: Record<InstallerOperation["kind"], string> = {
     write_gpt: "Write the target partition table",
     create_lp_metadata: "Create dynamic partition metadata",
+    populate_images: "Install system images",
     format: "Format a target partition",
     copy_partition: "Copy a system partition",
     clone_partition: "Clone a system partition",
@@ -137,8 +138,8 @@ export function InstallSection() {
     if (previewMode) {
       const demoOperations: OperationState[] = [
         { title: "Write the target partition table", status: "complete", progress: null },
-        { title: "Create dynamic partition metadata", status: "complete", progress: null },
-        { title: "Copy a system partition", status: "running", progress: null },
+        { title: "Format target filesystems", status: "complete", progress: null },
+        { title: "Install system images", status: "running", progress: null },
         { title: "Write boot and loader files", status: "waiting", progress: null },
       ];
       setPlanCount(demoOperations.length);
@@ -160,6 +161,7 @@ export function InstallSection() {
         selected.id,
         selected.identity,
         selected.sizeBytes,
+        selected.rotational,
       ).operations;
     } catch (problem) {
       setFailedOperation("Prepare the install plan");
