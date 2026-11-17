@@ -152,7 +152,7 @@ mformat -i "$esp" -F -v MATONOS ::
 mmd -i "$esp" ::/EFI ::/EFI/BOOT ::/EFI/systemd ::/EFI/Linux ::/android ::/loader ::/loader/entries
 # secureboot: keep source notices on the ESP; Secure Boot UKIs also embed this archive.
 mmd -i "$esp" ::/EFI/BOOT/licenses
-mcopy -i "$esp" "$DEVICE_DIR/secureboot/licenses/Fedora-shim-x64-BSD-3-Clause.txt" ::/EFI/BOOT/licenses/
+mcopy -i "$esp" "$DEVICE_DIR/secureboot/licenses/shim-x64-BSD-3-Clause.txt" ::/EFI/BOOT/licenses/
 mcopy -i "$esp" "$DEVICE_DIR/secureboot/licenses/Intel-Microcode-LICENSE.txt" ::/EFI/BOOT/licenses/
 mcopy -i "$esp" "$work/amd-WHENCE.txt" ::/EFI/BOOT/licenses/
 # secureboot: opt-in shim/systemd-boot assets and UKIs; default ESP stays compatible.

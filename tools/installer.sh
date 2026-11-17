@@ -99,7 +99,7 @@ if [[ " $KERNEL_CMDLINE $DEBUG_CMDLINE " =~ [[:space:]]androidboot\.selinux=perm
   LABEL+=" (DEVELOPMENT: SELinux permissive)"
 fi
 # secureboot: CPU microcode is a required first-initrd asset in every installer profile.
-for f in microcode.cpio licenses/Fedora-shim-x64-BSD-3-Clause.txt \
+for f in microcode.cpio licenses/shim-x64-BSD-3-Clause.txt \
          licenses/Intel-Microcode-LICENSE.txt licenses/AMD-WHENCE.txt; do
   [[ -s $PAYLOAD_DIR/$f ]] || die "payload is missing required CPU microcode asset ($f)"
 done
@@ -165,7 +165,7 @@ install_file_image() {
   esp_sectors=$(( $(sgdisk -i 1 "$IMAGE_TARGET" | sed -n 's/^Last sector: *\([0-9][0-9]*\).*/\1/p') - esp_start + 1 ))
   mformat -i "$fatdev" -T "$esp_sectors" -h 64 -s 32 -F -v ANDROIDESP ::
   mmd -i "$fatdev" ::/EFI ::/EFI/BOOT ::/EFI/systemd ::/EFI/Linux ::/android ::/loader ::/loader/entries ::/EFI/BOOT/licenses
-  for f in Fedora-shim-x64-BSD-3-Clause.txt Intel-Microcode-LICENSE.txt AMD-WHENCE.txt; do
+  for f in shim-x64-BSD-3-Clause.txt Intel-Microcode-LICENSE.txt AMD-WHENCE.txt; do
     mcopy -i "$fatdev" "$PAYLOAD_DIR/licenses/$f" ::/EFI/BOOT/licenses/
   done
   if [[ ${SECURE_BOOT:-0} == 1 ]]; then
@@ -380,7 +380,7 @@ mount "$ESP" "$MNT"
 mkdir -p "$MNT/EFI/BOOT/licenses"
 install -m 0644 "$PAYLOAD_DIR/licenses/Intel-Microcode-LICENSE.txt" "$MNT/EFI/BOOT/licenses/"
 install -m 0644 "$PAYLOAD_DIR/licenses/AMD-WHENCE.txt" "$MNT/EFI/BOOT/licenses/"
-install -m 0644 "$PAYLOAD_DIR/licenses/Fedora-shim-x64-BSD-3-Clause.txt" "$MNT/EFI/BOOT/licenses/"
+install -m 0644 "$PAYLOAD_DIR/licenses/shim-x64-BSD-3-Clause.txt" "$MNT/EFI/BOOT/licenses/"
 
 # secureboot: Secure Boot payloads install the shim chain and UKI on the same ESP.
 if [[ ${SECURE_BOOT:-0} == 1 ]]; then

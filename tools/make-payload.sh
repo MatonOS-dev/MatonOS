@@ -77,7 +77,7 @@ microcode_work=$(mktemp -d --tmpdir pc-microcode.XXXXXX)
 trap 'rm -rf "$microcode_work"' EXIT
 sb_build_microcode_cpio "$PAYLOAD/microcode.cpio" "$microcode_work"
 mkdir -p "$PAYLOAD/licenses"
-cp "$DEVICE_DIR/secureboot/licenses/Fedora-shim-x64-BSD-3-Clause.txt" "$PAYLOAD/licenses/"
+cp "$DEVICE_DIR/secureboot/licenses/shim-x64-BSD-3-Clause.txt" "$PAYLOAD/licenses/"
 cp "$DEVICE_DIR/secureboot/licenses/Intel-Microcode-LICENSE.txt" "$PAYLOAD/licenses/"
 cp "$microcode_work/amd-WHENCE.txt" "$PAYLOAD/licenses/AMD-WHENCE.txt"
 

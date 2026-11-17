@@ -1,6 +1,6 @@
-Fedora shim-x64 signed EFI binaries
-Package: shim-x64 16.1-7 (x86_64)
-Source: https://src.fedoraproject.org/rpms/shim
+Rocky Linux shim-x64 signed EFI binaries (shimx64.efi, mmx64.efi)
+Package: shim-x64 16.1-2.el10 (x86_64), source shim-16.1-2.el10.src.rpm
+Source: https://git.rockylinux.org/staging/rpms/shim (upstream https://github.com/rhboot/shim)
 Package metadata license: BSD-3-Clause
 
 Copyright (c) 2012 Red Hat, Inc. and contributors.

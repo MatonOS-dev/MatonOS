@@ -47,8 +47,9 @@ allows explicit shim/MokManager paths for package-specific choices. Check the
 exact artifact against the machine's current revocation state before release.
 Ubuntu's shim-signed copyright file identifies its upstream shim binary as
 BSD-2-Clause; Fedora's `shim-x64` package page lists BSD-3-Clause. The image
-builders and installer preserve the Fedora package license text and source
-provenance in `EFI/BOOT/licenses/Fedora-shim-x64-BSD-3-Clause.txt`; copied
+builders and installer ship the Rocky Linux shim-x64 16.1-2.el10 binaries
+committed as `secureboot/shim.tar.xz` and preserve the license text and source
+provenance in `EFI/BOOT/licenses/shim-x64-BSD-3-Clause.txt`; copied
 vendor binaries remain unchanged. Recheck the precise vendor package terms
 when changing shim versions.
 
