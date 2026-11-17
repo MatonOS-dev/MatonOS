@@ -489,7 +489,7 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
             if(op.source_kind==CopySourceKind::kTargetPartition) src_path=PartitionPath(target,op.source);
             else {
                 // Fixed live source catalog: logical names only, no caller path.
-                static const std::vector<std::string> allowed{"system_a","system_ext_a","product_a","vendor_a","odm_a","system","system_ext","product","vendor","odm"};
+                static const std::vector<std::string> allowed{"system_a","system_ext_a","product_a","vendor_a","odm_a","vbmeta_a","vbmeta_b","system","system_ext","product","vendor","odm"};
                 if(std::find(allowed.begin(),allowed.end(),op.live_partition_name)==allowed.end()){*error="Live image payload is not in the service catalog.";return false;}
                 src_path=(fs::path("/dev/block/mapper")/op.live_partition_name).string();
                 if(!fs::exists(src_path)&&op.live_partition_name.size()>2&&op.live_partition_name.substr(op.live_partition_name.size()-2)=="_a")

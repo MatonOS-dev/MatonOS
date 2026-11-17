@@ -61,8 +61,12 @@ BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
 BUILD_BROKEN_SRC_DIR_RW_ALLOWLIST := $(realpath ccache)
 
 # ---------------------------------------------------------------- AVB
-# Disabled: no vbmeta partition, systemd-boot does no verification.
-BOARD_AVB_ENABLE := false
+# The signed installed UKI pins vbmeta's digest; first-stage init verifies
+# the vbmeta signature and each image's hashtree. The vbmeta block image is
+# file-backed on installed systems (see the vbmeta fstab entry).
+BOARD_AVB_ENABLE := true
+BOARD_AVB_ALGORITHM := SHA256_RSA4096
+BOARD_AVB_KEY_PATH := $(if $(MATON_AVB_KEY_PATH),$(MATON_AVB_KEY_PATH),$(HOME)/.config/matonos/avb/matonos-avb-dev.pem)
 
 # ---------------------------------------------------------------- partitions
 TARGET_USERIMAGES_USE_EXT4 := true

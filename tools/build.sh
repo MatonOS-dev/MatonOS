@@ -82,6 +82,12 @@ while getopts "KMALpm:j:v:h" opt; do
 done
 
 PRODUCT_OUT=$AOSP/out/target/product/$PRODUCT
+if [[ $DO_AOSP == 1 ]]; then
+  # The AVB development key is machine-local and must exist before Soong/Make
+  # evaluates BoardConfig.mk. Release signing uses a separately provisioned key.
+  source "$DEVICE_DIR/secureboot/avb.sh"
+  avb_ensure_dev_key || die "could not provision the AVB development key"
+fi
 start=$SECONDS
 
 info "Build plan"

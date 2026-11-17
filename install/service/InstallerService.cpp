@@ -543,10 +543,13 @@ ValidationResult ValidateOperation(const OperationRequest& request,
         } else if constexpr (std::is_same_v<T, PopulateImages>) {
             const auto system=std::find_if(it->partitions.begin(),it->partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==op.maton_system_part_guid;});
             const auto metadata=std::find_if(it->partitions.begin(),it->partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==op.metadata_part_guid;});
-            if(system==it->partitions.end()||metadata==it->partitions.end()||system->name!="maton_system"||metadata->name!="metadata"||system->mounted||metadata->mounted||op.images.size()!=5){error="Image population needs the verified maton_system and metadata partitions and five source images.";return false;}
-            static const std::set<std::string> allowed{"system_a","system_ext_a","product_a","vendor_a","odm_a"};
+            if(system==it->partitions.end()||metadata==it->partitions.end()||system->name!="maton_system"||metadata->name!="metadata"||system->mounted||metadata->mounted||op.images.size()!=7){error="Image population needs the verified image-store partitions and seven A/B system plus vbmeta images.";return false;}
+            static const std::set<std::string> allowed{"system_a","system_ext_a","product_a","vendor_a","odm_a","vbmeta_a","vbmeta_b"};
+            static const std::set<std::string> sources{"system_a","system_ext_a","product_a","vendor_a","odm_a","vbmeta_a"};
             std::set<std::string> names;
-            for(const auto& image:op.images) if(!allowed.count(image.name)||image.live_partition_name!=image.name||!names.insert(image.name).second){error="Image population contains an unsupported or duplicate image.";return false;}
+            for(const auto& image:op.images) if(!allowed.count(image.name)||!sources.count(image.live_partition_name)||
+                (image.name!="vbmeta_b"&&image.live_partition_name!=image.name)||
+                (image.name=="vbmeta_b"&&image.live_partition_name!="vbmeta_a")||!names.insert(image.name).second){error="Image population contains an unsupported or duplicate image.";return false;}
             return true;
         } else if constexpr (std::is_same_v<T, Format>) {
             if (!CheckRef(*it, op.target) || op.label.size() > 16) { error = "Invalid format target or label."; return false; }

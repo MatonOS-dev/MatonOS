@@ -11,8 +11,8 @@
 #
 # Layout (GPT, write to a USB stick with dd):
 #   1 esp    FAT32, systemd-boot + bzImage + ramdisks + loader entries
-#   2 super  compact dynamic-partition image, repacked with lpmake so it's
-#            only as big as system+system_ext+product+vendor
+#   2 super  compact dynamic-partition image for the five system images plus
+#            the signed root vbmeta image
 # /data and /metadata live in RAM (brd, fstab.pc_x86_64.live): nothing
 # persists. The boot disk is found through androidboot.boot_part_uuid (the
 # ESP's partition UUID, random per image), so it works on any port.
@@ -28,6 +28,7 @@ DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
 AOSP=$(readlink -f "$DEVICE_DIR/../../..")
 # secureboot: early CPU microcode is included for every boot profile.
 source "$DEVICE_DIR/secureboot/microcode.sh"
+source "$DEVICE_DIR/secureboot/avb.sh"
 source "$DEVICE_DIR/tools/selinux-boot.sh"
 PRODUCT_OUT=""
 KERNEL=$DEVICE_DIR/prebuilt/bzImage
@@ -40,7 +41,7 @@ SECURE_BOOT=1
 # substantially larger than the old raw-kernel boot files.
 ESP_MIB=1024
 GROUP=pc_dynamic_partitions
-PARTITIONS=(system system_ext product vendor odm)
+PARTITIONS=(system system_ext product vendor odm vbmeta)
 
 while getopts "o:k:b:d:c:SRh" opt; do
   case $opt in
@@ -84,11 +85,16 @@ if (( SECURE_BOOT )); then
   sb_require_tools
   sb_ensure_dev_key
 fi
+avb_ensure_dev_key
 for f in ramdisk.img vendor_ramdisk.img; do
   [[ -f $PRODUCT_OUT/$f ]] || die "$PRODUCT_OUT/$f missing"
 done
 for p in "${PARTITIONS[@]}"; do
-  [[ -f $PRODUCT_OUT/$p.img ]] || die "$PRODUCT_OUT/$p.img missing"
+  if [[ $p == vbmeta ]]; then
+    : # Root vbmeta is assembled below from only the five system images.
+  else
+    [[ -f $PRODUCT_OUT/$p.img ]] || die "$PRODUCT_OUT/$p.img missing"
+  fi
 done
 for t in lpmake simg2img sgdisk mformat mmd mcopy od; do
   command -v "$t" >/dev/null || die "missing tool: $t (lpmake/simg2img come from AOSP's out/host)"
@@ -98,6 +104,7 @@ for t in git cpio; do command -v "$t" >/dev/null || die "missing tool: $t (CPU m
 mkdir -p "$AOSP/out/pc-logs"
 work=$(mktemp -d --tmpdir="$AOSP/out/pc-logs" pc-live.XXXXXX)
 trap 'rm -rf "$work"' EXIT
+avb_make_root_vbmeta "$work/vbmeta.img" "$PRODUCT_OUT" "$HOSTBIN/avbtool" "$AVB_KEY_PATH" || die "could not make root vbmeta image"
 sb_build_microcode_cpio "$work/microcode.cpio" "$work"
 
 # ---------------------------------------------------------------- super
@@ -107,7 +114,7 @@ info "Repacking compact super"
 lp_args=()
 total=0
 for p in "${PARTITIONS[@]}"; do
-  img=$PRODUCT_OUT/$p.img
+  if [[ $p == vbmeta ]]; then img=$work/vbmeta.img; else img=$PRODUCT_OUT/$p.img; fi
   if [[ $(od -An -tx1 -N4 "$img" | tr -d ' \n') == "3aff26ed" ]]; then
     simg2img "$img" "$work/$p.img"
     img=$work/$p.img
@@ -141,7 +148,8 @@ cmdline+=" androidboot.slot_suffix=_a"
 # and starts the install service only here, never on installed systems.
 cmdline+=" androidboot.matonos.live=1"
 cmdline+=" androidboot.boot_part_uuid=$esp_uuid"
-cmdline+=" androidboot.selinux=$MATON_SELINUX_MODE androidboot.verifiedbootstate=orange"
+avb_cmdline=$(avb_vbmeta_cmdline "$work/vbmeta.img" "$HOSTBIN/avbtool") || die "could not derive AVB boot parameters"
+cmdline+=" androidboot.selinux=$MATON_SELINUX_MODE $avb_cmdline"
 [[ -n $EXTRA_CMDLINE ]] && cmdline+=" $EXTRA_CMDLINE"
 debug_cmdline="loglevel=7 printk.devkmsg=on androidboot.console=ttyS0 vt.global_cursor_default=1 fbcon=vc:1-6"
 
@@ -243,7 +251,7 @@ EOF
   # Installed systems do not use RAM-backed /data or /metadata. Keep the
   # ramN nodes absent so the live-only block labels cannot affect installed
   # boots. The kernel default creates RAM disks unless rd_nr is set to zero.
-  installed_a="console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=0 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange"
+  installed_a="console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=0 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=enforcing $avb_cmdline"
   installed_b=${installed_a/_a /_b }
   sb_build_uki "$work/matonos-installed-a.efi" "$KERNEL" "$installed_a" "$work/matonos.sbat" "$work" \
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"

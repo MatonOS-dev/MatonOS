@@ -16,7 +16,7 @@ The new planner writes ESP, `maton_system`, metadata, and userdata GPT entries;
 formats userdata based on rotational state; and submits one image-population
 primitive. The executor creates a sector-zero dm-linear wrapper over the full
 `maton_system` partition, formats/mounts the target ext4 filesystems, calls the
-Soong `matonos-fiemap-helper` to create/map/unmap the five readonly libfiemap
+Soong `matonos-fiemap-helper` to create/map/unmap the readonly libfiemap
 images, copies each live A mapper device, then unmounts and removes the
 temporary dm mapping. It then writes one installed UKI and one loader entry.
 `make-payload.sh` separately packages individual built EROFS images instead of
@@ -35,6 +35,43 @@ Soong module and `selinux_policy` target have not been built, and no image or
 VM test was run. First-stage permissions for the persisted file label and
 conditional F2FS userdata fstab support remain open; see
 `SHARED-CHANGES.md`.
+
+## AVB chain
+
+The AOSP build adds AVB hashtree footers to the five protected system images.
+Packaging creates a signed root `vbmeta.img` from only those five image
+descriptors (excluding boot and vendor_boot, which the UKI supplies under
+Secure Boot). The live super carries this as `vbmeta_a`;
+the installer stores the root metadata as file-backed `vbmeta_a` and
+`vbmeta_b` (the root metadata is slot-agnostic). Each installed UKI embeds the
+SHA-256 digest and exact metadata size for that vbmeta image. First-stage init
+maps the vbmeta image via the existing file-backed mapper, then stock `fs_mgr`
+checks the pinned digest and sets up dm-verity for every fstab image marked
+`avb`. No extra AOSP patch is needed for vbmeta lookup.
+
+The development key is machine-local at
+`$HOME/.config/matonos/avb/matonos-avb-dev.pem`; `tools/build.sh` generates it
+if missing before AOSP evaluates BoardConfig. Release builds must set
+`MATON_AVB_KEY_PATH` to a separately provisioned key; missing release or
+custom keys are fatal. No coordinated build or VM was permitted for this
+task, so the first-stage chain and image sizes remain unverified. At SHA-256
+with 4 KiB blocks the hash tree costs about 0.8% of each protected image, plus
+upper hash levels and a 64 KiB footer; exact bytes depend on the built image.
+Using the current on-disk EROFS input sizes as the source-size basis, the
+estimated tree bytes are:
+
+| Image | Estimated hashtree bytes |
+|---|---:|
+| system | 5,836,800 |
+| system_ext | 2,338,816 |
+| product | 5,419,008 |
+| vendor | 5,382,144 |
+| odm | 94,208 |
+| **Total** | **19,070,976** |
+
+This adds 65,536 footer bytes per image, plus small vbmeta metadata padding.
+The estimates use the existing pre-AVB images and must be checked against the
+coordinated AVB build output.
 
 The sections below document the previous A/B dynamic-super installer and are
 historical evidence, not validation of the 2026-11-17 layout.

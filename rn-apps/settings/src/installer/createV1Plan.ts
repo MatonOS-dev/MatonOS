@@ -129,10 +129,15 @@ export function createV1Plan(
       kind: "populate_images" as const,
       matonSystemPartGuid: matonSystem.partGuid,
       metadataPartGuid: metadata.partGuid,
-      images: ["system", "system_ext", "product", "vendor", "odm"].map((name) => ({
-        name: `${name}_a`,
-        livePartitionName: `${name}_a`,
-      })),
+      images: [
+        ...["system", "system_ext", "product", "vendor", "odm"].map((name) => ({
+          name: `${name}_a`,
+          livePartitionName: `${name}_a`,
+        })),
+        { name: "vbmeta_a", livePartitionName: "vbmeta_a" },
+        // The generated root vbmeta is slot agnostic; each UKI pins its digest.
+        { name: "vbmeta_b", livePartitionName: "vbmeta_a" },
+      ],
     },
     {
       kind: "write_files" as const,

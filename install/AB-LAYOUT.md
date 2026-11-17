@@ -19,7 +19,8 @@ slot policy.
 `OperationRequestV1` retains its existing envelope. The app sends `write_gpt`,
 filesystem `format`, `populate_images`, and fixed-catalog `write_files`
 operations in order. The new `populate_images` operation names both target
-PARTUUIDs and lists exactly five allowed live-to-target image pairs:
+PARTUUIDs and lists the five A-slot system images plus the two root vbmeta
+images:
 
 ```json
 {
@@ -35,7 +36,9 @@ PARTUUIDs and lists exactly five allowed live-to-target image pairs:
       {"name": "system_ext_a", "livePartitionName": "system_ext_a"},
       {"name": "product_a", "livePartitionName": "product_a"},
       {"name": "vendor_a", "livePartitionName": "vendor_a"},
-      {"name": "odm_a", "livePartitionName": "odm_a"}
+      {"name": "odm_a", "livePartitionName": "odm_a"},
+      {"name": "vbmeta_a", "livePartitionName": "vbmeta_a"},
+      {"name": "vbmeta_b", "livePartitionName": "vbmeta_a"}
     ]
   }
 }

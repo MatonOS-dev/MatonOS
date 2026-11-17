@@ -29,10 +29,10 @@ image names. Slot selection and OTA writes are outside this task.
    from sector zero, format ext4 through that mapping, then mount both ext4
    filesystems under `/mnt/matonos-install/`.
 5. Call `ImageManager::Open("/mnt/matonos-install/metadata/maton/images",
-   "/mnt/matonos-install/system/images")`. For each of `system_a`,
-   `system_ext_a`, `product_a`, `vendor_a`, and `odm_a`, create the readonly
-   backing image, map it, copy the complete live mapper image, fsync and
-   read back the bytes, then unmap it.
+   "/mnt/matonos-install/system/images")`. Create readonly backing images for
+   the five A-slot system partitions plus `vbmeta_a` and `vbmeta_b`, map each,
+   copy the complete live mapper image (the root vbmeta source supplies both
+   slot files), fsync and read back the bytes, then unmap it.
 6. Unmount the target filesystems and remove the temporary dm-linear device.
 7. Write the fallback loader, installed UKI and one loader entry. The entry
    selects `_a`, carries the target ESP PARTUUID and the selected disk's

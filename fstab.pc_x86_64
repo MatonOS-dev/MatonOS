@@ -6,7 +6,7 @@
 # disk's sysfs ancestry so ueventd creates that disk's /dev/block/by-name/*.
 #
 # Mainline-kernel constraints (see NOTES.md):
-#  - no avb flags (AVB disabled)
+#  - AVB hashtree verification uses UKI-pinned vbmeta metadata
 #  - no keydirectory= (metadata encryption needs dm-default-key, ACK-only)
 #  - no checkpoint=block (needs dm-bow, ACK-only)
 #  - no inlinecrypt (PCs have no inline crypto engine)
@@ -14,11 +14,14 @@
 #<src>                     <mnt_point>  <type> <mnt_flags>                         <fs_mgr_flags>
 # install: slotselect resolves these logical names to *_a or *_b from the
 # systemd-boot androidboot.slot_suffix. The live fstab remains separately named.
-system                     /system      erofs  ro                                  wait,logical,first_stage_mount,slotselect
-system_ext                 /system_ext  erofs  ro                                  wait,logical,first_stage_mount,slotselect
-product                    /product     erofs  ro                                  wait,logical,first_stage_mount,slotselect
-vendor                     /vendor      erofs  ro                                  wait,logical,first_stage_mount,slotselect
-odm                        /odm         erofs  ro                                  wait,logical,first_stage_mount,slotselect
+system                     /system      erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+system_ext                 /system_ext  erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+product                    /product     erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+vendor                     /vendor      erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+odm                        /odm         erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+# AVB's root metadata is mapped from the file-backed image store just like
+# the system images. emmc keeps first-stage init from trying to mount it.
+vbmeta                     /vbmeta      emmc   defaults                            wait,logical,first_stage_mount,slotselect
 
 # Installed image files. First-stage init mounts this only when the boot disk
 # has no super partition; legacy super-based installations can omit it.
