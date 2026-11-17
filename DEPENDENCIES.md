@@ -15,7 +15,7 @@ sudo apt-get install -y \
   libc6-dev-i386 x11proto-core-dev libx11-dev lib32z1-dev libgl1-mesa-dev libxml2-utils xsltproc \
   fontconfig python3 python-is-python3 ccache ninja-build cmake pkg-config cpio xz-utils zstd lz4 \
   libarchive-tools mtools dosfstools gdisk parted efibootmgr sbsigntool systemd-ukify patchelf \
-  util-linux bubblewrap libexpat1-dev libxml2-dev libffi-dev gawk openjdk-21-jdk-headless \
+  util-linux bubblewrap libexpat1-dev libxml2-dev libffi-dev gawk openjdk-21-jdk-headless openjdk-25-jdk-headless \
   ostree python3-gi gir1.2-ostree-1.0 libglib2.0-dev libwayland-dev libdbus-1-dev
 ```
 
@@ -31,7 +31,7 @@ sudo apt-get install -y \
 | `bubblewrap` | `alpine-enter.sh`: enters the offline Alpine root for the musl Flatpak build (needs unprivileged user namespaces) |
 | `libexpat1-dev`, `libxml2-dev`, `libffi-dev` | host-side `wayland-scanner` build (compositor) |
 | `gawk` | libgpg-error `gen-lock-obj.sh` (Xwayland). **mawk ≥ 20250131 parses `0x28` as 0**, so the build stops with "cannot determine bionic pthread mutex size" |
-| `openjdk-21-jdk-headless` | subsystem tests (`javac`) and Gradle |
+| `openjdk-21-jdk-headless`, `openjdk-25-jdk-headless` | subsystem tests (`javac` 21) and the Gradle Java toolchain (JDK 25 compiler; a JRE alone fails with "does not provide JAVA_COMPILER") |
 | `ostree`, `python3-gi`, `gir1.2-ostree-1.0` | subsystem packs (`linux/packs/ostree_source.py`) and Flatpak tests |
 | `libglib2.0-dev`, `libwayland-dev`, `libdbus-1-dev` | host-side subsystem tests (D-Bus bus/portal tests use `gio-unix-2.0`, Wayland tests use `wayland-client`/`-server`) |
 
