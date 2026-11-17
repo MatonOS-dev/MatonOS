@@ -28,7 +28,7 @@ source "$DEVICE_DIR/tools/selinux-boot.sh"
 OUT=""
 KERNEL=""
 BOOTEFI="/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
-SUPER_SIZE_BYTES=8589934592          # must equal BOARD_SUPER_PARTITION_SIZE
+SUPER_SIZE_BYTES=$(sed -n "s/^BOARD_SUPER_PARTITION_SIZE := //p" "$DEVICE_DIR/BoardConfig.mk")
 CMDLINE="console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware androidboot.hardware=pc_x86_64 androidboot.verifiedbootstate=orange"
 PAYLOAD="$PWD/payload"
 SECURE_BOOT=0
