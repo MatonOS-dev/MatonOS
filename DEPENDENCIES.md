@@ -16,7 +16,8 @@ sudo apt-get install -y \
   fontconfig python3 python-is-python3 ccache ninja-build cmake pkg-config cpio xz-utils zstd lz4 \
   libarchive-tools mtools dosfstools gdisk parted efibootmgr sbsigntool systemd-ukify patchelf \
   util-linux bubblewrap libexpat1-dev libxml2-dev libffi-dev gawk openjdk-21-jdk-headless openjdk-25-jdk-headless \
-  ostree python3-gi gir1.2-ostree-1.0 libglib2.0-dev libwayland-dev libdbus-1-dev
+  ostree python3-gi gir1.2-ostree-1.0 libglib2.0-dev libwayland-dev libdbus-1-dev \
+  clang-21 lld-21 llvm-21
 ```
 
 | Package(s) | Needed by |
@@ -34,6 +35,7 @@ sudo apt-get install -y \
 | `openjdk-21-jdk-headless`, `openjdk-25-jdk-headless` | subsystem tests (`javac` 21) and the Gradle Java toolchain (JDK 25 compiler; a JRE alone fails with "does not provide JAVA_COMPILER") |
 | `ostree`, `python3-gi`, `gir1.2-ostree-1.0` | subsystem packs (`linux/packs/ostree_source.py`) and Flatpak tests |
 | `libglib2.0-dev`, `libwayland-dev`, `libdbus-1-dev` | host-side subsystem tests (D-Bus bus/portal tests use `gio-unix-2.0`, Wayland tests use `wayland-client`/`-server`) |
+| `clang-21`, `lld-21`, `llvm-21` | freestanding Vulkan/GL forwarder ICDs (`linux/vulkan-forward/build.sh` uses `clang-21`, `llvm-readelf-21`). Debian 13 has no LLVM 21; add `deb [signed-by=…] http://apt.llvm.org/trixie/ llvm-toolchain-trixie-21 main` |
 
 ## Toolchains and sources outside apt
 
