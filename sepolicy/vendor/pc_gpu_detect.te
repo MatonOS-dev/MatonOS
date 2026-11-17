@@ -42,4 +42,4 @@ allow pc_gpu_detect vendor_modprobe:process { signal sigkill };
 # pc-virtgpu-caps (plain vendor_file, runs in this domain) queries the
 # virtio-gpu render node's capsets to choose the Vulkan HAL.
 allow pc_gpu_detect gpu_device:dir search;
-allow pc_gpu_detect gpu_device:chr_file { open read write ioctl };
+allow pc_gpu_detect gpu_device:chr_file { getattr open read write ioctl };
