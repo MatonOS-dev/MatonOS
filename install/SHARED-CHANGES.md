@@ -276,3 +276,52 @@ AOSP uses the prebuilt rather than generating a competing image. Keep
 these changes and request one full image build. Verify the installed
 `odm.img` is EROFS and contains the Mesa selectors before repeating the live
 boot and install test. I have not edited `tools/*` or graphics-owned files.
+
+## 2026-11-17 SELinux neverallow design for file-backed image population
+
+The module build at `out/pc-logs/inst-modules.log` found that the current
+vendor installer cannot mount the target ext4 filesystems or exec the
+system_ext libfiemap executable. Do not add neverallow exceptions. `libfs_mgr`
+explicitly says it must never be vendor-available as a shared library, so
+moving `matonos-fiemap-helper` into the ODM/vendor domain is not a valid fix.
+Keep the helper in system_ext and make init the only cross-boundary launcher.
+
+The required end-to-end sequence is:
+
+1. `matonos_driver` validates the target partition descriptors/diskseq, creates
+   the single-target sector-zero dm-linear wrapper, formats the two filesystems,
+   creates the mountpoint directories, and writes the source device paths plus
+   a unique request id to the existing `vendor.maton.*` property namespace.
+2. An init property action in the installer rc performs both ext4 mounts at
+   `/mnt/matonos-install/metadata` and `/mnt/matonos-install/system`, then
+   publishes the matching completion id. The installer verifies both mounts
+   in mountinfo before continuing. Its existing root-label and image-directory
+   setup remains after the mounts. The matching finish action unmounts both
+   paths and reports completion before the dm mapping is removed.
+3. The vendor installer writes one bounded request (`id`, operation, image
+   name, optional size) to a request file on the mounted image store, then
+   updates a monotonically changing request-id property. An init property
+   action synchronously `exec_start`s a disabled, oneshot
+   `/system_ext/bin/matonos-fiemap-helper` service and sets a done-id property
+   after it exits. The helper reads the request file, calls the existing
+   `ImageManager` API, and atomically writes id/status/output to a result file
+   in that same store. The installer waits for the matching done id, reads the
+   matching result, and uses the mapped `/dev/block/dm-*` path as before.
+   Request/result files use the existing `matonos_install_mount_file` label;
+   add only the narrow helper read/write rules to the existing
+   `sepolicy/system_ext/private/matonos_controllers.te` and exec label to the
+   existing system_ext `file_contexts` (no policy file additions).
+4. The existing copy loop still writes each live EROFS mapper device to the
+   fiemap mapper device and verifies the bytes. It then unmaps each image,
+   requests init unmount both ext4 filesystems, verifies unmount, and removes
+   the dm-linear wrapper.
+
+The helper must not use `ctl.start` from the vendor domain: init property
+triggers own the transition and keep vendor code from executing a system_ext
+binary. The mount actions likewise keep all mount/unmount syscalls in init.
+The sector-zero dm-linear wrapper remains mandatory because libfiemap records
+the leaf block device and expects the filesystem to start at sector zero.
+
+This is a design/request only; the implementation and coordinator build
+confirmation are still pending. The current direct mount and fork/exec paths
+remain the neverallow failures until the sequence above is implemented.

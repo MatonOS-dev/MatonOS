@@ -528,3 +528,15 @@ made AOSP overwrite the custom bundle `odm.img` staged earlier by
 the latter's root-shell `logcat -b crash -d` captured the tombstone.
 This image did not reach `sys.boot_completed`, so the live home screen and
 target install remain unverified.
+
+## SELinux neverallow follow-up (2026-11-17)
+
+The current direct mount and vendor-to-system_ext helper exec paths fail
+platform `domain.te` neverallows. The module build confirmed that `libfs_mgr`
+cannot be made vendor-available. The required replacement sequence and exact
+shared policy/rc integration are recorded in
+[`SHARED-CHANGES.md`](SHARED-CHANGES.md). Do not claim installer image-store
+population is policy-clean until init owns both mounts and unmounts, init
+starts the system_ext helper by request property, and the coordinator confirms
+`selinux_policy` plus `matonos-fiemap-helper` build clean. No AOSP neverallow
+exception is acceptable.
