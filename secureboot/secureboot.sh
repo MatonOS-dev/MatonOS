@@ -5,7 +5,7 @@ set -Eeuo pipefail
 SECUREBOOT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 DEVICE_DIR=$(dirname "$SECUREBOOT_DIR")
 SB_KEY_DIR=${MATON_SECUREBOOT_KEY_DIR:-$HOME/.config/matonos/secureboot-dev}
-# Default shim: dual-signed shim 16.1 from Ventoy, staged by fetch-shim.sh.
+# Default shim: Rocky Linux dual-signed shim 16.1, staged by fetch-shim.sh.
 SB_SHIM_DIR=${MATON_SHIM_DIR:-$HOME/.cache/matonos/shim}
 if [[ -z ${MATON_SHIM_EFI:-} ]]; then "$SECUREBOOT_DIR/fetch-shim.sh" "$SB_SHIM_DIR" >&2; fi
 SB_SHIM=${MATON_SHIM_EFI:-$SB_SHIM_DIR/shimx64.efi}
