@@ -77,16 +77,14 @@ allow matonos_driver_helper matonos_install_mount_file:dir { relabelto relabelfr
 allow matonos_driver_helper matonos_install_mount_file:file { create open read write getattr setattr unlink map relabelto relabelfrom ioctl };
 type_transition matonos_driver_helper matonos_install_mount_file:dir matonos_install_mount_file;
 type_transition matonos_driver_helper matonos_install_mount_file:file matonos_install_mount_file;
-allow matonos_driver_helper ext4:filesystem { mount unmount getattr };
-allow matonos_install_mount_file ext4:filesystem associate;
-allow matonos_driver_helper self:capability sys_admin;
+allow matonos_driver_helper labeledfs:filesystem { mount unmount getattr };
+allow matonos_install_mount_file labeledfs:filesystem associate;
 allow init matonos_install_mount_file:dir { create_dir_perms relabelto };
 allow init matonos_install_mount_file:dir { search open read getattr };
 allow init matonos_install_mount_file:file { open read getattr map };
 allow matonos_driver_helper unlabeled:dir { getattr relabelfrom };
 allow matonos_driver_helper matonos_install_block_device:blk_file ioctl;
 allow matonos_driver_helper dm_device:blk_file rw_file_perms;
-allow matonos_driver_helper make_f2fs_exec:file { execute execute_no_trans getattr map open read };
 allow matonos_driver dm_device:blk_file r_file_perms;
 allow matonos_driver_helper self:capability sys_admin;
 typeattribute matonos_driver_helper vendor_executes_system_violators;

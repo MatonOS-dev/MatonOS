@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
         auto manager = OpenManager();
         if (!manager) return Fail("ImageManager::Open failed for the install image directories");
         const auto status = manager->CreateBackingImage(argv[2], size,
-                android::fiemap::IImageManager::CREATE_IMAGE_READONLY);
+                android::fiemap::IImageManager::CREATE_IMAGE_READONLY, nullptr);
         if (!status) return Fail("CreateBackingImage failed");
         return 0;
     }
