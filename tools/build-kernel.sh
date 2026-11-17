@@ -20,8 +20,9 @@
 #          android-base.config + kernel/pc.config (merged in that order,
 #          later wins).
 #
-# KERNEL_SRC selects an ACK tree: it starts from x86_64_defconfig and omits
-# the mainline-only android-base fragment. KERNEL_STAGE can redirect staging.
+# KERNEL_SRC selects an ACK tree: it starts from x86_64_defconfig, then merges
+# the same fragments (android-base is required: without it netd's iptables
+# tables end up as unloaded modules and zygote restart-loops). KERNEL_STAGE can redirect staging.
 # Mainline still stages into <device dir>/prebuilt/ by default; ACK defaults
 # to <aosp>/out/ack-kernel-stage so the coordinator can review/swap it.
 # Staged files:
@@ -76,11 +77,10 @@ done
 KOUT=${KOUT:-$AOSP/out/pc-kernel}
 if (( ACK_MODE )); then
   STAGE=${KERNEL_STAGE:-$AOSP/out/ack-kernel-stage}
-  BASE_CFG=""
 else
   STAGE=${KERNEL_STAGE:-$DEVICE_DIR/prebuilt}
-  BASE_CFG=$AOSP/kernel/configs/$ANDROID_BASE_FRAGMENT
 fi
+BASE_CFG=$AOSP/kernel/configs/$ANDROID_BASE_FRAGMENT
 PC_CFG=$DEVICE_DIR/kernel/pc.config
 BASE=$DEVICE_DIR/kernel/base.config
 if (( SECURE_BOOT )); then
@@ -182,7 +182,7 @@ mkdir -p "$KOUT"
 if (( ACK_MODE )); then
   kmake -s x86_64_defconfig
   "$LINUX/scripts/kconfig/merge_config.sh" -m -O "$KOUT" \
-    "$KOUT/.config" "$BASE" "$PC_CFG" >/dev/null
+    "$KOUT/.config" "$BASE" "$BASE_CFG" "$PC_CFG" >/dev/null
 else
   "$LINUX/scripts/kconfig/merge_config.sh" -m -O "$KOUT" \
     "$BASE" "$BASE_CFG" "$PC_CFG" >/dev/null
