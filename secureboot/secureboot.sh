@@ -5,8 +5,11 @@ set -Eeuo pipefail
 SECUREBOOT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 DEVICE_DIR=$(dirname "$SECUREBOOT_DIR")
 SB_KEY_DIR=${MATON_SECUREBOOT_KEY_DIR:-$HOME/.config/matonos/secureboot-dev}
-SB_SHIM=${MATON_SHIM_EFI:-/usr/lib/shim/shimx64.efi.signed.latest}
-SB_MOK_MANAGER=${MATON_MOK_MANAGER_EFI:-/usr/lib/shim/mmx64.efi}
+# Default shim: dual-signed shim 16.1 from Ventoy, staged by fetch-shim.sh.
+SB_SHIM_DIR=${MATON_SHIM_DIR:-$HOME/.cache/matonos/shim}
+if [[ -z ${MATON_SHIM_EFI:-} ]]; then "$SECUREBOOT_DIR/fetch-shim.sh" "$SB_SHIM_DIR" >&2; fi
+SB_SHIM=${MATON_SHIM_EFI:-$SB_SHIM_DIR/shimx64.efi}
+SB_MOK_MANAGER=${MATON_MOK_MANAGER_EFI:-$SB_SHIM_DIR/mmx64.efi}
 SB_SYSTEMD_STUB=${MATON_SYSTEMD_STUB:-/usr/lib/systemd/boot/efi/linuxx64.efi.stub}
 
 sb_die() { echo "ERROR: $*" >&2; exit 1; }
