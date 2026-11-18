@@ -31,8 +31,7 @@ Configuration paths are supplied by environment variables. Example:
   "channels": {
     "testing": { "update_id": 1795430400 },
     "main": { "update_id": 1795430400 }
-  },
-  "eol": { "1795430400": "2027-05-17" }
+  }
 }
 ```
 
@@ -76,6 +75,6 @@ python3 ../install/ota/test_ota.py
 ```
 
 Node tests cover all four API endpoints, downgrade filtering and promotion,
-add-on selection, EOL, malformed requests, and byte ranges. The Python test
+the required add-on gate, fixed EOL response, malformed requests, and byte ranges. The Python test
 checks publisher output and compatibility with the native slot-writer
 manifest verifier.

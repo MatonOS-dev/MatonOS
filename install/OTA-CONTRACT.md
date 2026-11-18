@@ -36,29 +36,36 @@ The server config has this shape:
     "testing": { "update_id": 1795430400 },
     "main": { "update_id": 1795430400 },
     "internal": { "update_id": 1795430400, "requires_license": true }
-  },
-  "eol": {
-    "1795430400": "2027-05-17"
   }
 }
 ```
 
 Only `testing` and `main` are initially configured. Channel names are
 configuration-driven and may later include versioned names without code
-changes. EOL values are the final supported UTC calendar date for that update.
-All update and channel selection paths refuse a release with an Android base
-below the request's `base_android`. Channel selection also omits channels
-marked `requires_license` because no license validation is implemented yet.
+changes. All update and channel selection paths refuse a release with an
+Android base below the request's `base_android`. They also require every ID in
+the device's `addon_list` to have an entry in the release manifest's `addons`
+object. `/api/update` returns `{"available":false,"reason":"missing_addons",
+"missing_addons":[...]}` listing every missing ID; `/api/channels` hides a
+channel whose current update fails this gate. Channel selection also omits
+channels marked `requires_license` because no license validation is implemented yet.
+The current slot-writer stage cannot repeat the add-on check: its manifest
+model contains only base payload metadata, and the device tree has no source
+that enumerates installed add-on IDs. `install/tools/test-install.sh:77-85`
+defines the `addons_a`/`addons_b` image partitions, but those partition names
+do not identify the add-ons installed in them. The caller must therefore send
+the authoritative `addon_list`; adding a device-side inventory is still open.
 
 ## Request schema
 
 All endpoints use `POST`, `Content-Type: application/json`, and accept the
-same object. `license_hash` is optional and may be `null`.
+same object. `machine_id` and `license_hash` are optional strings accepted but
+otherwise unused; neither is logged or stored. When present, each must be a
+string.
 
 ```json
 {
   "update_id": 1795430400,
-  "license_hash": null,
   "channel": "testing",
   "base_android": 18,
   "machine_id": "opaque-device-id",
@@ -66,8 +73,7 @@ same object. `license_hash` is optional and may be `null`.
 }
 ```
 
-`machine_id` is validated, never logged or stored, and is not used as an
-authentication credential. Requests larger than 64 KiB are rejected.
+Requests larger than 64 KiB are rejected.
 Successful and error API responses use `Cache-Control: no-store`.
 
 ## Endpoints
@@ -78,12 +84,16 @@ Successful and error API responses use `Cache-Control: no-store`.
 {"channels":[{"channel":"testing","update_id":1795430401,"version":"18","android_base":18}]}
 ```
 
-Channels below the installed Android base and license-required channels are
-omitted.
+Channels below the installed Android base, license-required channels, and
+channels missing any installed add-on are omitted.
 
 `POST /api/update` checks the configured request channel. An update response
-contains the base files and only the requested add-ons present in that
-release:
+contains the base files and every requested add-on. If any requested add-on is
+missing, the update is unavailable and the response names those IDs:
+
+```json
+{"available":false,"reason":"missing_addons","missing_addons":["editor"]}
+```
 
 ```json
 {
@@ -102,15 +112,13 @@ If the channel points below `base_android`, the response is
 `{"available":false,"reason":"android_base_too_old"}`. If it points to the
 already installed update, the response is `{"available":false}`.
 
-`POST /api/eol` reports whether the installed update is past its configured
-support end date:
+`POST /api/eol` always returns:
 
 ```json
-{"update_id":1795430400,"end_of_life":false,"support_ends":"2027-05-17"}
+{"eol":false}
 ```
 
-An update without a configured EOL entry returns `support_ends: null` and
-`end_of_life: false`.
+There is no EOL configuration or date logic.
 
 `POST /api/license` returns `{"status":"none","license":null}` until
 license support is implemented.

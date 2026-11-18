@@ -39,7 +39,7 @@ async function writeUpdate(id: number, base: number, addonFiles: Record<string, 
 
 const request = (endpoint: string, body: unknown, headers: Record<string, string> = {}) =>
   fetch(`${baseUrl}${endpoint}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: typeof body === 'string' ? body : JSON.stringify(body) });
-const payload = (values: Record<string, unknown> = {}) => ({ update_id: 100, license_hash: null, channel: 'testing', base_android: 18, machine_id: 'device-abc_123', addon_list: [], ...values });
+const payload = (values: Record<string, unknown> = {}) => ({ update_id: 100, channel: 'testing', base_android: 18, machine_id: 'device-abc_123', addon_list: [], ...values });
 
 before(async () => {
   root = await mkdtemp(resolve(tmpdir(), 'matonos-ota-'));
@@ -51,8 +51,7 @@ before(async () => {
   await writeUpdate(102, 17);
   await writeUpdate(103, 19);
   await writeFile(configPath, JSON.stringify({
-    channels: { testing: { update_id: 101 }, main: { update_id: 102 }, licensed: { update_id: 103, requires_license: true } },
-    eol: { '100': '2026-01-01', '101': '2099-12-31' }
+    channels: { testing: { update_id: 101 }, incomplete: { update_id: 103 }, main: { update_id: 102 }, licensed: { update_id: 103, requires_license: true } }
   }));
   const { createOtaServer } = await import('../src/server.ts');
   server = createOtaServer();
@@ -66,15 +65,15 @@ after(async () => {
 });
 
 describe('OTA API', () => {
-  it('lists configured channels whose Android base is not lower', async () => {
-    const response = await request('/api/channels', payload());
+  it('lists only channels whose base and add-on inventory satisfy the device', async () => {
+    const response = await request('/api/channels', payload({ addon_list: ['games', 'editor'] }));
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.deepEqual(await response.json(), { channels: [{ channel: 'testing', update_id: 101, version: '18', android_base: 18 }] });
   });
 
-  it('returns base files and only requested add-on files', async () => {
-    const response = await request('/api/update', payload({ addon_list: ['games', 'missing'] }));
+  it('returns base files and every requested add-on file', async () => {
+    const response = await request('/api/update', payload({ addon_list: ['games'] }));
     const result = await response.json();
     assert.equal(response.status, 200);
     assert.equal(result.available, true);
@@ -83,16 +82,19 @@ describe('OTA API', () => {
     assert.deepEqual(result.addons.games.map((item: any) => item.url), ['/storage/101/games/runtime.tar.zst', '/storage/101/games/locale/en.dat']);
   });
 
+  it('refuses an update and names missing add-ons', async () => {
+    const response = await request('/api/update', payload({ addon_list: ['games', 'not-ported'] }));
+    assert.deepEqual(await response.json(), { available: false, reason: 'missing_addons', missing_addons: ['not-ported'] });
+  });
+
   it('does not offer an update below the installed Android base', async () => {
     const response = await request('/api/update', payload({ channel: 'main', base_android: 18 }));
     assert.deepEqual(await response.json(), { available: false, reason: 'android_base_too_old' });
   });
 
-  it('reports end-of-life status from configured dates', async () => {
-    const ended = await request('/api/eol', payload());
-    assert.deepEqual(await ended.json(), { update_id: 100, end_of_life: true, support_ends: '2026-01-01' });
-    const supported = await request('/api/eol', payload({ update_id: 101 }));
-    assert.equal((await supported.json()).end_of_life, false);
+  it('always reports that the installed build is not at end of life', async () => {
+    const response = await request('/api/eol', payload());
+    assert.deepEqual(await response.json(), { eol: false });
   });
 
   it('returns no license when none are implemented', async () => {
@@ -103,9 +105,9 @@ describe('OTA API', () => {
   it('rejects malformed JSON and invalid request fields without logging machine id', async () => {
     const malformed = await request('/api/update', '{');
     assert.equal(malformed.status, 400);
-    const invalid = await request('/api/update', payload({ machine_id: 'bad / id' }));
+    const invalid = await request('/api/update', payload({ machine_id: 42 }));
     assert.equal(invalid.status, 400);
-    assert.equal((await invalid.text()).includes('bad / id'), false);
+    assert.equal((await invalid.text()).includes('42'), false);
   });
 
   it('serves byte ranges and immutable storage cache headers', async () => {

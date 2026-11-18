@@ -8,8 +8,6 @@ const STORAGE_DIR = process.env.OTA_STORAGE_DIR;
 const CONFIG_PATH = process.env.OTA_CONFIG;
 const MAX_BODY = 64 * 1024;
 const CHANNEL_RE = /^[a-z0-9_]+$/;
-const ADDON_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-const MACHINE_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 const UPDATE_ID_RE = /^[1-9][0-9]{0,19}$/;
 
 function log(level: string, event: string, fields: Record<string, unknown> = {}) {
@@ -41,27 +39,26 @@ function idString(value: string | number): string {
 
 function validateBody(body: any) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw fail(400, 'invalid_body', 'Expected a JSON object');
-  const required = ['update_id', 'channel', 'base_android', 'machine_id', 'addon_list'];
+  const required = ['update_id', 'channel', 'base_android', 'addon_list'];
   for (const key of required) if (!(key in body)) throw fail(400, 'missing_field', `Missing field: ${key}`);
   if (!validUpdateId(body.update_id)) throw fail(400, 'invalid_update_id', 'update_id must be a positive integer');
   if (!Number.isSafeInteger(body.base_android) || body.base_android <= 0) throw fail(400, 'invalid_base_android', 'base_android must be a positive integer');
   if (typeof body.channel !== 'string' || !CHANNEL_RE.test(body.channel)) throw fail(400, 'invalid_channel', 'channel has an invalid format');
-  if (typeof body.machine_id !== 'string' || !MACHINE_ID_RE.test(body.machine_id)) throw fail(400, 'invalid_machine_id', 'machine_id has an invalid format');
-  if (body.license_hash !== undefined && body.license_hash !== null &&
-      (typeof body.license_hash !== 'string' || !/^[a-f0-9]{64}$/.test(body.license_hash))) {
-    throw fail(400, 'invalid_license_hash', 'license_hash must be a lowercase SHA-256 hex string');
+  if (body.machine_id !== undefined && typeof body.machine_id !== 'string') throw fail(400, 'invalid_machine_id', 'machine_id must be a string');
+  if (body.license_hash !== undefined && typeof body.license_hash !== 'string') {
+    throw fail(400, 'invalid_license_hash', 'license_hash must be a string');
   }
-  if (!Array.isArray(body.addon_list) || body.addon_list.some((id: unknown) => typeof id !== 'string' || !ADDON_RE.test(id))) {
-    throw fail(400, 'invalid_addon_list', 'addon_list must contain valid add-on ids');
+  if (!Array.isArray(body.addon_list) || body.addon_list.some((id: unknown) => typeof id !== 'string')) {
+    throw fail(400, 'invalid_addon_list', 'addon_list must contain add-on id strings');
   }
-  return body as { update_id: string | number; channel: string; base_android: number; machine_id: string; license_hash?: string | null; addon_list: string[] };
+  return body as { update_id: string | number; channel: string; base_android: number; machine_id?: string; license_hash?: string; addon_list: string[] };
 }
 
 async function readConfig() {
   if (!CONFIG_PATH) throw new Error('OTA_CONFIG is not set');
   const config = JSON.parse(await fs.readFile(CONFIG_PATH, 'utf8'));
-  if (!config || typeof config.channels !== 'object' || !config.channels || typeof config.eol !== 'object' || !config.eol) {
-    throw new Error('config must contain channels and eol objects');
+  if (!config || typeof config.channels !== 'object' || !config.channels) {
+    throw new Error('config must contain a channels object');
   }
   for (const [name, channel] of Object.entries(config.channels) as [string, any][]) {
     if (!CHANNEL_RE.test(name) || !channel || !validUpdateId(channel.update_id) ||
@@ -69,13 +66,7 @@ async function readConfig() {
       throw new Error(`invalid channel configuration: ${name}`);
     }
   }
-  for (const [id, date] of Object.entries(config.eol)) {
-    if (!UPDATE_ID_RE.test(id) || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-        !Number.isFinite(Date.parse(`${date}T00:00:00.000Z`)) || new Date(`${date}T00:00:00.000Z`).toISOString().slice(0, 10) !== date) {
-      throw new Error(`invalid EOL configuration for update ${id}`);
-    }
-  }
-  return config as { channels: Record<string, { update_id: string | number; requires_license?: boolean }>; eol: Record<string, string> };
+  return config as { channels: Record<string, { update_id: string | number; requires_license?: boolean }> };
 }
 
 async function readManifest(id: string) {
@@ -137,14 +128,13 @@ async function handleApi(req: any, res: any) {
     for (const [name, entry] of Object.entries(config.channels)) {
       if (entry.requires_license) continue;
       const manifest = await readManifest(idString(entry.update_id));
-      if (manifest.build.android_base >= body.base_android) channels.push({ channel: name, update_id: entry.update_id, version: manifest.build.version, android_base: manifest.build.android_base });
+      const missing = body.addon_list.filter((addonId: string) => !Array.isArray(manifest.addons[addonId]));
+      if (manifest.build.android_base >= body.base_android && missing.length === 0) channels.push({ channel: name, update_id: entry.update_id, version: manifest.build.version, android_base: manifest.build.android_base });
     }
     return json(res, 200, { channels });
   }
   if (path === '/api/eol') {
-    const date = config.eol[idString(body.update_id)] ?? null;
-    const eol = date !== null && new Date(`${date}T23:59:59.999Z`).getTime() < Date.now();
-    return json(res, 200, { update_id: body.update_id, end_of_life: eol, support_ends: date });
+    return json(res, 200, { eol: false });
   }
   const selected = config.channels[body.channel];
   if (!selected) throw fail(404, 'channel_not_found', `Channel ${body.channel} was not found`);
@@ -154,11 +144,13 @@ async function handleApi(req: any, res: any) {
   if (manifest.build.android_base < body.base_android) {
     return json(res, 200, { available: false, reason: 'android_base_too_old' });
   }
+  const missing = [...new Set(body.addon_list)].filter((addonId) => !Array.isArray(manifest.addons[addonId]));
+  if (missing.length > 0) return json(res, 200, { available: false, reason: 'missing_addons', missing_addons: missing });
   if (updateId === idString(body.update_id)) return json(res, 200, { available: false });
   const addons: Record<string, unknown[]> = {};
   for (const addonId of [...new Set(body.addon_list)]) {
     const entries = manifest.addons[addonId];
-    if (Array.isArray(entries)) addons[addonId] = entries.map((entry: any) => fileRecord(updateId, entry, addonId));
+    addons[addonId] = entries.map((entry: any) => fileRecord(updateId, entry, addonId));
   }
   const files = manifest.files.map((entry: any) => fileRecord(updateId, entry));
   return json(res, 200, {
