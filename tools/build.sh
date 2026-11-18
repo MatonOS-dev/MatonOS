@@ -196,6 +196,11 @@ if [[ $DO_AOSP == 1 ]]; then
   "$TOOLS/fetch-apps.sh"
   "$TOOLS/../gms/fetch-gms.sh"
 
+  # Soong only accepts in-tree paths; BoardConfig.mk points here (gitignored).
+  mkdir -p "$DEVICE_DIR/prebuilt/avb"
+  # A copy, not a symlink: sandboxed build actions may not see $HOME.
+  install -m 0600 "$AVB_KEY_PATH" "$DEVICE_DIR/prebuilt/avb/matonos-avb.pem"
+
   info "AOSP build setup ($PRODUCT-$RELEASE-$VARIANT)"
   printf '  AOSP root: %s\n' "$AOSP"
   if [[ -n $MODULES ]]; then
