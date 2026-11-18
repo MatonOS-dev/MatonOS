@@ -60,6 +60,7 @@ struct source {
     bool finger_down;
     bool left_down;
     bool has_hardware_buttons;
+    bool led_misc; /* vmmouse: LED_MISC on = relative mode during capture */
     bool has_wheel_hi_res, has_hwheel_hi_res;
     bool wheel_hi_res_this_frame, hwheel_hi_res_this_frame;
     int wheel_legacy_pending, hwheel_legacy_pending;
@@ -71,6 +72,7 @@ struct source {
 static struct source sources[MAX_DEVICES];
 static int epfd = -1, inotify_fd = -1, keyboard_fd = -1, pointer_fd = -1;
 static _Atomic int touchpad_fd = -1;
+static bool pointer_captured;
 static _Atomic unsigned int keyboards, pointers;
 static _Atomic unsigned int absolute_pointers;
 static _Atomic unsigned int touchpads;
@@ -246,6 +248,8 @@ static bool configure_pointer(int fd) {
         if (ioctl(fd, UI_SET_RELBIT, required_axes[i]) < 0) return false;
     pointer_wheel_hi_res = ioctl(fd, UI_SET_RELBIT, REL_WHEEL_HI_RES) == 0;
     pointer_hwheel_hi_res = ioctl(fd, UI_SET_RELBIT, REL_HWHEEL_HI_RES) == 0;
+    /* InputReader sets LED_MISC while an app holds pointer capture. */
+    if (ioctl(fd, UI_SET_EVBIT, EV_LED) < 0 || ioctl(fd, UI_SET_LEDBIT, LED_MISC) < 0) return false;
     if (ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0) return false;
     for (unsigned int code = ABS_X; code <= ABS_Y; code++) {
         struct uinput_abs_setup abs = {.code = code,
@@ -310,11 +314,36 @@ static void remove_source(int i) {
     state_update();
 }
 
+static void set_source_capture(struct source *s) {
+    struct input_event ev[2] = {{.type = EV_LED, .code = LED_MISC, .value = pointer_captured},
+                                {.type = EV_SYN, .code = SYN_REPORT}};
+    if (write(s->fd, ev, sizeof(ev)) != (ssize_t)sizeof(ev))
+        ALOGE("cannot set capture LED on %s (%s): %s", s->node, s->name, strerror(errno));
+}
+
+static void handle_pointer_feedback(void) {
+    struct input_event buf[16];
+    ssize_t bytes;
+    while ((bytes = read(pointer_fd, buf, sizeof(buf))) > 0) {
+        for (size_t j = 0; j < (size_t)bytes / sizeof(buf[0]); j++) {
+            if (buf[j].type != EV_LED || buf[j].code != LED_MISC) continue;
+            bool captured = buf[j].value != 0;
+            if (captured == pointer_captured) continue;
+            pointer_captured = captured;
+            ALOGI("pointer capture %s", captured ? "on: relative host mouse" : "off: absolute host mouse");
+            for (int i = 0; i < MAX_DEVICES; i++)
+                if (sources[i].fd >= 0 && sources[i].led_misc) set_source_capture(&sources[i]);
+        }
+    }
+    if (bytes < 0 && errno != EAGAIN) ALOGE("read uinput pointer feedback: %s", strerror(errno));
+}
+
 static void add_source(const char *node) {
     if (strncmp(node, "event", 5) != 0) return;
     for (int i = 0; i < MAX_DEVICES; i++) if (sources[i].fd >= 0 && !strcmp(sources[i].node, node)) return;
     char path[160]; snprintf(path, sizeof(path), INPUT_DIR "/%s", node);
-    int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    int fd = open(path, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+    if (fd < 0) fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (fd < 0) return;
     struct input_id id;
     char name[128] = {0};
@@ -327,6 +356,8 @@ static void add_source(const char *node) {
         !get_bits(fd, EV_REL, rel_bits, sizeof(rel_bits)) ||
         !get_bits(fd, EV_ABS, abs_bits, sizeof(abs_bits)) ||
         ioctl(fd, EVIOCGPROP(sizeof(prop_bits)), prop_bits) < 0) { close(fd); return; }
+    unsigned long led_bits[(LED_MAX + sizeof(unsigned long)*8)/(sizeof(unsigned long)*8)];
+    bool led_misc = get_bits(fd, EV_LED, led_bits, sizeof(led_bits)) && bit_test(led_bits, LED_MISC);
     if (id.bustype == BUS_VIRTUAL || !strncmp(name, "MatonOS ", 8)) { close(fd); return; }
     bool kb = is_keyboard(key_bits);
     int min_x=0,max_x=0,min_y=0,max_y=0;
@@ -367,6 +398,8 @@ static void add_source(const char *node) {
     s->has_hwheel_hi_res = bit_test(rel_bits, REL_HWHEEL_HI_RES);
     s->has_hardware_buttons = bit_test(key_bits, BTN_MOUSE) || bit_test(key_bits, BTN_LEFT);
     s->min_x=min_x; s->max_x=max_x; s->min_y=min_y; s->max_y=max_y;
+    s->led_misc = ptr && s->absolute && led_misc;
+    if (s->led_misc && pointer_captured) set_source_capture(s);
     struct epoll_event ev = {.events = EPOLLIN | EPOLLHUP | EPOLLERR, .data.u32 = (unsigned int)i};
     if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) < 0) { (void)ioctl(fd, EVIOCGRAB,0); close(fd); s->fd=-1; return; }
     if (kb) keyboards++;
@@ -623,7 +656,7 @@ int main(void) {
     refresh_display_geometry();
     for (int i=0;i<MAX_DEVICES;i++) sources[i].fd=-1;
     keyboard_fd = open(UINPUT_NODE, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
-    pointer_fd = open(UINPUT_NODE, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
+    pointer_fd = open(UINPUT_NODE, O_RDWR | O_NONBLOCK | O_CLOEXEC);
     if (keyboard_fd < 0 || pointer_fd < 0 || !configure_keyboard(keyboard_fd) || !configure_pointer(pointer_fd)) {
         ALOGE("cannot create stable uinput devices: %s", strerror(errno)); return 1;
     }
@@ -640,6 +673,10 @@ int main(void) {
     }
     struct epoll_event watch = {.events=EPOLLIN,.data.u32=MAX_DEVICES};
     if (epoll_ctl(epfd, EPOLL_CTL_ADD, inotify_fd, &watch) < 0) return 1;
+    struct epoll_event feedback = {.events=EPOLLIN,.data.u32=MAX_DEVICES+1};
+    if (epoll_ctl(epfd, EPOLL_CTL_ADD, pointer_fd, &feedback) < 0) {
+        ALOGE("cannot watch uinput pointer feedback: %s", strerror(errno)); return 1;
+    }
     scan_devices();
     ALOGI("started; stable keyboard and pointer are active");
     struct epoll_event events[MAX_EVENTS];
@@ -651,6 +688,7 @@ int main(void) {
         for (int e=0;e<n;e++) {
             unsigned int idx=events[e].data.u32;
             if (idx == MAX_DEVICES) { handle_inotify(); continue; }
+            if (idx == MAX_DEVICES + 1) { handle_pointer_feedback(); continue; }
             if (idx >= MAX_DEVICES || sources[idx].fd < 0) continue;
             if (events[e].events & (EPOLLHUP|EPOLLERR)) { remove_source((int)idx); continue; }
             struct input_event buf[32];
