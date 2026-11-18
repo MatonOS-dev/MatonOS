@@ -62,10 +62,13 @@ Each one lives wherever the machine keeps bulk data. Its location goes in `maton
 | meson | 1.9.1 | on `PATH`; the launcher must find `meson.py` relative to itself, not by an absolute path |
 | SPIR-V LLVM translator | LLVM 21 | `MATON_SPIRV_PREFIX` |
 | Mesa source | 26.2.3 | `MESA_DIR` (Xwayland build) |
-| Zink stage (subsystem Mesa) | — | `MATON_ZINK_STAGE`, `MATON_ZINK_STAGE_I386` |
+| Zink (subsystem Mesa) | pinned upstream | checkout `MATON_ZINK_MESA`, output `MATON_ZINK_OUT`; `linux/gl-maton/build-zink.sh` (not part of `--build-dependencies`) prints `MATON_ZINK_STAGE`, `MATON_ZINK_STAGE_I386` |
+| Local source checkouts | — | `LOCAL_REPOS` (holds DullPGP for the Flatpak build) |
 | Offline Alpine root + musl scratch | — | `MATON_MUSL_SCRATCH`, `MUSL_SCRATCH`, `EROFS_MUSL_SCRATCH`, `MUSL_ROOTFS` |
 | Linux subsystem app checkout | — | `MATON_SUBSYSTEM_REPO`, output `MATON_SUBSYSTEM_OUT` |
 | Firmware / microcode cache | — | `FW_CACHE` |
+
+A fresh subsystem checkout or worktree needs `git submodule update --init` (the `contract` store-source AIDL).
 
 Copied build directories carry absolute paths from the machine that made them (configure caches, Makefiles).
 Do not copy `deps/compositor` or `deps/pipewire` between machines; rebuild them with
