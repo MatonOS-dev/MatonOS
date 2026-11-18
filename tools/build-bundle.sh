@@ -16,7 +16,7 @@ done
 
 HOSTBIN=$AOSP/out/host/linux-x86/bin
 MKFS_EROFS=$HOSTBIN/mkfs.erofs
-[[ -x $MKFS_EROFS ]] || die "AOSP host mkfs.erofs missing: $MKFS_EROFS"
+[[ -x $MKFS_EROFS ]] || die "AOSP host mkfs.erofs missing: $MKFS_EROFS (fresh tree: tools/build.sh -m libbinder_ndk,mkfs.erofs)"
 LIST=$DEVICE_DIR/bundle/contents.list
 [[ -s $LIST ]] || die "bundle registry missing: $LIST"
 
