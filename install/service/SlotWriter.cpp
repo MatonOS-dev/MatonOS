@@ -245,7 +245,10 @@ bool Stage(const fs::path& payload) {
     }
     std::set<std::string> installed_addons;
     std::error_code addon_ec;
-    if (fs::is_directory(kAddonDir, addon_ec)) {
+    const bool addon_dir = fs::is_directory(kAddonDir, addon_ec);
+    // Only "no add-on directory" means no add-ons; any other failure (e.g. a denial) must not pass the gate.
+    if (addon_ec == std::errc::no_such_file_or_directory) addon_ec.clear();
+    if (!addon_ec && addon_dir) {
         for (fs::directory_iterator it(kAddonDir, addon_ec), end; !addon_ec && it != end; it.increment(addon_ec)) {
             std::error_code type_ec;
             if (!it->is_directory(type_ec) || type_ec) continue;
