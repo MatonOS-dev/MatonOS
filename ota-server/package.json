@@ -1,0 +1,11 @@
+{
+  "name": "matonos-ota-server",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node src/server.ts",
+    "test": "node --test"
+  }
+}

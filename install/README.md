@@ -8,11 +8,10 @@
 The installed-slot writer accepts signed, slot-neutral full image sets. The
 publisher (`tools/ota-publish.sh`) packages the five raw EROFS images, one
 suffix-free root `vbmeta.img`, both UKIs, and a signed manifest under
-`updates/<update_id>/`. `tools/ota-promote.sh` moves a channel pointer (for
-example, `testing` to `main`) without rebuilding; each channel has a plain
-`updates/<channel>-manifest.json` pointer and short-cache `.hwfm` sidecar. The channel pointer includes Android base for UI filtering. The device
-trusts the signed build manifest for downgrade protection, not channel
-metadata. The AVB
+`storage/<update_id>/`. `ota-server/` serves the API and immutable files;
+`ota-server/src/promote.ts` updates the configured channel after checking that
+the Android base does not decrease. The device trusts the signed build
+manifest for downgrade protection, not channel metadata. The AVB
 descriptor source is `secureboot/avb.sh:64-69`, where the `system`,
 `system_ext`, `product`, `vendor`, and `odm` descriptors are imported without
 slot suffixes; `tools/make-live.sh:46` and `tools/make-live.sh:256-259` build
@@ -22,9 +21,11 @@ publisher and device derive `android_base` from the leading integer in
 allowing any build on the same base. See [OTA-CONTRACT.md](OTA-CONTRACT.md) for the update-centre
 contract and local publishing flow.
 
-Host tests: `python3 install/ota/test_ota.py` builds the same manifest verifier
-used by the writer and checks a fake signed publish, tampering, Android-base downgrade rejection, same-base older-build acceptance, promotion,
-and channel base-downgrade rejection.
+Host tests: `node --test` in `ota-server/` covers all API endpoints,
+base-downgrade filtering and promotion, add-on selection, EOL, malformed
+requests, and range reads. `python3 install/ota/test_ota.py` builds the same
+manifest verifier used by the writer and checks a fake signed publish,
+tampering, and Android-base downgrade rejection.
 Release signing still requires `MATON_OTA_KEY` matching the
 committed public key. No AOSP build, VM, or upload was run for this work.
 

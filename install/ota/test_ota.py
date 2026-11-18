@@ -34,24 +34,27 @@ with tempfile.TemporaryDirectory(prefix="matonos-ota-test-") as temp:
         (images / source_name).write_bytes((f"fake image {index} " * 40).encode())
     output = temp / "published"
     env = os.environ.copy(); env["MATON_OTA_KEY"] = str(key); env["MATON_OTA_PUBLIC_KEY"] = str(pub)
+    addons = temp / "addons" / "games" / "locale"
+    addons.mkdir(parents=True)
+    (addons.parent / "runtime.tar.zst").write_bytes(b"game runtime")
+    (addons / "en.dat").write_bytes(b"locale")
+    env["OTA_ADDONS_DIR"] = str(temp / "addons")
     run(str(ROOT / "tools/ota-publish.sh"), str(images), str(output), env=env)
-    release = output / "updates/1795430400"
+    release = output / "storage/1795430400"
     run(str(verifier), str(release), str(pub), "17")
     manifest = json.loads((release / "manifest.json").read_text())
     assert "channel" not in manifest
     assert manifest["build"]["android_base"] == 18
-    run(str(ROOT / "tools/ota-promote.sh"), str(output), "testing", "1795430400")
-    pointer = output / "updates/testing-manifest.json"
-    assert json.loads(pointer.read_text()) == {"format": 1, "update_id": 1795430400, "version": "18", "android_base": 18}
-    assert pointer.with_suffix(".json.hwfm").is_file()
-    run(str(ROOT / "tools/ota-promote.sh"), str(output), "main", "1795430400")
+    assert (release / "manifest.json.sig").read_bytes() == (release / "manifest.sig").read_bytes()
+    assert manifest["addons"]["games"][0]["name"] == "locale/en.dat"
+    assert (release / "games/locale/en.dat").read_bytes() == b"locale"
 
     (release / "system.erofs").write_bytes(b"tampered")
     run(str(verifier), str(release), str(pub), "17", ok=False)
     # Restore content by re-publishing into a separate output.
     output2 = temp / "published2"
     run(str(ROOT / "tools/ota-publish.sh"), str(images), str(output2), env=env)
-    run(str(verifier), str(output2 / "updates/1795430400"), str(pub), "18")
+    run(str(verifier), str(output2 / "storage/1795430400"), str(pub), "18")
     newer_images = temp / "newer-images"
     (newer_images / "system").mkdir(parents=True)
     (newer_images / "system/build.prop").write_text("ro.build.date.utc=1795430401\nro.build.version.release=18\n")
@@ -59,9 +62,6 @@ with tempfile.TemporaryDirectory(prefix="matonos-ota-test-") as temp:
         source_name = {"matonos-a.efi": "matonos-installed-a.efi", "matonos-b.efi": "matonos-installed-b.efi"}.get(name, name)
         (newer_images / source_name).write_bytes((f"new fake image {index} " * 40).encode())
     run(str(ROOT / "tools/ota-publish.sh"), str(newer_images), str(output), env=env)
-    run(str(ROOT / "tools/ota-promote.sh"), str(output), "testing", "1795430401")
-    # Same Android base allows promoting an older build id.
-    run(str(ROOT / "tools/ota-promote.sh"), str(output), "testing", "1795430400")
     older_base_images = temp / "older-base-images"
     (older_base_images / "system").mkdir(parents=True)
     (older_base_images / "system/build.prop").write_text("ro.build.date.utc=1795430402\nro.build.version.release=17\n")
@@ -70,6 +70,5 @@ with tempfile.TemporaryDirectory(prefix="matonos-ota-test-") as temp:
         (older_base_images / source_name).write_bytes((f"older base image {index} " * 40).encode())
     run(str(ROOT / "tools/ota-publish.sh"), str(older_base_images), str(output), env=env)
     older_base_id = "1795430402"
-    run(str(verifier), str(output / "updates" / older_base_id), str(pub), "18", ok=False)
-    run(str(ROOT / "tools/ota-promote.sh"), str(output), "testing", older_base_id, ok=False)
+    run(str(verifier), str(output / "storage" / older_base_id), str(pub), "18", ok=False)
 print("OTA publisher/signature/hash/base-downgrade tests passed")

@@ -11,6 +11,7 @@ from pathlib import Path
 
 FILES = ("system.erofs", "system_ext.erofs", "product.erofs", "vendor.erofs",
          "odm.erofs", "vbmeta.img", "matonos-a.efi", "matonos-b.efi")
+ADDON_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 
 def fail(message):
     print(f"ota-publish: ERROR: {message}", file=sys.stderr)
@@ -43,7 +44,8 @@ def main():
     android_base = int(base_match.group(1))
 
     build_id = str(int(build_id))
-    target = out / "updates" / build_id
+    addons_dir = os.environ.get("OTA_ADDONS_DIR")
+    target = out / "storage" / build_id
     if target.exists(): fail(f"refusing to overwrite existing release directory: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".matonos-ota-", dir=target.parent) as temp_name:
@@ -76,13 +78,37 @@ def main():
         for name in FILES:
             data = (temp / name).read_bytes()
             entries.append({"name": name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+        addons = {}
+        if addons_dir:
+            addon_root = Path(addons_dir)
+            if not addon_root.is_dir(): fail(f"OTA_ADDONS_DIR is not a directory: {addon_root}")
+            for addon_dir in sorted(addon_root.iterdir()):
+                if not addon_dir.is_dir() or addon_dir.is_symlink():
+                    fail(f"add-on input must contain only directories: {addon_dir}")
+                addon_id = addon_dir.name
+                if not ADDON_ID.fullmatch(addon_id): fail(f"invalid add-on id: {addon_id}")
+                addon_entries = []
+                for source in sorted(addon_dir.rglob("*")):
+                    if source.is_symlink(): fail(f"add-on files may not be symlinks: {source}")
+                    if not source.is_file(): continue
+                    relative = source.relative_to(addon_dir).as_posix()
+                    if any(part in ("", ".", "..") for part in Path(relative).parts):
+                        fail(f"invalid add-on file path: {source}")
+                    name = f"{addon_id}/{relative}"
+                    destination = temp / name
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(source, destination)
+                    data = destination.read_bytes()
+                    addon_entries.append({"name": relative, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+                addons[addon_id] = addon_entries
         manifest = {"format_version": 1,
                     "build": {"id": int(build_id), "version": version,
-                              "android_base": android_base}, "files": entries}
+                              "android_base": android_base}, "files": entries, "addons": addons}
         manifest_bytes = (json.dumps(manifest, ensure_ascii=True, separators=(",", ":"), sort_keys=False) + "\n").encode()
         (temp / "manifest.json").write_bytes(manifest_bytes)
         subprocess.run(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(key),
                         "-in", str(temp / "manifest.json"), "-out", str(temp / "manifest.sig")], check=True)
+        shutil.copyfile(temp / "manifest.sig", temp / "manifest.json.sig")
         target.parent.mkdir(parents=True, exist_ok=True)
         temp.rename(target)
     print(f"Published locally: {target}")

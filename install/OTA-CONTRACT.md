@@ -1,125 +1,132 @@
-# Full image OTA contract
+# OTA API and storage contract
 
-The update centre downloads an immutable full image set over HTTPS, verifies
-the signed `manifest.json`, and calls the slot writer. Payloads are slot-neutral:
-one `vbmeta.img` has suffix-free descriptors for `system`, `system_ext`,
-`product`, `vendor`, and `odm`. The writer selects the inactive slot's
-`matonos-a.efi` or `matonos-b.efi` and names installed image records for it.
+The OTA service exposes a JSON API and immutable files. It does not upload or
+publish builds. A deployment promotes a release by editing its channels
+configuration with `ota-server/src/promote.ts`, which refuses a lower
+`android_base` than the channel currently serves. Same-base moves in either
+direction are allowed. The device and slot writer also enforce downgrade
+protection.
 
-## URL layout
+## Configuration and publisher
 
-Given the configured OTA root URL `https://updates.example/`:
+The server requires `OTA_STORAGE_DIR` and `OTA_CONFIG`; `OTA_PORT` defaults to
+8080. The storage directory contains immutable update directories:
 
 ```text
-updates/testing-manifest.json
-updates/testing-manifest.json.hwfm
-updates/main-manifest.json
-updates/v16_10-manifest.json
-updates/<update_id>/manifest.json
-updates/<update_id>/manifest.sig
-updates/<update_id>/system.erofs
-updates/<update_id>/system_ext.erofs
-updates/<update_id>/product.erofs
-updates/<update_id>/vendor.erofs
-updates/<update_id>/odm.erofs
-updates/<update_id>/vbmeta.img
-updates/<update_id>/matonos-a.efi
-updates/<update_id>/matonos-b.efi
+<storage>/<update_id>/manifest.json
+<storage>/<update_id>/manifest.sig
+<storage>/<update_id>/manifest.json.sig
+<storage>/<update_id>/<base payload files>
+<storage>/<update_id>/<addon id>/<addon files>
 ```
 
-Each `<update_id>` is the build's `ro.build.date.utc` value. A build directory
-is immutable and can be referenced by any number of channel manifests. Channel
-names contain only lowercase ASCII letters, digits, and underscores. Channel
-manifests are plain JSON pointers, not signed, and have this schema:
+The publisher writes directly to `<out>/storage/<update_id>/`. Set
+`OTA_ADDONS_DIR` to an optional directory whose immediate child directories
+are add-on IDs; each child tree is copied into that release and included in
+its signed `addons` manifest inventory. The signed `files` array remains the
+eight base slot-writer payload files. The identical detached signature is
+published as `manifest.sig` for the existing slot writer and
+`manifest.json.sig` for clients using the manifest filename convention.
 
-```json
-{"format":1,"update_id":1795430400,"version":"18","android_base":18}
-```
-
-They are hints for discovery only. The device does not read a channel property,
-validate a channel name, or trust the pointer for integrity. The signed build
-manifest authenticates the Android base and file inventory. The publisher
-reads `ro.build.version.release` from `system/build.prop` and stores its
-leading integer major version as `android_base`; the device reads the same
-property and parses the same leading integer. This property directly identifies
-the Android release major; `ro.build.version.sdk` would need a separate
-SDK-to-release mapping. Stage refuses only when the update base is lower than
-the running base; any build timestamp on the same base is allowed.
-
-## Signed build manifest
-
-Version 1 has this shape; every file entry contains exact size and lowercase
-SHA-256 for its downloaded file:
+The server config has this shape:
 
 ```json
 {
-  "format_version": 1,
-  "build": {"id": 1795430400, "version": "18", "android_base": 18},
-  "files": [
-    {"name":"system.erofs","size":123,"sha256":"<64 lowercase hex chars>"},
-    {"name":"system_ext.erofs","size":123,"sha256":"..."},
-    {"name":"product.erofs","size":123,"sha256":"..."},
-    {"name":"vendor.erofs","size":123,"sha256":"..."},
-    {"name":"odm.erofs","size":123,"sha256":"..."},
-    {"name":"vbmeta.img","size":123,"sha256":"..."},
-    {"name":"matonos-a.efi","size":123,"sha256":"..."},
-    {"name":"matonos-b.efi","size":123,"sha256":"..."}
-  ]
+  "channels": {
+    "testing": { "update_id": 1795430400 },
+    "main": { "update_id": 1795430400 },
+    "internal": { "update_id": 1795430400, "requires_license": true }
+  },
+  "eol": {
+    "1795430400": "2027-05-17"
+  }
 }
 ```
 
-The manifest must list those eight names exactly once. The UI verifies the
-detached signature using the public key installed at
-`/system_ext/etc/security/matonos/ota-ed25519.pub` before trusting its file
-list. The signature is the raw 64-byte Ed25519 signature over the exact bytes
-of `manifest.json`. The slot writer independently repeats signature, file,
-size and hash checks, then rejects an Android base lower than the running
-base before writing.
+Only `testing` and `main` are initially configured. Channel names are
+configuration-driven and may later include versioned names without code
+changes. EOL values are the final supported UTC calendar date for that update.
+All update and channel selection paths refuse a release with an Android base
+below the request's `base_android`. Channel selection also omits channels
+marked `requires_license` because no license validation is implemented yet.
 
-## Update sequence
+## Request schema
 
-1. Fetch `<channel>-manifest.json` (with the short cache sidecar policy); its
-   `android_base` lets the UI filter releases below the installed base without
-   downloading them. Update timestamps do not determine downgrade safety.
-2. Download `updates/<update_id>/manifest.json`, its signature, and the eight
-   named files into a private temporary directory. Verify the signature,
-   sizes, and SHA-256 hashes. Keep the directory flat.
-3. Call `matonos-slot-writer stage <download-dir>`. The writer repeats the
-   cryptographic and integrity checks before touching the inactive slot. Keep
-   the download until staging succeeds.
-4. Call `matonos-slot-writer finalize`. BootControl selects the target slot;
-   the bootloader's counted entry provides rollback if the system does not
-   mark itself successful.
-5. Reboot. Once the new slot boots and BootControl marks it successful, call
-   `matonos-slot-writer remove-inactive` to reclaim the old slot.
+All endpoints use `POST`, `Content-Type: application/json`, and accept the
+same object. `license_hash` is optional and may be `null`.
 
-## Exit codes
+```json
+{
+  "update_id": 1795430400,
+  "license_hash": null,
+  "channel": "testing",
+  "base_android": 18,
+  "machine_id": "opaque-device-id",
+  "addon_list": ["games", "editor"]
+}
+```
 
-Writer commands return `0` on success and `1` for an operational failure.
-`stage` returns `1` for invalid signature, missing/mismatched file,
-lower Android base, disk/ESP failure, or image write failure. `finalize` returns
-`1` if the target is incomplete, its UKI does not pin the staged vbmeta, or
-BootControl refuses selection. `remove-inactive` returns `1` until the running
-slot is successful or if cleanup fails. Invalid command syntax returns `2`.
-A failed stage leaves the inactive counted entry removed until all writes
-complete; it is not permission to reboot into a partially staged slot.
+`machine_id` is validated, never logged or stored, and is not used as an
+authentication credential. Requests larger than 64 KiB are rejected.
+Successful and error API responses use `Cache-Control: no-store`.
 
-## Publisher and promotion
+## Endpoints
 
-`tools/ota-publish.sh <images-dir> <out-dir>` writes one build to
-`<out-dir>/updates/<update_id>/`. The image directory is the AOSP product
-output after `tools/make-live.sh`; it supplies the five partition images,
-`system/build.prop`, `vbmeta.img`, and `matonos-installed-{a,b}.efi`. Sparse
-partition images are converted to raw EROFS with `simg2img`; image data is not
-modified. Set `MATON_OTA_KEY` to the Ed25519 private-key path. The publisher
-does not promote a build or upload files.
+`POST /api/channels` returns configured channels this device can switch to.
 
-`tools/ota-promote.sh <out-dir> <channel> <update_id>` atomically writes the
-plain channel pointer and its `.hwfm` sidecar. It refuses to move an existing
-channel to a lower Android base. Builds on the same base can be promoted in
-either timestamp order. Upload the resulting `updates/`
-tree using the printed/manual deployment process.
+```json
+{"channels":[{"channel":"testing","update_id":1795430401,"version":"18","android_base":18}]}
+```
 
-The checked-in public key is a bootstrap key; replace it with the release
-public key before building an image intended to accept published OTAs. The
-publisher rejects a signing key that does not match the installed public key.
+Channels below the installed Android base and license-required channels are
+omitted.
+
+`POST /api/update` checks the configured request channel. An update response
+contains the base files and only the requested add-ons present in that
+release:
+
+```json
+{
+  "available": true,
+  "update_id": 1795430401,
+  "version": "18",
+  "android_base": 18,
+  "manifest_url": "/storage/1795430401/manifest.json",
+  "signature_url": "/storage/1795430401/manifest.json.sig",
+  "files": [{"name":"system.erofs","url":"/storage/1795430401/system.erofs","size":123,"sha256":"..."}],
+  "addons": {"games":[{"name":"runtime.tar.zst","url":"/storage/1795430401/games/runtime.tar.zst","size":123,"sha256":"..."}]}
+}
+```
+
+If the channel points below `base_android`, the response is
+`{"available":false,"reason":"android_base_too_old"}`. If it points to the
+already installed update, the response is `{"available":false}`.
+
+`POST /api/eol` reports whether the installed update is past its configured
+support end date:
+
+```json
+{"update_id":1795430400,"end_of_life":false,"support_ends":"2027-05-17"}
+```
+
+An update without a configured EOL entry returns `support_ends: null` and
+`end_of_life: false`.
+
+`POST /api/license` returns `{"status":"none","license":null}` until
+license support is implemented.
+
+Errors have `{ "error": "code", "message": "description" }`. API requests
+are logged with method, path, status, and error context; `machine_id` and
+request bodies are excluded.
+
+## Storage HTTP behavior
+
+Files are served at `/storage/<update_id>/<path>` with
+`Cache-Control: public, max-age=31536000, immutable`, `Accept-Ranges: bytes`,
+and single byte-range support. Invalid or unsatisfiable ranges return 416.
+The `manifest.json` and signature are immutable along with the release files.
+
+The client downloads the signed manifest and detached signature, verifies the
+signature with the installed OTA public key, checks sizes and SHA-256 values,
+then passes the complete base payload directory to `matonos-slot-writer`.
+The writer repeats verification and downgrade checks before writing.
