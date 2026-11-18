@@ -93,5 +93,20 @@ MATON_SUBSYSTEM_OUT=/srv/matonos/subsystem-out
 MATON_KEY_DIR=$HOME/.matonos-build/keys
 ```
 
-Some scripts still fall back to `$HOME/...` defaults when a variable is unset. Those are bugs to remove; set the
-variable rather than recreating the default directory.
+Memory: `tools/build.sh` runs inside a systemd scope with `MemoryHigh=20G` (sized for a 23 GB host). On larger
+machines set `MATON_BUILD_MEM_HIGH` (the 46 GB build server uses `40G`); a cap far below RAM makes Soong
+analysis thrash in zram.
+
+## Fresh tree bootstrap
+
+The native daemons and the ODM bundle use outputs that only an AOSP build produces (vendor `libbinder_ndk`,
+vendor `toolbox`, host `mkfs.erofs`). On a tree with no `out/`, run once before the first image build:
+
+```sh
+tools/build.sh -m libbinder_ndk.vendor,toolbox_vendor,mkfs.erofs
+```
+
+`-m` builds skip both steps until those outputs exist. The native build uses the prebuilt `aidl` from
+`prebuilts/build-tools` when `out/` has none.
+
+`patchelf` is required for the ODM bundle: it sets `$ORIGIN/../lib64` on the bundle's binaries.
