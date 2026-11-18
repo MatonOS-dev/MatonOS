@@ -257,6 +257,10 @@ EOF
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"
   sb_build_uki "$work/matonos-installed-b.efi" "$KERNEL" "$installed_b" "$work/matonos.sbat" "$work" \
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"
+  # Keep the full-image OTA inputs beside product outputs for ota-publish.sh.
+  cp "$work/vbmeta.img" "$PRODUCT_OUT/vbmeta.img"
+  cp "$work/matonos-installed-a.efi" "$PRODUCT_OUT/matonos-installed-a.efi"
+  cp "$work/matonos-installed-b.efi" "$PRODUCT_OUT/matonos-installed-b.efi"
   mcopy -i "$esp" "$work/matonos-live.efi" ::/EFI/Linux/matonos-live.efi
   mcopy -i "$esp" "$work/matonos-live-debug.efi" ::/EFI/Linux/matonos-live-debug.efi
   mcopy -i "$esp" "$work/matonos-live-debug-permissive.efi" ::/EFI/Linux/matonos-live-debug-permissive.efi

@@ -2,6 +2,7 @@
 #include <openssl/evp.h>
 
 #include "service/FatFilesystem.h"
+#include "service/OtaManifest.h"
 
 #include <sys/stat.h>
 #include <sys/ioctl.h>
@@ -15,6 +16,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cctype>
 #include <filesystem>
@@ -234,6 +236,15 @@ bool RemoveEspIfPresent(mi::FatVolume* esp,const std::string& path,std::string* 
 bool Stage(const fs::path& payload) {
     Slot running{},target{};
     if(!GetSlots(&running,&target))return false;
+    mi::ota::Manifest manifest; std::string verify_error;
+    if(!mi::ota::Verify(payload.string(), "/system_ext/etc/security/matonos/ota-ed25519.pub", &manifest, &verify_error)) {
+        std::fprintf(stderr,"matonos-slot-writer: OTA manifest verification failed: %s\n",verify_error.c_str());return false;
+    }
+    char build_property[PROP_VALUE_MAX]{};
+    if(__system_property_get("ro.matonos.build_id",build_property)<=0) { errno=ENOENT; return Fail("ro.matonos.build_id is unavailable"); }
+    char* build_end=nullptr; errno=0; const unsigned long long installed_id=std::strtoull(build_property,&build_end,10);
+    if(errno||!build_end||*build_end||installed_id==0) { errno=EINVAL; return Fail("ro.matonos.build_id is not a positive integer"); }
+    if(manifest.build_id<=installed_id) { errno=EINVAL; return Fail("refusing OTA build id not newer than installed build"); }
     if (access("/maton_system/images", R_OK|W_OK|X_OK)!=0 || access(kMetadata,R_OK|W_OK|X_OK)!=0)
         return Fail("installed image store or libfiemap metadata is unavailable");
     mi::FatVolume esp_read;std::string preflight_error;
@@ -255,11 +266,11 @@ bool Stage(const fs::path& payload) {
 
     // Validate the supplied UKI/vbmeta pair before invalidating a previously staged slot.
     int vbmeta=-1;uint64_t vbmeta_size=0;
-    if(!ReadRegular(payload/(std::string("vbmeta_")+target.letter+".img"),&vbmeta,&vbmeta_size))return false;
+    if(!ReadRegular(payload/"vbmeta.img",&vbmeta,&vbmeta_size))return false;
     std::string vbmeta_digest;
     if(!VbmetaDigest(vbmeta,vbmeta_size,&vbmeta_digest)){CLOSE_FD(vbmeta);return false;}
     int uki=-1;uint64_t uki_size=0;
-    const fs::path payload_uki=payload/UkiPath(target);
+    const fs::path payload_uki=payload/(std::string("matonos-")+target.letter+".efi");
     if(!ReadRegular(payload_uki,&uki,&uki_size)){CLOSE_FD(vbmeta);return false;}
     std::vector<uint8_t> uki_bytes(static_cast<size_t>(uki_size));
     size_t read=0;
@@ -281,14 +292,14 @@ bool Stage(const fs::path& payload) {
     auto manager=android::fiemap::ImageManager::Open(kMetadata,kImageDir);
     if(!manager)return Fail("open libfiemap image manager");
     for(const char* base:kImages) {
-        const fs::path path=payload/(std::string(base)+"_"+target.letter+".erofs");
+        const fs::path path=payload/(std::string(base)+".erofs");
         int fd=-1;uint64_t size=0;
         if(!ReadRegular(path,&fd,&size))return false;
         const bool copied=CopyToImage(fd,ImageName(base,target),size,manager.get());
         CLOSE_FD(fd);
         if(!copied)return false;
     }
-    if(!ReadRegular(payload/(std::string("vbmeta_")+target.letter+".img"),&vbmeta,&vbmeta_size))return false;
+    if(!ReadRegular(payload/"vbmeta.img",&vbmeta,&vbmeta_size))return false;
     const bool vbmeta_ok=CopyToImage(vbmeta,ImageName("vbmeta",target),vbmeta_size,manager.get());
     CLOSE_FD(vbmeta);
     if(!vbmeta_ok)return false;

@@ -81,6 +81,7 @@ Do not copy `deps/compositor` or `deps/pipewire` between machines; rebuild them 
 | Platform/APK keys, subsystem keystore (`matonos-linux-subsystem.jks` + `.pass`) | `MATON_KEY_DIR` |
 | Secure Boot keys | `~/.config/matonos` (secureboot.sh `SB_KEY_DIR`) |
 | AVB key `matonos-avb-dev.pem` | `~/.config/matonos/avb/`, or `MATON_AVB_KEY_PATH` |
+| OTA Ed25519 signing key | `MATON_OTA_KEY` (private key stays outside the repo); matching public key is `install/ota/ota-ed25519.pub` and is installed into system_ext. Replace the bootstrap public key with the provisioned release key before shipping an OTA-capable image. |
 
 ## Path configuration
 

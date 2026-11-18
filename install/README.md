@@ -3,6 +3,24 @@
 
 # Installer service
 
+## Full image OTA
+
+The installed-slot writer accepts signed, slot-neutral full image sets. The
+publisher (`tools/ota-publish.sh`) packages the five raw EROFS images, one
+suffix-free root `vbmeta.img`, both UKIs, and a signed manifest. The AVB
+descriptor source is `secureboot/avb.sh:64-69`, where the `system`,
+`system_ext`, `product`, `vendor`, and `odm` descriptors are imported without
+slot suffixes; `tools/make-live.sh:46` and `tools/make-live.sh:256-259` build
+one root vbmeta and distinct A/B UKIs. `ro.matonos.build_id` is set from the
+release `BUILD_NUMBER`; the writer refuses ids less than or equal to the
+running build. See [OTA-CONTRACT.md](OTA-CONTRACT.md) for the update-centre
+contract and local publishing flow.
+
+Host tests: `python3 install/ota/test_ota.py` builds the same manifest verifier
+used by the writer and checks a fake signed publish, tampering, and downgrade
+rejection. Release signing still requires `MATON_OTA_KEY` matching the
+committed public key. No AOSP build, VM, or upload was run for this work.
+
 ## 2026-11-17 file-backed install implementation
 
 The active install path is `rn-apps/settings/src/sections/InstallSection.tsx`

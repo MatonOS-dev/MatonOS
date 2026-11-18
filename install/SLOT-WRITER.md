@@ -2,13 +2,18 @@
 
 `matonos-slot-writer` is a system_ext CLI for the installed-disk file-backed
 layout. It stages whichever slot is not running, using `ro.boot.slot_suffix`
-to choose the target. The payload directory contains raw, 512-byte-aligned
-images named `system_<target>.erofs`, `system_ext_<target>.erofs`,
-`product_<target>.erofs`, `vendor_<target>.erofs`, and `odm_<target>.erofs`,
-plus `vbmeta_<target>.img` and `EFI/Linux/matonos-<target>.efi`. The writer
-checks that the UKI's embedded `androidboot.vbmeta.digest` matches the SHA-256
-digest of the target vbmeta header, authentication block, and auxiliary block.
-It does not decompress, rebuild, or resign the payload.
+to choose the target. `stage <dir>` consumes a signed, slot-neutral OTA set:
+five raw EROFS images (`system.erofs`, `system_ext.erofs`, `product.erofs`,
+`vendor.erofs`, `odm.erofs`), one `vbmeta.img`, and both installed UKIs
+(`matonos-a.efi`, `matonos-b.efi`), together with `manifest.json` and its raw
+Ed25519 detached signature `manifest.sig`.
+
+Before any slot state changes, the writer verifies the signature using
+`/system_ext/etc/security/matonos/ota-ed25519.pub`, validates the exact file
+inventory, sizes and SHA-256 hashes, and requires the manifest build id to be
+newer than `ro.matonos.build_id`. It selects the target UKI itself. The UKI's
+embedded `androidboot.vbmeta.digest` must match the SHA-256 digest of the
+target vbmeta header, authentication block, and auxiliary block.
 
 The extent format is the existing libfiemap image metadata under
 `/metadata/maton/images`; first-stage init opens that metadata and the backing
@@ -36,6 +41,9 @@ success marking and renames the counted entry to `<A|B>.conf`.
 currently running slot is marked successful, then removes the other slot's
 images, vbmeta, loader entries, and UKI.
 
+See [OTA-CONTRACT.md](OTA-CONTRACT.md) for publisher format, verification and
+update-centre sequence.
+
 ## Failure and disk risk
 
 Every failed write stops the command and logs context. Since only the inactive
@@ -51,5 +59,5 @@ The implementation relies on libfiemap's `CreateBackingImage()` and metadata
 update for allocation and extent registration. That API does not expose an
 atomic replacement operation; the old inactive image is removed before the
 new one is created. A failed stage can require retrying the full inactive-slot
-stage. No AOSP build, Soong build, or VM boot was run for this follow-up; image
-integration and installed-disk validation remain pending.
+stage. Host verification covers signing, tamper detection, and downgrade
+rejection. No AOSP build or installed-image boot was run for this change.

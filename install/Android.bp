@@ -2,6 +2,7 @@ cc_binary {
     name: "matonos-slot-writer",
     srcs: [
         "service/SlotWriter.cpp",
+        "service/OtaManifest.cpp",
         "service/FatFilesystem.cpp",
         "//system/fs/fs_mgr/libfiemap:libfiemap_srcs",
     ],
