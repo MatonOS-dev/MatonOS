@@ -108,12 +108,12 @@ are not in this repo. The tools rebuild or fetch them.
 
 ## Downloads and updates
 
-OS updates, driver add-ons and the MatonOS F-Droid repo are served from
-<https://download.hanro50.net.za/matonos>:
+OS updates, add-ons and the MatonOS F-Droid repo are served by the MatonOS OTA server
+([MatonOS-dev/matonos-ota](https://github.com/MatonOS-dev/matonos-ota)) at <https://maton.hanro50.net.za>:
 
 - the F-Droid repo is at `fdroid/repo`;
-- updates are under `updates/<version>/`, with that version's add-ons in
-  `updates/<version>/addons/`.
+- update discovery is the `/api/` endpoints, and each update's files (add-ons included) are under
+  `storage/<update_id>/`. See `install/OTA-CONTRACT.md`.
 
 ## Built on
 
