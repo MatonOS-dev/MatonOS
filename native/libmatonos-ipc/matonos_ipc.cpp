@@ -250,6 +250,10 @@ struct MatonosIpcServer {
     std::string target;
     std::mutex handlers_mutex;
     std::unordered_map<std::string, Handler> handlers;
+    matonos_ipc_stage_handler stage_handler = nullptr;
+    matonos_ipc_handler finalize_handler = nullptr;
+    matonos_ipc_handler status_handler = nullptr;
+    void *ota_context = nullptr;
     std::mutex listeners_mutex;
     std::unordered_map<std::string, std::vector<std::shared_ptr<IChannelListener>>> listeners;
     std::shared_ptr<void> service_lifetime;
@@ -285,6 +289,40 @@ class Channel final : public BnChannel {
         *jsonResult = std::move(value);
         return ScopedAStatus::ok();
     }
+    ScopedAStatus stageUpdate(const std::vector<std::string> &names,
+                              const std::vector<ndk::ScopedFileDescriptor> &files,
+                              std::string *jsonResult) override {
+        if (names.empty() || names.size() != files.size())
+            return ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+        if (!server_->stage_handler)
+            return ScopedAStatus::fromServiceSpecificErrorWithMessage(5, "OTA staging is unavailable");
+        std::vector<const char *> name_ptrs;
+        std::vector<int> fd_values;
+        name_ptrs.reserve(names.size()); fd_values.reserve(files.size());
+        for (size_t i = 0; i < names.size(); ++i) {
+            if (names[i].empty() || names[i].size() > 64 || files[i].get() < 0)
+                return ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+            name_ptrs.push_back(names[i].c_str());
+            fd_values.push_back(files[i].get());
+        }
+        std::vector<char> result(kMaxMessage + 1, 0);
+        if (server_->stage_handler(name_ptrs.data(), fd_values.data(), names.size(),
+                                   result.data(), result.size(), server_->ota_context) != 0)
+            return ScopedAStatus::fromServiceSpecificErrorWithMessage(6, "OTA stage failed; see installer log for step and file");
+        const size_t result_size = strnlen(result.data(), result.size());
+        if (result_size > kMaxMessage) return ScopedAStatus::fromServiceSpecificError(3);
+        JsonValue parsed;
+        if (!ValidJson(std::string(result.data(), result_size), &parsed))
+            return ScopedAStatus::fromServiceSpecificError(3);
+        *jsonResult = std::string(result.data(), result_size);
+        return ScopedAStatus::ok();
+    }
+    ScopedAStatus finalizeUpdate(std::string *jsonResult) override {
+        return OtaCommand(server_, server_->finalize_handler, "finalize_update", jsonResult);
+    }
+    ScopedAStatus getUpdateStatus(std::string *jsonResult) override {
+        return OtaCommand(server_, server_->status_handler, "get_update_status", jsonResult);
+    }
     ScopedAStatus subscribe(const std::string &topic,
                             const std::shared_ptr<IChannelListener> &listener) override {
         if (!ValidName(topic) || !listener) return ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
@@ -318,6 +356,19 @@ class Channel final : public BnChannel {
         return ScopedAStatus::ok();
     }
   private:
+    static ScopedAStatus OtaCommand(MatonosIpcServer *server, matonos_ipc_handler handler,
+                                    const char *command, std::string *jsonResult) {
+        if (!handler) return ScopedAStatus::fromServiceSpecificErrorWithMessage(5, "OTA operation is unavailable");
+        std::vector<char> result(kMaxMessage + 1, 0);
+        if (handler("{}", result.data(), result.size(), server->ota_context) != 0)
+            return ScopedAStatus::fromServiceSpecificErrorWithMessage(6, command);
+        const size_t result_size = strnlen(result.data(), result.size());
+        JsonValue parsed;
+        if (result_size > kMaxMessage || !ValidJson(std::string(result.data(), result_size), &parsed))
+            return ScopedAStatus::fromServiceSpecificError(3);
+        *jsonResult = std::string(result.data(), result_size);
+        return ScopedAStatus::ok();
+    }
     MatonosIpcServer *server_;
 };
 }  // namespace
@@ -331,6 +382,18 @@ extern "C" int matonos_ipc_register(MatonosIpcServer *server, const char *comman
     if (!server || !command || !handler || !ValidName(command)) return -1;
     std::lock_guard<std::mutex> lock(server->handlers_mutex);
     return server->handlers.emplace(command, std::make_pair(handler, context)).second ? 0 : -1;
+}
+extern "C" int matonos_ipc_register_ota(MatonosIpcServer *server,
+        matonos_ipc_stage_handler stage_handler, matonos_ipc_handler finalize_handler,
+        matonos_ipc_handler status_handler, void *context) {
+    if (!server || !stage_handler || !finalize_handler || !status_handler) return -1;
+    std::lock_guard<std::mutex> lock(server->handlers_mutex);
+    if (server->stage_handler || server->finalize_handler || server->status_handler) return -1;
+    server->stage_handler = stage_handler;
+    server->finalize_handler = finalize_handler;
+    server->status_handler = status_handler;
+    server->ota_context = context;
+    return 0;
 }
 extern "C" int matonos_ipc_start(MatonosIpcServer *server) {
     if (!server) return -1;

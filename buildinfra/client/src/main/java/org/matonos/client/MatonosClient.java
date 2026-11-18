@@ -11,6 +11,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.RemoteException;
+import android.os.ParcelFileDescriptor;
 import android.provider.Settings;
 
 import org.json.JSONArray;
@@ -35,7 +36,7 @@ public final class MatonosClient implements AutoCloseable {
     public interface AvailabilityListener { void onAvailabilityChanged(boolean available, String reason); }
     public interface CheckCallback { void onComplete(CheckResult result); }
 
-    public static final int REQUIRED_BRIDGE_API = 6;
+    public static final int REQUIRED_BRIDGE_API = 9;
     private static final String BRIDGE_PACKAGE = "org.matonos.systembridge";
     private static final String BRIDGE_ACTION = "org.matonos.systembridge.BIND";
     private static final String TRUST_RESULT_PREFIX = "org.matonos.client.TRUST_RESULT.";
@@ -128,6 +129,30 @@ public final class MatonosClient implements AutoCloseable {
     public boolean isTargetAllowed(String target) { return allowedTargets.contains(target); }
     public boolean isChannelAvailable(String target) { return availableChannels.contains(target); }
     public ISystemBridge getBridgeInterface() { return bridge; }
+
+    public Result<String> stageUpdate(String[] names, ParcelFileDescriptor[] files) {
+        ISystemBridge current = bridge;
+        if (current == null) return Result.unavailable(reason == null ? "BRIDGE_UNAVAILABLE" : reason);
+        if (!allowedTargets.contains("install")) return Result.unavailable("BRIDGE_APP_NOT_TRUSTED:install");
+        try { return Result.value(current.stageUpdate(names, files)); }
+        catch (RemoteException | RuntimeException e) {
+            return Result.unavailable("OTA_STAGE_FAILED:" + e.getMessage());
+        }
+    }
+    public Result<String> finalizeUpdate() {
+        ISystemBridge current = bridge;
+        if (current == null) return Result.unavailable(reason == null ? "BRIDGE_UNAVAILABLE" : reason);
+        if (!allowedTargets.contains("install")) return Result.unavailable("BRIDGE_APP_NOT_TRUSTED:install");
+        try { return Result.value(current.finalizeUpdate()); }
+        catch (RemoteException | RuntimeException e) { return Result.unavailable("OTA_FINALIZE_FAILED:" + e.getMessage()); }
+    }
+    public Result<String> getUpdateStatus() {
+        ISystemBridge current = bridge;
+        if (current == null) return Result.unavailable(reason == null ? "BRIDGE_UNAVAILABLE" : reason);
+        if (!allowedTargets.contains("install")) return Result.unavailable("BRIDGE_APP_NOT_TRUSTED:install");
+        try { return Result.value(current.getUpdateStatus()); }
+        catch (RemoteException | RuntimeException e) { return Result.unavailable("OTA_STATUS_FAILED:" + e.getMessage()); }
+    }
 
     public void addAvailabilityListener(AvailabilityListener listener) {
         if (listener == null) return;

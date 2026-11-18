@@ -60,11 +60,11 @@ public final class SystemBridgeService extends Service {
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
         @Override public int getBridgeApiVersion() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiVersion");
-            return 8;
+            return 9;
         }
         @Override public String getBridgeApiHash() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiHash");
-            return "d4a82b10f6e9c73b81a2d5e4f09c8a3b7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1";
+            return "227f3f7e15ec7c76afaf631fe540a76218408dc6662fd498c1ca9a620880cd6a";
         }
 
         @Override public String getBridgeStatus() {
@@ -110,6 +110,47 @@ public final class SystemBridgeService extends Service {
             } catch (Exception e) {
                 Log.e(TAG, "Daemon call failed: target=" + target + " command=" + command, e);
                 throw new IllegalStateException("Daemon call failed", e);
+            }
+        }
+
+        @Override public String stageUpdate(String[] names, ParcelFileDescriptor[] files) {
+            enforceAuthorizedCaller("install", "stageUpdate");
+            if (names == null || files == null || names.length != files.length)
+                throw new IllegalArgumentException("OTA payload names and descriptors must have equal lengths");
+            try {
+                IChannel channel = channelFor("install");
+                if (channel == null) throw new IllegalStateException("install service is unavailable");
+                String result = channel.stageUpdate(names, files);
+                if (result == null || result.length() > 64 * 1024)
+                    throw new IllegalStateException("invalid OTA stage result");
+                return result;
+            } catch (Exception e) {
+                Log.e(TAG, "OTA stage failed: target=install files=" + (names == null ? 0 : names.length), e);
+                throw new IllegalStateException("OTA stage failed", e);
+            }
+        }
+
+        @Override public String finalizeUpdate() {
+            enforceAuthorizedCaller("install", "finalizeUpdate");
+            try {
+                IChannel channel = channelFor("install");
+                if (channel == null) throw new IllegalStateException("install service is unavailable");
+                return channel.finalizeUpdate();
+            } catch (Exception e) {
+                Log.e(TAG, "OTA finalize failed: target=install", e);
+                throw new IllegalStateException("OTA finalize failed", e);
+            }
+        }
+
+        @Override public String getUpdateStatus() {
+            enforceAuthorizedCaller("install", "getUpdateStatus");
+            try {
+                IChannel channel = channelFor("install");
+                if (channel == null) throw new IllegalStateException("install service is unavailable");
+                return channel.getUpdateStatus();
+            } catch (Exception e) {
+                Log.e(TAG, "OTA status failed: target=install", e);
+                throw new IllegalStateException("OTA status failed", e);
             }
         }
 

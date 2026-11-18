@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import fnmatch
 import json
 import os
 from pathlib import Path
@@ -48,6 +49,41 @@ with tempfile.TemporaryDirectory(prefix="matonos-ota-test-") as temp:
     assert (release / "manifest.json.sig").read_bytes() == (release / "manifest.sig").read_bytes()
     assert manifest["addons"]["games"][0]["name"] == "locale/en.dat"
     assert (release / "games/locale/en.dat").read_bytes() == b"locale"
+
+    # A manifest changed without a matching signature must fail before any
+    # payload staging can begin.
+    manifest_bytes = (release / "manifest.json").read_bytes()
+    changed_manifest = json.loads(manifest_bytes)
+    changed_manifest["build"]["id"] += 1
+    (release / "manifest.json").write_text(json.dumps(changed_manifest, separators=(",", ":")) + "\n")
+    mismatch = run(str(verifier), str(release), str(pub), "17", ok=False)
+    assert "signature" in mismatch.stderr.lower()
+    (release / "manifest.json").write_bytes(manifest_bytes)
+
+    # The installer and boot-control contract must agree on stable entry and
+    # UKI names. Stage invalidates the target before the first image write;
+    # the default glob survives systemd-boot's counted filename changes.
+    plan = (ROOT / "rn-apps/settings/src/installer/createV1Plan.ts").read_text()
+    writer = (ROOT / "install/service/SlotWriter.cpp").read_text()
+    bootctrl = (ROOT / "native/matonos-bootctrl/BootControl.cpp").read_text()
+    assert 'relativePath: "A.conf"' in plan
+    assert 'relativePath: "matonos-a.efi"' in plan
+    assert '"loader/entries/" + slot.upper' not in writer  # paths are centralized in EntryPath
+    invalidation = writer.index('RemoveEspIfPresent(&esp,EntryPath(target,true)')
+    first_image_write = writer.index('CopyToImage(fd,ImageName(base,target)')
+    last_image_write = writer.rindex('CopyToImage(')
+    counted_entry_write = writer.index('esp.WriteFile(target_entry')
+    assert invalidation < first_image_write
+    assert last_image_write < counted_entry_write
+    assert 'selected=stem+"+[1-3]-*.conf"' in bootctrl
+    assert 'MarkEntrySuccessful(slot)' in bootctrl
+    counted_names = [f"B+{tries}-{done}.conf" for tries, done in ((3, 0), (2, 1), (1, 2), (0, 3))]
+    retry_glob = "B+[1-3]-*.conf"
+    assert all(fnmatch.fnmatchcase(name, retry_glob) for name in counted_names[:3])
+    assert not fnmatch.fnmatchcase(counted_names[3], retry_glob)
+    assert "EntryPath(target,true)" in writer and "RunBootctl(\"set-active-boot-slot\"" in writer
+    service_rc = (ROOT / "install/matonos-installer-service.rc").read_text()
+    assert "on post-fs-data" in service_rc and "start matonos-installer-service" in service_rc
     installed_ids = temp / "installed-addon-ids"
     installed_ids.write_text("games\n")
     run(str(verifier), str(release), str(pub), "17", str(installed_ids))

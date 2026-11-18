@@ -22,6 +22,9 @@ type MatonOSClientModule = NativeEvents<EventMap> & {
   ): Promise<BridgeSnapshot>;
   getBridgeSnapshot(accessTarget: string): Promise<BridgeSnapshot>;
   call(target: string, command: string, jsonArgs: string): Promise<CallResult>;
+  stageUpdate(names: string[], uris: string[]): Promise<CallResult>;
+  finalizeUpdate(): Promise<CallResult>;
+  getUpdateStatus(): Promise<CallResult>;
   isLiveImage(): Promise<boolean>;
   getSystemInfo(): Promise<{
     version: string;
@@ -52,6 +55,9 @@ export const MatonOS = {
     command: string,
     args: unknown = {},
   ): Promise<CallResult> => Native.call(target, command, JSON.stringify(args)),
+  stageUpdate: (names: string[], uris: string[]) => Native.stageUpdate(names, uris),
+  finalizeUpdate: () => Native.finalizeUpdate(),
+  getUpdateStatus: () => Native.getUpdateStatus(),
   isLiveImage: () => Native.isLiveImage(),
   getSystemInfo: () => Native.getSystemInfo(),
   openTrustedApps: () => Native.openTrustedApps(),

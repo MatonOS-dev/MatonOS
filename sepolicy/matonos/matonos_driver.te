@@ -44,7 +44,8 @@ allow matonos_driver matonos_driver_helper:process signal;
 # Narrow helper permissions: pw-cat reaches PipeWire's private socket, the
 # VHCI child uses /dev/vhci, and the installer invokes fixed system format/GPT
 # tools plus BLKRRPART after driver-domain validation.
-allow matonos_driver_helper matonos_driver_data_file:dir search;
+allow matonos_driver_helper matonos_driver_data_file:dir { search r_dir_perms };
+allow matonos_driver_helper matonos_driver_data_file:file r_file_perms;
 allow matonos_driver_helper matonos_driver_data_file:sock_file write;
 allow matonos_driver_helper matonos_driver:unix_stream_socket connectto;
 allow matonos_driver_helper matonos_vhci_device:chr_file rw_file_perms;
@@ -100,6 +101,8 @@ allow matonos_driver proc_asound:file r_file_perms;
 allow matonos_driver self:capability { setuid setgid sys_nice };
 allow matonos_driver self:process { fork sigchld setsched };
 allow matonos_driver matonos_driver_data_file:dir create_dir_perms;
+type_transition matonos_driver matonos_driver_data_file:dir matonos_driver_data_file;
+type_transition matonos_driver matonos_driver_data_file:file matonos_driver_data_file;
 allow matonos_driver matonos_driver_data_file:sock_file create_file_perms;
 # Sockets are the process's own objects; the socket FILE lives in
 # matonos_driver_data_file (/data/vendor/maton-audio).
@@ -327,9 +330,10 @@ allow kernel device:dir create;
 allow vendor_init matonos_addon_mount_file:dir create;
 allow init matonos_addon_mount_file:dir mounton;
 
-# install: one broad hardware-zone block for the disk installer (live-only in
-# use; init starts it only when ro.boot.matonos.live=1). The daemon enumerates
-# /dev/block and reads super/swap nodes to refuse in-use disks; its re-exec'd
+# install: one broad hardware-zone block for the installer channel (started
+# after /data on installed and live sessions for OTA; disk writes are gated by
+# ro.boot.matonos.live). The daemon enumerates /dev/block and reads super/swap
+# nodes to refuse in-use disks; its re-exec'd
 # helper inherits the daemon's fds and runs the fixed system tools on the
 # validated target fd (sgdisk, mke2fs, newfs_msdos, e2fsck).
 allow init matonos_driver:process2 nosuid_transition;
@@ -338,8 +342,11 @@ allow matonos_driver block_device:dir r_dir_perms;
 allow matonos_driver { super_block_device swap_block_device }:blk_file { getattr open read };
 allow matonos_driver_helper block_device:dir r_dir_perms;
 allow matonos_driver_helper matonos_driver:fd use;
+allow matonos_driver matonos_system_bridge:fd use;
 allow matonos_driver_helper matonos_install_block_device:blk_file ioctl;
 allow matonos_driver_helper { sgdisk_exec e2fs_exec fsck_exec }:file { execute execute_no_trans getattr map open read };
+# OTA stage/finalize delegates to the system_ext slot writer through this fixed helper.
+allow matonos_driver_helper system_file:file { execute execute_no_trans getattr map open read };
 # mke2fs probes ext4 features and the target's block topology/zoned queue in sysfs.
 allow matonos_driver_helper sysfs_fs_ext4_features:dir search;
 allow matonos_driver_helper sysfs_fs_ext4_features:file r_file_perms;

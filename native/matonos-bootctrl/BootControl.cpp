@@ -297,7 +297,12 @@ bool WriteLoaderDefault(int slot) {
         for (int done=0; done<=3; ++done) {
             const std::string candidate=stem+"+"+std::to_string(left)+"-"+std::to_string(done)+".conf";
             std::vector<uint8_t> ignored;
-            if (volume.ReadFile("loader/entries/"+candidate,&ignored,&error)) { selected=candidate; left=-1; break; }
+            if (volume.ReadFile("loader/entries/"+candidate,&ignored,&error)) {
+                // systemd-boot renames the entry after each attempt. Match all
+                // retryable counters, but exclude +0-* so the failed slot no
+                // longer matches and the previously good slot is auto-selected.
+                selected=stem+"+[1-3]-*.conf"; left=-1; break;
+            }
         }
     }
     if (!replaced) updated = "default " + selected + "\n" + config;

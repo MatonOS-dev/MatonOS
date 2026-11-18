@@ -13,8 +13,10 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/xattr.h>
+#include <sys/system_properties.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/statvfs.h>
 #include <algorithm>
 
 #include <atomic>
@@ -51,6 +53,10 @@ namespace {
 constexpr char kTag[] = "MatonosInstaller";
 constexpr char kImageStoreRoot[] = "/mnt/matonos-install";
 constexpr char kSystemMapper[] = "matonos-install-system";
+constexpr char kOtaStageRoot[] = "/data/vendor/matonos-install-ota";
+constexpr const char* kOtaNames[] = {"manifest.json", "manifest.sig", "system.erofs",
+    "system_ext.erofs", "product.erofs", "vendor.erofs", "odm.erofs", "vbmeta.img",
+    "matonos-a.efi", "matonos-b.efi"};
 std::atomic<bool> g_cancel{false};
 std::atomic<bool> g_operation_active{false};
 std::mutex g_operation_mutex;
@@ -294,6 +300,59 @@ int GetStatus(const char*, char* result, size_t capacity, void*) {
     const std::string json="{\"executorReady\":true,\"dryRunVerified\":true,\"readbackVerified\":true,\"liveMode\":"+std::string(LiveMode()?"true":"false")+"}";
     if (json.size()+1>capacity) return -1; std::memcpy(result,json.c_str(),json.size()+1); return 0;
 }
+
+int RunSlotWriter(const char* command, const char* payload_dir) {
+    const pid_t pid=fork();
+    if(pid<0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: fork slot-writer command=%s failed errno=%d",command,errno);return -1;}
+    if(pid==0){
+        if(payload_dir) execl("/odm/bin/matonos-installer-service","matonos-installer-service","--run-slot-writer",command,payload_dir,static_cast<char*>(nullptr));
+        else execl("/odm/bin/matonos-installer-service","matonos-installer-service","--run-slot-writer",command,static_cast<char*>(nullptr));
+        std::fprintf(stderr,"installer: exec slot-writer helper command=%s failed errno=%d\n",command,errno);_exit(127);
+    }
+    int status=0;while(waitpid(pid,&status,0)<0){if(errno==EINTR)continue;__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: wait slot-writer command=%s pid=%d failed errno=%d",command,pid,errno);return -1;}
+    if(!WIFEXITED(status)||WEXITSTATUS(status)!=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: slot-writer command=%s pid=%d failed status=%d",command,pid,status);return -1;}
+    return 0;
+}
+
+int StageUpdate(const char* const* names,const int* fds,size_t count,char* result,size_t capacity,void*) {
+    if(count!=std::size(kOtaNames)){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: OTA stage expects %zu descriptors, received %zu",std::size(kOtaNames),count);return -1;}
+    uint64_t total=0;
+    for(size_t i=0;i<count;++i){
+        if(!names[i]||std::strcmp(names[i],kOtaNames[i])!=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: OTA stage descriptor %zu has unexpected name %s",i,names[i]?names[i]:"<null>");return -1;}
+        struct stat st{};if(fstat(fds[i],&st)!=0||!S_ISREG(st.st_mode)||st.st_size<=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: OTA stage input %s is not a readable regular file fd=%d errno=%d",names[i],fds[i],errno);return -1;}
+        if(static_cast<uint64_t>(st.st_size)>UINT64_MAX-total){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: OTA payload size overflow at %s",names[i]);return -1;}
+        total+=static_cast<uint64_t>(st.st_size);
+    }
+    struct statvfs space{};if(statvfs(kOtaStageRoot,&space)!=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: statvfs OTA staging directory %s failed errno=%d",kOtaStageRoot,errno);return -1;}
+    if(static_cast<unsigned __int128>(space.f_bavail)*space.f_frsize<total){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: insufficient space to stage OTA descriptors bytes=%llu",static_cast<unsigned long long>(total));return -1;}
+    std::string pattern=std::string(kOtaStageRoot)+"/stage.XXXXXX";
+    char* directory=mkdtemp(pattern.data());if(!directory){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: create OTA stage directory under %s failed errno=%d",kOtaStageRoot,errno);return -1;}
+    bool ok=true;
+    for(size_t i=0;i<count&&ok;++i){
+        const std::string path=std::string(directory)+"/"+kOtaNames[i];
+        const int output=open(path.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
+        if(output<0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: create OTA staging file %s failed errno=%d",path.c_str(),errno);ok=false;break;}
+        struct stat st{};if(fstat(fds[i],&st)!=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: stat OTA descriptor %s fd=%d failed errno=%d",names[i],fds[i],errno);ok=false;}
+        std::vector<uint8_t> buffer(1024*1024);uint64_t offset=0;const uint64_t size=st.st_size;
+        while(ok&&offset<size){const size_t want=static_cast<size_t>(std::min<uint64_t>(buffer.size(),size-offset));ssize_t n;do{n=pread(fds[i],buffer.data(),want,static_cast<off_t>(offset));}while(n<0&&errno==EINTR);if(n<=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: read OTA descriptor %s fd=%d offset=%llu failed errno=%d",names[i],fds[i],static_cast<unsigned long long>(offset),n<0?errno:EIO);ok=false;break;}size_t done=0;while(done<static_cast<size_t>(n)){ssize_t w;do{w=write(output,buffer.data()+done,static_cast<size_t>(n)-done);}while(w<0&&errno==EINTR);if(w<=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: write OTA staging file %s offset=%llu failed errno=%d",path.c_str(),static_cast<unsigned long long>(offset+done),w<0?errno:EIO);ok=false;break;}done+=static_cast<size_t>(w);}offset+=static_cast<uint64_t>(n);}
+        if(ok&&fsync(output)!=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: fsync OTA staging file %s failed errno=%d",path.c_str(),errno);ok=false;}
+        CLOSE_FD(output);
+    }
+    if(ok)ok=RunSlotWriter("stage",directory)==0;
+    std::error_code cleanup_error;std::filesystem::remove_all(directory,cleanup_error);if(cleanup_error){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: remove OTA stage directory %s failed errno=%d message=%s",directory,cleanup_error.value(),cleanup_error.message().c_str());ok=false;}
+    const char* response=ok?"{\"ok\":true}":"{\"ok\":false,\"error\":\"stage_failed\"}";
+    if(std::strlen(response)+1>capacity)return -1;std::memcpy(result,response,std::strlen(response)+1);return 0;
+}
+int FinalizeUpdate(const char*,char* result,size_t capacity,void*) {
+    const bool ok=RunSlotWriter("finalize",nullptr)==0;const char* response=ok?"{\"ok\":true}":"{\"ok\":false,\"error\":\"finalize_failed\"}";
+    if(std::strlen(response)+1>capacity)return -1;std::memcpy(result,response,std::strlen(response)+1);return 0;
+}
+int UpdateStatus(const char*,char* result,size_t capacity,void*) {
+    char suffix[PROP_VALUE_MAX]{};const int len=__system_property_get("ro.boot.slot_suffix",suffix);
+    if(len<=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: update status cannot read ro.boot.slot_suffix errno=%d",errno);return -1;}
+    const std::string json=std::string("{\"available\":")+(access("/maton_system/images",R_OK|W_OK|X_OK)==0?"true":"false")+",\"runningSlot\":\""+suffix+"\"}";
+    if(json.size()+1>capacity)return -1;std::memcpy(result,json.c_str(),json.size()+1);return 0;
+}
 int ListDrives(const char*, char* result, size_t capacity, void*) {
     const auto json=DrivesJson(); if(json.size()+1>capacity)return -1; std::memcpy(result,json.c_str(),json.size()+1); return 0;
 }
@@ -360,6 +419,11 @@ bool WaitForPartitionNodes(const char* disk_path) {
 }  // namespace
 
 int HelperMain(int argc,char** argv) {
+    if((argc==3||argc==4)&&std::strcmp(argv[1],"--run-slot-writer")==0){
+        if(std::strcmp(argv[2],"stage")==0&&argc==4)execl("/system_ext/bin/matonos-slot-writer","matonos-slot-writer","stage",argv[3],static_cast<char*>(nullptr));
+        else if(std::strcmp(argv[2],"finalize")==0&&argc==3)execl("/system_ext/bin/matonos-slot-writer","matonos-slot-writer","finalize",static_cast<char*>(nullptr));
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer helper: unsupported slot-writer operation %s argc=%d errno=%d",argv[2],argc,errno);return 127;
+    }
     if(argc==5&&std::strcmp(argv[1],"--prepare-image-store")==0) {
         const uint64_t expected=std::strtoull(argv[2],nullptr,10);
         return PrepareImageStore(expected,argv[3],argv[4]);
@@ -409,7 +473,9 @@ int main(int argc,char** argv) {
     if (!g_server || matonos_ipc_register(g_server,"get_status",GetStatus,nullptr) ||
         matonos_ipc_register(g_server,"list_drives",ListDrives,nullptr) ||
         matonos_ipc_register(g_server,"execute_operation",Execute,nullptr) ||
-        matonos_ipc_register(g_server,"cancel_operation",Cancel,nullptr) || matonos_ipc_start(g_server)) {
+        matonos_ipc_register(g_server,"cancel_operation",Cancel,nullptr) ||
+        matonos_ipc_register_ota(g_server,StageUpdate,FinalizeUpdate,UpdateStatus,nullptr) ||
+        matonos_ipc_start(g_server)) {
         __android_log_print(ANDROID_LOG_ERROR,kTag,"Unable to register installer channel; exiting without delaying boot");
         return 1;
     }

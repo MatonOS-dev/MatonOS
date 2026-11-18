@@ -1,4 +1,6 @@
-# The installer is an optional live-session helper. Its failure never gates boot.
+# The service handles OTA in installed sessions and full installation in a live
+# session. Its asynchronous startup never gates boot; destructive install
+# operations still check the live-image kernel command line.
 service matonos-installer-service /odm/bin/matonos-installer-service
     class late_start
     user root
@@ -7,9 +9,14 @@ service matonos-installer-service /odm/bin/matonos-installer-service
     restart_period 10
 
 # The system image remains usable without installer support or target disks.
+on post-fs-data
+    mkdir /data/vendor/matonos-install-ota 0700 root root
+    restorecon_recursive /data/vendor/matonos-install-ota
+
+    start matonos-installer-service
+
 on property:ro.boot.matonos.live=1
     mkdir /mnt/matonos-install 0700 root root
     mkdir /mnt/matonos-install/metadata 0700 root root
     mkdir /mnt/matonos-install/system 0700 root root
     restorecon_recursive /mnt/matonos-install
-    start matonos-installer-service

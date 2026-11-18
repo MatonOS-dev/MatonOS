@@ -16,6 +16,9 @@ extern "C" {
 typedef struct MatonosIpcServer MatonosIpcServer;
 typedef int (*matonos_ipc_handler)(const char *json_args, char *json_result,
                                     size_t result_capacity, void *context);
+typedef int (*matonos_ipc_stage_handler)(const char *const *names, const int *fds,
+                                          size_t count, char *json_result,
+                                          size_t result_capacity, void *context);
 
 /* target is the VINTF-declared vendor.matonos.channel instance suffix.
  * The caller owns the returned server and may destroy it after stopping its
@@ -28,6 +31,10 @@ MATONOS_IPC_API MatonosIpcServer *matonos_ipc_create(const char *target);
 MATONOS_IPC_API int matonos_ipc_destroy(MatonosIpcServer *server);
 MATONOS_IPC_API int matonos_ipc_register(MatonosIpcServer *server, const char *command,
                          matonos_ipc_handler handler, void *context);
+MATONOS_IPC_API int matonos_ipc_register_ota(MatonosIpcServer *server,
+                          matonos_ipc_stage_handler stage_handler,
+                          matonos_ipc_handler finalize_handler,
+                          matonos_ipc_handler status_handler, void *context);
 MATONOS_IPC_API int matonos_ipc_start(MatonosIpcServer *server);
 MATONOS_IPC_API int matonos_ipc_publish(MatonosIpcServer *server, const char *topic,
                         const char *json_event);

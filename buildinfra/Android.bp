@@ -24,8 +24,12 @@ aidl_interface {
             version: "1",
             imports: [],
         },
+        {
+            version: "2",
+            imports: [],
+        },
     ],
-    frozen: true,
+    frozen: false,
 }
 
 // Driver executables and libmatonos-ipc live in the ODM image built outside

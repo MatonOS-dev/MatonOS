@@ -150,3 +150,35 @@ validation details). Send those `id` values as `addon_list` in OTA API
 requests. The slot writer uses the same service state directly: an ID is
 installed when its `/mnt/vendor/addons/<id>/active-version` file is present
 and nonempty.
+
+## Device-side installer channel
+
+Settings calls the existing `vendor.matonos.channel.IChannel/install` service
+through System Bridge. The caller must already be authorized for the `install`
+target by the same bridge permission and certificate policy as disk
+installation. OTA does not add a separate daemon or client connection.
+
+For `stageUpdate(names, files)`, Settings opens each selected file as a
+read-only `ParcelFileDescriptor` and sends it with its expected filename.
+`names` and `files` are parallel arrays in this exact order:
+
+```text
+manifest.json, manifest.sig, system.erofs, system_ext.erofs, product.erofs,
+vendor.erofs, odm.erofs, vbmeta.img, matonos-a.efi, matonos-b.efi
+```
+
+The service accepts only that inventory, copies the descriptors into a
+service-owned temporary directory, then invokes the existing slot writer.
+The service never opens a caller-supplied path. The writer verifies the signed
+manifest, every payload size and hash, the Android-base downgrade gate, the
+installed add-on gate, and the target UKI/vbmeta digest before invalidating
+the target slot's boot entry. A failed stage returns an error naming the
+failed operation; installer and slot-writer logs name the failed file or step.
+The running slot remains untouched and the target slot has no boot entry until
+staging finishes.
+
+`getUpdateStatus()` returns `available` and the running slot suffix.
+`finalizeUpdate()` validates the staged images and UKI/vbmeta pair, then asks
+BootControl to select the target's `+3-0` entry. Systemd-boot's counted entry
+handles failed-boot attempts; after the new slot reports boot success,
+BootControl promotes its entry to the stable `A.conf` or `B.conf` name.

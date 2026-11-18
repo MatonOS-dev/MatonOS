@@ -21,13 +21,53 @@ publisher and device derive `android_base` from the leading integer in
 allowing any build on the same base. See [OTA-CONTRACT.md](OTA-CONTRACT.md) for the update-centre
 contract and local publishing flow.
 
+Settings reaches the device-side updater through the existing authorized
+`install` channel. The service starts asynchronously after `/data` on installed
+and live sessions; image-install writes remain gated to a live image. OTA stage
+accepts read-only file descriptors for the signed manifest, eight signed image
+payloads, and signature, then stages the inactive slot. `finalizeUpdate` asks
+BootControl to select its counted entry; boot success promotes that slot to a
+stable loader name. See the device API and file order in [OTA-CONTRACT.md](OTA-CONTRACT.md).
+
 Host tests: `npm test` in the matonos-ota repo covers all API endpoints,
 base-downgrade filtering and promotion, add-on selection, EOL, malformed
 requests, and range reads. `python3 install/ota/test_ota.py` builds the same
 manifest verifier used by the writer and checks a fake signed publish,
-tampering, and Android-base downgrade rejection.
+tampering, Android-base downgrade rejection, interrupted-stage entry ordering,
+counted-entry retry names, and the rollback glob. The Settings release app and
+the installer and IPC NDK components compiled. The AIDL v1→v2 compatibility
+check passed. No Soong build or device boot was run; see the remaining build
+targets and device checks in the task report.
 Release signing still requires `MATON_OTA_KEY` matching the
 committed public key. No AOSP build, VM, or upload was run for this work.
+
+### Installed-device verification
+
+Run this first on a spare device or disk that has a confirmed bootable old
+slot. Keep power connected and retain the signed payload until the new slot is
+marked successful.
+
+1. Boot the installed system and confirm `getUpdateStatus()` reports the
+   running slot. Confirm the current ESP has its stable `A.conf` or `B.conf`
+   entry and corresponding UKI.
+2. From Settings, stage a complete signed release. Confirm the service log
+   names successful manifest verification and that the inactive slot receives
+   all five image files, vbmeta, UKI, and a `+3-0` loader entry. Confirm the
+   running slot's images, UKI, and stable entry are unchanged.
+3. Finalize once. Confirm BootControl selects the inactive slot and the
+   default loader pattern matches its counted entry. Reboot normally.
+4. On the first successful boot, confirm the running slot changed and its
+   loader entry was promoted to `A.conf` or `B.conf`; confirm the old slot's
+   stable entry remains available.
+5. To check retry rollback, use a separately recoverable test installation
+   with a signed release whose target slot is known to fail before Android
+   starts. Confirm systemd-boot exhausts `+3-0` through `+0-3` and starts the
+   old slot. Do not perform this failure-injection step on a user's only
+   installation.
+
+Invalid signatures and interrupted staging should also be exercised on the
+spare installation: both must leave the running slot bootable and the target
+without an eligible loader entry; a subsequent complete stage must succeed.
 
 ## 2026-11-17 file-backed install implementation
 

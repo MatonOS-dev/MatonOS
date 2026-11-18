@@ -9,6 +9,7 @@ import android.os.Build
 import org.matonos.client.BridgeMode
 import org.matonos.client.MatonOS
 import org.matonos.client.MatonosClient
+import org.matonos.settings.OtaInstallerBridge
 import java.util.concurrent.ConcurrentHashMap
 
 /** Expo adapter over buildinfra/client. All bridge semantics remain in that shared Java client. */
@@ -60,6 +61,17 @@ class MatonOSExpoModule : Module() {
     }
     AsyncFunction("call") { target: String, command: String, jsonArgs: String ->
       val result = requireClient().call(target, command, jsonArgs)
+      mapOf("available" to result.available, "value" to (result.value ?: ""), "reason" to (result.reason ?: ""))
+    }
+    AsyncFunction("stageUpdate") { names: List<String>, uris: List<String> ->
+      OtaInstallerBridge.stage(requireNotNull(appContext.reactContext), requireClient(), names, uris)
+    }
+    AsyncFunction("finalizeUpdate") {
+      val result = requireClient().finalizeUpdate()
+      mapOf("available" to result.available, "value" to (result.value ?: ""), "reason" to (result.reason ?: ""))
+    }
+    AsyncFunction("getUpdateStatus") {
+      val result = requireClient().getUpdateStatus()
       mapOf("available" to result.available, "value" to (result.value ?: ""), "reason" to (result.reason ?: ""))
     }
     AsyncFunction("isLiveImage") {
