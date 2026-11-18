@@ -35,9 +35,9 @@ def main():
     if not public_key.is_file(): fail(f"public key does not exist: {public_key}")
     build_prop = images / "system" / "build.prop"
     if not build_prop.is_file(): fail(f"missing {build_prop} (system build properties are required)")
-    build_id = prop(build_prop, "ro.matonos.build_id")
+    build_id = prop(build_prop, "ro.build.date.utc")
     version = prop(build_prop, "ro.build.version.release")
-    if not build_id.isdigit() or int(build_id) <= 0: fail("ro.matonos.build_id must be a positive integer")
+    if not build_id.isdigit() or int(build_id) <= 0: fail("ro.build.date.utc must be a positive integer")
     if not version: fail("ro.build.version.release is missing")
 
     build_id = str(int(build_id))

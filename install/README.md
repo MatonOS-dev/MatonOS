@@ -11,8 +11,8 @@ suffix-free root `vbmeta.img`, both UKIs, and a signed manifest. The AVB
 descriptor source is `secureboot/avb.sh:64-69`, where the `system`,
 `system_ext`, `product`, `vendor`, and `odm` descriptors are imported without
 slot suffixes; `tools/make-live.sh:46` and `tools/make-live.sh:256-259` build
-one root vbmeta and distinct A/B UKIs. `ro.matonos.build_id` is set from the
-release `BUILD_NUMBER`; the writer refuses ids less than or equal to the
+one root vbmeta and distinct A/B UKIs. `ro.build.date.utc` (the build's UTC timestamp) is the
+build id; the writer refuses ids less than or equal to the
 running build. See [OTA-CONTRACT.md](OTA-CONTRACT.md) for the update-centre
 contract and local publishing flow.
 

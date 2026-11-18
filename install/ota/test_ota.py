@@ -28,16 +28,16 @@ with tempfile.TemporaryDirectory(prefix="matonos-ota-test-") as temp:
 
     images = temp / "images"
     (images / "system").mkdir(parents=True)
-    (images / "system/build.prop").write_text("ro.matonos.build_id=420\nro.build.version.release=1.2\n")
+    (images / "system/build.prop").write_text("ro.build.date.utc=1795430400\nro.build.version.release=1.2\n")
     for index, name in enumerate(NAMES):
         source_name = {"matonos-a.efi": "matonos-installed-a.efi", "matonos-b.efi": "matonos-installed-b.efi"}.get(name, name)
         (images / source_name).write_bytes((f"fake image {index} " * 40).encode())
     output = temp / "published"
     env = os.environ.copy(); env["MATON_OTA_KEY"] = str(key); env["MATON_OTA_PUBLIC_KEY"] = str(pub)
     run(str(ROOT / "tools/ota-publish.sh"), str(images), "stable", str(output), env=env)
-    release = output / "stable/420"
+    release = output / "stable/1795430400"
     run(str(verifier), str(release), str(pub), "419")
-    assert json.loads((output / "stable/latest.json").read_text())["build_id"] == 420
+    assert json.loads((output / "stable/latest.json").read_text())["build_id"] == 1795430400
     assert (output / "stable/latest.json.hwfm").is_file()
 
     (release / "system.erofs").write_bytes(b"tampered")
@@ -45,5 +45,5 @@ with tempfile.TemporaryDirectory(prefix="matonos-ota-test-") as temp:
     # Restore content by re-publishing into a separate output, then check downgrade.
     output2 = temp / "published2"
     run(str(ROOT / "tools/ota-publish.sh"), str(images), "stable", str(output2), env=env)
-    run(str(verifier), str(output2 / "stable/420"), str(pub), "420", ok=False)
+    run(str(verifier), str(output2 / "stable/1795430400"), str(pub), "1795430400", ok=False)
 print("OTA publisher/signature/hash/tamper/downgrade tests passed")

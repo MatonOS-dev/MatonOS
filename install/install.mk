@@ -8,7 +8,6 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/virtual_ab_ota/vabc_features.m
 # The release flag guarding the feature fragment's default is not fixed for
 # this product. Select the kernel UBLK backend explicitly, never dm-user.
 PRODUCT_VENDOR_PROPERTIES += ro.virtual_ab.ublk.enabled=true
-PRODUCT_SYSTEM_PROPERTIES += ro.matonos.build_id=$(BUILD_NUMBER)
 # First-stage init needs this static binary before mounting a snapshotted
 # /system. The ordinary snapuserd package above is the second-stage copy.
 PRODUCT_PACKAGES += snapuserd_ramdisk

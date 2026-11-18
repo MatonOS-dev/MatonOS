@@ -11,7 +11,7 @@ Ed25519 detached signature `manifest.sig`.
 Before any slot state changes, the writer verifies the signature using
 `/system_ext/etc/security/matonos/ota-ed25519.pub`, validates the exact file
 inventory, sizes and SHA-256 hashes, and requires the manifest build id to be
-newer than `ro.matonos.build_id`. It selects the target UKI itself. The UKI's
+newer than `ro.build.date.utc`. It selects the target UKI itself. The UKI's
 embedded `androidboot.vbmeta.digest` must match the SHA-256 digest of the
 target vbmeta header, authentication block, and auxiliary block.
 

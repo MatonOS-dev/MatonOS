@@ -30,7 +30,7 @@ latest.json
 the server until an operator removes them. `latest.json` has this schema:
 
 ```json
-{"build_id":420,"version":"1.2","path":"stable/420/","manifest_sha256":"<64 lowercase hex chars>"}
+{"build_id":1795430400,"version":"1.2","path":"stable/1795430400/","manifest_sha256":"<64 lowercase hex chars>"}
 ```
 
 The `path` is relative to the configured OTA root URL. The UI checks the
@@ -49,7 +49,7 @@ lowercase SHA-256 of the corresponding downloaded file:
 {
   "format_version": 1,
   "channel": "stable",
-  "build": {"id": 420, "version": "1.2"},
+  "build": {"id": 1795430400, "version": "1.2"},
   "files": [
     {"name":"system.erofs","size":123,"sha256":"<64 lowercase hex chars>"},
     {"name":"system_ext.erofs","size":123,"sha256":"..."},
@@ -65,14 +65,15 @@ lowercase SHA-256 of the corresponding downloaded file:
 
 The manifest must list those eight names exactly once. The writer independently
 checks the signature, each size and hash, and requires `build.id` to be greater
-than the running `ro.matonos.build_id` property. `BUILD_NUMBER` must therefore
-be a positive monotonic integer for release builds; `ro.build.version.release`
-provides the human version string.
+than the running `ro.build.date.utc` property. That property is the build's
+UTC timestamp in seconds, set by every AOSP build, so build ids increase with
+build time and need no configuration; `ro.build.version.release` provides the
+human version string.
 
 ## Update sequence
 
 1. Fetch `latest.json`; skip if its build id is not newer than the installed
-   `ro.matonos.build_id`.
+   `ro.build.date.utc`.
 2. Download the manifest, signature and all eight named files into a private
    temporary directory. Verify the latest manifest hash and Ed25519 signature,
    then sizes and SHA-256 hashes. Keep the directory layout flat.
