@@ -2,7 +2,7 @@
 
 The OTA service exposes a JSON API and immutable files. It does not upload or
 publish builds. A deployment promotes a release by editing its channels
-configuration with `ota-server/src/promote.ts`, which refuses a lower
+configuration with `src/promote.ts` in [MatonOS-dev/matonos-ota](https://github.com/MatonOS-dev/matonos-ota), which refuses a lower
 `android_base` than the channel currently serves. Same-base moves in either
 direction are allowed. The device and slot writer also enforce downgrade
 protection.
