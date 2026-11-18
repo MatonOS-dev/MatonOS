@@ -194,9 +194,9 @@ if [[ $DO_AOSP == 1 ]]; then
   # Distinct path: AOSP copies this as odm.img via BOARD_PREBUILT_ODMIMAGE
   # (install/BoardConfig.mk). Writing straight to $PRODUCT_OUT/odm.img let the
   # AOSP build overwrite the bundle (boot loop). See SHARED-CHANGES.md.
-  if [[ -n $MODULES && ! -x $AOSP/out/host/linux-x86/bin/mkfs.erofs ]]; then
-    # Fresh tree: -m mkfs.erofs bootstraps the host tool; -m builds make no images.
-    info "Skipping ODM bundle: no host mkfs.erofs yet (-m bootstrap)"
+  if [[ -n $MODULES ]]; then
+    # -m builds make no images; the bundle also needs a full build's vendor/.
+    info "Skipping ODM bundle (-m)"
   else
     "$TOOLS/build-bundle.sh" -o "$PRODUCT_OUT/odm-bundle.img"
   fi
