@@ -18,7 +18,7 @@ def main():
     if not re.fullmatch(r"[a-z0-9_]+", channel):
         fail("channel must contain only lowercase letters, digits, and underscores")
     if not re.fullmatch(r"[1-9][0-9]*", update_id):
-        fail("update_id must be a positive integer build id")
+        fail("update_id must be a positive integer update id")
     build_dir = out / "updates" / update_id
     manifest_path = build_dir / "manifest.json"
     if not build_dir.is_dir() or not manifest_path.is_file():
@@ -26,7 +26,8 @@ def main():
     try:
         manifest = json.loads(manifest_path.read_text())
         build = manifest["build"]
-        if int(build["id"]) != int(update_id) or str(build["version"]) == "":
+        android_base = int(build["android_base"])
+        if int(build["id"]) != int(update_id) or str(build["version"]) == "" or android_base <= 0:
             fail("build manifest metadata does not match update_id or has no version")
         version = str(build["version"])
     except (OSError, ValueError, TypeError, KeyError) as error:
@@ -36,17 +37,18 @@ def main():
     if pointer.exists():
         try:
             current = json.loads(pointer.read_text())
-            current_id = int(current["update_id"])
-            if current_id <= 0:
-                fail(f"current channel pointer has invalid update_id: {pointer}")
+            current_base = int(current["android_base"])
+            if current_base <= 0:
+                fail(f"current channel pointer has invalid android_base: {pointer}")
         except (OSError, ValueError, TypeError, KeyError) as error:
             fail(f"cannot read current channel pointer {pointer}: {error}")
-        if int(update_id) < current_id:
-            fail(f"refusing downgrade of channel {channel}: current {current_id}, requested {update_id}")
+        if android_base < current_base:
+            fail(f"refusing Android base downgrade of channel {channel}: current {current_base}, requested {android_base}")
 
     pointer.parent.mkdir(parents=True, exist_ok=True)
     staging = pointer.with_name(f".{pointer.name}.tmp")
-    staging.write_text(json.dumps({"format": 1, "update_id": int(update_id), "version": version},
+    staging.write_text(json.dumps({"format": 1, "update_id": int(update_id), "version": version,
+                                   "android_base": android_base},
                                   separators=(",", ":")) + "\n")
     staging.replace(pointer)
     pointer.with_suffix(pointer.suffix + ".hwfm").write_text(json.dumps({

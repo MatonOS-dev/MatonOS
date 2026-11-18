@@ -14,6 +14,7 @@ struct File {
 
 struct Manifest {
     uint64_t build_id = 0;
+    uint64_t android_base = 0;
     std::string version;
     std::vector<File> files;
 };

@@ -37,6 +37,10 @@ def main():
     version = prop(build_prop, "ro.build.version.release")
     if not build_id.isdigit() or int(build_id) <= 0: fail("ro.build.date.utc must be a positive integer")
     if not version: fail("ro.build.version.release is missing")
+    base_match = re.match(r"([0-9]+)", version)
+    if not base_match or int(base_match.group(1)) <= 0:
+        fail("ro.build.version.release must start with a positive Android major version")
+    android_base = int(base_match.group(1))
 
     build_id = str(int(build_id))
     target = out / "updates" / build_id
@@ -73,7 +77,8 @@ def main():
             data = (temp / name).read_bytes()
             entries.append({"name": name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
         manifest = {"format_version": 1,
-                    "build": {"id": int(build_id), "version": version}, "files": entries}
+                    "build": {"id": int(build_id), "version": version,
+                              "android_base": android_base}, "files": entries}
         manifest_bytes = (json.dumps(manifest, ensure_ascii=True, separators=(",", ":"), sort_keys=False) + "\n").encode()
         (temp / "manifest.json").write_bytes(manifest_bytes)
         subprocess.run(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(key),

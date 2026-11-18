@@ -240,11 +240,11 @@ bool Stage(const fs::path& payload) {
     if(!mi::ota::Verify(payload.string(), "/system_ext/etc/security/matonos/ota-ed25519.pub", &manifest, &verify_error)) {
         std::fprintf(stderr,"matonos-slot-writer: OTA manifest verification failed: %s\n",verify_error.c_str());return false;
     }
-    char build_property[PROP_VALUE_MAX]{};
-    if(__system_property_get("ro.build.date.utc",build_property)<=0) { errno=ENOENT; return Fail("ro.build.date.utc is unavailable"); }
-    char* build_end=nullptr; errno=0; const unsigned long long installed_id=std::strtoull(build_property,&build_end,10);
-    if(errno||!build_end||*build_end||installed_id==0) { errno=EINVAL; return Fail("ro.build.date.utc is not a positive integer"); }
-    if(manifest.build_id<=installed_id) { errno=EINVAL; return Fail("refusing OTA build id not newer than installed build"); }
+    char release[PROP_VALUE_MAX]{};
+    if(__system_property_get("ro.build.version.release",release)<=0) { errno=ENOENT; return Fail("ro.build.version.release is unavailable"); }
+    char* base_end=nullptr; errno=0; const unsigned long long installed_base=std::strtoull(release,&base_end,10);
+    if(errno||base_end==release||installed_base==0) { errno=EINVAL; return Fail("ro.build.version.release has no positive major version"); }
+    if(manifest.android_base<installed_base) { errno=EINVAL; return Fail("refusing OTA with lower Android base version"); }
     if (access("/maton_system/images", R_OK|W_OK|X_OK)!=0 || access(kMetadata,R_OK|W_OK|X_OK)!=0)
         return Fail("installed image store or libfiemap metadata is unavailable");
     mi::FatVolume esp_read;std::string preflight_error;

@@ -33,14 +33,18 @@ names contain only lowercase ASCII letters, digits, and underscores. Channel
 manifests are plain JSON pointers, not signed, and have this schema:
 
 ```json
-{"format":1,"update_id":1795430400,"version":"1.2"}
+{"format":1,"update_id":1795430400,"version":"18","android_base":18}
 ```
 
 They are hints for discovery only. The device does not read a channel property,
-validate a channel name, or trust the pointer for integrity or downgrade
-protection. The downloaded build manifest's Ed25519 signature authenticates
-its build id and file inventory; stage continues to require that id to be
-greater than running `ro.build.date.utc`.
+validate a channel name, or trust the pointer for integrity. The signed build
+manifest authenticates the Android base and file inventory. The publisher
+reads `ro.build.version.release` from `system/build.prop` and stores its
+leading integer major version as `android_base`; the device reads the same
+property and parses the same leading integer. This property directly identifies
+the Android release major; `ro.build.version.sdk` would need a separate
+SDK-to-release mapping. Stage refuses only when the update base is lower than
+the running base; any build timestamp on the same base is allowed.
 
 ## Signed build manifest
 
@@ -50,7 +54,7 @@ SHA-256 for its downloaded file:
 ```json
 {
   "format_version": 1,
-  "build": {"id": 1795430400, "version": "1.2"},
+  "build": {"id": 1795430400, "version": "18", "android_base": 18},
   "files": [
     {"name":"system.erofs","size":123,"sha256":"<64 lowercase hex chars>"},
     {"name":"system_ext.erofs","size":123,"sha256":"..."},
@@ -69,12 +73,14 @@ detached signature using the public key installed at
 `/system_ext/etc/security/matonos/ota-ed25519.pub` before trusting its file
 list. The signature is the raw 64-byte Ed25519 signature over the exact bytes
 of `manifest.json`. The slot writer independently repeats signature, file,
-size, hash, and newer-build checks before writing.
+size and hash checks, then rejects an Android base lower than the running
+base before writing.
 
 ## Update sequence
 
-1. Fetch `<channel>-manifest.json` (with the short cache sidecar policy); skip
-   if its update id is not newer than installed `ro.build.date.utc`.
+1. Fetch `<channel>-manifest.json` (with the short cache sidecar policy); its
+   `android_base` lets the UI filter releases below the installed base without
+   downloading them. Update timestamps do not determine downgrade safety.
 2. Download `updates/<update_id>/manifest.json`, its signature, and the eight
    named files into a private temporary directory. Verify the signature,
    sizes, and SHA-256 hashes. Keep the directory flat.
@@ -91,7 +97,7 @@ size, hash, and newer-build checks before writing.
 
 Writer commands return `0` on success and `1` for an operational failure.
 `stage` returns `1` for invalid signature, missing/mismatched file,
-non-newer build, disk/ESP failure, or image write failure. `finalize` returns
+lower Android base, disk/ESP failure, or image write failure. `finalize` returns
 `1` if the target is incomplete, its UKI does not pin the staged vbmeta, or
 BootControl refuses selection. `remove-inactive` returns `1` until the running
 slot is successful or if cleanup fails. Invalid command syntax returns `2`.
@@ -110,8 +116,8 @@ does not promote a build or upload files.
 
 `tools/ota-promote.sh <out-dir> <channel> <update_id>` atomically writes the
 plain channel pointer and its `.hwfm` sidecar. It refuses to move an existing
-channel to a lower build id, so operators can promote the same immutable build
-from `testing` to `main` without rebuilding. Upload the resulting `updates/`
+channel to a lower Android base. Builds on the same base can be promoted in
+either timestamp order. Upload the resulting `updates/`
 tree using the printed/manual deployment process.
 
 The checked-in public key is a bootstrap key; replace it with the release

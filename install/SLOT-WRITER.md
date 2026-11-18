@@ -10,8 +10,10 @@ Ed25519 detached signature `manifest.sig`.
 
 Before any slot state changes, the writer verifies the signature using
 `/system_ext/etc/security/matonos/ota-ed25519.pub`, validates the exact file
-inventory, sizes and SHA-256 hashes, and requires the manifest build id to be
-newer than `ro.build.date.utc`. It selects the target UKI itself. The UKI's
+inventory, sizes and SHA-256 hashes, and refuses an `android_base` below the
+running major release parsed from `ro.build.version.release`. Build ids are
+not used for downgrade protection; same-base builds are accepted in either
+timestamp order. It selects the target UKI itself. The UKI's
 embedded `androidboot.vbmeta.digest` must match the SHA-256 digest of the
 target vbmeta header, authentication block, and auxiliary block.
 
@@ -45,7 +47,7 @@ See [OTA-CONTRACT.md](OTA-CONTRACT.md) for publisher format, verification and
 update-centre sequence.
 
 The writer does not consume or validate channel pointers. The signed build
-manifest carries the authenticated build id used for downgrade protection;
+manifest carries the authenticated Android base used for downgrade protection;
 channel promotion is server-side metadata.
 
 ## Failure and disk risk

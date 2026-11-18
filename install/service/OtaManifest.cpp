@@ -87,15 +87,18 @@ bool Verify(const std::string& directory, const std::string& public_key,
     uint64_t format = 0;
     if (!Number(root.Get("format_version"), &format) || format != 1) { *error = "unsupported manifest format_version"; return false; }
     const json::Value* build = root.Get("build"); uint64_t build_id = 0;
+    uint64_t android_base = 0;
     if (!build || build->kind != json::Value::Kind::kObject ||
-        !Number(build->Get("id"), &build_id) || String(build->Get("version")).empty()) {
+        !Number(build->Get("id"), &build_id) || !Number(build->Get("android_base"), &android_base) ||
+        String(build->Get("version")).empty()) {
         *error = "manifest build metadata is invalid"; return false;
     }
     const json::Value* files = root.Get("files");
     if (!files || files->kind != json::Value::Kind::kArray || files->array.size() != std::size(kFiles)) {
         *error = "manifest must list exactly the eight OTA payload files"; return false;
     }
-    Manifest result; result.build_id = build_id; result.version = String(build->Get("version"));
+    Manifest result; result.build_id = build_id; result.android_base = android_base;
+    result.version = String(build->Get("version"));
     std::set<std::string> seen;
     for (const auto& entry : files->array) {
         if (entry.kind != json::Value::Kind::kObject) { *error = "manifest file entry is not an object"; return false; }
