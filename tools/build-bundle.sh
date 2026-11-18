@@ -71,6 +71,8 @@ install -m 0755 "$PRODUCT_OUT/vendor/bin/toolbox" "$root/bin/modprobe"
 # runtime path explicit as well as setting LD_LIBRARY_PATH in service rc files.
 if command -v patchelf >/dev/null 2>&1; then
   while IFS= read -r -d '' binary; do
+    # Scripts are executable too; only ELF files take an rpath.
+    [[ $(head -c4 "$binary") == $'\x7fELF' ]] || continue
     patchelf --set-rpath '$ORIGIN/../lib64' "$binary"
   done < <(find "$root/bin" -type f -perm /111 -print0 2>/dev/null || true)
 fi
