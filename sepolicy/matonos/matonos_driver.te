@@ -80,7 +80,6 @@ allow matonos_driver matonos_install_mount_file:dir { search getattr write add_n
 allow matonos_driver matonos_install_mount_file:file { create open read write getattr setattr unlink rename map };
 type_transition matonos_driver matonos_install_mount_file:dir matonos_install_mount_file;
 type_transition matonos_driver matonos_install_mount_file:file matonos_install_mount_file;
-allow matonos_driver_helper labeledfs:filesystem { mount unmount getattr };
 allow matonos_install_mount_file labeledfs:filesystem associate;
 allow init matonos_install_mount_file:dir { create_dir_perms relabelto mounton search };
 allow init matonos_install_mount_file:dir { search open read getattr };
