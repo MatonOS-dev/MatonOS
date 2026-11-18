@@ -5,10 +5,8 @@ type matonos_driver, domain;
 type matonos_driver_exec, exec_type, vendor_file_type, file_type;
 type matonos_driver_helper, domain;
 type matonos_driver_helper_exec, exec_type, vendor_file_type, file_type;
-type matonos_install_mount_file, file_type;
 type matonos_driver_data_file, file_type, data_file_type;
 type matonos_channel_service, protected_service, hal_service_type, service_manager_type;
-type matonos_install_block_device, dev_type;
 # addons: GPT entries 6/7 hold service-written raw ext4 slot images, mounted RO.
 type matonos_addons_block_device, dev_type;
 # /mnt/vendor mountpoint is writable tmpfs, not immutable /vendor content.

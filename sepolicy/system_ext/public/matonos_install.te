@@ -1,0 +1,5 @@
+# Install-store types shared by vendor (matonos_driver_helper) and system_ext
+# (matonos_fiemap_helper) policy. system_ext policy cannot name vendor types,
+# so they are declared here, in system_ext public policy.
+type matonos_install_mount_file, file_type;
+type matonos_install_block_device, dev_type;

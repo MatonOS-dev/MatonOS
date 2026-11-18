@@ -117,6 +117,7 @@ BOARD_VENDOR_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy/matonos
 # consolidation by mistake: without it init refuses the composer/allocator
 # and the partitions lose their labels. Keep both dirs.
 BOARD_VENDOR_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy/vendor
+SYSTEM_EXT_PUBLIC_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy/system_ext/public
 SYSTEM_EXT_PRIVATE_SEPOLICY_DIRS += $(DEVICE_PATH)/sepolicy/system_ext/private
 
 # Areas (audio, wifi, bluetooth; v2: sleep, install, updater) each own their directory: board
