@@ -39,9 +39,10 @@ BINDER_NDK_CPP=$DEVICE_DIR/native/third_party/binder_ndk_cpp
    -s $BINDER_NDK_CPP/android/binder_interface_utils.h &&
    -s $BINDER_NDK_CPP/PROVENANCE.md ]] || die "pinned Binder NDK C++ helper headers are missing"
 BINDER_PLATFORM_INCLUDE=$AOSP/frameworks/native/libs/binder/ndk/include_platform
-BINDER_NDK_LIB=$AOSP/out/soong/.intermediates/frameworks/native/libs/binder/ndk/libbinder_ndk/android_vendor_x86_64_shared/libbinder_ndk.so
+# Variant dir follows TARGET_ARCH_VARIANT (BoardConfig.mk); the plain x86_64 dir is stale.
+BINDER_NDK_LIB=$AOSP/out/soong/.intermediates/frameworks/native/libs/binder/ndk/libbinder_ndk/android_vendor_x86_64_sandybridge_shared/libbinder_ndk.so
 [[ -s $BINDER_PLATFORM_INCLUDE/android/binder_manager.h ]] || die "AOSP Binder NDK platform headers are missing"
-[[ -s $BINDER_NDK_LIB ]] || die "AOSP vendor libbinder_ndk missing at $BINDER_NDK_LIB; on a fresh tree run tools/build.sh -m libbinder_ndk,mkfs.erofs first"
+[[ -s $BINDER_NDK_LIB ]] || die "AOSP vendor libbinder_ndk missing at $BINDER_NDK_LIB; on a fresh tree run tools/build.sh -m libbinder_ndk.vendor,mkfs.erofs first"
 IPC_SRC=$DEVICE_DIR/native/libmatonos-ipc
 [[ -f $IPC_SRC/CMakeLists.txt ]] || die "shared native/libmatonos-ipc source is missing"
 mkdir -p "$OUT" "$DEVICE_DIR/prebuilt/native" "$DEVICE_DIR/buildinfra/native-built"
