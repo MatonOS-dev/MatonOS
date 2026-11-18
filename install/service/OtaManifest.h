@@ -13,7 +13,6 @@ struct File {
 };
 
 struct Manifest {
-    std::string channel;
     uint64_t build_id = 0;
     std::string version;
     std::vector<File> files;

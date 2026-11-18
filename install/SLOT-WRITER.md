@@ -44,6 +44,10 @@ images, vbmeta, loader entries, and UKI.
 See [OTA-CONTRACT.md](OTA-CONTRACT.md) for publisher format, verification and
 update-centre sequence.
 
+The writer does not consume or validate channel pointers. The signed build
+manifest carries the authenticated build id used for downgrade protection;
+channel promotion is server-side metadata.
+
 ## Failure and disk risk
 
 Every failed write stops the command and logs context. Since only the inactive

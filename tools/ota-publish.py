@@ -21,11 +21,9 @@ def prop(path, key):
     return match.group(1).strip() if match else ""
 
 def main():
-    if len(sys.argv) != 4:
-        fail("usage: tools/ota-publish.sh <images-dir> <channel> <out-dir>")
-    images, channel, out = map(Path, sys.argv[1:])
-    channel_s = str(channel)
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", channel_s): fail("invalid channel name")
+    if len(sys.argv) != 3:
+        fail("usage: tools/ota-publish.sh <images-dir> <out-dir>")
+    images, out = map(Path, sys.argv[1:])
     key = os.environ.get("MATON_OTA_KEY")
     if not key: fail("MATON_OTA_KEY must name the Ed25519 private key")
     key = Path(key)
@@ -41,7 +39,7 @@ def main():
     if not version: fail("ro.build.version.release is missing")
 
     build_id = str(int(build_id))
-    target = out / channel_s / build_id
+    target = out / "updates" / build_id
     if target.exists(): fail(f"refusing to overwrite existing release directory: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".matonos-ota-", dir=target.parent) as temp_name:
@@ -74,7 +72,7 @@ def main():
         for name in FILES:
             data = (temp / name).read_bytes()
             entries.append({"name": name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
-        manifest = {"format_version": 1, "channel": channel_s,
+        manifest = {"format_version": 1,
                     "build": {"id": int(build_id), "version": version}, "files": entries}
         manifest_bytes = (json.dumps(manifest, ensure_ascii=True, separators=(",", ":"), sort_keys=False) + "\n").encode()
         (temp / "manifest.json").write_bytes(manifest_bytes)
@@ -82,17 +80,6 @@ def main():
                         "-in", str(temp / "manifest.json"), "-out", str(temp / "manifest.sig")], check=True)
         target.parent.mkdir(parents=True, exist_ok=True)
         temp.rename(target)
-    manifest_hash = hashlib.sha256((target / "manifest.json").read_bytes()).hexdigest()
-    relative = f"{channel_s}/{build_id}/"
-    latest = {"build_id": int(build_id), "version": version, "path": relative,
-              "manifest_sha256": manifest_hash}
-    parent = out / channel_s
-    latest_path = parent / "latest.json"
-    staging = parent / ".latest.json.tmp"
-    staging.write_text(json.dumps(latest, separators=(",", ":")) + "\n")
-    staging.replace(latest_path)
-    (parent / "latest.json.hwfm").write_text(json.dumps({
-        "Cache-Control": "public, max-age=60", "CDN-Cache-Control": "public, max-age=60"}, separators=(",", ":")) + "\n")
     print(f"Published locally: {target}")
     print(f"Manual upload command (not run): rsync -aS {out}/ <user@host:/document-root/>")
 

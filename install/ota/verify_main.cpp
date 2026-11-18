@@ -9,6 +9,6 @@ int main(int argc, char** argv) {
         char* end = nullptr; const unsigned long long minimum = std::strtoull(argv[3], &end, 10);
         if (!end || *end || minimum == 0 || manifest.build_id <= minimum) { std::fprintf(stderr, "verify failed: OTA build id is not newer\n"); return 1; }
     }
-    std::printf("OK channel=%s build_id=%llu version=%s\n", manifest.channel.c_str(), static_cast<unsigned long long>(manifest.build_id), manifest.version.c_str());
+    std::printf("OK build_id=%llu version=%s\n", static_cast<unsigned long long>(manifest.build_id), manifest.version.c_str());
     return 0;
 }
