@@ -117,6 +117,22 @@ bool Verify(const std::string& directory, const std::string& public_key,
         result.files.push_back(std::move(file));
     }
     for (const char* name : kFiles) if (!seen.count(name)) { *error = std::string("manifest omits ") + name; return false; }
+    const json::Value* addons = root.Get("addons");
+    if (addons && addons->kind != json::Value::Kind::kObject) { *error = "manifest add-on inventory is not an object"; return false; }
+    if (addons) for (const auto& item : addons->object) {
+        if (item.first.empty() || item.second.kind != json::Value::Kind::kArray) { *error = "manifest add-on inventory has an invalid entry"; return false; }
+        result.addons.insert(item.first);
+    }
     *manifest = std::move(result); return true;
+}
+
+bool RequireAddons(const Manifest& manifest, const std::set<std::string>& installed,
+                   std::string* error) {
+    std::vector<std::string> missing;
+    for (const auto& id : installed) if (!manifest.addons.count(id)) missing.push_back(id);
+    if (missing.empty()) return true;
+    *error = "signed OTA manifest is missing installed add-on IDs:";
+    for (const auto& id : missing) *error += " " + id;
+    return false;
 }
 }  // namespace matonos::install::ota

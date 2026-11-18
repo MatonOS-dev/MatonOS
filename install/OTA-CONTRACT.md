@@ -137,4 +137,16 @@ The `manifest.json` and signature are immutable along with the release files.
 The client downloads the signed manifest and detached signature, verifies the
 signature with the installed OTA public key, checks sizes and SHA-256 values,
 then passes the complete base payload directory to `matonos-slot-writer`.
-The writer repeats verification and downgrade checks before writing.
+The writer repeats verification and downgrade checks before writing. It also
+requires every currently installed add-on ID to be present as a key in the
+signed manifest's `addons` object, and refuses staging with the missing IDs
+named in its error.
+
+Updater clients obtain the installed add-on IDs from the add-ons service's
+`vendor.matonos.channel.IChannel/addons` `status` command through the system
+bridge generic channel. The response's `addons` array contains one object per
+installed add-on, with its ID in `id` (alongside `version`, `valid`, and
+validation details). Send those `id` values as `addon_list` in OTA API
+requests. The slot writer uses the same service state directly: an ID is
+installed when its `/mnt/vendor/addons/<id>/active-version` file is present
+and nonempty.

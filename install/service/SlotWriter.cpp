@@ -20,6 +20,8 @@
 #include <cstring>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -29,6 +31,7 @@ namespace {
 constexpr char kMetadata[] = "/metadata/maton/images";
 constexpr char kImageDir[] = "/maton_system/images";
 constexpr char kEsp[] = "/dev/block/by-name/esp";
+constexpr char kAddonDir[] = "/mnt/vendor/addons";
 constexpr char kImages[][16] = {"system", "system_ext", "product", "vendor", "odm"};
 constexpr size_t kCopyBytes = 1024 * 1024;
 
@@ -239,6 +242,22 @@ bool Stage(const fs::path& payload) {
     mi::ota::Manifest manifest; std::string verify_error;
     if(!mi::ota::Verify(payload.string(), "/system_ext/etc/security/matonos/ota-ed25519.pub", &manifest, &verify_error)) {
         std::fprintf(stderr,"matonos-slot-writer: OTA manifest verification failed: %s\n",verify_error.c_str());return false;
+    }
+    std::set<std::string> installed_addons;
+    std::error_code addon_ec;
+    if (fs::is_directory(kAddonDir, addon_ec)) {
+        for (fs::directory_iterator it(kAddonDir, addon_ec), end; !addon_ec && it != end; it.increment(addon_ec)) {
+            std::error_code type_ec;
+            if (!it->is_directory(type_ec) || type_ec) continue;
+            std::ifstream active(it->path() / "active-version");
+            std::string version;
+            if (std::getline(active, version) && !version.empty()) installed_addons.insert(it->path().filename().string());
+        }
+    }
+    if (addon_ec) { std::fprintf(stderr,"matonos-slot-writer: cannot enumerate installed add-ons at %s: %s\n",kAddonDir,addon_ec.message().c_str());return false; }
+    std::string addon_error;
+    if (!mi::ota::RequireAddons(manifest, installed_addons, &addon_error)) {
+        std::fprintf(stderr,"matonos-slot-writer: %s\n",addon_error.c_str());return false;
     }
     char release[PROP_VALUE_MAX]{};
     if(__system_property_get("ro.build.version.release",release)<=0) { errno=ENOENT; return Fail("ro.build.version.release is unavailable"); }

@@ -48,6 +48,12 @@ with tempfile.TemporaryDirectory(prefix="matonos-ota-test-") as temp:
     assert (release / "manifest.json.sig").read_bytes() == (release / "manifest.sig").read_bytes()
     assert manifest["addons"]["games"][0]["name"] == "locale/en.dat"
     assert (release / "games/locale/en.dat").read_bytes() == b"locale"
+    installed_ids = temp / "installed-addon-ids"
+    installed_ids.write_text("games\n")
+    run(str(verifier), str(release), str(pub), "17", str(installed_ids))
+    installed_ids.write_text("games\neditor\n")
+    missing = run(str(verifier), str(release), str(pub), "17", str(installed_ids), ok=False)
+    assert "editor" in missing.stderr
 
     (release / "system.erofs").write_bytes(b"tampered")
     run(str(verifier), str(release), str(pub), "17", ok=False)
