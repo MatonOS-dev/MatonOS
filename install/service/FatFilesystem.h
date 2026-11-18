@@ -19,6 +19,7 @@ class FatVolume {
     bool ReadFile(const std::string& path,std::vector<uint8_t>* contents,std::string* error);
     bool WriteFile(const std::string& path,const std::vector<uint8_t>& contents,std::string* error);
     bool RenameFile(const std::string& from,const std::string& to,std::string* error);
+    bool RemoveFile(const std::string& path,std::string* error);
     bool Sync(std::string* error);
   private:
     int fd_=-1;bool writable_=false;

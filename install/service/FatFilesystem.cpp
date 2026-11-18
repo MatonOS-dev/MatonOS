@@ -227,6 +227,55 @@ bool FatVolume::RenameFile(const std::string& from,const std::string& to,std::st
     return WriteAt(fd_,entry,32,offset);
 }
 
+bool FatVolume::RemoveFile(const std::string& path,std::string* error) {
+    if (!writable_) { *error="Target FAT volume is read-only."; return false; }
+    const auto components=Components(path);
+    if (components.empty()) { *error="FAT removal path is empty."; return false; }
+    std::vector<uint32_t> dir;
+    if (!DirectoryChain(root_cluster_,&dir,error)) return false;
+    for (size_t i=0;i+1<components.size();++i) {
+        uint8_t entry[32]{};
+        if (!Find(dir,components[i],entry,error)) return false;
+        if (!(entry[11]&0x10)) { *error="FAT removal path component is not a directory."; return false; }
+        const uint32_t cluster=(uint32_t(U16(entry+20))<<16)|U16(entry+26);
+        if (!DirectoryChain(cluster,&dir,error)) return false;
+    }
+    uint8_t entry[32]{};
+    uint64_t entry_offset=0;
+    if (!Find(dir,components.back(),entry,error,&entry_offset)) return error->empty();
+    if (entry[11]&0x10) { *error="FAT removal path resolves to a directory."; return false; }
+    const uint32_t first=(uint32_t(U16(entry+20))<<16)|U16(entry+26);
+    std::vector<uint32_t> chain;
+    if (first&&!DirectoryChain(first,&chain,error)) return false;
+    std::vector<uint64_t> long_name_offsets;
+    bool found_short=false;
+    for (uint32_t cluster:dir) {
+        std::vector<uint8_t> bytes;
+        if (!ReadCluster(cluster,&bytes)) { *error="Unable to read FAT directory while removing file."; return false; }
+        for (size_t off=0;off+32<=bytes.size();off+=32) {
+            const uint64_t absolute=data_offset_+uint64_t(cluster-2)*cluster_size_+off;
+            if (absolute==entry_offset) { found_short=true; break; }
+            const uint8_t* current=bytes.data()+off;
+            if (current[0]==0) break;
+            if (current[0]==0xe5) { long_name_offsets.clear(); continue; }
+            if (current[11]==0x0f) long_name_offsets.push_back(absolute);
+            else long_name_offsets.clear();
+        }
+        if (found_short) break;
+    }
+    if (!found_short) { *error="FAT file entry disappeared during removal."; return false; }
+    for (uint64_t offset:long_name_offsets) {
+        uint8_t deleted=0xe5;
+        if (!WriteAt(fd_,&deleted,1,offset)) { *error="Unable to remove FAT long-name entry."; return false; }
+    }
+    entry[0]=0xe5;
+    if (!WriteAt(fd_,entry,32,entry_offset)) { *error="Unable to remove FAT directory entry."; return false; }
+    for (uint32_t cluster:chain) {
+        if (!SetFatEntry(cluster,0)) { *error="Unable to release removed FAT file data."; return false; }
+    }
+    return true;
+}
+
 bool FatVolume::Sync(std::string* error) {
     if(fd_<0||!writable_){*error="FAT volume is not open for writing.";return false;}
     if(fsync(fd_)!=0){*error="Unable to flush FAT volume: errno="+std::to_string(errno);return false;}
