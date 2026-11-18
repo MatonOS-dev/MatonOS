@@ -29,9 +29,6 @@ namespace matonos::bootctrl {
 namespace {
 std::mutex g_state_mutex;
 
-// Keep Android's bootloader_message and bootloader_control area (first 4 KiB)
-// intact; the MatonOS redundant state records start immediately after it.
-constexpr uint64_t kStateOffsets[] = {4096, 8192};
 constexpr char kStateMagic[8] = {'M','A','T','O','N','B','C','1'};
 #pragma pack(push, 1)
 struct State {
@@ -186,29 +183,31 @@ State DefaultState() {
     return state;
 }
 
+// Installed disks have no misc partition: the redundant state records are two
+// files on the ESP, written alternately by generation.
+const char* const kStateFiles[] = {"loader/matonos-bootctrl-0.bin", "loader/matonos-bootctrl-1.bin"};
+
 bool ReadState(State* state) {
     if (IsLive()) { *state = DefaultState(); state->successful_mask = 1; return true; }
-    const std::string path = FindCurrentDiskPartition("misc");
-    if (path.empty()) {
+    mi::FatVolume volume;
+    std::string error;
+    if (!OpenCurrentEsp(false, &volume, &error)) {
         // Never hold early boot hostage to missing/late block metadata. This
-        // default is read-only; slot changes still fail unless misc is found.
+        // default is read-only; slot changes still fail unless the ESP opens.
         *state = DefaultState();
-        std::fprintf(stderr, "matonos-bootctrl: misc unavailable; using current-slot defaults\n");
-        return true;
-    }
-    const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) {
-        *state = DefaultState();
-        std::fprintf(stderr, "matonos-bootctrl: cannot open %s: %s; using defaults\n", path.c_str(), strerror(errno));
+        std::fprintf(stderr, "matonos-bootctrl: ESP unavailable (%s); using current-slot defaults\n", error.c_str());
         return true;
     }
     State candidates[2]{};
     bool valid[2]{};
     for (size_t i = 0; i < 2; ++i) {
-        valid[i] = pread(fd, &candidates[i], sizeof(State), kStateOffsets[i]) == sizeof(State) &&
-                   Valid(candidates[i]);
+        std::vector<uint8_t> bytes;
+        valid[i] = volume.ReadFile(kStateFiles[i], &bytes, &error) && bytes.size() == sizeof(State);
+        if (valid[i]) {
+            std::memcpy(&candidates[i], bytes.data(), sizeof(State));
+            valid[i] = Valid(candidates[i]);
+        }
     }
-    close(fd);
     if (!valid[0] && !valid[1]) { *state = DefaultState(); return true; }
     *state = valid[1] && (!valid[0] || candidates[1].generation > candidates[0].generation)
                  ? candidates[1] : candidates[0];
@@ -217,27 +216,25 @@ bool ReadState(State* state) {
 
 bool WriteState(State state) {
     if (IsLive()) return true;
-    const std::string path = FindCurrentDiskPartition("misc");
-    if (path.empty()) return false;
     State current{};
     ReadState(&current);
     state.generation = current.generation + 1;
     std::memcpy(state.magic, kStateMagic, sizeof(kStateMagic));
     state.version = 1;
     state.crc = Crc32(&state, offsetof(State, crc));
-    const uint64_t offset = kStateOffsets[state.generation & 1u];
-    const int fd = open(path.c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW);
-    if (fd < 0) return false;
-    size_t done = 0;
-    while (done < sizeof(state)) {
-        const ssize_t count = pwrite(fd, reinterpret_cast<const uint8_t*>(&state) + done, sizeof(state) - done, static_cast<off_t>(offset + done));
-        if (count < 0 && errno == EINTR) continue;
-        if (count <= 0) break;
-        done += static_cast<size_t>(count);
+    mi::FatVolume volume;
+    std::string error;
+    if (!OpenCurrentEsp(true, &volume, &error)) {
+        std::fprintf(stderr, "matonos-bootctrl: cannot open ESP to save state: %s\n", error.c_str());
+        return false;
     }
-    const bool ok = done == sizeof(state) && fsync(fd) == 0;
-    close(fd);
-    return ok;
+    const auto* bytes = reinterpret_cast<const uint8_t*>(&state);
+    if (!volume.WriteFile(kStateFiles[state.generation & 1u],
+                          std::vector<uint8_t>(bytes, bytes + sizeof(state)), &error)) {
+        std::fprintf(stderr, "matonos-bootctrl: cannot save state: %s\n", error.c_str());
+        return false;
+    }
+    return true;
 }
 
 bool ReadLoaderDefault(int* slot) {

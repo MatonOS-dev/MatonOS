@@ -29,7 +29,8 @@ uint8_t Checksum(const uint8_t* short_name){uint8_t sum=0;for(int i=0;i<11;++i)s
 std::vector<std::string> Components(const std::string& path){std::vector<std::string> out;std::string part;for(char c:path){if(c=='/'){if(!part.empty()){out.push_back(part);part.clear();}}else part.push_back(c);}if(!part.empty())out.push_back(part);return out;}
 }  // namespace
 
-FatVolume::~FatVolume(){if(fd_>=0)close(fd_);}
+// Callers commit loader/state changes by closing the volume: flush them first.
+FatVolume::~FatVolume(){if(fd_>=0){if(writable_)(void)fsync(fd_);close(fd_);}}
 FatVolume::FatVolume(FatVolume&& other) noexcept {*this=std::move(other);}
 FatVolume& FatVolume::operator=(FatVolume&& other) noexcept {
     if(this==&other)return *this;

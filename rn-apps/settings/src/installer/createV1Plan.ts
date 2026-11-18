@@ -156,21 +156,21 @@ export function createV1Plan(
       kind: "write_files" as const,
       target: { partGuid: esp.partGuid },
       relativeDirectory: "EFI/Linux",
-      files: [{ relativePath: "matonos-installed.efi", livePayloadPath: "live/esp/EFI/Linux/matonos-installed-a.efi" }],
+      files: [{ relativePath: "matonos-a.efi", livePayloadPath: "live/esp/EFI/Linux/matonos-installed-a.efi" }],
     },
     {
       kind: "write_files" as const,
       target: { partGuid: esp.partGuid },
       relativeDirectory: "loader",
-      files: [{ relativePath: "loader.conf", inlineContents: "default matonos.conf\ntimeout 0\neditor no\n" }],
+      files: [{ relativePath: "loader.conf", inlineContents: "default A.conf\ntimeout 0\neditor no\n" }],
     },
     {
       kind: "write_files" as const,
       target: { partGuid: esp.partGuid },
       relativeDirectory: "loader/entries",
       files: [{
-        relativePath: "matonos.conf",
-        inlineContents: `title MatonOS\nefi /EFI/Linux/matonos-installed.efi\noptions androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.boot_part_uuid=${esp.partGuid} androidboot.boot_devices=${bootDevice} androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange firmware_class.path=/vendor/firmware console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6\n`,
+        relativePath: "A.conf", // boot-control HAL names: A/B.conf, A+N-M.conf while counting
+        inlineContents: `title MatonOS\nefi /EFI/Linux/matonos-a.efi\noptions androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.boot_part_uuid=${esp.partGuid} androidboot.boot_devices=${bootDevice} androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange firmware_class.path=/vendor/firmware console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6\n`,
       }],
     },
   ] satisfies InstallerOperation[];
