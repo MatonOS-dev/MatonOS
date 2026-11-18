@@ -4,6 +4,7 @@
 #include <cctype>
 #include <array>
 #include <cerrno>
+#include <cstdio>
 #include <cctype>
 #include <cstring>
 #include <fcntl.h>
@@ -15,6 +16,7 @@
 
 namespace matonos::install {
 namespace {
+#define CLOSE_FD(fd_value) do { const int close_fd_value=(fd_value); if(close_fd_value>=0){std::fprintf(stderr,"matonos-fat: close fd=%d at %s:%d\n",close_fd_value,__FILE__,__LINE__);if(::close(close_fd_value)!=0)std::fprintf(stderr,"matonos-fat: close fd=%d failed errno=%d at %s:%d\n",close_fd_value,errno,__FILE__,__LINE__);} } while(0)
 constexpr uint32_t kEoc=0x0fffffff;
 constexpr uint64_t kMaxFat32Clusters=0x0ffffff5ULL;
 uint16_t U16(const uint8_t* p){return uint16_t(p[0])|(uint16_t(p[1])<<8);}
@@ -30,11 +32,11 @@ std::vector<std::string> Components(const std::string& path){std::vector<std::st
 }  // namespace
 
 // Callers commit loader/state changes by closing the volume: flush them first.
-FatVolume::~FatVolume(){if(fd_>=0){if(writable_)(void)fsync(fd_);close(fd_);}}
+FatVolume::~FatVolume(){if(fd_>=0){if(writable_&&fsync(fd_)!=0)std::fprintf(stderr,"matonos-fat: fsync fd=%d failed errno=%d at %s:%d\n",fd_,errno,__FILE__,__LINE__);CLOSE_FD(fd_);}}
 FatVolume::FatVolume(FatVolume&& other) noexcept {*this=std::move(other);}
 FatVolume& FatVolume::operator=(FatVolume&& other) noexcept {
     if(this==&other)return *this;
-    if(fd_>=0)close(fd_);
+    if(fd_>=0)CLOSE_FD(fd_);
     fd_=other.fd_;other.fd_=-1;writable_=other.writable_;bytes_per_sector_=other.bytes_per_sector_;sectors_per_cluster_=other.sectors_per_cluster_;reserved_sectors_=other.reserved_sectors_;fat_count_=other.fat_count_;sectors_per_fat_=other.sectors_per_fat_;root_cluster_=other.root_cluster_;total_sectors_=other.total_sectors_;fat_offset_=other.fat_offset_;data_offset_=other.data_offset_;cluster_size_=other.cluster_size_;cluster_count_=other.cluster_count_;next_free_cluster_=other.next_free_cluster_;return *this;
 }
 
@@ -162,12 +164,12 @@ bool FatVolume::Insert(std::vector<uint32_t>* directory,const std::string& name,
 
 bool FatVolume::ReadFile(const std::string& path,std::vector<uint8_t>* contents,std::string* error){
     auto components=Components(path);if(components.empty()){*error="FAT source path is empty.";return false;}std::vector<uint32_t> dir;std::string chain_error;if(!DirectoryChain(root_cluster_,&dir,&chain_error)){*error=chain_error;return false;}uint8_t entry[32]{};
-    for(size_t i=0;i<components.size();++i){if(!Find(dir,components[i],entry,error)){*error="Approved live payload was not found on the live ESP: "+components[i];return false;}const uint8_t attr=entry[11];const uint32_t cluster=(uint32_t(U16(entry+20))<<16)|U16(entry+26);if(i+1<components.size()){if(!(attr&0x10)){*error="Live payload path component is not a directory.";return false;}if(!DirectoryChain(cluster,&dir,error))return false;}else{if(attr&0x10){*error="Live payload resolves to a directory.";return false;}const uint32_t size=U32(entry+28);if(size>512U*1024*1024){*error="Live payload exceeds the copy limit.";return false;}contents->resize(size);if(size==0)return true;std::vector<uint32_t> file_chain;if(!DirectoryChain(cluster,&file_chain,error))return false;size_t copied=0;for(uint32_t c:file_chain){std::vector<uint8_t> data;if(!ReadCluster(c,&data)){*error="Unable to read live FAT file data.";return false;}const size_t n=std::min(data.size(),contents->size()-copied);std::memcpy(contents->data()+copied,data.data(),n);copied+=n;if(copied==contents->size())return true;}*error="Live FAT file chain is shorter than its directory entry.";return false;}}
+    for(size_t i=0;i<components.size();++i){if(!Find(dir,components[i],entry,error)){*error="Approved live payload was not found on the live ESP: "+components[i];return false;}const uint8_t attr=entry[11];const uint32_t cluster=(uint32_t(U16(entry+20))<<16)|U16(entry+26);if(i+1<components.size()){if(!(attr&0x10)){*error="Live payload path component is not a directory.";return false;}if(!DirectoryChain(cluster,&dir,error))return false;}else{if(attr&0x10){*error="Live payload resolves to a directory.";return false;}const uint32_t size=U32(entry+28);contents->resize(size);if(size==0)return true;std::vector<uint32_t> file_chain;if(!DirectoryChain(cluster,&file_chain,error))return false;size_t copied=0;for(uint32_t c:file_chain){std::vector<uint8_t> data;if(!ReadCluster(c,&data)){*error="Unable to read live FAT file data.";return false;}const size_t n=std::min(data.size(),contents->size()-copied);std::memcpy(contents->data()+copied,data.data(),n);copied+=n;if(copied==contents->size())return true;}*error="Live FAT file chain is shorter than its directory entry.";return false;}}
     return false;
 }
 
 bool FatVolume::WriteFile(const std::string& path,const std::vector<uint8_t>& contents,std::string* error){
-    if(!writable_||contents.size()>512U*1024*1024){*error="Target FAT output is read-only or exceeds the copy limit.";return false;}
+    if(!writable_||contents.size()>UINT32_MAX){*error="Target FAT output is read-only or exceeds the FAT32 file-size field.";return false;}
     const auto components=Components(path);if(components.empty()){*error="Target FAT path is empty.";return false;}std::vector<uint32_t> dir;std::string chain_error;if(!DirectoryChain(root_cluster_,&dir,&chain_error)){*error=chain_error;return false;}
     for(size_t i=0;i+1<components.size();++i){uint8_t entry[32]{};error->clear();if(Find(dir,components[i],entry,error)){if(!(entry[11]&0x10)){*error="Target path component exists as a file.";return false;}uint32_t c=(uint32_t(U16(entry+20))<<16)|U16(entry+26);if(!DirectoryChain(c,&dir,error))return false;}
         else{if(!error->empty())return false;uint32_t child;if(!Allocate(&child,error))return false;std::vector<uint8_t> dot_data(cluster_size_,0);dot_data[0]='.';std::fill(dot_data.begin()+1,dot_data.begin()+11,' ');dot_data[11]=0x10;P16(dot_data.data()+20,static_cast<uint16_t>(child>>16));P16(dot_data.data()+26,static_cast<uint16_t>(child));dot_data[32]='.';dot_data[33]='.';std::fill(dot_data.begin()+34,dot_data.begin()+43,' ');dot_data[43]=0x10;const uint32_t parent_cluster=dir.back()==root_cluster_?0:dir.back();P16(dot_data.data()+52,static_cast<uint16_t>(parent_cluster>>16));P16(dot_data.data()+58,static_cast<uint16_t>(parent_cluster));if(!WriteCluster(child,dot_data)){*error="Unable to initialize target FAT directory.";return false;}uint8_t new_entry[32]{};new_entry[11]=0x10;P16(new_entry+20,static_cast<uint16_t>(child>>16));P16(new_entry+26,static_cast<uint16_t>(child));if(!Insert(&dir,components[i],new_entry,error))return false;if(!DirectoryChain(child,&dir,error))return false;}}
@@ -223,6 +225,12 @@ bool FatVolume::RenameFile(const std::string& from,const std::string& to,std::st
     std::memset(entry,' ',11);for(size_t i=0;i<base.size();++i)entry[i]=static_cast<uint8_t>(std::toupper(static_cast<unsigned char>(base[i])));
     for(size_t i=0;i<ext.size();++i)entry[8+i]=static_cast<uint8_t>(std::toupper(static_cast<unsigned char>(ext[i])));
     return WriteAt(fd_,entry,32,offset);
+}
+
+bool FatVolume::Sync(std::string* error) {
+    if(fd_<0||!writable_){*error="FAT volume is not open for writing.";return false;}
+    if(fsync(fd_)!=0){*error="Unable to flush FAT volume: errno="+std::to_string(errno);return false;}
+    return true;
 }
 
 }  // namespace matonos::install

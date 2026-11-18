@@ -19,6 +19,7 @@ class FatVolume {
     bool ReadFile(const std::string& path,std::vector<uint8_t>* contents,std::string* error);
     bool WriteFile(const std::string& path,const std::vector<uint8_t>& contents,std::string* error);
     bool RenameFile(const std::string& from,const std::string& to,std::string* error);
+    bool Sync(std::string* error);
   private:
     int fd_=-1;bool writable_=false;
     uint32_t bytes_per_sector_=0,sectors_per_cluster_=0,reserved_sectors_=0,fat_count_=0,sectors_per_fat_=0,root_cluster_=0,total_sectors_=0;

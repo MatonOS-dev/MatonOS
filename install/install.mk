@@ -14,3 +14,4 @@ PRODUCT_PACKAGES += snapuserd_ramdisk
 
 # libfiemap-linked primitive used only by the live installer executor.
 PRODUCT_PACKAGES += matonos-fiemap-helper
+PRODUCT_PACKAGES += matonos-slot-writer

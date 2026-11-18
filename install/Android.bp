@@ -1,0 +1,32 @@
+cc_binary {
+    name: "matonos-slot-writer",
+    srcs: [
+        "service/SlotWriter.cpp",
+        "service/FatFilesystem.cpp",
+        "//system/fs/fs_mgr/libfiemap:libfiemap_srcs",
+    ],
+    system_ext_specific: true,
+    cpp_std: "c++20",
+    static_libs: [
+        "libavb",
+        "libdm",
+        "libext2_uuid",
+        "libfs_avb",
+        "libfscrypt",
+        "libfstab",
+        "libgsi",
+        "liblogwrap",
+    ],
+    shared_libs: [
+        "libbase",
+        "libcrypto",
+        "libcrypto_utils",
+        "libcutils",
+        "libext4_utils",
+        "libfs_mgr",
+        "liblog",
+        "liblp",
+        "libselinux",
+    ],
+    cflags: ["-Wall", "-Wextra", "-Werror"],
+}
