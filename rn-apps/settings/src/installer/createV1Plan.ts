@@ -146,6 +146,9 @@ export function createV1Plan(
       files: [
         { relativePath: "BOOT/BOOTX64.EFI", livePayloadPath: "live/esp/EFI/BOOT/BOOTX64.EFI" },
         { relativePath: "BOOT/grubx64.efi", livePayloadPath: "live/esp/EFI/BOOT/grubx64.efi" },
+        // MokManager + public key: re-enroll the MOK from the installed disk.
+        { relativePath: "BOOT/mmx64.efi", livePayloadPath: "live/esp/EFI/BOOT/mmx64.efi" },
+        { relativePath: "BOOT/matonos-dev.der", livePayloadPath: "live/esp/EFI/BOOT/matonos-dev.der" },
         { relativePath: "systemd/systemd-bootx64.efi", livePayloadPath: "live/esp/EFI/systemd/systemd-bootx64.efi" },
       ],
     },

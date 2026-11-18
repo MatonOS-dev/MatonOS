@@ -381,6 +381,8 @@ std::string LiveEspPath() {
 std::string LivePayloadPath(const std::string& id) {
     if(id=="live/esp/EFI/BOOT/BOOTX64.EFI")return "EFI/BOOT/BOOTX64.EFI";
     if(id=="live/esp/EFI/BOOT/grubx64.efi")return "EFI/BOOT/grubx64.efi";
+    if(id=="live/esp/EFI/BOOT/mmx64.efi")return "EFI/BOOT/mmx64.efi";
+    if(id=="live/esp/EFI/BOOT/matonos-dev.der")return "EFI/BOOT/matonos-dev.der";
     if(id=="live/esp/EFI/systemd/systemd-bootx64.efi")return "EFI/systemd/systemd-bootx64.efi";
     if(id=="live/esp/EFI/Linux/matonos-installed-a.efi")return "EFI/Linux/matonos-installed-a.efi";
     if(id=="live/esp/EFI/Linux/matonos-installed-b.efi")return "EFI/Linux/matonos-installed-b.efi";
