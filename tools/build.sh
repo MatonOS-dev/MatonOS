@@ -181,7 +181,14 @@ if [[ $DO_AOSP == 1 ]]; then
   "$TOOLS/build-apps.sh"
 
   info "MatonOS native daemons"
-  "$TOOLS/build-native.sh"
+  binder_ndk=$AOSP/out/soong/.intermediates/frameworks/native/libs/binder/ndk/libbinder_ndk/android_vendor_x86_64_shared/libbinder_ndk.so
+  if [[ -n $MODULES && ! -s $binder_ndk ]]; then
+    # Fresh tree: the daemons link Soong's vendor libbinder_ndk. A -m build
+    # (e.g. -m libbinder_ndk) bootstraps it; image builds still require it.
+    info "Skipping native daemons: no Soong libbinder_ndk yet (-m bootstrap)"
+  else
+    "$TOOLS/build-native.sh"
+  fi
 
   info "MatonOS ODM driver bundle"
   # Distinct path: AOSP copies this as odm.img via BOARD_PREBUILT_ODMIMAGE
