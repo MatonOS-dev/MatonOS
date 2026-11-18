@@ -63,7 +63,7 @@ done < "$LIST"
 # A separate inode for the stock module-loader applet. Labeling the shared
 # vendor toolbox would also transition cat/setprop/readlink in the detector.
 # Keep its basename modprobe so toolbox dispatches only the module loader.
-[[ -x $PRODUCT_OUT/vendor/bin/toolbox ]] || die "vendor toolbox missing"
+[[ -x $PRODUCT_OUT/vendor/bin/toolbox ]] || die "vendor toolbox missing (fresh tree: tools/build.sh -m libbinder_ndk.vendor,toolbox_vendor first)"
 mkdir -p "$root/bin"
 install -m 0755 "$PRODUCT_OUT/vendor/bin/toolbox" "$root/bin/modprobe"
 
