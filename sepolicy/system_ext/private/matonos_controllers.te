@@ -16,7 +16,7 @@ allow matonos_fiemap_helper self:capability sys_admin;
 allow matonos_fiemap_helper dm_device:chr_file { open read write ioctl getattr };
 allow matonos_fiemap_helper dm_device:blk_file rw_file_perms;
 allow matonos_fiemap_helper matonos_install_block_device:blk_file rw_file_perms;
-allow matonos_fiemap_helper ext4:filesystem getattr;
+allow matonos_fiemap_helper labeledfs:filesystem getattr;
 
 # matonos-erofsd (erofsd/): validates requests to mount EROFS images embedded
 # in Linux stub/runtime APK splits read-only under /mnt/matonos; init performs
