@@ -101,7 +101,7 @@ index da0901b2a2..077a96d08f 100644
  
      // Configure device mode.
      switch (mParameters.mode) {
-@@ -508,6 +565,13 @@ void CursorInputMapper::configureOnPointerCapture(const InputReaderConfiguration
+@@ -508,5 +565,12 @@ void CursorInputMapper::configureOnPointerCapture(const InputReaderConfiguration
              ALOGE("Cannot release pointer capture, device is not in MODE_POINTER_RELATIVE");
          }
      }
@@ -114,15 +114,10 @@ index da0901b2a2..077a96d08f 100644
 +    }
      bumpGeneration();
  }
- 
-@@ -574,6 +638,7 @@ void CursorInputMapper::configureOnChangeDisplayInfo(const InputReaderConfigurat
-             : FloatRect{0, 0, 0, 0};
- 
+@@ -576,2 +640,3 @@ void CursorInputMapper::configureOnChangeDisplayInfo(const InputReaderConfiguration
      if (resolvedViewport) {
 +        mAbsBounds = mBoundsInLogicalDisplay;
          mViewportDensityDpi = resolvedViewport->densityDpi;
-         mViewportXDpi = resolvedViewport->xDpi;
-         mViewportYDpi = resolvedViewport->yDpi;
 diff --git a/services/inputflinger/reader/mapper/CursorInputMapper.h b/services/inputflinger/reader/mapper/CursorInputMapper.h
 index 7215403de2..d3d51c046a 100644
 --- a/services/inputflinger/reader/mapper/CursorInputMapper.h

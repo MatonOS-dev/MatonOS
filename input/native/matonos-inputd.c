@@ -317,14 +317,32 @@ static void remove_source(int i) {
 static void set_source_capture(struct source *s) {
     struct input_event ev[2] = {{.type = EV_LED, .code = LED_MISC, .value = pointer_captured},
                                 {.type = EV_SYN, .code = SYN_REPORT}};
-    if (write(s->fd, ev, sizeof(ev)) != (ssize_t)sizeof(ev))
+    ssize_t bytes;
+    do {
+        bytes = write(s->fd, ev, sizeof(ev));
+    } while (bytes < 0 && errno == EINTR);
+    if (bytes < 0)
         ALOGE("cannot set capture LED on %s (%s): %s", s->node, s->name, strerror(errno));
+    else if (bytes != (ssize_t)sizeof(ev))
+        ALOGE("short capture LED write on %s (%s): %zd/%zu bytes", s->node, s->name,
+              bytes, sizeof(ev));
 }
 
 static void handle_pointer_feedback(void) {
     struct input_event buf[16];
     ssize_t bytes;
-    while ((bytes = read(pointer_fd, buf, sizeof(buf))) > 0) {
+    for (;;) {
+        bytes = read(pointer_fd, buf, sizeof(buf));
+        if (bytes < 0 && errno == EINTR) continue;
+        if (bytes == 0) {
+            ALOGE("unexpected EOF from uinput pointer feedback");
+            break;
+        }
+        if (bytes < 0) break;
+        if (bytes % (ssize_t)sizeof(buf[0]) != 0) {
+            ALOGE("partial input event from uinput pointer feedback: %zd bytes", bytes);
+            break;
+        }
         for (size_t j = 0; j < (size_t)bytes / sizeof(buf[0]); j++) {
             if (buf[j].type != EV_LED || buf[j].code != LED_MISC) continue;
             bool captured = buf[j].value != 0;
