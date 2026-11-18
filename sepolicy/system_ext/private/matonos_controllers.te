@@ -18,6 +18,13 @@ allow matonos_fiemap_helper dm_device:blk_file rw_file_perms;
 allow matonos_fiemap_helper matonos_install_block_device:blk_file rw_file_perms;
 allow matonos_fiemap_helper labeledfs:filesystem getattr;
 
+# The slot writer is started only by init after a vendor request property.
+type matonos_slot_writer, domain, coredomain;
+type matonos_slot_writer_exec, system_file_type, exec_type, file_type;
+init_daemon_domain(matonos_slot_writer)
+allow matonos_slot_writer matonos_install_mount_file:dir { search getattr write add_name remove_name };
+allow matonos_slot_writer matonos_install_mount_file:file { create open read write getattr setattr unlink rename map };
+
 # matonos-erofsd (erofsd/): validates requests to mount EROFS images embedded
 # in Linux stub/runtime APK splits read-only under /mnt/matonos; init performs
 # the mounts through matonos.erofs.* property triggers (matonos-erofsd.rc),

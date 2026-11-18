@@ -32,6 +32,7 @@ constexpr char kMetadata[] = "/metadata/maton/images";
 constexpr char kImageDir[] = "/maton_system/images";
 constexpr char kEsp[] = "/dev/block/by-name/esp";
 constexpr char kAddonDir[] = "/mnt/vendor/addons";
+constexpr char kOtaStageRoot[] = "/data/misc/matonos-install-ota";
 constexpr char kImages[][16] = {"system", "system_ext", "product", "vendor", "odm"};
 constexpr size_t kCopyBytes = 1024 * 1024;
 
@@ -412,11 +413,58 @@ bool RemoveInactive() {
     if(manager->BackingImageExists(vbmeta)&&!manager->DeleteBackingImage(vbmeta))return Fail("delete inactive vbmeta "+vbmeta);
     std::fprintf(stderr,"matonos-slot-writer: explicitly removed inactive slot %c; running slot %c is successful\n",target.upper,running.upper);return true;
 }
+
+bool WriteResult(const std::string& path,const std::string& id,bool ok,const std::string& output) {
+    const std::string temporary=path+"."+id+".tmp";
+    const std::string result=id+"\n"+(ok?"0":"1")+"\n"+output+"\n";
+    const int fd=open(temporary.c_str(),O_WRONLY|O_CREAT|O_EXCL|O_CLOEXEC|O_NOFOLLOW,0600);
+    if(fd<0)return Fail("create slot-writer result file "+temporary);
+    size_t written=0;
+    while(written<result.size()) {
+        const ssize_t n=write(fd,result.data()+written,result.size()-written);
+        if(n<0&&errno==EINTR)continue;
+        if(n<=0){const int e=n<0?errno:EIO;CLOSE_FD(fd);errno=e;return Fail("write slot-writer result file "+temporary);}
+        written+=static_cast<size_t>(n);
+    }
+    if(fsync(fd)!=0){const int e=errno;CLOSE_FD(fd);errno=e;return Fail("sync slot-writer result file "+temporary);}
+    CLOSE_FD(fd);
+    if(rename(temporary.c_str(),path.c_str())!=0)return Fail("publish slot-writer result file "+path);
+    return true;
+}
+
+bool RunRequest(const char* request_path,const char* result_path) {
+    std::ifstream request(request_path);
+    std::string id,operation,payload,extra;
+    if(!std::getline(request,id)||!std::getline(request,operation)||!std::getline(request,payload)||std::getline(request,extra))
+        return Fail("read malformed slot-writer request");
+    if(id.empty()||id.find_first_not_of("0123456789")!=std::string::npos)
+        return Fail("slot-writer request has invalid id");
+    bool ok=false;
+    std::string output;
+    if(operation=="stage") {
+        const std::string prefix=std::string(kOtaStageRoot)+"/stage.";
+        if(payload.rfind(prefix,0)!=0||payload.find("/../")!=std::string::npos||payload.size()<=prefix.size()) {
+            errno=EINVAL;output="invalid stage directory";
+        } else {
+            std::error_code ec;
+            if(!fs::is_directory(payload,ec)||ec){errno=ec?ec.value():ENOENT;output="stage directory unavailable";}
+            else {ok=Stage(payload);output=ok?"stage completed":"stage failed; see slot-writer log";}
+        }
+    } else if(operation=="finalize"&&payload.empty()) {
+        ok=Finalize();output=ok?"finalize completed":"finalize failed; see slot-writer log";
+    } else if(operation=="remove-inactive"&&payload.empty()) {
+        ok=RemoveInactive();output=ok?"remove-inactive completed":"remove-inactive failed; see slot-writer log";
+    } else {
+        errno=EINVAL;output="unsupported operation or unexpected payload directory";
+    }
+    return WriteResult(result_path,id,ok,output);
+}
 }
 
 int main(int argc,char** argv) {
+    if(argc==4&&std::strcmp(argv[1],"--request")==0)return RunRequest(argv[2],argv[3])?0:1;
     if(argc==3&&std::strcmp(argv[1],"stage")==0)return Stage(argv[2])?0:1;
     if(argc==2&&std::strcmp(argv[1],"finalize")==0)return Finalize()?0:1;
     if(argc==2&&std::strcmp(argv[1],"remove-inactive")==0)return RemoveInactive()?0:1;
-    std::fprintf(stderr,"usage: matonos-slot-writer stage <payload-dir> | finalize | remove-inactive\n");return 2;
+    std::fprintf(stderr,"usage: matonos-slot-writer --request <request-file> <result-file>\n");return 2;
 }

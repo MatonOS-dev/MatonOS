@@ -25,9 +25,12 @@ Settings reaches the device-side updater through the existing authorized
 `install` channel. The service starts asynchronously after `/data` on installed
 and live sessions; image-install writes remain gated to a live image. OTA stage
 accepts read-only file descriptors for the signed manifest, eight signed image
-payloads, and signature, then stages the inactive slot. `finalizeUpdate` asks
-BootControl to select its counted entry; boot success promotes that slot to a
-stable loader name. See the device API and file order in [OTA-CONTRACT.md](OTA-CONTRACT.md).
+payloads, and signature, then stages the inactive slot through an init-started
+system_ext oneshot. The vendor service submits a request file and request-id
+property, then reads the matching result; it never executes a system_ext
+binary. `finalizeUpdate` uses the same route and asks BootControl to select its
+counted entry; boot success promotes that slot to a stable loader name. See
+the device API and file order in [OTA-CONTRACT.md](OTA-CONTRACT.md).
 
 Host tests: `npm test` in the matonos-ota repo covers all API endpoints,
 base-downgrade filtering and promotion, add-on selection, EOL, malformed

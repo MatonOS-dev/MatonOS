@@ -53,7 +53,9 @@ namespace {
 constexpr char kTag[] = "MatonosInstaller";
 constexpr char kImageStoreRoot[] = "/mnt/matonos-install";
 constexpr char kSystemMapper[] = "matonos-install-system";
-constexpr char kOtaStageRoot[] = "/data/vendor/matonos-install-ota";
+constexpr char kOtaStageRoot[] = "/data/misc/matonos-install-ota";
+constexpr char kSlotWriterRequest[] = "/data/misc/matonos-install-ota/.request";
+constexpr char kSlotWriterResult[] = "/data/misc/matonos-install-ota/.result";
 constexpr const char* kOtaNames[] = {"manifest.json", "manifest.sig", "system.erofs",
     "system_ext.erofs", "product.erofs", "vendor.erofs", "odm.erofs", "vbmeta.img",
     "matonos-a.efi", "matonos-b.efi"};
@@ -302,15 +304,39 @@ int GetStatus(const char*, char* result, size_t capacity, void*) {
 }
 
 int RunSlotWriter(const char* command, const char* payload_dir) {
-    const pid_t pid=fork();
-    if(pid<0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: fork slot-writer command=%s failed errno=%d",command,errno);return -1;}
-    if(pid==0){
-        if(payload_dir) execl("/odm/bin/matonos-installer-service","matonos-installer-service","--run-slot-writer",command,payload_dir,static_cast<char*>(nullptr));
-        else execl("/odm/bin/matonos-installer-service","matonos-installer-service","--run-slot-writer",command,static_cast<char*>(nullptr));
-        std::fprintf(stderr,"installer: exec slot-writer helper command=%s failed errno=%d\n",command,errno);_exit(127);
+    if(std::strcmp(command,"stage")!=0&&std::strcmp(command,"finalize")!=0&&
+       std::strcmp(command,"remove-inactive")!=0){
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: unsupported slot-writer step=%s",command);return -1;
     }
-    int status=0;while(waitpid(pid,&status,0)<0){if(errno==EINTR)continue;__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: wait slot-writer command=%s pid=%d failed errno=%d",command,pid,errno);return -1;}
-    if(!WIFEXITED(status)||WEXITSTATUS(status)!=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: slot-writer command=%s pid=%d failed status=%d",command,pid,status);return -1;}
+    const std::string id=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const std::string request=id+"\n"+command+"\n"+(payload_dir?payload_dir:"")+"\n";
+    const int fd=open(kSlotWriterRequest,O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC|O_NOFOLLOW,0600);
+    if(fd<0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: open slot-writer request step=%s path=%s failed errno=%d",command,kSlotWriterRequest,errno);return -1;}
+    size_t written=0;
+    while(written<request.size()){
+        const ssize_t n=write(fd,request.data()+written,request.size()-written);
+        if(n<0&&errno==EINTR)continue;
+        if(n<=0){const int e=n<0?errno:EIO;CLOSE_FD(fd);__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: write slot-writer request step=%s failed errno=%d",command,e);return -1;}
+        written+=static_cast<size_t>(n);
+    }
+    if(fsync(fd)!=0){const int e=errno;CLOSE_FD(fd);__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: sync slot-writer request step=%s failed errno=%d",command,e);return -1;}
+    CLOSE_FD(fd);
+    if(!matonos::props::Set("vendor.maton.install.slot_writer.request",id)){
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: set slot-writer request property step=%s request=%s failed",command,id.c_str());return -1;
+    }
+    if(!matonos::props::WaitFor("vendor.maton.install.slot_writer.done",id,std::chrono::minutes(30))){
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: timed out waiting for init slot-writer step=%s request=%s",command,id.c_str());return -1;
+    }
+    std::ifstream response(kSlotWriterResult);
+    std::string result_id,status_text,output;
+    if(!std::getline(response,result_id)||!std::getline(response,status_text)||result_id!=id){
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: missing or stale slot-writer result step=%s request=%s",command,id.c_str());return -1;
+    }
+    std::ostringstream rest;rest<<response.rdbuf();output=rest.str();
+    if(status_text!="0"){
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: slot-writer step=%s failed request=%s output=%s",command,id.c_str(),output.c_str());return -1;
+    }
+    __android_log_print(ANDROID_LOG_INFO,kTag,"installer: slot-writer step=%s completed request=%s",command,id.c_str());
     return 0;
 }
 
@@ -419,11 +445,6 @@ bool WaitForPartitionNodes(const char* disk_path) {
 }  // namespace
 
 int HelperMain(int argc,char** argv) {
-    if((argc==3||argc==4)&&std::strcmp(argv[1],"--run-slot-writer")==0){
-        if(std::strcmp(argv[2],"stage")==0&&argc==4)execl("/system_ext/bin/matonos-slot-writer","matonos-slot-writer","stage",argv[3],static_cast<char*>(nullptr));
-        else if(std::strcmp(argv[2],"finalize")==0&&argc==3)execl("/system_ext/bin/matonos-slot-writer","matonos-slot-writer","finalize",static_cast<char*>(nullptr));
-        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer helper: unsupported slot-writer operation %s argc=%d errno=%d",argv[2],argc,errno);return 127;
-    }
     if(argc==5&&std::strcmp(argv[1],"--prepare-image-store")==0) {
         const uint64_t expected=std::strtoull(argv[2],nullptr,10);
         return PrepareImageStore(expected,argv[3],argv[4]);

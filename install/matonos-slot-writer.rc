@@ -1,0 +1,12 @@
+service matonos-slot-writer /system_ext/bin/matonos-slot-writer --request /data/misc/matonos-install-ota/.request /data/misc/matonos-install-ota/.result
+    class late_start
+    user root
+    group root
+    disabled
+    oneshot
+
+# The vendor installer only submits a bounded request and waits for this init
+# started system_ext service. It never executes a system_ext binary itself.
+on property:vendor.maton.install.slot_writer.request=*
+    exec_start matonos-slot-writer
+    setprop vendor.maton.install.slot_writer.done ${vendor.maton.install.slot_writer.request}

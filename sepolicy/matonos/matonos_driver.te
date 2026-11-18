@@ -75,6 +75,11 @@ allow matonos_driver_helper matonos_install_mount_file:file { create open read w
 allow matonos_driver_helper matonos_install_mount_file:file rename;
 type_transition matonos_driver_helper matonos_install_mount_file:dir matonos_install_mount_file;
 type_transition matonos_driver_helper matonos_install_mount_file:file matonos_install_mount_file;
+# OTA staging/request files are shared with the init-started system_ext writer.
+allow matonos_driver matonos_install_mount_file:dir { search getattr write add_name remove_name create_dir_perms };
+allow matonos_driver matonos_install_mount_file:file { create open read write getattr setattr unlink rename map };
+type_transition matonos_driver matonos_install_mount_file:dir matonos_install_mount_file;
+type_transition matonos_driver matonos_install_mount_file:file matonos_install_mount_file;
 allow matonos_driver_helper labeledfs:filesystem { mount unmount getattr };
 allow matonos_install_mount_file labeledfs:filesystem associate;
 allow init matonos_install_mount_file:dir { create_dir_perms relabelto mounton search };
@@ -345,8 +350,6 @@ allow matonos_driver_helper matonos_driver:fd use;
 allow matonos_driver matonos_system_bridge:fd use;
 allow matonos_driver_helper matonos_install_block_device:blk_file ioctl;
 allow matonos_driver_helper { sgdisk_exec e2fs_exec fsck_exec }:file { execute execute_no_trans getattr map open read };
-# OTA stage/finalize delegates to the system_ext slot writer through this fixed helper.
-allow matonos_driver_helper system_file:file { execute execute_no_trans getattr map open read };
 # mke2fs probes ext4 features and the target's block topology/zoned queue in sysfs.
 allow matonos_driver_helper sysfs_fs_ext4_features:dir search;
 allow matonos_driver_helper sysfs_fs_ext4_features:file r_file_perms;

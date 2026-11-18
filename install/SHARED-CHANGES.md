@@ -322,6 +322,15 @@ binary. The mount actions likewise keep all mount/unmount syscalls in init.
 The sector-zero dm-linear wrapper remains mandatory because libfiemap records
 the leaf block device and expects the filesystem to start at sector zero.
 
+The OTA slot writer follows the same boundary: the installer stages payloads
+and writes an operation request under `/data/misc/matonos-install-ota`, then
+sets `vendor.maton.install.slot_writer.request`. Init starts the disabled
+system_ext oneshot and sets the matching done property after exit. The writer
+atomically publishes the matching result in the staging directory. That tree
+uses the existing public `matonos_install_mount_file` type, declared in
+`sepolicy/system_ext/public/matonos_install.te`, so system_ext policy never
+references vendor types.
+
 Implemented in this worktree: installer ext4 mount/unmount requests now go
 through init property actions; the system_ext helper is an init-started
 oneshot that consumes a request file and writes a matching result file; the

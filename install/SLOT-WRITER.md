@@ -24,12 +24,17 @@ The writer calls the same `ImageManager` API with the standard logical image
 names (`system_a`, `system_b`, etc.), so first-stage sees the existing LP
 metadata and extent representation.
 
-Commands:
+The installer does not execute this system_ext binary from its vendor
+domain. Init starts it as a disabled oneshot after the installer writes a
+request file and sets `vendor.maton.install.slot_writer.request`; init writes
+the matching done id after exit. Request and result files plus the staged
+payload directory use the existing shared `matonos_install_mount_file` type
+under `/data/misc/matonos-install-ota`.
+
+The init service runs the request mode:
 
 ```sh
-matonos-slot-writer stage <payload-dir>
-matonos-slot-writer finalize
-matonos-slot-writer remove-inactive
+matonos-slot-writer --request <request-file> <result-file>
 ```
 
 `stage` removes stale target loader entries and UKI before replacing its
