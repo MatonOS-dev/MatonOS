@@ -10,7 +10,7 @@ OBJDUMP=${MATON_LLVM_OBJDUMP:-$(find "$AOSP/prebuilts/clang/host/linux-x86" -pat
 # Verdicts are cached per file content + script version, so unchanged ELFs
 # are not disassembled again; MATON_ISA_CACHE moves the cache.
 CACHE=${MATON_ISA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/matonos/isa-audit}
-SCRIPT_SHA=$(sha256sum "$(readlink -f "$0")" | cut -c1-16)
+SCRIPT_SHA=$(sha256sum "$(readlink -f "$0")" )
 python3 - "$OBJDUMP" "$CACHE" "$SCRIPT_SHA" "$@" <<'PY'
 import hashlib, json, os, re, subprocess, sys, tempfile, zipfile
 from concurrent.futures import ProcessPoolExecutor
@@ -28,6 +28,33 @@ while i < len(args):
         symbol_dirs.append(args[i + 1]); i += 2
     else:
         inputs.append(args[i]); i += 1
+def input_manifest(roots):
+    files=set()
+    for root in roots:
+        if os.path.isfile(root): files.add(os.path.realpath(root))
+        elif os.path.isdir(root):
+            for base,dirs,names in os.walk(root):
+                dirs.sort()
+                for name in names: files.add(os.path.realpath(os.path.join(base,name)))
+    rows=[]
+    for path in sorted(files):
+        try:
+            st=os.stat(path)
+            rows.append((path,st.st_size,st.st_mtime_ns))
+        except OSError: rows.append((path,None,None))
+    return rows
+manifest_roots=inputs+symbol_dirs
+if product_out: manifest_roots.append(os.path.join(product_out,'symbols'))
+manifest=input_manifest(manifest_roots)
+verdict_key=hashlib.sha256(json.dumps([script_sha,manifest],separators=(',',':')).encode()).hexdigest()
+verdict_path=os.path.join(cache_dir,'verdict.json')
+try:
+    with open(verdict_path) as f: verdict=json.load(f)
+    if verdict.get('key')==verdict_key and verdict.get('result')=='PASS':
+        print('ISA audit: cached whole-tree verdict')
+        print('PASS: no instruction beyond x86-64-v2 found')
+        sys.exit(0)
+except (OSError,ValueError,AttributeError): pass
 # Beyond-v2 instruction families: VEX/EVEX (AVX, AVX2, AVX-512, FMA, F16C),
 # BMI1/2, LZCNT, MOVBE, ADX, SHA, and newer AES/VAES variants. POPCNT is v2.
 patterns = [
@@ -281,4 +308,8 @@ if failures:
     for f in failures: print('FAIL '+f)
     sys.exit(1)
 print('PASS: no instruction beyond x86-64-v2 found')
+os.makedirs(cache_dir,exist_ok=True)
+tmp=f'{verdict_path}.{os.getpid()}'
+with open(tmp,'w') as f: json.dump({'key':verdict_key,'result':'PASS'},f)
+os.replace(tmp,verdict_path)
 PY

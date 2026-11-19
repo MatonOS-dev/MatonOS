@@ -117,19 +117,39 @@ fi
 # sparse Android images; libfiemap on the target must receive raw EROFS bytes.
 image_work=$(mktemp -d --tmpdir pc-images.XXXXXX)
 trap 'rm -rf "$microcode_work" "$image_work" "$avb_work"' EXIT
-for partition in system system_ext product vendor odm; do
+partitions=(system system_ext product vendor odm)
+declare -A partition_pids=() partition_logs=()
+for partition in "${partitions[@]}"; do
   input="$OUT/$partition.img"
   raw="$image_work/$partition.raw"
-  magic=$(od -An -tx1 -N4 "$input" | tr -d ' \n')
-  if [[ $magic == "3aff26ed" ]]; then
-    command -v simg2img >/dev/null || die "$input is sparse; put AOSP's out/host/linux-x86/bin on PATH for simg2img"
-    simg2img "$input" "$raw"
-  else
-    cp "$input" "$raw"
-  fi
-  info "Compressing $partition EROFS image"
-  zstd -19 -T0 -q "$raw" -o "$PAYLOAD/${partition}_a.erofs.zst"
+  log="$image_work/$partition.log"
+  partition_logs[$partition]=$log
+  (
+    magic=$(od -An -tx1 -N4 "$input" | tr -d ' \n')
+    if [[ $magic == "3aff26ed" ]]; then
+      command -v simg2img >/dev/null || { echo "$input is sparse; put AOSP's out/host/linux-x86/bin on PATH for simg2img" >&2; exit 1; }
+      simg2img "$input" "$raw"
+    else
+      cp "$input" "$raw"
+    fi
+    info "Compressing $partition EROFS image"
+    zstd -19 -T0 -q "$raw" -o "$PAYLOAD/${partition}_a.erofs.zst"
+  ) >"$log" 2>&1 &
+  partition_pids[$partition]=$!
 done
+
+partition_failed=0
+for partition in "${partitions[@]}"; do
+  if wait "${partition_pids[$partition]}"; then
+    continue
+  else
+    status=$?
+    echo "ERROR: $partition payload job failed (exit $status); log: ${partition_logs[$partition]}" >&2
+    cat "${partition_logs[$partition]}" >&2
+    partition_failed=1
+  fi
+done
+(( partition_failed == 0 )) || die "one or more partition payload jobs failed"
 cp "$avb_work/vbmeta.img" "$PAYLOAD/vbmeta_a.img"
 cp "$avb_work/vbmeta.img" "$PAYLOAD/vbmeta_b.img"
 
