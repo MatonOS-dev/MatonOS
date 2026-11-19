@@ -14,7 +14,7 @@
 #<src>                     <mnt_point>  <type> <mnt_flags>                         <fs_mgr_flags>
 # install: slotselect resolves these logical names to *_a or *_b from the
 # systemd-boot androidboot.slot_suffix. The live fstab remains separately named.
-system                     /system      erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+system                     /system      erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb=vbmeta
 system_ext                 /system_ext  erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
 product                    /product     erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
 vendor                     /vendor      erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb

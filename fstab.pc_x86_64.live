@@ -15,7 +15,7 @@
 #<src>             <mnt_point>  <type> <mnt_flags>                         <fs_mgr_flags>
 # The live super contains only *_a logical partitions. The live loader entry
 # passes androidboot.slot_suffix=_a and keeps the existing live fstab suffix.
-system             /system      erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+system             /system      erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb=vbmeta
 system_ext         /system_ext  erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
 product            /product     erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
 vendor             /vendor      erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
