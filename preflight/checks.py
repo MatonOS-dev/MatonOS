@@ -128,6 +128,17 @@ def check_product_makefiles() -> None:
                         error(path, f"line {lineno}: VINTF XML must not use PRODUCT_COPY_FILES: {item!r}; use the ODM bundle or DEVICE_MANIFEST_FILE")
 
 
+def gradle_staged_apks() -> set[str]:
+    """APK names tools/build-apps.sh stages into buildinfra/apps-built (after preflight)."""
+    listing = DEVICE / "buildinfra" / "apps" / "apps.list"
+    names = set()
+    for line in listing.read_text().splitlines():
+        fields = line.split("\t")
+        if len(fields) == 4 and not line.startswith("#"):
+            names.add(fields[3].strip())
+    return names
+
+
 def check_android_bp() -> None:
     for path in files(DEVICE, ("Android.bp",), prune=GENERATED_DIRS):
         source = path.read_text(errors="replace")
@@ -141,7 +152,9 @@ def check_android_bp() -> None:
                 if re.search(r'(?m)^\s*certificate\s*:\s*"PRESIGNED"', block):
                     error(path, f"android_app_import {name} sets certificate: \"PRESIGNED\"; use preprocessed: true for byte-preserved prebuilts")
                 apk = string_property(block, "apk")
-                if apk and not (path.parent / apk).is_file():
+                if apk and apk.startswith("apps-built/") and apk.removeprefix("apps-built/") in gradle_staged_apks():
+                    pass  # staged later in the same build by tools/build-apps.sh
+                elif apk and not (path.parent / apk).is_file():
                     error(path, f"android_app_import {name} apk is missing: {apk}")
             # Check literal src/srcs files for prebuilt module declarations.
             if module_type.startswith("prebuilt_") or "prebuilt" in module_type:
