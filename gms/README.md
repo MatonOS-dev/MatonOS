@@ -1,6 +1,6 @@
 # microG and app installation
 
-MatonOS is based on AOSP. This area installs the hash-pinned, upstream microG GmsCore and Companion APKs as privileged product apps. `gms.lock` records their versions, APK SHA-256 values and actual signer digest; `fetch-gms.sh` verifies each download. GsfProxy is omitted because the current bundle does not need its legacy C2DM role.
+MatonOS is based on AOSP. This area installs the hash-pinned, upstream microG GmsCore and Companion APKs as privileged product apps. `gms.lock` records their versions, APK SHA-256 values and actual signer digest; `fetch-gms.sh` verifies each download. GsfProxy is omitted (user 2026-11-19): only microG Services and its Companion ship.
 
 F-Droid Basic and Neo Store are not installed in the image. F-Droid Basic was removed on 2026-10-05 under the GPLv3 rule; the MatonOS software centre will provide that role later. The former Neo Store installer flow described in historical test records is not a current image feature.
 

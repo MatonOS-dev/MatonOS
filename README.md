@@ -130,7 +130,7 @@ MatonOS is mostly an assembly of other people's excellent open-source work:
 - [systemd-boot](https://systemd.io/BOOT/)
 - [wireless-regdb](https://git.kernel.org/pub/scm/linux/kernel/git/wens/wireless-regdb.git)
 - BayLibre's generic AIDL audio HAL
-- [microG](https://microg.org/) (GmsCore, Companion, GsfProxy); the signature
+- [microG](https://microg.org/) (GmsCore, Companion); the signature
   spoofing patch follows [LineageOS](https://lineageos.org/)'s approach
 - [F-Droid](https://f-droid.org/) (repo and app sources; its client is not
   preinstalled, and software-centre support is planned)
