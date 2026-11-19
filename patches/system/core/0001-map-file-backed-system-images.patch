@@ -40,6 +40,24 @@ index bbd70bc72..e000beffd 100644
      bool InitDeviceMapper();
      bool InitDmUser(const std::string& name);
      bool InitDevices(std::set<std::string> devices);
+diff --git a/init/first_stage_init.cpp b/init/first_stage_init.cpp
+index 8b9469906..fdf917ea9 100644
+--- a/init/first_stage_init.cpp
++++ b/init/first_stage_init.cpp
+@@ -367,6 +367,13 @@ int FirstStageMain(int argc, char** argv) {
+     CHECKCALL(setgroups(arraysize(groups), groups));
+     CHECKCALL(mount("sysfs", "/sys", "sysfs", 0, NULL));
+     CHECKCALL(mount("selinuxfs", "/sys/fs/selinux", "selinuxfs", 0, NULL));
++    // MatonOS: the boot partition UUID comes from the boot loader EFI
++    // variables when the UKI cmdline has none (see fs_mgr GetBootPartUuid).
++    if (access("/sys/firmware/efi/efivars", F_OK) == 0 &&
++        mount("efivarfs", "/sys/firmware/efi/efivars", "efivarfs",
++              MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr) != 0) {
++        PLOG(ERROR) << "Could not mount efivarfs";
++    }
+ 
+     CHECKCALL(mknod("/dev/kmsg", S_IFCHR | 0600, makedev(1, 11)));
+ 
 diff --git a/init/first_stage_mount.cpp b/init/first_stage_mount.cpp
 index 8a00aa41d..4a8141147 100644
 --- a/init/first_stage_mount.cpp
@@ -238,3 +256,21 @@ index 13635bd67..fbc042756 100644
  
    private:
      bool CreateLogicalPartitions();
+diff --git a/init/property_service.cpp b/init/property_service.cpp
+index e6fffc4da..45317391d 100644
+--- a/init/property_service.cpp
++++ b/init/property_service.cpp
+@@ -1421,6 +1421,13 @@ void PropertyInit() {
+     ProcessKernelDt();
+     ProcessBootconfig();
+     ProcessKernelCmdline();
++    // MatonOS: installed UKIs carry no boot_part_uuid; fs_mgr then reads it
++    // from the boot loader EFI variables. Export it like a cmdline value.
++    if (GetProperty("ro.boot.boot_part_uuid", "").empty()) {
++        if (auto uuid = android::fs_mgr::GetBootPartUuid(); !uuid.empty()) {
++            InitPropertySet("ro.boot.boot_part_uuid", uuid);
++        }
++    }
+ 
+     // Propagate the kernel variables to internal variables
+     // used by init as well as the current required properties.

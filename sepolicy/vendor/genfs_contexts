@@ -1,0 +1,1 @@
+genfscon efivarfs / u:object_r:matonos_efivarfs:s0

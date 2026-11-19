@@ -13,3 +13,7 @@ TARGET_COPY_OUT_ODM := odm
 # dependencies, so ship this matching module in its early modules.load.
 BOARD_GENERIC_RAMDISK_KERNEL_MODULES += $(DEVICE_PATH)/prebuilt/modules/ublk_drv.ko
 BOARD_GENERIC_RAMDISK_KERNEL_MODULES_LOAD += $(DEVICE_PATH)/prebuilt/modules/ublk_drv.ko
+
+# First-stage init mounts the file-backed image store at /maton_system and
+# switch_root moves that mount into the system root, which needs the directory.
+BOARD_ROOT_EXTRA_FOLDERS += maton_system

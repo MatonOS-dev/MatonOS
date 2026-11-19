@@ -134,15 +134,6 @@ bool OpenEsp(bool writable, mi::FatVolume* volume, std::string* error) {
     return mi::FatVolume::Open(device.string(), writable, volume, error);
 }
 
-bool ReplaceSlotOption(std::string* options, const Slot& target) {
-    size_t p=options->find("androidboot.slot_suffix=");
-    if(p==std::string::npos)return false;
-    const size_t end=options->find_first_of(" \r\n",p);
-    options->replace(p,end==std::string::npos?options->size()-p:end-p,
-                     std::string("androidboot.slot_suffix=_")+target.letter);
-    return true;
-}
-
 uint32_t U32(const uint8_t* p) {
     return (uint32_t(p[0])<<24)|(uint32_t(p[1])<<16)|(uint32_t(p[2])<<8)|uint32_t(p[3]);
 }
@@ -274,18 +265,6 @@ bool Stage(const fs::path& payload) {
     if(!OpenEsp(false,&esp_read,&preflight_error)){std::fprintf(stderr,"matonos-slot-writer: preflight ESP: %s\n",preflight_error.c_str());return false;}
     std::vector<uint8_t> a_bytes;
     if(!esp_read.ReadFile(EntryPath(running,false),&a_bytes,&preflight_error)){std::fprintf(stderr,"matonos-slot-writer: preflight running slot entry: %s\n",preflight_error.c_str());return false;}
-    std::string entry(a_bytes.begin(),a_bytes.end());
-    bool title=false,efi=false,options=false;
-    size_t begin=0;
-    while(begin<entry.size()) {
-        size_t end=entry.find('\n',begin);std::string line=entry.substr(begin,(end==std::string::npos?entry.size():end)-begin);
-        if(line.rfind("title ",0)==0)title=true;
-        else if(line.rfind("efi ",0)==0)efi=true;
-        else if(line.rfind("options ",0)==0){std::string copy=line;options=ReplaceSlotOption(&copy,target);}
-        if(end==std::string::npos) break;
-        begin=end+1;
-    }
-    if(!title||!efi||!options){std::fprintf(stderr,"matonos-slot-writer: running slot entry lacks required title, efi, or slot_suffix options\n");return false;}
 
     // Validate the supplied UKI/vbmeta pair before invalidating a previously staged slot.
     int vbmeta=-1;uint64_t vbmeta_size=0;
@@ -328,17 +307,9 @@ bool Stage(const fs::path& payload) {
     if(!vbmeta_ok)return false;
 
     if(!esp.WriteFile(UkiPath(target),uki_bytes,&error)||!esp.Sync(&error)){std::fprintf(stderr,"matonos-slot-writer: write/sync target UKI: %s\n",error.c_str());return false;}
-    if(!esp_read.ReadFile(EntryPath(running,false),&a_bytes,&error)){std::fprintf(stderr,"matonos-slot-writer: reread running slot entry: %s\n",error.c_str());return false;}
-    entry.assign(a_bytes.begin(),a_bytes.end());
-    std::string updated;begin=0;
-    while(begin<entry.size()) {
-        size_t end=entry.find('\n',begin);std::string line=entry.substr(begin,(end==std::string::npos?entry.size():end)-begin);
-        if(line.rfind("title ",0)==0){line=std::string("title MatonOS (slot ")+target.upper+")";title=true;}
-        else if(line.rfind("efi ",0)==0){line="efi /"+UkiPath(target);efi=true;}
-        else if(line.rfind("options ",0)==0){if(!ReplaceSlotOption(&line,target)){std::fprintf(stderr,"matonos-slot-writer: running slot entry has no slot_suffix option\n");return false;}options=true;}
-        updated+=line;if(end!=std::string::npos)updated.push_back('\n');if(end==std::string::npos)break;begin=end+1;
-    }
-    if(!title||!efi||!options){std::fprintf(stderr,"matonos-slot-writer: running slot entry lacks required title, efi, or options line\n");return false;}
+    // Entries carry no options: each slot's signed UKI embeds its own cmdline,
+    // and first stage finds the ESP through the boot loader's EFI variables.
+    const std::string updated=std::string("title MatonOS (slot ")+target.upper+")\nefi /"+UkiPath(target)+"\n";
     const std::string target_entry=EntryPath(target,true);
     if(!esp.WriteFile(target_entry,std::vector<uint8_t>(updated.begin(),updated.end()),&error)||!esp.Sync(&error)){
         std::fprintf(stderr,"matonos-slot-writer: write/sync target counted entry: %s\n",error.c_str());return false;

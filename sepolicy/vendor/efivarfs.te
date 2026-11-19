@@ -1,0 +1,6 @@
+# efivarfs is mounted read-only by first-stage init so that fs_mgr can read the
+# boot loader's LoaderDevicePartUUID (installed UKIs carry no boot_part_uuid).
+# init exports it as ro.boot.boot_part_uuid; ueventd uses it for by-name links.
+type matonos_efivarfs, fs_type;
+allow { init ueventd } matonos_efivarfs:dir search;
+allow { init ueventd } matonos_efivarfs:file r_file_perms;

@@ -61,3 +61,40 @@ index cdd137b3..357651af 100644
      return bdev_path;
  }
  
+diff --git a/libfstab/fstab.cpp b/libfstab/fstab.cpp
+index e3e5336f..e322f790 100644
+--- a/libfstab/fstab.cpp
++++ b/libfstab/fstab.cpp
+@@ -857,7 +857,31 @@ std::string GetBootPartUuid() {
+             boot_part_uuid = value;
+         }
+     });
+-
++    if (!boot_part_uuid.empty()) return boot_part_uuid;
++
++    // MatonOS: UKIs carry no per-install cmdline. The boot loader (or
++    // systemd-stub) exports the ESP it started from in LoaderDevicePartUUID:
++    // a 4-byte attribute word followed by a NUL-terminated UTF-16LE GUID.
++    std::string raw;
++    if (!android::base::ReadFileToString(
++                "/sys/firmware/efi/efivars/"
++                "LoaderDevicePartUUID-4a67b082-0a4c-41cf-b6c7-440b29bb8c4f",
++                &raw)) {
++        return "";
++    }
++    for (size_t i = 4; i + 1 < raw.size(); i += 2) {
++        const char c = raw[i];
++        if (c == '\0' && raw[i + 1] == '\0') break;
++        if (raw[i + 1] != '\0' || !(isxdigit(static_cast<unsigned char>(c)) || c == '-')) {
++            LERROR << "Malformed LoaderDevicePartUUID EFI variable";
++            return "";
++        }
++        boot_part_uuid += static_cast<char>(tolower(static_cast<unsigned char>(c)));
++    }
++    if (boot_part_uuid.size() != 36) {
++        LERROR << "Malformed LoaderDevicePartUUID EFI variable: " << boot_part_uuid;
++        return "";
++    }
+     return boot_part_uuid;
+ }
+ 

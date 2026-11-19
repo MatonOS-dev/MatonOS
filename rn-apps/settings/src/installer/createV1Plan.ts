@@ -32,18 +32,6 @@ function guid(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function bootDeviceFromIdentity(identity: string): string {
-  const sys = identity.match(/^sys=(.*?);seq=/)?.[1];
-  if (!sys?.startsWith("/sys/devices/"))
-    throw new Error("Refresh the drive list; the target boot path is unavailable.");
-  const relative = sys.slice("/sys".length);
-  const pci = relative.match(/^\/devices\/(pci[^/]+\/[^/]+)/);
-  if (pci) return pci[1];
-  const platform = relative.match(/^\/devices\/platform\/(.+)\/(?:ata|host|nvme|mmc_host)[^/]*\//);
-  if (platform) return platform[1];
-  throw new Error("This target's firmware device path is not supported yet.");
-}
-
 export type V1Plan = {
   operations: OperationRequestV1[];
   userdataBytes: number;
@@ -58,7 +46,6 @@ export function createV1Plan(
 ): V1Plan {
   if (!diskIdentity)
     throw new Error("Refresh the drive list before confirming this target.");
-  const bootDevice = bootDeviceFromIdentity(diskIdentity);
   if (diskBytes < V1_MINIMUM_DISK_BYTES)
     throw new Error("This installer profile requires a 32 GiB drive.");
   let cursor = ALIGNMENT;
@@ -170,7 +157,7 @@ export function createV1Plan(
       relativeDirectory: "loader/entries",
       files: [{
         relativePath: "A.conf", // boot-control HAL names: A/B.conf, A+N-M.conf while counting
-        inlineContents: `title MatonOS\nefi /EFI/Linux/matonos-a.efi\noptions androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.boot_part_uuid=${esp.partGuid} androidboot.boot_devices=${bootDevice} androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange firmware_class.path=/vendor/firmware console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6\n`,
+        inlineContents: "title MatonOS\nefi /EFI/Linux/matonos-a.efi\n",
       }],
     },
   ] satisfies InstallerOperation[];

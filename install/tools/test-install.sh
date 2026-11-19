@@ -102,8 +102,8 @@ ops.append({"kind":"write_files","target":{"partGuid":esp["partGuid"]},"relative
 for name in ("system","system_ext","product","vendor","odm"):
     ops.append({"kind":"copy_partition","source":{"kind":"live_image","partitionName":name+"_a"},"target":{"logicalName":name+"_a"}})
 ops.append({"kind":"write_files","target":{"partGuid":esp["partGuid"]},"relativeDirectory":"loader/entries","files":[
-    {"relativePath":"A+3-0.conf","inlineContents":"title MatonOS (slot A)\nefi /EFI/Linux/matonos-a.efi\noptions androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.boot_part_uuid=@BOOT_PART_UUID@ androidboot.boot_devices=@BOOT_DEVICE@ androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange firmware_class.path=/vendor/firmware console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6\n"},
-    {"relativePath":"B.DIS","inlineContents":"title MatonOS (slot B)\nefi /EFI/Linux/matonos-b.efi\noptions androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_b androidboot.boot_part_uuid=@BOOT_PART_UUID@ androidboot.boot_devices=@BOOT_DEVICE@ androidboot.matonos.live=0 androidboot.selinux=enforcing androidboot.verifiedbootstate=orange firmware_class.path=/vendor/firmware console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6\n"}]})
+    {"relativePath":"A+3-0.conf","inlineContents":"title MatonOS (slot A)\nefi /EFI/Linux/matonos-a.efi\n"},
+    {"relativePath":"B.DIS","inlineContents":"title MatonOS (slot B)\nefi /EFI/Linux/matonos-b.efi\n"}]})
 with open(output,"w") as f:
     for op in ops:
         f.write(json.dumps({"apiVersion":1,"targetDiskId":target,"operation":op},separators=(",",":"))+"\n")
@@ -130,35 +130,11 @@ PY
 python3 - "$work/operations.jsonl" "$TARGET_ID" "$target_identity" "$drives" "$FIRST_OPERATION" <<'PY'
 import json,sys
 path,target,identity,drives_json,first_operation=sys.argv[1:]
-sys_path=identity.split(";",1)[0][4:]
-if not sys_path.startswith("/sys/devices/"): raise SystemExit("target lacks a sysfs boot path")
-rel=sys_path[len("/sys"):]
-import re
-m=re.match(r"^/devices/(pci[^/]+/[^/]+)",rel)
-if m: boot_device=m.group(1)
-else:
-    m=re.match(r"^/devices/platform/(.+)/(?:ata|host|nvme|mmc_host)[^/]*/",rel)
-    if not m: raise SystemExit("target firmware device path is unsupported")
-    boot_device=m.group(1)
 with open(path) as f: requests=[json.loads(line) for line in f]
-if int(first_operation)>1:
-    drives=json.loads(drives_json)
-    disk=next(d for d in drives.get("drives",[]) if d.get("id")==target)
-    esp_guid=next(p["partGuid"] for p in disk.get("partitions",[]) if p.get("name")=="esp")
-else:
-    esp_guid=next(part["partGuid"] for request in requests
-                  for part in request["operation"].get("partitions",[])
-                  if part["name"]=="esp")
 with open(path,"w") as f:
     for request in requests:
         request["targetDiskId"]=target
         request["targetDiskIdentity"]=identity
-        operation=request["operation"]
-        if operation.get("kind")=="write_files":
-            for file in operation.get("files",[]):
-                file["inlineContents"]=(file.get("inlineContents","")
-                    .replace("@BOOT_DEVICE@",boot_device)
-                    .replace("@BOOT_PART_UUID@",esp_guid))
         f.write(json.dumps(request,separators=(",",":"))+"\n")
 PY
 target_path=$(python3 - "$drives" "$TARGET_ID" <<'PY'
