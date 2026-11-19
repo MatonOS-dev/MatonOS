@@ -170,13 +170,6 @@ int PrepareImageStore(uint64_t expected,const char* system_path,const char* meta
     const std::string metadata_fd_path="/proc/"+std::to_string(getpid())+"/fd/"+std::to_string(metadata_fd);
     if(!MountImageStore(metadata_fd_path,mapped,&error)){CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);RemoveDmDevice(kSystemMapper);return HelperFail("init mount target image store",error.c_str(),errno);}
     CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);
-    constexpr char label[]="u:object_r:matonos_install_mount_file:s0";
-    for(const char* root:{"/mnt/matonos-install/metadata","/mnt/matonos-install/system"}){
-        const int dir=open(root,O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
-        if(dir<0){const int e=errno;UnmountImagePath(std::string(kImageStoreRoot)+"/system");RemoveDmDevice(kSystemMapper);return HelperFail("open mounted image-store root",root,e);}
-        if(fsetxattr(dir,"security.selinux",label,sizeof(label),0)!=0){const int e=errno;CLOSE_FD(dir);UnmountImagePath(std::string(kImageStoreRoot)+"/system");RemoveDmDevice(kSystemMapper);return HelperFail("label mounted image-store root",root,e);}
-        CLOSE_FD(dir);
-    }
     std::filesystem::create_directories(std::string(kImageStoreRoot)+"/metadata/maton/images",dir_error);
     if(!dir_error)std::filesystem::create_directories(std::string(kImageStoreRoot)+"/system/images",dir_error);
     if(dir_error){const int e=dir_error.value();UnmountImagePath(std::string(kImageStoreRoot)+"/system");RemoveDmDevice(kSystemMapper);return HelperFail("create image directories",dir_error.message().c_str(),e);}

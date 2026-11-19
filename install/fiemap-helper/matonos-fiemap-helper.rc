@@ -17,6 +17,9 @@ on property:vendor.maton.install.fiemap.request=*
 on property:vendor.maton.install.mount.request=*
     mount ext4 ${vendor.maton.install.metadata_source} /mnt/matonos-install/metadata noatime
     mount ext4 ${vendor.maton.install.system_source} /mnt/matonos-install/system noatime
+    # Fresh filesystems have unlabeled roots; init relabels them.
+    restorecon /mnt/matonos-install/metadata
+    restorecon /mnt/matonos-install/system
     setprop vendor.maton.install.mount.done ${vendor.maton.install.mount.request}
 
 on property:vendor.maton.install.unmount.request=*
