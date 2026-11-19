@@ -279,12 +279,96 @@ static int activate_image(const char *path) {
     memset(&cfg, 0, sizeof(cfg));
     cfg.fd = (uint32_t)imagefd;
     cfg.block_size = 512;
-    cfg.info.lo_flags = LO_FLAGS_READ_ONLY | LO_FLAGS_PARTSCAN | LO_FLAGS_AUTOCLEAR;
+    /* No AUTOCLEAR: closing loopfd below is the last reference and would
+     * detach the device. No PARTSCAN: first-stage init only links partitions
+     * on MMC/NVMe/SCSI disks, so the loop is exported as a SCSI disk below and
+     * its partitions must be the only ones carrying the boot PARTUUID. */
+    cfg.info.lo_flags = LO_FLAGS_READ_ONLY;
     int rc = ioctl(loopfd, LOOP_CONFIGURE, &cfg);
     int saved = errno;
     close(loopfd); close(imagefd);
     if (rc) { errno = saved; return -1; }
     return idx;
+}
+
+static int write_str(const char *path, const char *value) {
+    int fd = open(path, O_WRONLY | O_CLOEXEC);
+    if (fd < 0) return -1;
+    size_t len = strlen(value);
+    ssize_t n = write(fd, value, len);
+    int saved = errno;
+    close(fd);
+    errno = saved;
+    return n == (ssize_t)len ? 0 : -1;
+}
+
+static int make_dir(const char *path) {
+    if (!mkdir(path, 0755) || errno == EEXIST) return 0;
+    logmsg("mkdir %s failed: %s", path, strerror(errno));
+    return -1;
+}
+
+/* Stock first-stage init derives /dev/block/by-name only for partitions under
+ * an MMC, NVMe or SCSI parent device; a loop device is virtual and gets none.
+ * Re-export the read-only loop through the kernel's SCSI target loopback
+ * fabric (target_core_iblock + tcm_loop), which creates a real SCSI disk. */
+static int export_scsi(int loop) {
+    const char *mods[] = { "target_core_mod", "target_core_iblock", "tcm_loop" };
+    for (size_t i = 0; i < sizeof(mods) / sizeof(mods[0]); ++i) {
+        char path[PATH_MAX];
+        snprintf(path, sizeof(path), "/ventoy/modules/%s.ko", mods[i]);
+        if (module_load(path) && errno != EEXIST) {
+            logmsg("SCSI target module %s unavailable: %s", mods[i], strerror(errno));
+            return -1;
+        }
+    }
+    if (mount("configfs", "/sys/kernel/config", "configfs", 0, NULL) && errno != EBUSY) {
+        logmsg("configfs mount failed: %s", strerror(errno));
+        return -1;
+    }
+    static const char core[] = "/sys/kernel/config/target/core/iblock_0/matonos";
+    static const char tpg[] = "/sys/kernel/config/target/loopback/naa.6001405000000001/tpgt_1";
+    static const char lun[] = "/sys/kernel/config/target/loopback/naa.6001405000000001/tpgt_1/lun/lun_0";
+    if (make_dir("/sys/kernel/config/target/core/iblock_0") || make_dir(core)) return -1;
+    char control[96];
+    snprintf(control, sizeof(control), "udev_path=/dev/loop%d,readonly=1", loop);
+    if (write_str("/sys/kernel/config/target/core/iblock_0/matonos/control", control) ||
+        write_str("/sys/kernel/config/target/core/iblock_0/matonos/enable", "1")) {
+        logmsg("iblock backstore for /dev/loop%d failed: %s", loop, strerror(errno));
+        return -1;
+    }
+    if (make_dir("/sys/kernel/config/target/loopback") ||
+        make_dir("/sys/kernel/config/target/loopback/naa.6001405000000001") ||
+        make_dir(tpg) || make_dir(lun)) return -1;
+    /* The nexus must exist before the LUN link: linking triggers the SCSI scan. */
+    if (write_str("/sys/kernel/config/target/loopback/naa.6001405000000001/tpgt_1/nexus", "naa.6001405000000002")) {
+        logmsg("tcm_loop nexus setup failed: %s", strerror(errno));
+        return -1;
+    }
+    if (symlink(core, "/sys/kernel/config/target/loopback/naa.6001405000000001/tpgt_1/lun/lun_0/image")) {
+        logmsg("tcm_loop LUN export failed: %s", strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+/* First-stage init's SwitchRoot moves every rootfs mount into /system and
+ * aborts on any it cannot move, so no scan mount may survive the handoff. The
+ * loop device holds its own reference to the image file, so lazily detaching
+ * the medium that carries it is safe. */
+static void detach_candidates(void) {
+    DIR *d = opendir("/mnt/ventoyboot");
+    if (!d) return;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        if (e->d_name[0] == '.') continue;
+        char mnt[PATH_MAX];
+        snprintf(mnt, sizeof(mnt), "/mnt/ventoyboot/%s", e->d_name);
+        if (umount2(mnt, MNT_DETACH) && errno != EINVAL) logmsg("detach %s failed: %s", mnt, strerror(errno));
+        (void)rmdir(mnt);
+    }
+    closedir(d);
+    (void)rmdir("/mnt/ventoyboot");
 }
 
 static void start_android(void) {
@@ -320,7 +404,9 @@ static int ventoy_work(void) {
         logmsg("loop setup failed: %s", strerror(errno));
         return 0;
     }
-    logmsg("attached image to /dev/loop%d with read-only partition scan", loop);
+    logmsg("attached image read-only to /dev/loop%d", loop);
+    if (export_scsi(loop)) return 0;
+    logmsg("exported /dev/loop%d as a read-only tcm_loop SCSI disk", loop);
     uint64_t wait_for_part = monotonic_ms() + 3000;
     while (monotonic_ms() < wait_for_part && !sysfs_has_boot_uuid()) sleep_ms(100);
     if (sysfs_has_boot_uuid()) {
@@ -331,7 +417,7 @@ static int ventoy_work(void) {
     if (d) {
         struct dirent *e;
         while ((e = readdir(d)) != NULL) {
-            if (strncmp(e->d_name, "loop", 4)) continue;
+            if (strncmp(e->d_name, "sd", 2)) continue;
             char path[PATH_MAX];
             snprintf(path, sizeof(path), "/sys/class/block/%s/uevent", e->d_name);
             FILE *f = fopen(path, "re");
@@ -349,7 +435,7 @@ static int ventoy_work(void) {
         }
         closedir(d);
     }
-    logmsg("loop partition scan did not expose requested PARTUUID; continuing Android init for fallback");
+    logmsg("SCSI export did not expose requested PARTUUID; continuing Android init for fallback");
     return 0;
 }
 
@@ -402,5 +488,6 @@ int main(void) {
         logmsg("Ventoy image attached; starting Android first-stage init");
     }
     (void)waitpid(worker, NULL, WNOHANG);
+    detach_candidates();
     start_android();
 }

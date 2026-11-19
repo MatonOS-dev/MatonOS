@@ -13,16 +13,23 @@ helper initrd. It mounts discoverable vfat, exFAT, and NTFS3 partitions
 read-only and scans regular files to depth three. A candidate image must have
 a valid GPT containing both the requested ESP PARTUUID and a GPT partition
 named `super`; filename alone is not used to identify the image. It attaches
-the image read-only with loop partition scanning enabled, waits briefly for
-the requested PARTUUID, logs the result to kmsg, and execs Android's original
-first-stage init even on failure.
+the image read-only on a loop device (no partition scan), then re-exports that
+loop device as a read-only SCSI disk through the kernel's SCSI target loopback
+fabric (`target_core_mod`, `target_core_iblock`, `tcm_loop`). This is needed
+because stock first-stage init creates `/dev/block/by-name` links only for
+partitions whose parent is an MMC, NVMe or SCSI device; a loop device is
+virtual and gets none, which ends in `realpath failed: /dev/block/by-name/super`.
+Only the SCSI disk's partitions carry the boot PARTUUID. The helper waits
+briefly for it, detaches every scan mount (first-stage `SwitchRoot` aborts on a
+rootfs mount it cannot move into `/system`), logs the result to kmsg, and execs
+Android's original first-stage init even on failure.
 
 `tools/make-live.sh` creates the shim initrd each time it repacks a live image.
 The helper builds outside Soong with the configured Android NDK (`ANDROID_NDK`
 or `~/Documents/android-ndk-r30`) and is included only in the live image's
 ESP/initrd chain. No AOSP source patch, new SELinux policy, or kernel change is
-used. The currently staged 7.2.7 kernel has loop built in and ships the exFAT,
-NTFS3, and UTF-8 NLS modules.
+used. The ACK 7.3 kernel has loop and configfs built in and ships the exFAT,
+NTFS3, UTF-8 NLS, optical and SCSI target modules the helper loads.
 
 ## Tests
 
@@ -43,7 +50,7 @@ NTFS3, and UTF-8 NLS modules.
 2. Boot the USB in UEFI mode, choose the MatonOS image in Ventoy, and wait for
    the launcher. Confirm Wi-Fi, audio, and suspend as usual.
 3. Collect `dmesg | grep matonos-ventoyboot` and confirm the requested PARTUUID
-   was found on a loop partition before first-stage init continued.
+   was found on the `tcm_loop` SCSI disk before first-stage init continued.
 4. As a regression, write the same image directly to a USB drive and boot it;
    it should take the immediate PARTUUID path without the nine-second wait.
 

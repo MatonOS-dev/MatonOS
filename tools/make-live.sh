@@ -191,7 +191,9 @@ gzip -dc "$PRODUCT_OUT/ramdisk.img" | cpio -i --quiet --to-stdout init > "$stage
 mkdir -p "$stage/ventoy/modules"
 cp "$DEVICE_DIR/prebuilt/modules/nls_utf8.ko" "$DEVICE_DIR/prebuilt/modules/exfat.ko" \
   "$DEVICE_DIR/prebuilt/modules/ntfs3.ko" "$DEVICE_DIR/prebuilt/modules/cdrom.ko" \
-  "$DEVICE_DIR/prebuilt/modules/sr_mod.ko" "$DEVICE_DIR/prebuilt/modules/isofs.ko" "$stage/ventoy/modules/"
+  "$DEVICE_DIR/prebuilt/modules/sr_mod.ko" "$DEVICE_DIR/prebuilt/modules/isofs.ko" \
+  "$DEVICE_DIR/prebuilt/modules/target_core_mod.ko" "$DEVICE_DIR/prebuilt/modules/target_core_iblock.ko" \
+  "$DEVICE_DIR/prebuilt/modules/tcm_loop.ko" "$stage/ventoy/modules/"
 bash "$DEVICE_DIR/ventoyboot/build.sh" "$stage/init" \
   || die "failed to build static NDK Ventoy pre-init"
 chmod 0755 "$stage/init" "$stage/init.android"
