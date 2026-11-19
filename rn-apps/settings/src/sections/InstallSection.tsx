@@ -92,6 +92,7 @@ export function InstallSection() {
   const [drives, setDrives] = useState<InstallDrive[]>([]);
   const [selected, setSelected] = useState<InstallDrive | null>(null);
   const [eraseConfirmed, setEraseConfirmed] = useState(false);
+  const [healthAccepted, setHealthAccepted] = useState(false);
   const [readiness, setReadiness] = useState<ReadyState>("loading");
   const [loadError, setLoadError] = useState("");
   const [operationStates, setOperationStates] = useState<OperationState[]>([]);
@@ -251,6 +252,7 @@ export function InstallSection() {
     previewModeRef.current = false;
     setSelected(null);
     setEraseConfirmed(false);
+    setHealthAccepted(false);
     setOperationStates([]);
     setProgress(null);
     setFailedOperation("");
@@ -281,6 +283,14 @@ export function InstallSection() {
             removable: true,
             safe: true,
             rotational: false,
+            health: {
+              known: true,
+              source: "ata",
+              findings: [
+                { level: "error", message: "This drive reports 8 unreadable sectors waiting to be remapped." },
+                { level: "warning", message: "This SSD has used about 80% of its write cycles." },
+              ],
+            },
             partitions: [],
           };
           setPreviewMode(true);
@@ -301,6 +311,7 @@ export function InstallSection() {
         selectedId={selected?.id ?? ""}
         onSelect={(drive) => {
           setSelected(drive);
+          setHealthAccepted(false);
           setStep("confirm");
         }}
         onRefresh={() => void refreshDrives()}
@@ -313,6 +324,8 @@ export function InstallSection() {
         confirmed={eraseConfirmed}
         preview={previewMode}
         onConfirmChange={setEraseConfirmed}
+        healthAccepted={healthAccepted}
+        onHealthAcceptedChange={setHealthAccepted}
         onBack={() => setStep("drives")}
         onStart={() => void startInstall()}
         formatSize={sizeLabel}
@@ -363,6 +376,7 @@ export function InstallSection() {
         onBack={() => {
           setSelected(null);
           setEraseConfirmed(false);
+          setHealthAccepted(false);
           setStep("drives");
         }}
       />

@@ -1,5 +1,6 @@
 #include "InstallerService.h"
 #include "EfiBootEntry.h"
+#include "DriveHealth.h"
 #include "Json.h"
 #include "matonos_ipc.h"
 
@@ -280,6 +281,31 @@ bool LiveMode() {
 std::vector<mi::Drive> Snapshot() {
     return mi::EnumerateDrives("/sys/block","/dev/block","/proc/self/mountinfo","/proc/cmdline","/proc/swaps");
 }
+// SMART needs the helper's capabilities; the daemon only relays its JSON.
+std::string HealthJson(const mi::Drive& d) {
+    static const std::string unknown="{\"known\":false,\"source\":\"\",\"findings\":[]}";
+    int pipe_fds[2];
+    if(pipe2(pipe_fds,O_CLOEXEC)!=0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: health pipe: %s",strerror(errno));return unknown;}
+    const pid_t pid=fork();
+    if(pid<0){__android_log_print(ANDROID_LOG_ERROR,kTag,"installer: health fork: %s",strerror(errno));CLOSE_FD(pipe_fds[0]);CLOSE_FD(pipe_fds[1]);return unknown;}
+    if(pid==0) {
+        if(dup2(pipe_fds[1],STDOUT_FILENO)<0)_exit(126);
+        const std::string seq=std::to_string(d.disk_sequence);
+        execl("/odm/bin/matonos-installer-service","/odm/bin/matonos-installer-service","--health",seq.c_str(),d.path.c_str(),nullptr);
+        _exit(127);
+    }
+    CLOSE_FD(pipe_fds[1]);
+    std::string json;char buffer[1024];
+    for(;;){const ssize_t n=read(pipe_fds[0],buffer,sizeof(buffer));if(n<0&&errno==EINTR)continue;if(n<=0)break;json.append(buffer,static_cast<size_t>(n));}
+    CLOSE_FD(pipe_fds[0]);
+    int status=0;
+    while(waitpid(pid,&status,0)<0&&errno==EINTR){}
+    if(!WIFEXITED(status)||WEXITSTATUS(status)!=0||json.empty()||json.front()!='{') {
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: health helper for %s failed (status %d)",d.path.c_str(),status);
+        return unknown;
+    }
+    return json;
+}
 std::string DrivesJson() {
     std::ostringstream out; out << "{\"drives\":[";
     const auto drives=Snapshot();
@@ -287,7 +313,7 @@ std::string DrivesJson() {
         const auto& d=drives[i]; if (i) out << ',';
         out << "{\"id\":"<<Escape(d.id)<<",\"identity\":"<<Escape(d.identity)<<",\"path\":"<<Escape(d.path)<<",\"model\":"<<Escape(d.model)<<",\"serial\":"<<Escape(d.serial)
             <<",\"sizeBytes\":"<<d.size_bytes<<",\"transport\":"<<Escape(d.transport)<<",\"removable\":"<<(d.removable?"true":"false")<<",\"rotational\":"<<(d.rotational?"true":"false")
-            <<",\"safe\":"<<(d.safe?"true":"false")<<",\"reason\":"<<Escape(d.unsafe_reason)<<",\"partitions\":[";
+            <<",\"safe\":"<<(d.safe?"true":"false")<<",\"reason\":"<<Escape(d.unsafe_reason)<<",\"health\":"<<HealthJson(d)<<",\"partitions\":[";
         for (size_t j=0;j<d.partitions.size();++j) { const auto& p=d.partitions[j]; if(j)out<<',';
             out<<"{\"name\":"<<Escape(p.name)<<",\"partGuid\":"<<Escape(p.part_guid)<<",\"typeGuid\":"<<Escape(p.type_guid)
                <<",\"startBytes\":"<<p.start_bytes<<",\"sizeBytes\":"<<p.size_bytes<<",\"mounted\":"<<(p.mounted?"true":"false")<<",\"logical\":"<<(p.logical?"true":"false")<<'}'; }
@@ -459,6 +485,23 @@ bool ReadSysfsNumber(const std::string& path,uint64_t* value) {
     *value=v;return true;
 }
 
+// Prints the drive's SMART findings as JSON on stdout for list_drives.
+int PrintDriveHealth(uint64_t expected,const char* disk) {
+    struct stat st{};
+    const int fd=OpenExpectedBlock(disk,expected,O_RDONLY,&st);
+    mi::DriveHealth health;
+    if(fd>=0) {
+        const std::string name=std::string(disk).substr(std::string(disk).rfind('/')+1);
+        uint64_t rotational=1;
+        ReadSysfsNumber("/sys/block/"+name+"/queue/rotational",&rotational);
+        health=mi::ReadDriveHealth(fd,name.rfind("nvme",0)==0,rotational!=0);
+        CLOSE_FD(fd);
+    }
+    const std::string json=mi::HealthToJson(health);
+    std::fwrite(json.data(),1,json.size(),stdout);
+    return std::fflush(stdout)==0?0:1;
+}
+
 // Registers \EFI\BOOT\BOOTX64.EFI on the new ESP in NVRAM. Geometry comes from
 // sysfs for the verified partition node; failure is logged and not fatal.
 int WriteEfiBootEntry(uint64_t expected,const char* esp,const char* part_guid) {
@@ -531,6 +574,8 @@ int HelperMain(int argc,char** argv) {
         CLOSE_FD(fd);
         return WaitForPartitionNodes(argv[3])?0:1;
     }
+    if(argc==4&&std::strcmp(argv[1],"--health")==0)
+        return PrintDriveHealth(std::strtoull(argv[2],nullptr,10),argv[3]);
     if(argc==4&&std::strcmp(argv[1],"--discard")==0)
         return DiscardDisk(std::strtoull(argv[2],nullptr,10),argv[3]);
     if(argc==5&&std::strcmp(argv[1],"--boot-entry")==0)

@@ -6,7 +6,7 @@ add_executable(matonos-installer-service
   "${INSTALL_SRC}/InstallerDaemon.cpp"
   "${INSTALL_SRC}/InstallerService.cpp"
   "${INSTALL_SRC}/InstallerExecutor.cpp")
-target_sources(matonos-installer-service PRIVATE "${INSTALL_SRC}/LpMetadata.cpp" "${INSTALL_SRC}/FatFilesystem.cpp" "${INSTALL_SRC}/EfiBootEntry.cpp")
+target_sources(matonos-installer-service PRIVATE "${INSTALL_SRC}/LpMetadata.cpp" "${INSTALL_SRC}/FatFilesystem.cpp" "${INSTALL_SRC}/EfiBootEntry.cpp" "${INSTALL_SRC}/DriveHealth.cpp")
 target_include_directories(matonos-installer-service PRIVATE "${INSTALL_SRC}" "${MATON_IPC_INCLUDE_DIR}")
 target_compile_features(matonos-installer-service PRIVATE cxx_std_17)
 target_compile_options(matonos-installer-service PRIVATE -Wall -Wextra -Werror -O2 -fPIE)

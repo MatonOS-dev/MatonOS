@@ -8,6 +8,9 @@ export type DrivePartition = {
   logical: boolean;
 };
 
+export type DriveHealthFinding = { level: "error" | "warning"; message: string };
+// SMART findings from the installer service; never a reason to refuse.
+export type DriveHealth = { known: boolean; source: string; findings: DriveHealthFinding[] };
 export type InstallDrive = {
   id: string;
   identity: string;
@@ -19,6 +22,7 @@ export type InstallDrive = {
   rotational: boolean;
   safe: boolean;
   reason?: string;
+  health?: DriveHealth;
   partitions: DrivePartition[];
 };
 

@@ -5,7 +5,7 @@ import {
   StatusRow,
   ToggleRow,
 } from "../../components/SettingsUI";
-import type { InstallDrive, OperationProgress } from "../../installer/InstallerApi";
+import type { DriveHealth, InstallDrive, OperationProgress } from "../../installer/InstallerApi";
 import { createV1Plan } from "../../installer/createV1Plan";
 import { copy } from "../../strings";
 
@@ -44,6 +44,7 @@ function DriveCard({
       <StatusRow label={copy.capacity} value={formatSize(drive.sizeBytes)} />
       <StatusRow label={copy.connection} value={transport} />
       <StatusRow label={copy.device} value={drive.path} />
+      <HealthFindings health={drive.health} />
       <ActionButton
         label={selected ? copy.selected : copy.selectDrive}
         enabled={drive.safe}
@@ -53,6 +54,40 @@ function DriveCard({
         <TextError message={drive.reason || "This drive is not a safe target."} />
       ) : null}
     </SettingsCard>
+  );
+}
+
+export const HEALTH_ACCEPT_TEXT =
+  "This drive reports SMART errors. Do you accept that you may experience technical difficulties and file corruption if we install to it?";
+
+export function hasHealthErrors(drive: InstallDrive | null) {
+  return !!drive?.health?.findings.some((finding) => finding.level === "error");
+}
+
+function healthSummary(health: DriveHealth | undefined) {
+  if (!health?.known) return "Health unknown";
+  if (health.findings.length === 0) return "No problems reported";
+  if (health.findings.some((finding) => finding.level === "error")) return "SMART errors";
+  return "Warnings";
+}
+
+function HealthFindings({ health }: { health: DriveHealth | undefined }) {
+  const colors = useMaterialColors();
+  const findings = health?.known ? health.findings : [];
+  const rows = findings.map((finding, index) => (
+    <Text
+      key={`${index}:${finding.message}`}
+      style={{ typography: "bodySmall" }}
+      color={finding.level === "error" ? colors.error : colors.tertiary}
+    >
+      {finding.message}
+    </Text>
+  ));
+  return (
+    <>
+      <StatusRow label="Drive health" value={healthSummary(health)} />
+      {rows}
+    </>
   );
 }
 
@@ -265,17 +300,41 @@ function PartitionSummary({
   );
 }
 
+function HealthAcceptance({
+  drive,
+  accepted,
+  onAcceptedChange,
+}: {
+  drive: InstallDrive;
+  accepted: boolean;
+  onAcceptedChange: (value: boolean) => void;
+}) {
+  if (!hasHealthErrors(drive)) return null;
+  return (
+    <ToggleRow
+      title={HEALTH_ACCEPT_TEXT}
+      supporting="Installation is still allowed. Back up anything important elsewhere."
+      value={accepted}
+      onChange={onAcceptedChange}
+    />
+  );
+}
+
 function ConfirmBody({
   drive,
   preview,
   confirmed,
   onConfirmChange,
+  healthAccepted,
+  onHealthAcceptedChange,
   formatSize,
 }: {
   drive: InstallDrive | null;
   preview: boolean;
   confirmed: boolean;
   onConfirmChange: (value: boolean) => void;
+  healthAccepted: boolean;
+  onHealthAcceptedChange: (value: boolean) => void;
   formatSize: (bytes: number) => string;
 }) {
   const colors = useMaterialColors();
@@ -295,7 +354,13 @@ function ConfirmBody({
       </Text>
       <StatusRow label={copy.device} value={drive.path} />
       <StatusRow label={copy.capacity} value={formatSize(drive.sizeBytes)} />
+      <HealthFindings health={drive.health} />
       <PartitionSummary drive={drive} formatSize={formatSize} />
+      <HealthAcceptance
+        drive={drive}
+        accepted={healthAccepted}
+        onAcceptedChange={onHealthAcceptedChange}
+      />
       <ToggleRow
         title="I understand this drive will be erased"
         supporting="This confirmation is required before installation starts."
@@ -311,6 +376,8 @@ export function InstallConfirmStep({
   confirmed,
   preview,
   onConfirmChange,
+  healthAccepted,
+  onHealthAcceptedChange,
   onBack,
   onStart,
   formatSize,
@@ -319,12 +386,15 @@ export function InstallConfirmStep({
   confirmed: boolean;
   preview: boolean;
   onConfirmChange: (value: boolean) => void;
+  healthAccepted: boolean;
+  onHealthAcceptedChange: (value: boolean) => void;
   onBack: () => void;
   onStart: () => void;
   formatSize: (bytes: number) => string;
 }) {
   const cardTitle = preview ? "Preview confirmation" : "Confirm installation";
   const confirmLabel = preview ? "Start preview" : copy.confirmInstall;
+  const healthOk = !hasHealthErrors(drive) || healthAccepted;
   return (
     <SettingsCard title={cardTitle}>
       <ConfirmBody
@@ -332,12 +402,14 @@ export function InstallConfirmStep({
         preview={preview}
         confirmed={confirmed}
         onConfirmChange={onConfirmChange}
+        healthAccepted={healthAccepted}
+        onHealthAcceptedChange={onHealthAcceptedChange}
         formatSize={formatSize}
       />
       <ActionButton label={copy.goBack} variant="text" onClick={onBack} />
       <ActionButton
         label={confirmLabel}
-        enabled={!!drive && drive.safe && confirmed}
+        enabled={!!drive && drive.safe && confirmed && healthOk}
         onClick={onStart}
       />
     </SettingsCard>

@@ -90,6 +90,11 @@ allow matonos_driver_helper dm_device:blk_file rw_file_perms;
 # Image population writes the mapped install images (maton-img-*).
 allow matonos_driver dm_device:blk_file rw_file_perms;
 allow matonos_driver_helper self:capability sys_admin;
+# Drive health: the helper prints SMART JSON on a pipe to the installer.
+allow matonos_driver_helper matonos_driver:fifo_file write;
+# SATA SMART (SG_IO ATA pass-through) needs CAP_SYS_RAWIO, which platform
+# policy forbids vendor domains on user builds: there SATA shows "unknown".
+userdebug_or_eng(`allow matonos_driver_helper self:capability sys_rawio;')
 typeattribute matonos_driver_helper vendor_executes_system_violators;
 
 # (No audio HAL of ours: BayLibre generic AIDL HAL runs as hal_audio_default.)
