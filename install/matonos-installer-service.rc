@@ -11,6 +11,7 @@ service matonos-installer-service /odm/bin/matonos-installer-service
 # The system image remains usable without installer support or target disks.
 on post-fs-data
     mkdir /maton_system/ota-staging 0700 root root
+    restorecon_recursive /maton_system/ota-staging
 
     start matonos-installer-service
 
