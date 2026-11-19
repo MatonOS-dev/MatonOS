@@ -1,9 +1,6 @@
 package org.matonos.systembridge;
 
-import android.graphics.Point;
-import android.app.AppOpsManager;
 import android.app.Service;
-import android.hardware.display.DisplayManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -17,7 +14,6 @@ import android.os.ParcelFileDescriptor;
 import android.os.UserHandle;
 import android.provider.Settings;
 import android.util.Log;
-import android.view.Display;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -46,17 +42,9 @@ public final class SystemBridgeService extends Service {
     private static volatile SystemBridgeService activeService;
     private volatile Set<String> allowedCerts;
     private volatile Set<String> targetCallers;
-    private android.os.Handler geometryHandler;
-    private boolean geometryRetryPending;
     private final ConcurrentMap<String, Subscription> subscriptions = new ConcurrentHashMap<>();
     // sleep: forward Android's current suspend blockers to the sleep daemon.
     private AndroidWakeStateForwarder sleepWakeForwarder;
-    private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
-        @Override public void onDisplayAdded(int displayId) { publishDisplayGeometry(); }
-        @Override public void onDisplayRemoved(int displayId) { publishDisplayGeometry(); }
-        @Override public void onDisplayChanged(int displayId) { publishDisplayGeometry(); }
-    };
-
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
         @Override public int getBridgeApiVersion() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiVersion");
@@ -96,8 +84,6 @@ public final class SystemBridgeService extends Service {
                 JSONObject args = new JSONObject(jsonArgs == null ? "{}" : jsonArgs);
                 if (args.toString().length() > 64 * 1024)
                     throw new IllegalArgumentException("channel arguments too large");
-                if ("input".equals(target) && "set_absolute_pointer_mode".equals(command))
-                    return setAbsolutePointerMode(UserHandle.USER_CURRENT).toString();
                 IChannel channel = channelFor(target);
                 if (channel == null) throw new IllegalStateException("channel instance unavailable: " + target);
                 String result = channel.call(command, args.toString());
@@ -192,7 +178,6 @@ public final class SystemBridgeService extends Service {
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        applyAbsolutePointerModeIfPresent();
         return START_STICKY;
     }
 
@@ -202,19 +187,6 @@ public final class SystemBridgeService extends Service {
         // sleep: poll off the main thread; failed power inspection keeps sleep blocked.
         sleepWakeForwarder = new AndroidWakeStateForwarder(this);
         sleepWakeForwarder.start();
-        geometryHandler = new android.os.Handler(getMainLooper());
-        DisplayManager displayManager = getSystemService(DisplayManager.class);
-        if (displayManager != null) {
-            displayManager.registerDisplayListener(displayListener, new android.os.Handler(getMainLooper()));
-            publishDisplayGeometry();
-        }
-        // Absolute VM/tablet input is translated to relative motion by inputd.
-        // Keep InputReader's global cursor transform linear and unit gain, but
-        // only while such a device exists (inputd may find it after we start).
-        applyAbsolutePointerModeIfPresent();
-        for (long delay : new long[] {5000, 15000, 30000}) {
-            geometryHandler.postDelayed(this::applyAbsolutePointerModeIfPresent, delay);
-        }
         // The bridge is bound explicitly by apps. Root/adb administration is exposed
         // through the UID-gated ContentProvider below, never ServiceManager.
     }
@@ -222,81 +194,8 @@ public final class SystemBridgeService extends Service {
     @Override public void onDestroy() {
         // sleep: stop the poller with the persistent bridge service.
         if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
-        if (geometryHandler != null) geometryHandler.removeCallbacksAndMessages(null);
         if (activeService == this) activeService = null;
         super.onDestroy();
-    }
-
-    private void publishDisplayGeometry() {
-        DisplayManager displayManager = getSystemService(DisplayManager.class);
-        Display display = displayManager == null ? null : displayManager.getDisplay(Display.DEFAULT_DISPLAY);
-        if (display == null) return;
-        Point size = new Point();
-        display.getRealSize(size);
-        if (size.x <= 0 || size.y <= 0) return;
-        try {
-            IChannel channel = channelFor("input");
-            if (channel == null) {
-                scheduleDisplayGeometryRetry();
-                return;
-            }
-            JSONObject args = new JSONObject();
-            args.put("width", size.x);
-            args.put("height", size.y);
-            String response = channel.call("set_display_size", args.toString());
-            JSONObject result = new JSONObject(response == null ? "{}" : response);
-            if (!result.optBoolean("ok", false)) {
-                scheduleDisplayGeometryRetry();
-                return;
-            }
-            Log.i(TAG, "Sent active display geometry " + size.x + "x" + size.y + " to inputd");
-        } catch (Exception e) {
-            Log.w(TAG, "Cannot send active display geometry to inputd; retrying", e);
-            scheduleDisplayGeometryRetry();
-        }
-    }
-
-    private void scheduleDisplayGeometryRetry() {
-        if (geometryRetryPending) return;
-        geometryRetryPending = true;
-        geometryHandler.postDelayed(() -> {
-            geometryRetryPending = false;
-            publishDisplayGeometry();
-        }, 1000);
-    }
-
-    private boolean absolutePointerModeApplied;
-
-    /** Unit-gain cursor settings only when inputd reports an absolute pointer. */
-    private void applyAbsolutePointerModeIfPresent() {
-        if (absolutePointerModeApplied) return;
-        String count = android.os.SystemProperties.get("vendor.maton.input.absolute", "0");
-        if ("0".equals(count) || count.isEmpty()) return;
-        try {
-            Log.i(TAG, "Absolute pointer settings applied (" + count + " absolute devices): "
-                    + setAbsolutePointerMode(UserHandle.USER_CURRENT));
-            absolutePointerModeApplied = true;
-        } catch (RuntimeException | JSONException e) {
-            Log.e(TAG, "Cannot apply absolute pointer settings", e);
-        }
-    }
-
-    private JSONObject setAbsolutePointerMode(int userId) throws JSONException {
-        AppOpsManager appOps = getSystemService(AppOpsManager.class);
-        appOps.setMode(AppOpsManager.OPSTR_WRITE_SETTINGS, android.os.Process.myUid(),
-                getPackageName(), AppOpsManager.MODE_ALLOWED);
-        boolean accelerationWritten = Settings.System.putIntForUser(getContentResolver(),
-                Settings.System.MOUSE_POINTER_ACCELERATION_ENABLED, 0, userId);
-        boolean speedWritten = Settings.System.putIntForUser(getContentResolver(),
-                Settings.System.POINTER_SPEED, -7, userId);
-        if (!accelerationWritten || !speedWritten)
-            throw new IllegalStateException("SettingsProvider rejected absolute pointer mode");
-        JSONObject result = new JSONObject();
-        result.put("accelerationEnabled", Settings.System.getIntForUser(getContentResolver(),
-                Settings.System.MOUSE_POINTER_ACCELERATION_ENABLED, 1, userId) != 0);
-        result.put("pointerSpeed", Settings.System.getIntForUser(getContentResolver(),
-                Settings.System.POINTER_SPEED, 0, userId));
-        return result;
     }
 
     private void enforcePermission(int uid, String operation) {

@@ -52,7 +52,7 @@ Feature work continues, but in this shape from now on.
   projects are reverted; `patches/` is empty; old files for reference in
   `retired-patches/`. drm_hwcomposer/minigbm run on our own `matonos/v1.2`
   fork branches. Features to restore without patches: stock AIDL audio HAL
-  configuration + ODM ALSA endpoint glue, VM absolute pointers + PS/2 wake +
+  configuration + ODM ALSA endpoint glue, relative input + PS/2 wake +
   desktop mode on keyboard+mouse (matonos-inputd). Boot-critical: audio policy
   config must name every IModule the stock HAL declares, including Bluetooth
   (the Bluetooth module can be empty to expose no routes).
@@ -1528,7 +1528,7 @@ selector failure. Assess SOF firmware/topology separately if needed.
   Wake sources: `power/pc-wakeup.sh` (USB keyboards/mice + hubs/controllers,
   i8042 KBD/AUX); `patches/frameworks/native/0002` lets PS/2 mice wake the
   screen. QEMU: USB can't wake the guest (no PME/ACPI wake in qemu-xhci), so
-  `run-qemu-live.sh` uses the PS/2 keyboard + vmmouse (absolute).
+  `run-qemu-live.sh` uses the PS/2 keyboard + relative mouse with GTK pointer grab.
   **v2: Android ↔ sleepd bridge** (user's plan): a small privileged system
   service/app that (a) forwards Android's state to matonos-sleepd so it
   doesn't suspend while something needs the PC awake (Android wakelocks,

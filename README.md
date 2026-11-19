@@ -47,7 +47,7 @@ Work in progress, not yet ready for daily use.
   fallback for machines without a supported GPU, and Launcher3 desktop mode.
 - **Hardware glue.** Our own daemons handle Wi-Fi, Bluetooth, audio card
   selection, sleep/wake (including forwarding Android wake locks) and input.
-  QEMU's absolute mouse tracks the host cursor.
+  QEMU's relative PS/2 mouse uses GTK pointer grab on click.
   Firmware includes linux-firmware, SOF audio
   and the Wi-Fi regulatory database.
 - **Apps.**

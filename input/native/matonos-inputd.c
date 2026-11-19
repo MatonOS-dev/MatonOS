@@ -3,9 +3,7 @@
  * MatonOS input proxy. Physical keyboards and pointer-like devices are
  * grabbed and merged into stable uinput keyboard and mouse devices. Relative
  * devices pass through unchanged; touchpad motion becomes relative deltas.
- * Absolute VM/tablet positions are forwarded as ABS_X/ABS_Y on the pointer,
- * which the patched CursorInputMapper (cursor.absolute in the IDC) places
- * 1:1 on the display.
+ * Absolute-only tablet devices are left to Android's input stack.
  */
 #define _GNU_SOURCE
 #include <android/log.h>
@@ -15,7 +13,6 @@
 #include <linux/input.h>
 #include <linux/uinput.h>
 #include <matonos_ipc.h>
-#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -24,7 +21,6 @@
 #include <sys/epoll.h>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
-#include <sys/system_properties.h>
 #include <stdatomic.h>
 #include <unistd.h>
 
@@ -36,31 +32,22 @@
 #define UINPUT_NODE "/dev/uinput"
 #define MAX_DEVICES 128
 #define MAX_EVENTS 32
-#define DISPLAY_SIZE_MIN 64
-#define DISPLAY_SIZE_MAX 32768
 #define PROP_PRESENT "vendor.maton.input.present"
 #define PROP_KEYBOARD "vendor.maton.input.keyboard"
 #define PROP_POINTER "vendor.maton.input.pointer"
-/* Number of absolute pointers (VM/tablet); the bridge applies unit-gain cursor
- * settings only while this is non-zero, so real mice keep Android defaults. */
-#define PROP_ABSOLUTE "vendor.maton.input.absolute"
-#define DRM_DIR "/sys/class/drm"
-#define POINTER_ABS_MAX 65535
 
 struct source {
     int fd;
     char node[32];
     char name[128];
     bool keyboard, pointer, touchpad;
-    bool absolute;
     bool mt;
     bool have_x, have_y;
-    int x, y, min_x, max_x, min_y, max_y;
+    int x, y;
     int slot;
     bool finger_down;
     bool left_down;
     bool has_hardware_buttons;
-    bool led_misc; /* vmmouse: LED_MISC on = relative mode during capture */
     bool has_wheel_hi_res, has_hwheel_hi_res;
     bool wheel_hi_res_this_frame, hwheel_hi_res_this_frame;
     int wheel_legacy_pending, hwheel_legacy_pending;
@@ -72,81 +59,10 @@ struct source {
 static struct source sources[MAX_DEVICES];
 static int epfd = -1, inotify_fd = -1, keyboard_fd = -1, pointer_fd = -1;
 static _Atomic int touchpad_fd = -1;
-static bool pointer_captured;
 static _Atomic unsigned int keyboards, pointers;
-static _Atomic unsigned int absolute_pointers;
 static _Atomic unsigned int touchpads;
 static MatonosIpcServer *ipc;
 static bool pointer_wheel_hi_res, pointer_hwheel_hi_res;
-static _Atomic uint64_t requested_display_size;
-static int display_width = 1200, display_height = 1200;
-static float density_correction = 1.0f;
-
-/* Connector `mode` is the currently programmed DRM mode. `modes` is only the
- * advertised list and can disagree with Android's scanout after boot. */
-static bool read_display_geometry(int *width, int *height) {
-    DIR *dir = opendir(DRM_DIR);
-    if (!dir) return false;
-    bool found = false;
-    struct dirent *de;
-    while ((de = readdir(dir)) != NULL) {
-        if (strncmp(de->d_name, "card", 4) || !strchr(de->d_name, '-')) continue;
-        char path[256], status[32] = {0}, mode[64] = {0};
-        snprintf(path, sizeof(path), DRM_DIR "/%s/status", de->d_name);
-        FILE *f = fopen(path, "re");
-        if (!f) continue;
-        (void)fgets(status, sizeof(status), f); fclose(f);
-        if (strncmp(status, "connected", 9)) continue;
-        snprintf(path, sizeof(path), DRM_DIR "/%s/mode", de->d_name);
-        f = fopen(path, "re");
-        if (!f) continue;
-        if (fgets(mode, sizeof(mode), f)) {
-            int w = 0, h = 0;
-            if (sscanf(mode, "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
-                *width = w; *height = h; found = true;
-                fclose(f); break;
-            }
-        }
-        fclose(f);
-    }
-    closedir(dir);
-    if (!found) {
-        char size[64] = {0};
-        FILE *f = fopen("/sys/class/graphics/fb0/virtual_size", "re");
-        if (f) {
-            int w = 0, h = 0;
-            if (fgets(size, sizeof(size), f) && sscanf(size, "%d,%d", &w, &h) == 2 && w > 0 && h > 0) {
-                *width = w; *height = h; found = true;
-            }
-            fclose(f);
-        }
-    }
-    return found;
-}
-
-static void refresh_display_geometry(void) {
-    int width = display_width, height = display_height;
-    uint64_t request = atomic_load(&requested_display_size);
-    bool have_size = false;
-    if (request) {
-        width = (int)(request >> 32);
-        height = (int)(request & UINT32_MAX);
-        have_size = width > 0 && height > 0;
-    } else {
-        have_size = read_display_geometry(&width, &height);
-    }
-    if (have_size && (width != display_width || height != display_height)) {
-        display_width = width; display_height = height;
-        ALOGI("active scanout changed to %dx%d", width, height);
-    }
-    char density[32] = {0};
-    if (__system_property_get("ro.sf.lcd_density", density) > 0) {
-        int dpi = atoi(density);
-        if (dpi > 0) {
-            density_correction = 240.0f / (float)dpi;
-        }
-    }
-}
 
 static bool bit_test(const unsigned long *bits, unsigned int bit) {
     return (bits[bit / (sizeof(unsigned long) * 8)] &
@@ -169,15 +85,9 @@ static void sync_out(int fd) { (void)emit(fd, EV_SYN, SYN_REPORT, 0); }
 
 static void state_update(void) {
     const bool present = keyboards != 0 || pointers != 0;
-    unsigned int abs_count = atomic_load(&absolute_pointers);
     (void)__system_property_set(PROP_PRESENT, present ? "1" : "0");
     (void)__system_property_set(PROP_KEYBOARD, keyboards ? "1" : "0");
     (void)__system_property_set(PROP_POINTER, pointers ? "1" : "0");
-    {
-        char abs_buf[16];
-        snprintf(abs_buf, sizeof(abs_buf), "%u", abs_count);
-        (void)__system_property_set(PROP_ABSOLUTE, abs_buf);
-    }
     if (present && keyboards && pointers && touchpads && touchpad_fd < 0) {
         int fd = open(UINPUT_NODE, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
         if (fd >= 0) {
@@ -215,8 +125,8 @@ static void state_update(void) {
     }
     if (ipc) {
         char json[192];
-        snprintf(json, sizeof(json), "{\"keyboards\":%u,\"pointers\":%u,\"absolutePointers\":%u,\"desktopTouchpad\":%s}",
-                 keyboards, pointers, abs_count,
+        snprintf(json, sizeof(json), "{\"keyboards\":%u,\"pointers\":%u,\"desktopTouchpad\":%s}",
+                 keyboards, pointers,
                  touchpad_fd >= 0 ? "true" : "false");
         (void)matonos_ipc_publish(ipc, "state", json);
     }
@@ -248,14 +158,6 @@ static bool configure_pointer(int fd) {
         if (ioctl(fd, UI_SET_RELBIT, required_axes[i]) < 0) return false;
     pointer_wheel_hi_res = ioctl(fd, UI_SET_RELBIT, REL_WHEEL_HI_RES) == 0;
     pointer_hwheel_hi_res = ioctl(fd, UI_SET_RELBIT, REL_HWHEEL_HI_RES) == 0;
-    /* InputReader sets LED_MISC while an app holds pointer capture. */
-    if (ioctl(fd, UI_SET_EVBIT, EV_LED) < 0 || ioctl(fd, UI_SET_LEDBIT, LED_MISC) < 0) return false;
-    if (ioctl(fd, UI_SET_EVBIT, EV_ABS) < 0) return false;
-    for (unsigned int code = ABS_X; code <= ABS_Y; code++) {
-        struct uinput_abs_setup abs = {.code = code,
-                                       .absinfo = {.minimum = 0, .maximum = POINTER_ABS_MAX}};
-        if (ioctl(fd, UI_SET_ABSBIT, code) < 0 || ioctl(fd, UI_ABS_SETUP, &abs) < 0) return false;
-    }
     struct uinput_setup setup = {0};
     setup.id.bustype = BUS_VIRTUAL; setup.id.vendor = 0x4d54; setup.id.product = 2; setup.id.version = 1;
     snprintf(setup.name, UINPUT_MAX_NAME_SIZE, "MatonOS Pointer");
@@ -266,12 +168,6 @@ static bool is_keyboard(const unsigned long *keys) {
     bool letters = false;
     for (unsigned int k = KEY_Q; k <= KEY_P; k++) if (bit_test(keys, k)) { letters = true; break; }
     return letters && (bit_test(keys, KEY_ENTER) || bit_test(keys, KEY_SPACE) || bit_test(keys, KEY_LEFTSHIFT));
-}
-
-static bool has_abs_range(int fd, unsigned int code, int *min, int *max) {
-    struct input_absinfo a;
-    if (ioctl(fd, EVIOCGABS(code), &a) < 0 || a.maximum <= a.minimum) return false;
-    *min = a.minimum; *max = a.maximum; return true;
 }
 
 static int allocate_source(const char *node) {
@@ -307,53 +203,10 @@ static void remove_source(int i) {
     close(s->fd);
     if (s->keyboard && keyboards) keyboards--;
     if (s->pointer && pointers) pointers--;
-    if (s->pointer && s->absolute && absolute_pointers) absolute_pointers--;
     if (s->touchpad && touchpads) touchpads--;
     ALOGI("removed %s (%s)", s->node, s->name);
     s->fd = -1;
     state_update();
-}
-
-static void set_source_capture(struct source *s) {
-    struct input_event ev[2] = {{.type = EV_LED, .code = LED_MISC, .value = pointer_captured},
-                                {.type = EV_SYN, .code = SYN_REPORT}};
-    ssize_t bytes;
-    do {
-        bytes = write(s->fd, ev, sizeof(ev));
-    } while (bytes < 0 && errno == EINTR);
-    if (bytes < 0)
-        ALOGE("cannot set capture LED on %s (%s): %s", s->node, s->name, strerror(errno));
-    else if (bytes != (ssize_t)sizeof(ev))
-        ALOGE("short capture LED write on %s (%s): %zd/%zu bytes", s->node, s->name,
-              bytes, sizeof(ev));
-}
-
-static void handle_pointer_feedback(void) {
-    struct input_event buf[16];
-    ssize_t bytes;
-    for (;;) {
-        bytes = read(pointer_fd, buf, sizeof(buf));
-        if (bytes < 0 && errno == EINTR) continue;
-        if (bytes == 0) {
-            ALOGE("unexpected EOF from uinput pointer feedback");
-            break;
-        }
-        if (bytes < 0) break;
-        if (bytes % (ssize_t)sizeof(buf[0]) != 0) {
-            ALOGE("partial input event from uinput pointer feedback: %zd bytes", bytes);
-            break;
-        }
-        for (size_t j = 0; j < (size_t)bytes / sizeof(buf[0]); j++) {
-            if (buf[j].type != EV_LED || buf[j].code != LED_MISC) continue;
-            bool captured = buf[j].value != 0;
-            if (captured == pointer_captured) continue;
-            pointer_captured = captured;
-            ALOGI("pointer capture %s", captured ? "on: relative host mouse" : "off: absolute host mouse");
-            for (int i = 0; i < MAX_DEVICES; i++)
-                if (sources[i].fd >= 0 && sources[i].led_misc) set_source_capture(&sources[i]);
-        }
-    }
-    if (bytes < 0 && errno != EAGAIN) ALOGE("read uinput pointer feedback: %s", strerror(errno));
 }
 
 static void add_source(const char *node) {
@@ -374,33 +227,18 @@ static void add_source(const char *node) {
         !get_bits(fd, EV_REL, rel_bits, sizeof(rel_bits)) ||
         !get_bits(fd, EV_ABS, abs_bits, sizeof(abs_bits)) ||
         ioctl(fd, EVIOCGPROP(sizeof(prop_bits)), prop_bits) < 0) { close(fd); return; }
-    unsigned long led_bits[(LED_MAX + sizeof(unsigned long)*8)/(sizeof(unsigned long)*8)];
-    bool led_misc = get_bits(fd, EV_LED, led_bits, sizeof(led_bits)) && bit_test(led_bits, LED_MISC);
     if (id.bustype == BUS_VIRTUAL || !strncmp(name, "MatonOS ", 8)) { close(fd); return; }
     bool kb = is_keyboard(key_bits);
-    int min_x=0,max_x=0,min_y=0,max_y=0;
-    bool abs_xy = bit_test(abs_bits, ABS_X) && bit_test(abs_bits, ABS_Y) &&
-                  has_abs_range(fd, ABS_X, &min_x, &max_x) && has_abs_range(fd, ABS_Y, &min_y, &max_y);
     bool pointer_property = bit_test(prop_bits, INPUT_PROP_POINTER);
     bool direct_touchscreen = bit_test(prop_bits, INPUT_PROP_DIRECT) &&
                               !bit_test(key_bits, BTN_MOUSE) && !bit_test(key_bits, BTN_LEFT);
     bool mt = bit_test(abs_bits, ABS_MT_POSITION_X) && bit_test(abs_bits, ABS_MT_POSITION_Y) &&
               (bit_test(key_bits, BTN_TOUCH) || bit_test(key_bits, BTN_TOOL_FINGER)) &&
               (pointer_property || bit_test(key_bits, BTN_TOOL_FINGER));
-    if (mt) {
-        int mt_min_x, mt_max_x, mt_min_y, mt_max_y;
-        if (has_abs_range(fd, ABS_MT_POSITION_X, &mt_min_x, &mt_max_x) &&
-            has_abs_range(fd, ABS_MT_POSITION_Y, &mt_min_y, &mt_max_y)) {
-            min_x = mt_min_x; max_x = mt_max_x;
-            min_y = mt_min_y; max_y = mt_max_y;
-        } else {
-            mt = false; /* Keep ABS_X/Y ranges for the fallback absolute path. */
-        }
-    }
     bool rel = bit_test(rel_bits, REL_X) && bit_test(rel_bits, REL_Y);
     bool mouse = bit_test(key_bits, BTN_MOUSE) || bit_test(key_bits, BTN_LEFT) ||
                  bit_test(key_bits, BTN_TOOL_FINGER) || bit_test(key_bits, BTN_TOUCH);
-    bool ptr = mouse && (rel || abs_xy || mt) && !direct_touchscreen;
+    bool ptr = mouse && (rel || mt) && !direct_touchscreen;
     if (!kb && !ptr) { close(fd); return; }
     if (ioctl(fd, EVIOCGRAB, 1) < 0) { ALOGW("cannot grab %s (%s): %s", node, name, strerror(errno)); close(fd); return; }
     int i = allocate_source(node);
@@ -408,22 +246,16 @@ static void add_source(const char *node) {
     struct source *s = &sources[i];
     s->fd = fd; s->keyboard = kb; s->pointer = ptr;
     snprintf(s->name, sizeof(s->name), "%s", name);
-    /* Only bare absolute pointer sources need InputReader's cursor transform
-     * flattened. Multitouch touchpads keep their normal touchpad settings. */
-    s->absolute = !rel && abs_xy && !mt; s->mt = mt;
+    s->mt = mt;
     s->touchpad = ptr && mt && bit_test(key_bits, BTN_TOOL_FINGER);
     s->has_wheel_hi_res = bit_test(rel_bits, REL_WHEEL_HI_RES);
     s->has_hwheel_hi_res = bit_test(rel_bits, REL_HWHEEL_HI_RES);
     s->has_hardware_buttons = bit_test(key_bits, BTN_MOUSE) || bit_test(key_bits, BTN_LEFT);
-    s->min_x=min_x; s->max_x=max_x; s->min_y=min_y; s->max_y=max_y;
-    s->led_misc = ptr && s->absolute && led_misc;
-    if (s->led_misc && pointer_captured) set_source_capture(s);
     struct epoll_event ev = {.events = EPOLLIN | EPOLLHUP | EPOLLERR, .data.u32 = (unsigned int)i};
     if (epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev) < 0) { (void)ioctl(fd, EVIOCGRAB,0); close(fd); s->fd=-1; return; }
     if (kb) keyboards++;
     if (ptr) pointers++;
     if (s->touchpad) touchpads++;
-    if (s->absolute && ptr) absolute_pointers++;
     ALOGI("grabbed %s (%s)%s%s wheel=%s%s hwheel=%s%s (virtual hi-res=%s/%s)",
           node, name, kb ? " keyboard" : "", ptr ? " pointer" : "",
           bit_test(rel_bits, REL_WHEEL) ? "REL_WHEEL" : "none",
@@ -432,13 +264,6 @@ static void add_source(const char *node) {
           s->has_hwheel_hi_res ? "+HI_RES" : "",
           pointer_wheel_hi_res ? "yes" : "no", pointer_hwheel_hi_res ? "yes" : "no");
     state_update();
-}
-
-static int scaled_delta(int delta, int min, int max, int extent) {
-    if (max <= min) return delta;
-    float v = (float)delta * (float)extent * density_correction / (float)(max - min);
-    if (v > 32767) v = 32767; if (v < -32767) v = -32767;
-    return (int)v;
 }
 
 static void emit_scroll(struct source *s, bool horizontal, bool high_res, int value) {
@@ -479,16 +304,6 @@ static void flush_legacy_wheel(struct source *s) {
         emit_scroll(s, true, false, s->hwheel_legacy_pending);
     s->wheel_legacy_pending = s->hwheel_legacy_pending = 0;
     s->wheel_hi_res_this_frame = s->hwheel_hi_res_this_frame = false;
-}
-
-/* Absolute VM/tablet coordinates: rescale to the pointer's fixed ABS range
- * and forward; InputReader maps that range onto the display. */
-static void emit_absolute_axis(unsigned int code, int value, int min, int max) {
-    if (max <= min) return;
-    int64_t v = (int64_t)(value - min) * POINTER_ABS_MAX / (max - min);
-    if (v < 0) v = 0;
-    if (v > POINTER_ABS_MAX) v = POINTER_ABS_MAX;
-    (void)emit(pointer_fd, EV_ABS, (unsigned short)code, (int)v);
 }
 
 static void forward_event(struct source *s, const struct input_event *e) {
@@ -545,23 +360,10 @@ static void forward_event(struct source *s, const struct input_event *e) {
         if (e->code == ABS_MT_SLOT) { s->slot = e->value; return; }
         if (s->mt && e->code == ABS_MT_POSITION_X && s->slot == 0) {
             int old=s->x; bool had=s->have_x; s->x=e->value; s->have_x=true;
-            if (had && s->finger_down) {
-                int delta = scaled_delta(s->x-old,s->min_x,s->max_x, display_width);
-                (void)emit(pointer_fd, EV_REL, REL_X, delta);
-            }
+            if (had && s->finger_down) (void)emit(pointer_fd, EV_REL, REL_X, s->x-old);
         } else if (s->mt && e->code == ABS_MT_POSITION_Y && s->slot == 0) {
             int old=s->y; bool had=s->have_y; s->y=e->value; s->have_y=true;
-            if (had && s->finger_down) {
-                int delta = scaled_delta(s->y-old,s->min_y,s->max_y, display_height);
-                (void)emit(pointer_fd, EV_REL, REL_Y, delta);
-            }
-        } else if (!s->mt && (e->code == ABS_X || e->code == ABS_Y)) {
-            int *coord = e->code == ABS_X ? &s->x : &s->y;
-            int *min = e->code == ABS_X ? &s->min_x : &s->min_y;
-            int *max = e->code == ABS_X ? &s->max_x : &s->max_y;
-            bool *have = e->code == ABS_X ? &s->have_x : &s->have_y;
-            *coord=e->value; *have=true;
-            emit_absolute_axis(e->code, *coord, *min, *max);
+            if (had && s->finger_down) (void)emit(pointer_fd, EV_REL, REL_Y, s->y-old);
         }
         return;
     }
@@ -618,70 +420,21 @@ static void handle_inotify(void) {
 static int get_state(const char *args, char *result, size_t capacity, void *context) {
     (void)args; (void)context;
     if (capacity < 2) return -1;
-    snprintf(result, capacity, "{\"keyboards\":%u,\"pointers\":%u,\"absolutePointers\":%u,\"desktopTouchpad\":%s}",
-             keyboards, pointers, atomic_load(&absolute_pointers),
+    snprintf(result, capacity, "{\"keyboards\":%u,\"pointers\":%u,\"desktopTouchpad\":%s}",
+             keyboards, pointers,
              touchpad_fd >= 0 ? "true" : "false");
     return 0;
 }
 
-static bool json_int_field(const char *json, const char *key, int *value) {
-    const char *p = json;
-    int depth = 0;
-    while (*p) {
-        if (*p == '"') {
-            const char *start = ++p;
-            bool escaped = false;
-            while (*p && (*p != '"' || escaped)) {
-                if (!escaped && *p == '\\') escaped = true;
-                else escaped = false;
-                p++;
-            }
-            if (!*p) return false;
-            size_t length = (size_t)(p - start);
-            p++;
-            if (depth == 1 && length == strlen(key) && !memcmp(start, key, length)) {
-                const char *colon = p;
-                while (*colon == ' ' || *colon == '\t' || *colon == '\n' || *colon == '\r') colon++;
-                if (*colon == ':') { p = colon + 1; break; }
-            }
-            continue;
-        }
-        if (*p == '{' || *p == '[') depth++;
-        else if (*p == '}' || *p == ']') depth--;
-        p++;
-    }
-    if (!*p) return false;
-    char *end = NULL;
-    long parsed = strtol(p, &end, 10);
-    if (end == p || parsed < DISPLAY_SIZE_MIN || parsed > DISPLAY_SIZE_MAX ||
-        (*end && *end != ',' && *end != '}' && *end != ' ' && *end != '\t' && *end != '\r' && *end != '\n')) return false;
-    *value = (int)parsed;
-    return true;
-}
-
-static int set_display_size(const char *args, char *result, size_t capacity, void *context) {
-    (void)context;
-    int width, height;
-    if (!args || !json_int_field(args, "width", &width) ||
-        !json_int_field(args, "height", &height) || capacity < 2) return -1;
-    atomic_store(&requested_display_size,
-                 ((uint64_t)(uint32_t)width << 32) | (uint32_t)height);
-    snprintf(result, capacity, "{\"ok\":true,\"width\":%d,\"height\":%d}", width, height);
-    return 0;
-}
-
 int main(void) {
-    refresh_display_geometry();
     for (int i=0;i<MAX_DEVICES;i++) sources[i].fd=-1;
     keyboard_fd = open(UINPUT_NODE, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
-    pointer_fd = open(UINPUT_NODE, O_RDWR | O_NONBLOCK | O_CLOEXEC);
+    pointer_fd = open(UINPUT_NODE, O_WRONLY | O_NONBLOCK | O_CLOEXEC);
     if (keyboard_fd < 0 || pointer_fd < 0 || !configure_keyboard(keyboard_fd) || !configure_pointer(pointer_fd)) {
         ALOGE("cannot create stable uinput devices: %s", strerror(errno)); return 1;
     }
     ipc = matonos_ipc_create("input");
-    if (!ipc || matonos_ipc_register(ipc, "get_state", get_state, NULL) ||
-        matonos_ipc_register(ipc, "set_display_size", set_display_size, NULL) ||
-        matonos_ipc_start(ipc)) {
+    if (!ipc || matonos_ipc_register(ipc, "get_state", get_state, NULL) || matonos_ipc_start(ipc)) {
         ALOGE("cannot register input channel service"); return 1;
     }
     epfd = epoll_create1(EPOLL_CLOEXEC);
@@ -691,22 +444,16 @@ int main(void) {
     }
     struct epoll_event watch = {.events=EPOLLIN,.data.u32=MAX_DEVICES};
     if (epoll_ctl(epfd, EPOLL_CTL_ADD, inotify_fd, &watch) < 0) return 1;
-    struct epoll_event feedback = {.events=EPOLLIN,.data.u32=MAX_DEVICES+1};
-    if (epoll_ctl(epfd, EPOLL_CTL_ADD, pointer_fd, &feedback) < 0) {
-        ALOGE("cannot watch uinput pointer feedback: %s", strerror(errno)); return 1;
-    }
     scan_devices();
     ALOGI("started; stable keyboard and pointer are active");
     struct epoll_event events[MAX_EVENTS];
     for (;;) {
         int n = epoll_wait(epfd, events, MAX_EVENTS, 1000);
-        refresh_display_geometry();
         if (n == 0) { scan_devices(); continue; }
         if (n < 0) { if (errno == EINTR) continue; ALOGE("epoll_wait: %s", strerror(errno)); return 1; }
         for (int e=0;e<n;e++) {
             unsigned int idx=events[e].data.u32;
             if (idx == MAX_DEVICES) { handle_inotify(); continue; }
-            if (idx == MAX_DEVICES + 1) { handle_pointer_feedback(); continue; }
             if (idx >= MAX_DEVICES || sources[idx].fd < 0) continue;
             if (events[e].events & (EPOLLHUP|EPOLLERR)) { remove_source((int)idx); continue; }
             struct input_event buf[32];
