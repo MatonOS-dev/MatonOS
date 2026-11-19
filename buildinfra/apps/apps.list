@@ -1,6 +1,6 @@
 # key-id<TAB>project-path-from-device-tree<TAB>gradle-task<TAB>staged-apk-name
 matonos-settings	rn-apps/settings	expo	Settings.apk
-matonos-flathub	rn-apps/flathub	expo	Flathub.apk
+matonos-software	rn-apps/flathub	expo	Software.apk
 matonos-audio-tone-test	audio/testapp	:app:assembleRelease	AudioToneTest.apk
 # store source plugins (preinstalled, enabled by default)
 matonos-fdroid-source	store-sources/fdroid	assembleRelease	FdroidSource.apk

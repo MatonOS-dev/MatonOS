@@ -7,7 +7,7 @@ S=localhost:5556; a(){ adb -s $S shell "$@"; }
 q=$1; title=$2; out=${MATON_SMOKE_OUT:-/mnt/data/aosp/out/pc-logs/smoke}/$(echo "$title" | tr ' /' '__')
 mkdir -p $out
 dump(){ a uiautomator dump /data/local/tmp/u.xml >/dev/null 2>&1; a cat /data/local/tmp/u.xml; }
-a am force-stop org.matonos.flathub; a am start -n org.matonos.flathub/.MainActivity >/dev/null; sleep 10
+a am force-stop org.matonos.software; a am start -n org.matonos.software/.MainActivity >/dev/null; sleep 10
 eb=$(dump | grep -oE '<node[^>]*EditText[^>]*>' | grep -oE 'bounds="[^"]+"' | head -1 | grep -oE '[0-9]+' | tr '\n' ' '); read ex1 ey1 ex2 ey2 <<<"$eb"; a input tap $(((ex1+ex2)/2)) $(((ey1+ey2)/2)); sleep 1; a input text "$(echo "$q" | sed 's/ /%s/g')"; a input keyevent 66; sleep 8
 x=$(dump)
 # The Install button on the same row as the title: the first "Install" whose top is within 40px of the title's top.

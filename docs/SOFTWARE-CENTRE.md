@@ -5,6 +5,10 @@
 > in the Linux subsystem). See rn-apps/flathub/README.md. Text below that
 > describes one combined catalogue predates the plugins.
 
+The shipped app is named **Software Center** and its Android package is
+`org.matonos.software`. Its Gradle project stays at `rn-apps/flathub` to keep
+the existing submodule path stable; the APK artifact is `Software.apk`.
+
 The Software Center is the shipped Expo app in `rn-apps/flathub`. It presents
 two Sources in one catalogue: F-Droid APKs and Flathub Flatpaks. Search results
 carry a source badge; Installed, Updates, and operation progress are shared.
@@ -55,7 +59,7 @@ Updates, source badges, and progress UI.
 The native host tests are run with:
 
 ```sh
-rn-apps/flathub/modules/matonos-flathub/android/test-host.sh
+rn-apps/flathub/modules/matonos-software/android/test-host.sh
 ```
 
 They cover signed and damaged JARs, a wrong repository signer, an index hash
@@ -68,7 +72,7 @@ cd rn-apps/flathub
 npm run typecheck
 npm run lint
 cd ../..
-MATON_AOSP_ROOT=/mnt/data/aosp MATON_APPS_ONLY=matonos-flathub tools/build-apps.sh
+MATON_AOSP_ROOT=/mnt/data/aosp MATON_APPS_ONLY=matonos-software tools/build-apps.sh
 ```
 
 On a freshly built image, verify the built-in repository, search across both

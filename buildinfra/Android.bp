@@ -50,17 +50,17 @@ android_app_import {
 }
 
 android_app_import {
-    name: "MatonOSFlathub",
+    name: "MatonOSSoftware",
     optional_uses_libs: [
         "androidx.window.extensions",
         "androidx.window.sidecar",
     ],
-    apk: "apps-built/Flathub.apk",
+    apk: "apps-built/Software.apk",
     system_ext_specific: true,
     privileged: true,
     // Keep the APK byte-for-byte so the package retains its own app key.
     preprocessed: true,
-    required: ["privapp-permissions-org.matonos.flathub"],
+    required: ["privapp-permissions-org.matonos.software"],
 }
 
 // Store source plugin (buildinfra/apps/apps.list); unprivileged, own key.
@@ -80,8 +80,8 @@ prebuilt_etc {
 }
 
 prebuilt_etc {
-    name: "privapp-permissions-org.matonos.flathub",
-    src: "privapp-permissions/privapp-permissions-org.matonos.flathub.xml",
+    name: "privapp-permissions-org.matonos.software",
+    src: "privapp-permissions/privapp-permissions-org.matonos.software.xml",
     filename_from_src: true,
     sub_dir: "permissions",
     system_ext_specific: true,
