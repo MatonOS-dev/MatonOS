@@ -114,19 +114,30 @@ index 495bbdec7..dc54c9873 100644
                          Fstab::iterator* end = nullptr);
  
 diff --git a/init/first_stage_mount_android.cpp b/init/first_stage_mount_android.cpp
-index 09222de69..769661c36 100644
+index 09222de69..27bcb2c01 100644
 --- a/init/first_stage_mount_android.cpp
 +++ b/init/first_stage_mount_android.cpp
-@@ -16,6 +16,8 @@
+@@ -16,10 +16,19 @@
  
  #include "first_stage_mount_android.h"
  
++#include <linux/fs.h>
++#include <sys/ioctl.h>
 +#include <unistd.h>
 +
++#include <chrono>
++
++#include <android-base/file.h>
  #include <android-base/strings.h>
++#include <android-base/unique_fd.h>
  #include <com_android_apex_flags.h>
  #include <fs_mgr.h>
-@@ -109,12 +111,31 @@ bool FirstStageMountAndroid::DoCreateDevices() {
+ #include <fs_mgr_overlayfs.h>
++#include <libdm/dm.h>
+ #include <libfiemap/image_manager.h>
+ #include <libgsi/libgsi.h>
+ #include "snapuserd_transition.h"
+@@ -109,12 +118,59 @@ bool FirstStageMountAndroid::DoCreateDevices() {
          }
      }
  
@@ -136,7 +147,10 @@ index 09222de69..769661c36 100644
 +    if (IsDmLinearEnabled() && super_path_.empty()) {
 +        auto image_store = GetEntryForMountPoint(&fstab_, "/maton_system");
 +        auto it = image_store ? fstab_.begin() + (image_store - fstab_.data()) : fstab_.end();
-+        if (it == fstab_.end() || !MountPartition(it, true)) {
++        // Mount the store through a dm-linear node: a mounted raw partition is
++        // held exclusively, so the images' dm-linear tables over it would fail
++        // with EBUSY. dm devices share their claim on the partition.
++        if (it == fstab_.end() || !WrapImageStore(&*it) || !MountPartition(it, true)) {
 +            LOG(ERROR) << "Could not mount maton_system for file-backed partitions";
 +            return false;
 +        }
@@ -147,6 +161,31 @@ index 09222de69..769661c36 100644
      return true;
  }
  
++bool FirstStageMountAndroid::WrapImageStore(FstabEntry* entry) {
++    std::string partition;
++    if (!android::base::Realpath(entry->blk_device, &partition)) {
++        PLOG(ERROR) << "realpath failed: " << entry->blk_device;
++        return false;
++    }
++    android::base::unique_fd fd(open(partition.c_str(), O_RDONLY | O_CLOEXEC));
++    uint64_t size = 0;
++    if (fd < 0 || ioctl(fd.get(), BLKGETSIZE64, &size) != 0 || size < 512) {
++        PLOG(ERROR) << "Could not size image store " << partition;
++        return false;
++    }
++    android::dm::DmTable table;
++    table.Emplace<android::dm::DmTargetLinear>(0, size / 512, partition, 0);
++    std::string path;
++    auto& dm = android::dm::DeviceMapper::Instance();
++    if (!dm.CreateDevice("maton_system", table, &path, std::chrono::milliseconds::zero()) ||
++        !block_dev_init_.InitDmDevice(path)) {
++        LOG(ERROR) << "Could not create dm node for image store " << partition;
++        return false;
++    }
++    entry->blk_device = path;
++    return true;
++}
++
  void FirstStageMountAndroid::GetExtraBlockDevices(std::set<std::string>* devices) {
 +    if (IsDmLinearEnabled() && !HasBootDevicePartition(super_partition_name_)) {
 +        auto image_store = GetEntryForMountPoint(&fstab_, "/maton_system");
@@ -158,7 +197,7 @@ index 09222de69..769661c36 100644
      if constexpr (com::android::apex::flags::mount_before_data()) {
          // Even before /data is mounted, apexd needs to access the block device backing /data. Let's
          // initialize "userdata" so that apexd can avoid waiting for the symlink
-@@ -148,9 +169,25 @@ bool FirstStageMountAndroid::CreateLogicalPartitions() {
+@@ -148,9 +204,25 @@ bool FirstStageMountAndroid::CreateLogicalPartitions() {
          return true;
      }
      if (super_path_.empty()) {
@@ -187,3 +226,15 @@ index 09222de69..769661c36 100644
      }
  
      if (!IsMicrodroid() && SnapshotManager::IsSnapshotManagerNeeded()) {
+diff --git a/init/first_stage_mount_android.h b/init/first_stage_mount_android.h
+index 13635bd67..fbc042756 100644
+--- a/init/first_stage_mount_android.h
++++ b/init/first_stage_mount_android.h
+@@ -37,6 +37,7 @@ class FirstStageMountAndroid final : public FirstStageMount {
+     void SaveRamdiskPathToSnapuserd() override;
+     bool AllowVerityCheckAtMostOnce() override { return dsu_not_on_userdata_; }
+     void GetExtraBlockDevices(std::set<std::string>* devices) override;
++    bool WrapImageStore(android::fs_mgr::FstabEntry* entry);
+ 
+   private:
+     bool CreateLogicalPartitions();
