@@ -429,6 +429,16 @@ function LiveOnly({ live, children }: { live: boolean; children: ReactNode }) {
   return live ? <>{children}</> : null;
 }
 
+function InstalledOnly({
+  live,
+  children,
+}: {
+  live: boolean;
+  children: ReactNode;
+}) {
+  return live ? null : <>{children}</>;
+}
+
 export function NavRail({ live }: { live: boolean }) {
   const colors = useMaterialColors();
   const pathname = usePathname();
@@ -452,10 +462,12 @@ export function NavRail({ live }: { live: boolean }) {
         <LiveOnly live={live}>
           <NavItem section="install" selected={current === "install"} />
         </LiveOnly>
-        <NavItem
-          section="system-update"
-          selected={current === "system-update"}
-        />
+        <InstalledOnly live={live}>
+          <NavItem
+            section="system-update"
+            selected={current === "system-update"}
+          />
+        </InstalledOnly>
         <NavItem section="sleep" selected={current === "sleep"} />
         <NavItem section="hardware" selected={current === "hardware"} />
         <NavItem section="developer" selected={current === "developer"} />

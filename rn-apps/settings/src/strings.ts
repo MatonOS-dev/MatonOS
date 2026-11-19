@@ -17,6 +17,7 @@ const en = {
   installSummary: "Install MatonOS to a separate drive",
   systemUpdateSummary: "Check for and install MatonOS updates",
   installLiveOnly: "Installation is available only in the live image.",
+  updateInstalledOnly: "Updates are available after MatonOS is installed.",
   unknown: "Unknown",
   unavailable: "Unavailable",
   connected: "Connected",

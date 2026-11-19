@@ -69,7 +69,29 @@ function UpdateProgressCard({ progress }: { progress: UpdateProgress }) {
   );
 }
 
+// The live image is not updated in place: install first, then update.
 export function SystemUpdateSection() {
+  const { live } = useMatonSettings();
+  if (live) return <LiveImageNotice />;
+  return <SystemUpdateContent />;
+}
+
+function LiveImageNotice() {
+  const colors = useMaterialColors();
+  return (
+    <>
+      <SectionHeader
+        title={copy.systemUpdate}
+        summary={copy.systemUpdateSummary}
+      />
+      <Text style={{ typography: "bodyMedium" }} color={colors.onSurfaceVariant}>
+        {copy.updateInstalledOnly}
+      </Text>
+    </>
+  );
+}
+
+function SystemUpdateContent() {
   const colors = useMaterialColors();
   const { system } = useMatonSettings();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
