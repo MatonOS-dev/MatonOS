@@ -87,7 +87,8 @@ allow init dm_device:blk_file { open read getattr ioctl };
 allow init labeledfs:filesystem { mount unmount getattr };
 allow matonos_driver_helper matonos_install_block_device:blk_file ioctl;
 allow matonos_driver_helper dm_device:blk_file rw_file_perms;
-allow matonos_driver dm_device:blk_file r_file_perms;
+# Image population writes the mapped install images (maton-img-*).
+allow matonos_driver dm_device:blk_file rw_file_perms;
 allow matonos_driver_helper self:capability sys_admin;
 typeattribute matonos_driver_helper vendor_executes_system_violators;
 
