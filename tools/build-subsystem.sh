@@ -19,7 +19,17 @@ for f in "$KEY_DIR/matonos-linux-subsystem.jks" "$KEY_DIR/matonos-linux-subsyste
   [[ -s $f ]] || die "missing subsystem signing input: $f"
 done
 
-info "Linux subsystem ($REPO @ $(git -C "$REPO" rev-parse --short HEAD))"
+head=$(git -C "$REPO" rev-parse HEAD)
+info "Linux subsystem ($REPO @ ${head:0:7})"
+# Skip the build (and its test suite) when the staged APK is from this exact,
+# clean commit; MATON_SUBSYSTEM_FORCE=1 rebuilds anyway.
+if [[ -z ${MATON_SUBSYSTEM_FORCE:-} && -s $DEST/SOURCE && -s $DEST/MatonLinuxSubsystemBootstrap.apk ]] &&
+   [[ -z $(git -C "$REPO" status --porcelain) ]] &&
+   grep -qx "commit: $head" "$DEST/SOURCE" &&
+   grep -qF "$(cd "$DEST" && sha256sum MatonLinuxSubsystemBootstrap.apk)" "$DEST/SOURCE"; then
+  info "Skipping: staged APK already built from clean $head"
+  exit 0
+fi
 MATON_SUBSYSTEM_OUT=$OUT \
   MATON_SIGNING_STORE_FILE=$KEY_DIR/matonos-linux-subsystem.jks \
   MATON_SIGNING_PASSWORD_FILE=$KEY_DIR/matonos-linux-subsystem.pass \
@@ -39,7 +49,7 @@ cat > "$DEST/SOURCE" <<EOF
 v3.5 signed subsystem bootstrap APK (versionCode 1; embeds the real APK, installs it over itself on first boot)
 Built by tools/build-subsystem.sh; not committed.
 repo: https://github.com/MatonOS-dev/linux-subsystem-app
-commit: $(git -C "$REPO" rev-parse HEAD)$(git -C "$REPO" diff --quiet HEAD || echo ' (dirty)')
+commit: $head$(git -C "$REPO" diff --quiet HEAD || echo ' (dirty)')
 flatpak-repo: https://github.com/MatonOS-dev/flatpak
 flatpak-commit: $flatpak_commit
 certificate-sha256: $cert

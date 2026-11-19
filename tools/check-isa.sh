@@ -7,9 +7,14 @@ set -Eeuo pipefail
 AOSP=$(cd "$(dirname "$(readlink -f "$0")")/../../../.." && pwd)
 OBJDUMP=${MATON_LLVM_OBJDUMP:-$(find "$AOSP/prebuilts/clang/host/linux-x86" -path '*/bin/llvm-objdump' -type f | sort -V | tail -n1)}
 [[ -x $OBJDUMP ]] || { echo "llvm-objdump not found: $OBJDUMP" >&2; exit 2; }
-python3 - "$OBJDUMP" "$@" <<'PY'
-import os, re, subprocess, sys, tempfile, zipfile
-objdump, *args = sys.argv[1:]
+# Verdicts are cached per file content + script version, so unchanged ELFs
+# are not disassembled again; MATON_ISA_CACHE moves the cache.
+CACHE=${MATON_ISA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/matonos/isa-audit}
+SCRIPT_SHA=$(sha256sum "$(readlink -f "$0")" | cut -c1-16)
+python3 - "$OBJDUMP" "$CACHE" "$SCRIPT_SHA" "$@" <<'PY'
+import hashlib, json, os, re, subprocess, sys, tempfile, zipfile
+from concurrent.futures import ProcessPoolExecutor
+objdump, cache_dir, script_sha, *args = sys.argv[1:]
 symbol_dirs = []
 product_out = None
 inputs = []
@@ -170,11 +175,17 @@ DISPATCH = [
      'PipeWire audioconvert resample-native.c/fmt-ops.c selects AVX2 functions through SPA_CPU_FLAG_AVX2 (and FMA3 where required).'),
 ]
 
+def is_x86_elf(path):
+    # e_machine at offset 18 (little-endian ELF): 62 = x86-64, 3 = i386.
+    try:
+        with open(path,'rb') as f: head=f.read(20)
+    except OSError: return False
+    return len(head)==20 and head[:4]==b'\x7fELF' and head[5]==1 and head[18:20] in (b'\x3e\x00', b'\x03\x00')
+
+jobs=[]
 def run_file(path, label, symbol_hint=None):
     global scanned
-    if not is_elf(path): return
-    info=subprocess.run([objdump,'-f',path],text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
-    if not any(machine in info.stdout for machine in ('elf64-x86-64', 'elf32-i386')): return
+    if not is_x86_elf(path): return
     key=(os.path.realpath(path),label)
     if key in seen: return
     seen.add(key); scanned+=1
@@ -195,21 +206,42 @@ def run_file(path, label, symbol_hint=None):
     if re.search(r'/apex/com\.android\.art\.(?:debug|testing)/bin/dex2oatd?(?:32|64)$', normalized):
         trusted.append(f'TEST-ONLY-EXCLUDE {label}')
         return
+    jobs.append((path, label, symbol_hint))
+
+def file_sha(path):
+    h=hashlib.sha256()
+    with open(path,'rb') as f:
+        for block in iter(lambda: f.read(1<<20), b''): h.update(block)
+    return h.hexdigest()
+
+def disassemble(job):
+    """Returns (allowed dispatch sites, failure rows) for one ELF."""
+    path,label,symbol_hint=job
     sym=symbol_companion(path, symbol_hint)
     dis_path=sym or path
+    key=hashlib.sha256('\0'.join((script_sha,label,file_sha(path),file_sha(dis_path))).encode()).hexdigest()
+    cached=os.path.join(cache_dir,key[:2],key)
+    try:
+        with open(cached) as f: entry=json.load(f)
+        return entry['allowed'], entry['failures']
+    except (OSError,ValueError,KeyError): pass
     dis=subprocess.run([objdump,'-d','--demangle','--no-show-raw-insn',dis_path],text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     if dis.returncode:
-        failures.append(f'{label}: cannot disassemble: {dis.stderr.strip()}'); return
+        return 0, [f'{label}: cannot disassemble: {dis.stderr.strip()}']  # not cached
+    allowed_sites=0; rows=[]
     func='<unknown>'
     for line in dis.stdout.splitlines():
         m=re.match(r'^([0-9a-f]+) <(.+)>:$',line.strip())
         if m: func=m.group(2); continue
         m=inst.match(line)
         if m and any(p.match(m.group(1).lower()) for p in patterns):
-            allowed=next((why for lib_rx,func_rx,why in DISPATCH if lib_rx.search(label) and func_rx.search(func)),None)
-            row=f'{label}: {func}: {m.group(1)} {m.group(2)}'
-            if allowed: dispatched.append(f'DISPATCH-ALLOW {row} [{allowed}]')
-            else: failures.append(row)
+            if any(lib_rx.search(label) and func_rx.search(func) for lib_rx,func_rx,_ in DISPATCH): allowed_sites+=1
+            else: rows.append(f'{label}: {func}: {m.group(1)} {m.group(2)}')
+    os.makedirs(os.path.dirname(cached),exist_ok=True)
+    tmp=f'{cached}.{os.getpid()}'
+    with open(tmp,'w') as f: json.dump({'label':label,'allowed':allowed_sites,'failures':rows},f)
+    os.replace(tmp,cached)
+    return allowed_sites, rows
 
 def visit(path):
     if os.path.isdir(path):
@@ -224,15 +256,25 @@ def visit(path):
                                for abi in ('x86_64', 'x86')): continue
                     data=z.read(name)
                     if data[:4]!=b'\x7fELF': continue
-                    with tempfile.NamedTemporaryFile() as f:
-                        f.write(data); f.flush(); run_file(f.name, f'{path}!/{name}', os.path.basename(name))
+                    # Kept until the pool has run (workdir is removed at exit).
+                    out=os.path.join(workdir, f'{len(jobs)}-{os.path.basename(name)}')
+                    with open(out,'wb') as f: f.write(data)
+                    run_file(out, f'{path}!/{name}', os.path.basename(name))
         except (OSError,zipfile.BadZipFile) as e: failures.append(f'{path}: APK read failed: {e}')
     else: run_file(path,path)
 
-for p in inputs:
-    if not os.path.exists(p): failures.append(f'{p}: missing input')
-    else: visit(p)
-print(f'ISA audit: {scanned} x86 ELF objects scanned; runtime-dispatch allowlist: {len(dispatched)} instruction sites in exact symbols')
+with tempfile.TemporaryDirectory() as workdir:
+    for p in inputs:
+        if not os.path.exists(p): failures.append(f'{p}: missing input')
+        else: visit(p)
+    with ProcessPoolExecutor(os.cpu_count()) as pool:
+        results=list(pool.map(disassemble, jobs, chunksize=4))
+allowed_total=0
+for (path,label,_),(allowed,rows) in zip(jobs,results):
+    allowed_total+=allowed
+    if allowed: dispatched.append(f'DISPATCH-ALLOW {label}: {allowed} runtime-dispatched sites')
+    failures.extend(rows)
+print(f'ISA audit: {scanned} x86 ELF objects scanned; runtime-dispatch allowlist: {allowed_total} instruction sites in exact symbols')
 for f in dispatched: print(f)
 for f in trusted: print(f)
 if failures:

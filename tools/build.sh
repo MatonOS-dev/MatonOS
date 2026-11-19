@@ -55,7 +55,7 @@ if [[ -z ${MATON_BUILD_IN_SCOPE:-} && -z ${MATON_BUILD_NO_SCOPE:-} ]] &&
 fi
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
-info() { echo; echo "######## $*"; }
+info() { echo; echo "######## $* [$(date +%T)]"; }
 
 TOOLS=$(dirname "$(readlink -f "$0")")
 DEVICE_DIR=$(dirname "$TOOLS")
