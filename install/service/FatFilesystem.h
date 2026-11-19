@@ -14,6 +14,10 @@ class FatVolume {
     FatVolume& operator=(const FatVolume&) = delete;
     FatVolume(FatVolume&& other) noexcept;
     FatVolume& operator=(FatVolume&& other) noexcept;
+    // Creates an empty FAT32 volume (one root cluster, optional label) on a
+    // block device or file, replacing whatever was there.
+    static bool Format(const std::string& path,const std::string& label,std::string* error,
+                       uint64_t expected_disk_sequence=0);
     static bool Open(const std::string& path,bool writable,FatVolume* out,std::string* error,
                      uint64_t expected_disk_sequence=0);
     bool ReadFile(const std::string& path,std::vector<uint8_t>* contents,std::string* error);

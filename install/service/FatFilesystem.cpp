@@ -12,6 +12,7 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <random>
 #include <utility>
 
 namespace matonos::install {
@@ -38,6 +39,64 @@ FatVolume& FatVolume::operator=(FatVolume&& other) noexcept {
     if(this==&other)return *this;
     if(fd_>=0)CLOSE_FD(fd_);
     fd_=other.fd_;other.fd_=-1;writable_=other.writable_;bytes_per_sector_=other.bytes_per_sector_;sectors_per_cluster_=other.sectors_per_cluster_;reserved_sectors_=other.reserved_sectors_;fat_count_=other.fat_count_;sectors_per_fat_=other.sectors_per_fat_;root_cluster_=other.root_cluster_;total_sectors_=other.total_sectors_;fat_offset_=other.fat_offset_;data_offset_=other.data_offset_;cluster_size_=other.cluster_size_;cluster_count_=other.cluster_count_;next_free_cluster_=other.next_free_cluster_;return *this;
+}
+
+bool FatVolume::Format(const std::string& path,const std::string& label,std::string* error,uint64_t expected_disk_sequence){
+    std::string volume_label=Upper(label);
+    if(volume_label.size()>11){*error="FAT volume label is longer than 11 characters.";return false;}
+    for(char ch:volume_label)if(ch<0x20||ch>0x7e||std::strchr("\"*+,./:;<=>?[\\]|",ch)){*error="FAT volume label has an invalid character.";return false;}
+    const int fd=open(path.c_str(),O_RDWR|O_CLOEXEC|O_NOFOLLOW);
+    if(fd<0){*error="Unable to open the partition to format: "+std::string(std::strerror(errno));return false;}
+    auto fail=[&](const std::string& message){CLOSE_FD(fd);*error=message;return false;};
+    struct stat st{};if(fstat(fd,&st)!=0)return fail("Unable to inspect the partition to format.");
+    uint64_t device_bytes=0;uint32_t bytes_per_sector=512;
+    if(S_ISBLK(st.st_mode)){
+        if(expected_disk_sequence){uint64_t seq=0;if(ioctl(fd,BLKGETDISKSEQ,&seq)!=0||seq!=expected_disk_sequence)return fail("Selected disk changed before formatting its FAT partition.");}
+        int logical=0;if(ioctl(fd,BLKGETSIZE64,&device_bytes)!=0||ioctl(fd,BLKSSZGET,&logical)!=0)return fail("Unable to read the partition geometry.");
+        bytes_per_sector=static_cast<uint32_t>(logical);
+    } else if(S_ISREG(st.st_mode)) device_bytes=static_cast<uint64_t>(st.st_size);
+    else return fail("FAT format target is not a block device.");
+    if(bytes_per_sector<512||bytes_per_sector>4096||(bytes_per_sector&(bytes_per_sector-1)))return fail("Unsupported logical sector size for FAT32.");
+    const uint64_t sectors=device_bytes/bytes_per_sector;
+    if(sectors>UINT32_MAX)return fail("Partition is too large for FAT32.");
+    constexpr uint32_t kReserved=32,kFats=2;
+    // Largest cluster up to 4 KiB that still gives a valid FAT32 cluster count.
+    uint32_t sectors_per_cluster=0,sectors_per_fat=0;uint64_t clusters=0;
+    for(uint32_t spc=std::max<uint32_t>(1,4096/bytes_per_sector);spc>=1;spc/=2){
+        uint32_t spf=1;
+        for(int i=0;i<8;++i){
+            if(sectors<=kReserved+uint64_t(kFats)*spf)break;
+            const uint64_t c=(sectors-kReserved-uint64_t(kFats)*spf)/spc;
+            const uint64_t need=((c+2)*4+bytes_per_sector-1)/bytes_per_sector;
+            if(need<=spf){clusters=c;break;}
+            spf=static_cast<uint32_t>(need);clusters=0;
+        }
+        if(clusters>=65525&&clusters<=kMaxFat32Clusters){sectors_per_cluster=spc;sectors_per_fat=spf;break;}
+        clusters=0;if(spc==1)break;
+    }
+    if(!sectors_per_cluster)return fail("Partition size does not fit a FAT32 volume.");
+    const uint64_t cluster_bytes=uint64_t(bytes_per_sector)*sectors_per_cluster;
+    const uint64_t data_offset=(kReserved+uint64_t(kFats)*sectors_per_fat)*bytes_per_sector;
+    // Clear reserved sectors, both FATs and the root directory cluster.
+    {const std::vector<uint8_t> zero(1<<20,0);const uint64_t end=data_offset+cluster_bytes;
+     for(uint64_t off=0;off<end;off+=zero.size())if(!WriteAt(fd,zero.data(),static_cast<size_t>(std::min<uint64_t>(zero.size(),end-off)),off))return fail("Unable to clear the FAT metadata area.");}
+    std::vector<uint8_t> boot(bytes_per_sector,0),info(bytes_per_sector,0);
+    uint8_t* b=boot.data();b[0]=0xeb;b[1]=0x58;b[2]=0x90;std::memcpy(b+3,"MATONOS ",8);
+    P16(b+11,static_cast<uint16_t>(bytes_per_sector));b[13]=static_cast<uint8_t>(sectors_per_cluster);P16(b+14,kReserved);b[16]=kFats;
+    b[21]=0xf8;P16(b+24,63);P16(b+26,255);P32(b+32,static_cast<uint32_t>(sectors));P32(b+36,sectors_per_fat);
+    P32(b+44,2);P16(b+48,1);P16(b+50,6);b[64]=0x80;b[66]=0x29;
+    std::random_device random;P32(b+67,random());
+    std::string padded=volume_label.empty()?"NO NAME":volume_label;padded.resize(11,' ');std::memcpy(b+71,padded.data(),11);
+    std::memcpy(b+82,"FAT32   ",8);b[510]=0x55;b[511]=0xaa;
+    uint8_t* f=info.data();P32(f,0x41615252);P32(f+484,0x61417272);// Free-count and next-free hints stay "unknown": later FatVolume writes do not maintain them.
+    P32(f+488,0xffffffff);P32(f+492,0xffffffff);P32(f+508,0xaa550000);
+    for(uint32_t base:{0u,6u})
+        if(!WriteAt(fd,boot.data(),boot.size(),uint64_t(base)*bytes_per_sector)||!WriteAt(fd,info.data(),info.size(),uint64_t(base+1)*bytes_per_sector))return fail("Unable to write the FAT32 boot sectors.");
+    uint8_t fat[12];P32(fat,0x0ffffff8);P32(fat+4,0x0fffffff);P32(fat+8,kEoc);
+    for(uint32_t i=0;i<kFats;++i)if(!WriteAt(fd,fat,sizeof(fat),(kReserved+uint64_t(i)*sectors_per_fat)*bytes_per_sector))return fail("Unable to write the FAT32 allocation tables.");
+    if(!volume_label.empty()){uint8_t entry[32]={};std::memcpy(entry,padded.data(),11);entry[11]=0x08;if(!WriteAt(fd,entry,sizeof(entry),data_offset))return fail("Unable to write the FAT32 volume label.");}
+    if(fsync(fd)!=0)return fail("Unable to flush the new FAT32 volume.");
+    CLOSE_FD(fd);return true;
 }
 
 bool FatVolume::Open(const std::string& path,bool writable,FatVolume* out,std::string* error,uint64_t expected_disk_sequence){

@@ -481,7 +481,7 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
             const auto path=PartitionPath(target,op.target); if(path.empty()){*error="Format target disappeared after safety validation.";return false;}
             const auto* part=Find(target,op.target);if(!part||part->logical){*error="Filesystem format is supported only on a physical GPT partition.";return false;}
             if(op.filesystem==Filesystem::kExt4) return Run({"/system/bin/mke2fs","-t","ext4","-F","-L",op.label,path},target.disk_sequence,error);
-            if(op.filesystem==Filesystem::kVfat) return Run({"/system/bin/newfs_msdos","-F","32","-c","8","-L",op.label,path},target.disk_sequence,error);
+            if(op.filesystem==Filesystem::kVfat) return FatVolume::Format(path,op.label,error,target.disk_sequence);
             if(op.filesystem==Filesystem::kF2fs) return Run({"/system/bin/make_f2fs","-f","-g","android","-O","encrypt,quota,verity","-l",op.label,path},target.disk_sequence,error);
             *error="Unknown filesystem in format operation.";return false;
         } else if constexpr(std::is_same_v<T,CopyPartition>) {

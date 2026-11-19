@@ -195,7 +195,7 @@ allow matonos_driver block_device:dir search;
 # misc carries its own by-name label, unlike the ESP and disk nodes.
 allow matonos_driver misc_block_device:blk_file rw_file_perms;
 # BLKGETDISKSEQ (0x1280): the ESP writer checks the disk identity before writing.
-# Block ioctls (BLK* = type 0x12, HDIO_GETGEO 0x0301) used by sgdisk, mke2fs, newfs_msdos, fsck.
+# Block ioctls (BLK* = type 0x12, HDIO_GETGEO 0x0301) used by sgdisk, mke2fs, fsck and the FAT32 formatter.
 allowxperm { matonos_driver matonos_driver_helper } matonos_install_block_device:blk_file ioctl { 0x0301 0x1200-0x12ff };
 hal_server_domain(matonos_driver, hal_bootctl)
 get_prop(matonos_driver, exported_default_prop)
@@ -337,7 +337,7 @@ allow init matonos_addon_mount_file:dir mounton;
 # ro.boot.matonos.live). The daemon enumerates /dev/block and reads super/swap
 # nodes to refuse in-use disks; its re-exec'd
 # helper inherits the daemon's fds and runs the fixed system tools on the
-# validated target fd (sgdisk, mke2fs, newfs_msdos, e2fsck).
+# validated target fd (sgdisk, mke2fs, e2fsck).
 allow init matonos_driver:process2 nosuid_transition;
 allow matonos_driver matonos_driver_helper:process2 nosuid_transition;
 allow matonos_driver block_device:dir r_dir_perms;
