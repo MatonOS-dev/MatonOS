@@ -25,6 +25,6 @@ bool EncodeLoadOption(const EfiHardDrive& hd, const std::string& description, co
 // Creates or reuses a Boot#### variable for `hd` in `efivars_dir` and puts it
 // first in BootOrder. Returns false with `error` set; callers treat a failure
 // as non-fatal because the ESP fallback loader still boots.
-bool RegisterBootEntry(const std::string& efivars_dir, const EfiHardDrive& hd, std::string* error);
+bool AddEfiBootEntry(const std::string& efivars_dir, const EfiHardDrive& hd, std::string* error);
 
 }  // namespace matonos::install

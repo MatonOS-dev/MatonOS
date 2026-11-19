@@ -524,7 +524,7 @@ int WriteEfiBootEntry(uint64_t expected,const char* esp,const char* part_guid) {
         __android_log_print(ANDROID_LOG_ERROR,kTag,"storage helper: efivarfs missing (%s); no NVRAM boot entry",strerror(errno));
         return 0;
     }
-    if(!mi::RegisterBootEntry("/sys/firmware/efi/efivars",hd,&error)) {
+    if(!mi::AddEfiBootEntry("/sys/firmware/efi/efivars",hd,&error)) {
         __android_log_print(ANDROID_LOG_ERROR,kTag,"storage helper: NVRAM boot entry not written: %s; ESP fallback loader still boots",error.c_str());
         return 0;
     }

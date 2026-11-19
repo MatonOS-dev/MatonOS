@@ -123,7 +123,7 @@ bool EncodeLoadOption(const EfiHardDrive& hd, const std::string& description, co
     return true;
 }
 
-bool RegisterBootEntry(const std::string& efivars_dir, const EfiHardDrive& hd, std::string* error) {
+bool AddEfiBootEntry(const std::string& efivars_dir, const EfiHardDrive& hd, std::string* error) {
     std::vector<uint8_t> option;
     if (!EncodeLoadOption(hd, kEfiEntryDescription, kEfiLoaderPath, &option, error)) return false;
     const std::string suffix = std::string("-") + kGlobalGuid;
