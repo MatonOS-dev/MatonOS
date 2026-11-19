@@ -41,7 +41,7 @@ index bbd70bc72..e000beffd 100644
      bool InitDmUser(const std::string& name);
      bool InitDevices(std::set<std::string> devices);
 diff --git a/init/first_stage_mount.cpp b/init/first_stage_mount.cpp
-index 8a00aa41d..4c1d61d95 100644
+index 8a00aa41d..4a8141147 100644
 --- a/init/first_stage_mount.cpp
 +++ b/init/first_stage_mount.cpp
 @@ -123,6 +123,7 @@ bool FirstStageMount::InitDevices() {
@@ -76,6 +76,31 @@ index 8a00aa41d..4c1d61d95 100644
  }
  
  // Creates devices with uevent->partition_name matching ones in the given set.
+@@ -538,6 +545,24 @@ bool FirstStageMount::SetUpDmVerity(FstabEntry* fstab_entry) {
+ bool FirstStageMount::InitAvbHandle() {
+     if (avb_handle_) return true;  // Returns true if the handle is already initialized.
+ 
++    // MatonOS keeps vbmeta in a logical partition. libfs_avb falls back to its
++    // dm device, but first stage only creates nodes for mounted entries.
++    const std::string ab_suffix = fs_mgr_get_slot_suffix();
++    for (const auto& partition : vbmeta_partitions_) {
++        for (const auto& entry : fstab_) {
++            if (!entry.fs_mgr_flags.logical ||
++                basename(entry.blk_device.c_str()) != partition + ab_suffix) {
++                continue;
++            }
++            FstabEntry mapped = entry;
++            if (!fs_mgr_update_logical_partition(&mapped) ||
++                !block_dev_init_.InitDmDevice(mapped.blk_device)) {
++                LOG(ERROR) << "Failed to create device for vbmeta partition " << entry.blk_device;
++                return false;
++            }
++        }
++    }
++
+     avb_handle_ = AvbHandle::Open();
+ 
+     if (!avb_handle_) {
 diff --git a/init/first_stage_mount.h b/init/first_stage_mount.h
 index 495bbdec7..dc54c9873 100644
 --- a/init/first_stage_mount.h
