@@ -91,7 +91,7 @@ allow matonos_driver_helper dm_device:blk_file rw_file_perms;
 allow matonos_driver dm_device:blk_file rw_file_perms;
 allow matonos_driver_helper self:capability sys_admin;
 # Drive health: the helper prints SMART JSON on a pipe to the installer.
-allow matonos_driver_helper matonos_driver:fifo_file write;
+allow matonos_driver_helper matonos_driver:fifo_file { getattr write };
 # SATA SMART (SG_IO ATA pass-through) needs CAP_SYS_RAWIO, which platform
 # policy forbids vendor domains on user builds: there SATA shows "unknown".
 userdebug_or_eng(`allow matonos_driver_helper self:capability sys_rawio;')
@@ -205,6 +205,9 @@ allow matonos_driver misc_block_device:blk_file rw_file_perms;
 # BLKGETDISKSEQ (0x1280): the ESP writer checks the disk identity before writing.
 # Block ioctls (BLK* = type 0x12, HDIO_GETGEO 0x0301) used by sgdisk, mke2fs, fsck and the FAT32 formatter.
 allowxperm { matonos_driver matonos_driver_helper } matonos_install_block_device:blk_file ioctl { 0x0301 0x1200-0x12ff };
+# Drive health for the install/repair screens: NVME_IOCTL_ADMIN_CMD (Get Log
+# Page) and SG_IO (ATA SMART pass-through; also needs sys_rawio, userdebug only).
+allowxperm matonos_driver_helper matonos_install_block_device:blk_file ioctl { 0x4e41 0x2285 };
 # mke2fs on the linear image-store dm device queries the same BLK* geometry.
 allowxperm matonos_driver_helper dm_device:blk_file ioctl { 0x1200-0x12ff };
 hal_server_domain(matonos_driver, hal_bootctl)
