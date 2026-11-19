@@ -40,6 +40,8 @@ allowxperm matonos_slot_writer matonos_install_mount_file:file ioctl FS_IOC_FIEM
 allow matonos_slot_writer matonos_image_metadata_file:dir create_dir_perms;
 allow matonos_slot_writer matonos_image_metadata_file:file { create_file_perms rename };
 # libfiemap and libdm map and unmap the inactive slot's images through device-mapper.
+# Device-mapper table ioctls (map/unmap slot images) require CAP_SYS_ADMIN.
+allow matonos_slot_writer self:capability sys_admin;
 allow matonos_slot_writer dm_device:chr_file rw_file_perms;
 allow matonos_slot_writer dm_device:blk_file rw_file_perms;
 allowxperm matonos_slot_writer dm_device:blk_file ioctl BLKGETSIZE64;
@@ -55,6 +57,8 @@ allowxperm matonos_slot_writer matonos_install_block_device:blk_file ioctl { BLK
 # finalize runs /system/bin/bootctl in this domain against the BootControl HAL.
 allow matonos_slot_writer system_file:file execute_no_trans;
 binder_use(matonos_slot_writer)
+# libfs_mgr logs early-boot style messages to kmsg_debug.
+allow matonos_slot_writer kmsg_debug_device:chr_file { open append write };
 hal_client_domain(matonos_slot_writer, hal_bootctl)
 
 # matonos-erofsd (erofsd/): validates requests to mount EROFS images embedded
