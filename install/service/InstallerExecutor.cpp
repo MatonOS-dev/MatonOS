@@ -119,11 +119,27 @@ bool RunFiemap(const std::string& command, const std::string& name, uint64_t siz
     return true;
 }
 
+// ueventd publishes /dev/block/mapper/<name> as a symlink to the dm node.
+// Resolve it once and accept only a /dev/block/dm-N block device, so the
+// O_NOFOLLOW opens below still never follow anything else.
+std::string ResolveDmNode(const std::string& path) {
+    struct stat st{};
+    if(lstat(path.c_str(),&st)!=0)return "";
+    if(!S_ISLNK(st.st_mode))return S_ISBLK(st.st_mode)?path:"";
+    std::error_code ec;const std::string real=fs::canonical(path,ec).string();
+    if(ec||real.rfind("/dev/block/dm-",0)!=0||real.size()==14)return "";
+    for(size_t i=14;i<real.size();++i)if(real[i]<'0'||real[i]>'9')return "";
+    if(stat(real.c_str(),&st)!=0||!S_ISBLK(st.st_mode))return "";
+    return real;
+}
+
 bool CopyToMappedImage(const std::string& source,const std::string& target,uint64_t bytes,
                        ProgressCallback progress,CancelCallback cancelled,std::string* error) {
-    int in=open(source.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
+    const std::string source_node=ResolveDmNode(source),target_node=ResolveDmNode(target);
+    if(source_node.empty()||target_node.empty()){*error="Install image path is not a device-mapper node: "+(source_node.empty()?source:target);return false;}
+    int in=open(source_node.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
     if(in<0){*error="Cannot open approved live image: "+source+": "+strerror(errno);return false;}
-    int out=open(target.c_str(),O_RDWR|O_CLOEXEC|O_NOFOLLOW);
+    int out=open(target_node.c_str(),O_RDWR|O_CLOEXEC|O_NOFOLLOW);
     if(out<0){const int e=errno;CLOSE_FD(in);*error="Cannot open mapped install image: "+target+": "+strerror(e);return false;}
     std::vector<unsigned char> buffer(4*1024*1024);uint64_t done=0;bool ok=true;
     while(done<bytes){
@@ -461,7 +477,9 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
             for(size_t index=0;index<op.images.size()&&ok;++index){
                 if(cancelled&&cancelled()){*error="Image population cancelled between partitions.";ok=false;break;}
                 const auto& image=op.images[index];const std::string source="/dev/block/mapper/"+image.live_partition_name;
-                int source_fd=open(source.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
+                const std::string source_node=ResolveDmNode(source);
+                int source_fd=source_node.empty()?-1:open(source_node.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
+                if(source_node.empty())errno=ENODEV;
                 if(source_fd<0){*error="Approved live partition unavailable: "+source+": "+strerror(errno);ok=false;break;}
                 const uint64_t size=BlockBytes(source_fd);CLOSE_FD(source_fd);
                 if(size==0){*error="Cannot determine the live partition image size: "+source;ok=false;break;}

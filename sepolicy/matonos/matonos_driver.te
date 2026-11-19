@@ -181,6 +181,8 @@ allow kernel matonos_addon_firmware_overlay:file r_file_perms;
 # install: the validated disk-installer operations use a dedicated device
 # type; the daemon remains in the fixed MatonOS driver domain.
 allow matonos_driver proc:lnk_file { getattr read };
+# Resolve /dev/block/mapper/<name> symlinks to their dm nodes.
+allow matonos_driver block_device:lnk_file { getattr read };
 r_dir_file(matonos_driver, proc)
 allow matonos_driver proc_cmdline:file r_file_perms;
 allow matonos_driver proc_swaps:file r_file_perms;
