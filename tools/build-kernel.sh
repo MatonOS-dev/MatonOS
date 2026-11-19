@@ -152,29 +152,44 @@ else
   kernel_patch_dir="$DEVICE_DIR/kernel/patches/mainline"
 fi
 kernel_patches=("$DEVICE_DIR"/kernel/patches/*.patch "$kernel_patch_dir"/*.patch)
-declare -A applied_kernel_patches=()
-# Normalize existing patches in reverse order so later patches that edit
-# nearby lines are removed before checking their predecessors.
-for ((i=${#kernel_patches[@]} - 1; i >= 0; i--)); do
-  patch=${kernel_patches[$i]}
-  if git -C "$LINUX" apply --reverse --check "$patch" 2>/dev/null; then
-    git -C "$LINUX" apply --reverse "$patch"
-    applied_kernel_patches[$patch]=1
-    info "removed previously applied kernel patch: $(basename "$patch")"
-  fi
-done
-for patch in "${kernel_patches[@]}"; do
-  if [[ ${applied_kernel_patches[$patch]:-0} == 1 ]]; then
-    : # It was reversed above; reapply all patches in their declared order.
-  fi
-  if git -C "$LINUX" apply --check "$patch" 2>/dev/null; then
-    git -C "$LINUX" apply "$patch"
-    info "applied kernel patch: $(basename "$patch")"
-  else
-    die "kernel patch does not apply: $(basename "$patch")"
-  fi
-done
 shopt -u nullglob
+# Patches become commits on the matonos-build branch, so the tree stays clean
+# and the kernel version carries no "-dirty". The commits are built in a
+# temporary index with fixed identity and dates: the same base and patches
+# always give the same commit, and an up-to-date tree is not touched at all.
+# refs/matonos/kernel-base records the source commit the branch sits on; check
+# out another source branch to move the base.
+build_branch=matonos-build
+[[ -d $LINUX/.git ]] || die "kernel source must be a git checkout: $LINUX"
+git -C "$LINUX" diff-index --quiet HEAD -- ||
+  die "kernel source has uncommitted changes; patches are applied as commits now ($LINUX)"
+if [[ $(git -C "$LINUX" symbolic-ref -q --short HEAD) == "$build_branch" ]]; then
+  kernel_base=$(git -C "$LINUX" rev-parse --verify -q refs/matonos/kernel-base) ||
+    die "on $build_branch without refs/matonos/kernel-base; check out the source branch"
+else
+  kernel_base=$(git -C "$LINUX" rev-parse HEAD)
+  git -C "$LINUX" update-ref refs/matonos/kernel-base "$kernel_base"
+fi
+patch_index=$(mktemp)
+trap 'rm -f "$patch_index"' EXIT
+export GIT_AUTHOR_NAME=MatonOS GIT_AUTHOR_EMAIL=noreply@matonos GIT_COMMITTER_NAME=MatonOS \
+  GIT_COMMITTER_EMAIL=noreply@matonos GIT_AUTHOR_DATE='@0 +0000' GIT_COMMITTER_DATE='@0 +0000'
+kernel_head=$kernel_base
+GIT_INDEX_FILE=$patch_index git -C "$LINUX" read-tree "$kernel_base"
+for patch in "${kernel_patches[@]}"; do
+  GIT_INDEX_FILE=$patch_index git -C "$LINUX" apply --cached "$patch" ||
+    die "kernel patch does not apply: $(basename "$patch")"
+  tree=$(GIT_INDEX_FILE=$patch_index git -C "$LINUX" write-tree)
+  kernel_head=$(git -C "$LINUX" commit-tree "$tree" -p "$kernel_head" -m "MatonOS: $(basename "$patch")")
+done
+unset GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_AUTHOR_DATE GIT_COMMITTER_DATE
+rm -f "$patch_index"; trap - EXIT
+if [[ $(git -C "$LINUX" rev-parse HEAD) != "$kernel_head" ]]; then
+  git -C "$LINUX" checkout -q -B "$build_branch" "$kernel_head"
+  info "kernel source at $build_branch $(git -C "$LINUX" rev-parse --short HEAD) (${#kernel_patches[@]} patches on $(git -C "$LINUX" rev-parse --short "$kernel_base"))"
+else
+  info "kernel source already at $build_branch $(git -C "$LINUX" rev-parse --short HEAD)"
+fi
 
 # ---------------------------------------------------------------- config
 info "Configuring ($KOUT)"
