@@ -12,6 +12,14 @@ on property:vendor.maton.install.fiemap.request=*
     exec_start matonos-fiemap-helper
     setprop vendor.maton.install.fiemap.done ${vendor.maton.install.fiemap.request}
 
+# Install mount points and OTA staging, made by init: vendor_init may write
+# neither /mnt nor /maton_system. ota-staging fails harmlessly in live sessions.
+on post-fs-data
+    mkdir /maton_system/ota-staging 0700 root root
+    mkdir /mnt/matonos-install 0700 root root
+    mkdir /mnt/matonos-install/metadata 0700 root root
+    mkdir /mnt/matonos-install/system 0700 root root
+
 # Keep mount syscalls in init; the vendor installer only supplies verified
 # block paths and checks mountinfo before touching the filesystems.
 on property:vendor.maton.install.mount.request=*
