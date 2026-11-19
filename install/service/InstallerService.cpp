@@ -574,9 +574,10 @@ ValidationResult ValidateOperation(const OperationRequest& request,
             return true;
         } else if constexpr (std::is_same_v<T, RegisterBootEntry>) {
             const auto* esp = CheckRef(*it, op.esp) ? FindPartition(*it, op.esp) : nullptr;
-            if (!esp || esp->logical || esp->mounted ||
-                strcasecmp(esp->type_guid.c_str(), "c12a7328-f81f-11d2-ba4b-00a0c93ec93b") != 0) {
-                error = "Boot entry target is not an EFI system partition on the target."; return false;
+            // The ESP type is checked by the executor against the verified GPT;
+            // the sysfs scan carries no partition type.
+            if (!esp || esp->logical || esp->mounted) {
+                error = "Boot entry target is not an unmounted partition on the target."; return false;
             }
             return true;
 

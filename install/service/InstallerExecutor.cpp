@@ -3,6 +3,7 @@
 #include "FatFilesystem.h"
 #include "Props.h"
 
+#include <strings.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -553,6 +554,10 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
         } else if constexpr(std::is_same_v<T,RegisterBootEntry>) {
             const auto* esp=Find(target,op.esp);
             if(!esp||esp->logical||esp->path.empty()){*error="ESP disappeared after safety validation.";return false;}
+            // The kernel's partition uevent has no type GUID: read it from the verified GPT.
+            std::string type;
+            if(!ReadVerifiedGptType(target,*esp,&type,error))return false;
+            if(strcasecmp(type.c_str(),"c12a7328-f81f-11d2-ba4b-00a0c93ec93b")!=0){*error="Boot entry target is not an EFI system partition.";return false;}
             if(progress)progress({0,0,"Adding firmware boot entry"});
             return Run({"@boot-entry",esp->path,esp->part_guid},target.disk_sequence,error);
         }
