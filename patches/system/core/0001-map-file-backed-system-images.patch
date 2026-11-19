@@ -134,15 +134,19 @@ index 495bbdec7..dc54c9873 100644
                          Fstab::iterator* end = nullptr);
  
 diff --git a/init/first_stage_mount_android.cpp b/init/first_stage_mount_android.cpp
-index 09222de69..27bcb2c01 100644
+index 09222de69..bf5288b08 100644
 --- a/init/first_stage_mount_android.cpp
 +++ b/init/first_stage_mount_android.cpp
-@@ -16,10 +16,19 @@
+@@ -16,10 +16,23 @@
  
  #include "first_stage_mount_android.h"
  
++#include <dirent.h>
++#include <fcntl.h>
 +#include <linux/fs.h>
++#include <linux/vt.h>
 +#include <sys/ioctl.h>
++#include <sys/reboot.h>
 +#include <unistd.h>
 +
 +#include <chrono>
@@ -157,7 +161,68 @@ index 09222de69..27bcb2c01 100644
  #include <libfiemap/image_manager.h>
  #include <libgsi/libgsi.h>
  #include "snapuserd_transition.h"
-@@ -109,12 +118,59 @@ bool FirstStageMountAndroid::DoCreateDevices() {
+@@ -90,10 +103,60 @@ static bool GetRootEntry(FstabEntry* root_entry) {
+     return true;
+ }
+ 
++// A drive cloned to another keeps every PARTUUID, and init takes whichever
++// copy of the boot partition reports first. Booting a random copy can mix
++// old and new data, so stop and ask for one drive to be disconnected; reboot
++// on our own once only one copy is left.
++static int CountPartUuid(const std::string& uuid) {
++    int count = 0;
++    std::unique_ptr<DIR, decltype(&closedir)> dir(opendir("/sys/class/block"), closedir);
++    if (!dir) return 0;
++    while (auto entry = readdir(dir.get())) {
++        if (entry->d_name[0] == '.') continue;
++        std::string uevent;
++        if (!android::base::ReadFileToString(
++                    std::string("/sys/class/block/") + entry->d_name + "/uevent", &uevent)) {
++            continue;
++        }
++        for (const auto& line : android::base::Split(uevent, "\n")) {
++            if (android::base::StartsWith(line, "PARTUUID=") &&
++                android::base::EqualsIgnoreCase(line.substr(9), uuid)) {
++                ++count;
++            }
++        }
++    }
++    return count;
++}
++
++static void WaitForSingleBootDrive() {
++    auto uuid = android::fs_mgr::GetBootPartUuid();
++    if (uuid.empty() || CountPartUuid(uuid) < 2) return;
++
++    static constexpr char kMessage[] =
++            "\n\n  MatonOS found two drives with the same system on them.\n\n"
++            "  This usually means one drive was cloned to another. Starting from\n"
++            "  either copy could mix up their data.\n\n"
++            "  Disconnect one of the drives. The computer restarts by itself\n"
++            "  once only one is connected.\n";
++    LOG(ERROR) << "Boot partition UUID " << uuid << " is on more than one drive";
++    // fbcon is bound to VT 2 onwards (fbcon=vc:2-6); VT 1 stays blank for the splash.
++    android::base::unique_fd vt(open("/dev/tty0", O_RDWR | O_CLOEXEC));
++    if (vt >= 0 && ioctl(vt.get(), VT_ACTIVATE, 2) == 0) ioctl(vt.get(), VT_WAITACTIVE, 2);
++    for (const char* tty : {"/dev/tty2", "/dev/console"}) {
++        android::base::unique_fd fd(open(tty, O_WRONLY | O_NOCTTY | O_CLOEXEC));
++        if (fd >= 0) android::base::WriteStringToFd(kMessage, fd);
++    }
++    while (CountPartUuid(uuid) > 1) sleep(1);
++    LOG(INFO) << "Duplicate drive removed; restarting";
++    sync();
++    reboot(RB_AUTOBOOT);
++}
++
+ bool FirstStageMountAndroid::DoCreateDevices() {
+     if (!FirstStageMount::DoCreateDevices()) {
+         return false;
+     }
++    WaitForSingleBootDrive();
+ 
+     // Mount /metadata before creating logical partitions, since we need to
+     // know whether a snapshot merge is in progress.
+@@ -109,12 +172,59 @@ bool FirstStageMountAndroid::DoCreateDevices() {
          }
      }
  
@@ -217,7 +282,7 @@ index 09222de69..27bcb2c01 100644
      if constexpr (com::android::apex::flags::mount_before_data()) {
          // Even before /data is mounted, apexd needs to access the block device backing /data. Let's
          // initialize "userdata" so that apexd can avoid waiting for the symlink
-@@ -148,9 +204,25 @@ bool FirstStageMountAndroid::CreateLogicalPartitions() {
+@@ -148,9 +258,34 @@ bool FirstStageMountAndroid::CreateLogicalPartitions() {
          return true;
      }
      if (super_path_.empty()) {
@@ -234,6 +299,15 @@ index 09222de69..27bcb2c01 100644
 +        if (!images) {
 +            LOG(ERROR) << "Could not open file-backed partition images";
 +            return false;
++        }
++        // Block moves (file-level copy of the store, resize or defrag tools)
++        // leave the saved extents stale; mapping them would read wrong blocks.
++        if (!images->ValidateImageMaps()) {
++            LOG(WARNING) << "File-backed partition extents changed; rebuilding them";
++            if (!images->RebuildImageMaps() || !images->ValidateImageMaps()) {
++                LOG(ERROR) << "Could not rebuild file-backed partition extents";
++                return false;
++            }
 +        }
 +        auto init_devices = [this](std::set<std::string> devices) {
 +            return InitRequiredDevices(std::move(devices));

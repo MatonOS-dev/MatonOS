@@ -1,3 +1,54 @@
+diff --git a/libfiemap/image_manager.cpp b/libfiemap/image_manager.cpp
+index 435f7bdf..baad4430 100644
+--- a/libfiemap/image_manager.cpp
++++ b/libfiemap/image_manager.cpp
+@@ -873,6 +873,31 @@ bool ImageManager::ValidateImageMaps() {
+     return true;
+ }
+ 
++bool ImageManager::RebuildImageMaps() {
++    auto metadata = OpenMetadata(metadata_dir_);
++    if (!metadata) {
++        LOG(ERROR) << "Could not open image metadata in " << metadata_dir_;
++        return false;
++    }
++    for (const auto& partition : metadata->partitions) {
++        auto name = GetPartitionName(partition);
++        auto image_path = GetImageHeaderPath(name);
++        auto fiemap = SplitFiemap::Open(image_path);
++        if (fiemap == nullptr || !fiemap->HasPinnedExtents()) {
++            LOG(ERROR) << "Image cannot be remapped: " << image_path;
++            return false;
++        }
++        auto size = android::fs_mgr::GetPartitionSize(*metadata.get(), partition);
++        bool readonly = partition.attributes & LP_PARTITION_ATTR_READONLY;
++        if (!UpdateMetadata(metadata_dir_, name, fiemap.get(), size, readonly)) {
++            LOG(ERROR) << "Could not rewrite extents for " << image_path;
++            return false;
++        }
++        LOG(INFO) << "Rebuilt extents for " << image_path;
++    }
++    return true;
++}
++
+ bool ImageManager::IsImageDisabled(const std::string& name) {
+     if (!MetadataExists(metadata_dir_)) {
+         return true;
+diff --git a/libfiemap/include/libfiemap/image_manager.h b/libfiemap/include/libfiemap/image_manager.h
+index 78e3080d..06341588 100644
+--- a/libfiemap/include/libfiemap/image_manager.h
++++ b/libfiemap/include/libfiemap/image_manager.h
+@@ -183,6 +183,10 @@ class ImageManager final : public IImageManager {
+     // Validate that all images still have the same block map.
+     bool ValidateImageMaps();
+ 
++    // Rewrite every image's extents from its current fiemap (MatonOS: the
++    // image store was copied file-by-file or its blocks were moved).
++    bool RebuildImageMaps();
++
+   private:
+     ImageManager(const std::string& metadata_dir, const std::string& data_dir,
+                  const DeviceInfo& device_info);
 diff --git a/libfiemap/utility.cpp b/libfiemap/utility.cpp
 index cdd137b3..357651af 100644
 --- a/libfiemap/utility.cpp
