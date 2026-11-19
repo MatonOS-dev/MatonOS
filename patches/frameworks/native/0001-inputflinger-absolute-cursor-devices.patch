@@ -1,5 +1,5 @@
 diff --git a/services/inputflinger/reader/mapper/CursorInputMapper.cpp b/services/inputflinger/reader/mapper/CursorInputMapper.cpp
-index da0901b2a2..f6fa863571 100644
+index da0901b2a2..077a96d08f 100644
 --- a/services/inputflinger/reader/mapper/CursorInputMapper.cpp
 +++ b/services/inputflinger/reader/mapper/CursorInputMapper.cpp
 @@ -211,6 +211,17 @@ CursorInputMapper::Parameters CursorInputMapper::computeParameters(
@@ -48,11 +48,11 @@ index da0901b2a2..f6fa863571 100644
 +    // the position change is reported as an unaccelerated relative delta.
 +    if (mAbsChanged) {
 +        mAbsChanged = false;
-+        const float w = mBoundsInLogicalDisplay.right - mBoundsInLogicalDisplay.left;
-+        const float h = mBoundsInLogicalDisplay.bottom - mBoundsInLogicalDisplay.top;
-+        const float x = mBoundsInLogicalDisplay.left +
++        const float w = mAbsBounds.right - mAbsBounds.left;
++        const float h = mAbsBounds.bottom - mAbsBounds.top;
++        const float x = mAbsBounds.left +
 +                float(mAbsX - mAbsXInfo->minValue) * w / float(mAbsXInfo->maxValue - mAbsXInfo->minValue);
-+        const float y = mBoundsInLogicalDisplay.top +
++        const float y = mAbsBounds.top +
 +                float(mAbsY - mAbsYInfo->minValue) * h / float(mAbsYInfo->maxValue - mAbsYInfo->minValue);
 +        if (mParameters.mode == Parameters::Mode::POINTER) {
 +            xCursorPosition = x;
@@ -101,11 +101,28 @@ index da0901b2a2..f6fa863571 100644
  
      // Configure device mode.
      switch (mParameters.mode) {
+@@ -508,5 +565,12 @@ void CursorInputMapper::configureOnPointerCapture(const InputReaderConfiguration
+             ALOGE("Cannot release pointer capture, device is not in MODE_POINTER_RELATIVE");
+         }
+     }
++    // Absolute cursors (VM pointers) cannot produce true relative motion. The
++    // MISC LED tells the device side to switch the host to relative reporting
++    // while Pointer Capture is active (MatonOS inputd forwards it to vmmouse).
++    if (mParameters.absolute) {
++        getDeviceContext().setLedState(ALED_MISC,
++                                       mParameters.mode == Parameters::Mode::POINTER_RELATIVE);
++    }
+     bumpGeneration();
+ }
+@@ -576,2 +640,3 @@ void CursorInputMapper::configureOnChangeDisplayInfo(const InputReaderConfiguration
+     if (resolvedViewport) {
++        mAbsBounds = mBoundsInLogicalDisplay;
+         mViewportDensityDpi = resolvedViewport->densityDpi;
 diff --git a/services/inputflinger/reader/mapper/CursorInputMapper.h b/services/inputflinger/reader/mapper/CursorInputMapper.h
-index 7215403de2..e4e05745e1 100644
+index 7215403de2..d3d51c046a 100644
 --- a/services/inputflinger/reader/mapper/CursorInputMapper.h
 +++ b/services/inputflinger/reader/mapper/CursorInputMapper.h
-@@ -88,8 +88,18 @@ private:
+@@ -88,8 +88,20 @@ private:
          Mode mode;
          bool hasAssociatedDisplay;
          bool orientationAware;
@@ -120,6 +137,8 @@ index 7215403de2..e4e05745e1 100644
 +    bool mAbsChanged{false};
 +    bool mAbsKnown{false};
 +    float mAbsLastX{0}, mAbsLastY{0};
++    // Pointer viewport bounds, kept while Pointer Capture clears mBoundsInLogicalDisplay.
++    FloatRect mAbsBounds{};
 +
      CursorButtonAccumulator mCursorButtonAccumulator;
      CursorMotionAccumulator mCursorMotionAccumulator;
