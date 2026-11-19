@@ -33,8 +33,31 @@ allowxperm matonos_fiemap_helper matonos_install_mount_file:file ioctl { FS_IOC_
 type matonos_slot_writer, domain, coredomain;
 type matonos_slot_writer_exec, system_file_type, exec_type, file_type;
 init_daemon_domain(matonos_slot_writer)
-allow matonos_slot_writer matonos_install_mount_file:dir { search getattr write add_name remove_name };
-allow matonos_slot_writer matonos_install_mount_file:file { create open read write getattr setattr unlink rename map };
+# Staging payloads and the libfiemap backing files under /maton_system.
+allow matonos_slot_writer matonos_install_mount_file:dir create_dir_perms;
+allow matonos_slot_writer matonos_install_mount_file:file { create_file_perms rename setattr map };
+allowxperm matonos_slot_writer matonos_install_mount_file:file ioctl FS_IOC_FIEMAP;
+allow matonos_slot_writer matonos_image_metadata_file:dir create_dir_perms;
+allow matonos_slot_writer matonos_image_metadata_file:file { create_file_perms rename };
+# Add-on gate: read /mnt/vendor/addons/<name>/active-version.
+allow matonos_slot_writer mnt_vendor_file:dir search;
+r_dir_file(matonos_slot_writer, matonos_addon_mount_file)
+# libfiemap maps and unmaps the inactive slot's images through device-mapper.
+allow matonos_slot_writer dm_device:chr_file rw_file_perms;
+allow matonos_slot_writer dm_device:blk_file rw_file_perms;
+allowxperm matonos_slot_writer dm_device:blk_file ioctl BLKGETSIZE64;
+r_dir_file(matonos_slot_writer, sysfs_dm)
+allow matonos_slot_writer block_device:dir r_dir_perms;
+allow matonos_slot_writer { metadata_block_device userdata_block_device }:blk_file getattr;
+set_prop(matonos_slot_writer, gsid_prop)
+# The ESP: FAT reads/writes plus geometry queries (FAT and libfiemap).
+allow matonos_slot_writer matonos_install_block_device:blk_file rw_file_perms;
+# 0x1280 = BLKGETDISKSEQ (absent from ioctl_defines).
+allowxperm matonos_slot_writer matonos_install_block_device:blk_file ioctl { BLKGETSIZE64 BLKSSZGET BLKIOMIN BLKALIGNOFF 0x1280 };
+# finalize runs /system/bin/bootctl in this domain against the BootControl HAL.
+allow matonos_slot_writer system_file:file execute_no_trans;
+binder_use(matonos_slot_writer)
+hal_client_domain(matonos_slot_writer, hal_bootctl)
 
 # matonos-erofsd (erofsd/): validates requests to mount EROFS images embedded
 # in Linux stub/runtime APK splits read-only under /mnt/matonos; init performs

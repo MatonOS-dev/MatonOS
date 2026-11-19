@@ -1,3 +1,4 @@
+#include <libdm/dm.h>
 #include <libfiemap/image_manager.h>
 #include <openssl/evp.h>
 
@@ -62,6 +63,12 @@ std::string EntryPath(const Slot& slot, bool counted) {
     return std::string("loader/entries/") + slot.upper + (counted ? "+3-0" : "") + ".conf";
 }
 
+// A staged slot's entry stays disabled (not a .conf, so systemd-boot ignores it)
+// until BootControl activates it with ordering fields and a boot counter.
+std::string StagedEntryPath(const Slot& slot) {
+    return std::string("loader/entries/") + slot.upper + ".DIS";
+}
+
 std::string UkiPath(const Slot& slot) {
     return std::string("EFI/Linux/matonos-") + slot.letter + ".efi";
 }
@@ -87,11 +94,20 @@ bool ReadRegular(const fs::path& path, int* fd, uint64_t* size) {
     return true;
 }
 
+// First-stage init maps every image with MapAllImages(), which records no
+// libfiemap status file, so ImageManager cannot unmap those devices itself.
+bool UnmapInactive(const std::string& name, android::fiemap::ImageManager* manager) {
+    if (!manager->IsImageMapped(name) || manager->UnmapImageDevice(name)) return true;
+    std::fprintf(stderr, "matonos-slot-writer: %s has no libfiemap mapping record; removing its first-stage dm device\n", name.c_str());
+    if (!android::dm::DeviceMapper::Instance().DeleteDeviceIfExists(name))
+        return Fail("remove first-stage dm device for inactive image " + name);
+    return true;
+}
+
 bool CopyToImage(int source, const std::string& name, uint64_t size,
                  android::fiemap::ImageManager* manager) {
     if (size % 512 != 0) return Fail("payload size is not 512-byte aligned for " + name);
-    if (manager->IsImageMapped(name) && !manager->UnmapImageDevice(name))
-        return Fail("unmap existing inactive image " + name);
+    if (!UnmapInactive(name, manager)) return false;
     if (manager->BackingImageExists(name) && !manager->DeleteBackingImage(name))
         return Fail("remove previous inactive image " + name);
     if (!manager->CreateBackingImage(name, size, android::fiemap::IImageManager::CREATE_IMAGE_READONLY, nullptr))
@@ -228,6 +244,13 @@ bool RemoveEspIfPresent(mi::FatVolume* esp,const std::string& path,std::string* 
     return esp->RemoveFile(path,error);
 }
 
+// Every entry form BootControl may leave for a slot: counted, plain, disabled.
+bool RemoveSlotEntries(mi::FatVolume* esp,const Slot& slot,std::string* error) {
+    for(int left=0;left<=3;++left)for(int done=0;done<=3;++done)
+        if(!RemoveEspIfPresent(esp,std::string("loader/entries/")+slot.upper+"+"+std::to_string(left)+"-"+std::to_string(done)+".conf",error))return false;
+    return RemoveEspIfPresent(esp,EntryPath(slot,false),error)&&RemoveEspIfPresent(esp,StagedEntryPath(slot),error);
+}
+
 bool Stage(const fs::path& payload) {
     Slot running{},target{};
     if(!GetSlots(&running,&target))return false;
@@ -285,8 +308,7 @@ bool Stage(const fs::path& payload) {
 
     mi::FatVolume esp;std::string error;
     if(!OpenEsp(true,&esp,&error)){std::fprintf(stderr,"matonos-slot-writer: open ESP for stale-slot cleanup: %s\n",error.c_str());return false;}
-    if(!RemoveEspIfPresent(&esp,EntryPath(target,true),&error)||
-       !RemoveEspIfPresent(&esp,EntryPath(target,false),&error)||
+    if(!RemoveSlotEntries(&esp,target,&error)||
        !RemoveEspIfPresent(&esp,UkiPath(target),&error)||!esp.Sync(&error)){
         std::fprintf(stderr,"matonos-slot-writer: invalidate stale target entry/UKI: %s\n",error.c_str());return false;
     }
@@ -310,11 +332,11 @@ bool Stage(const fs::path& payload) {
     // Entries carry no options: each slot's signed UKI embeds its own cmdline,
     // and first stage finds the ESP through the boot loader's EFI variables.
     const std::string updated=std::string("title MatonOS (slot ")+target.upper+")\nefi /"+UkiPath(target)+"\n";
-    const std::string target_entry=EntryPath(target,true);
+    const std::string target_entry=StagedEntryPath(target);
     if(!esp.WriteFile(target_entry,std::vector<uint8_t>(updated.begin(),updated.end()),&error)||!esp.Sync(&error)){
-        std::fprintf(stderr,"matonos-slot-writer: write/sync target counted entry: %s\n",error.c_str());return false;
+        std::fprintf(stderr,"matonos-slot-writer: write/sync target staged entry: %s\n",error.c_str());return false;
     }
-    std::fprintf(stderr,"matonos-slot-writer: staged slot %c images, vbmeta, UKI, and counted entry; slot %c remains running\n",target.upper,running.upper);
+    std::fprintf(stderr,"matonos-slot-writer: staged slot %c images, vbmeta, UKI, and staged entry; slot %c remains running\n",target.upper,running.upper);
     return true;
 }
 
@@ -339,6 +361,7 @@ bool Finalize() {
     const std::string vbmeta_name=ImageName("vbmeta",target);
     if(!manager->BackingImageExists(vbmeta_name)){std::fprintf(stderr,"matonos-slot-writer: cannot finalize; missing %s\n",vbmeta_name.c_str());return false;}
     std::string block;
+    if(!UnmapInactive(vbmeta_name,manager.get()))return false;
     if(!manager->MapImageDevice(vbmeta_name,std::chrono::seconds(30),&block))return Fail("map target vbmeta for digest verification");
     int vbmeta_fd=open(block.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
     if(vbmeta_fd<0){const int e=errno;if(!manager->UnmapImageDevice(vbmeta_name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after open failure\n",vbmeta_name.c_str());errno=e;return Fail("open mapped target vbmeta for digest verification");}
@@ -356,8 +379,8 @@ bool Finalize() {
     std::string uki_digest;
     if(!UkiVbmetaDigest(contents,&uki_digest))return false;
     if(uki_digest!=vbmeta_digest){errno=EINVAL;return Fail("target UKI pinned vbmeta digest does not match staged vbmeta image; slot was not switched");}
-    if(!esp.ReadFile(EntryPath(target,true),&contents,&error)||contents.empty()){
-        std::fprintf(stderr,"matonos-slot-writer: cannot finalize; target counted entry unavailable: %s\n",error.c_str());return false;
+    if(!esp.ReadFile(StagedEntryPath(target),&contents,&error)||contents.empty()){
+        std::fprintf(stderr,"matonos-slot-writer: cannot finalize; target staged entry unavailable: %s\n",error.c_str());return false;
     }
     const std::string slot_index=std::to_string(target.index);
     if(!RunBootctl("set-active-boot-slot",slot_index.c_str()))return false;
@@ -372,15 +395,15 @@ bool RemoveInactive() {
     if(!RunBootctl("is-slot-marked-successful",running_index.c_str())){std::fprintf(stderr,"matonos-slot-writer: refusing to remove inactive slot until running slot %c is marked successful\n",running.upper);return false;}
     mi::FatVolume esp;std::string error;
     if(!OpenEsp(true,&esp,&error)){std::fprintf(stderr,"matonos-slot-writer: open ESP for inactive-slot removal: %s\n",error.c_str());return false;}
-    if(!RemoveEspIfPresent(&esp,EntryPath(target,true),&error)||!RemoveEspIfPresent(&esp,EntryPath(target,false),&error)||
+    if(!RemoveSlotEntries(&esp,target,&error)||
        !RemoveEspIfPresent(&esp,UkiPath(target),&error)||!esp.Sync(&error)){
         std::fprintf(stderr,"matonos-slot-writer: remove inactive slot loader files: %s\n",error.c_str());return false;
     }
     auto manager=android::fiemap::ImageManager::Open(kMetadata,kImageDir);
     if(!manager)return Fail("open libfiemap image manager for inactive-slot removal");
-    for(const char* base:kImages){const std::string name=ImageName(base,target);if(manager->IsImageMapped(name)&&!manager->UnmapImageDevice(name))return Fail("unmap inactive image "+name);if(manager->BackingImageExists(name)&&!manager->DeleteBackingImage(name))return Fail("delete inactive image "+name);}
+    for(const char* base:kImages){const std::string name=ImageName(base,target);if(!UnmapInactive(name,manager.get()))return false;if(manager->BackingImageExists(name)&&!manager->DeleteBackingImage(name))return Fail("delete inactive image "+name);}
     const std::string vbmeta=ImageName("vbmeta",target);
-    if(manager->IsImageMapped(vbmeta)&&!manager->UnmapImageDevice(vbmeta))return Fail("unmap inactive vbmeta "+vbmeta);
+    if(!UnmapInactive(vbmeta,manager.get()))return false;
     if(manager->BackingImageExists(vbmeta)&&!manager->DeleteBackingImage(vbmeta))return Fail("delete inactive vbmeta "+vbmeta);
     std::fprintf(stderr,"matonos-slot-writer: explicitly removed inactive slot %c; running slot %c is successful\n",target.upper,running.upper);return true;
 }

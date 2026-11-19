@@ -4,9 +4,11 @@ service matonos-slot-writer /system_ext/bin/matonos-slot-writer --request /maton
     group root
     disabled
     oneshot
+    stdio_to_kmsg
 
 # The vendor installer only submits a bounded request and waits for this init
 # started system_ext service. It never executes a system_ext binary itself.
 on property:vendor.maton.install.slot_writer.request=*
+    restorecon_recursive /metadata/maton
     exec_start matonos-slot-writer
     setprop vendor.maton.install.slot_writer.done ${vendor.maton.install.slot_writer.request}

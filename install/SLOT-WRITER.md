@@ -38,12 +38,21 @@ matonos-slot-writer --request <request-file> <result-file>
 ```
 
 `stage` removes stale target loader entries and UKI before replacing its
-images, then copies the running slot's entry to a counted target entry and
-changes its UKI path and slot suffix. The target remains unselected. After
-validating that the target images, UKI, and vbmeta are present and the UKI
-digest matches the staged vbmeta, `finalize` calls
-`/system/bin/bootctl set-active-boot-slot <target-index>`. BootControl owns
-success marking and renames the counted entry to `<A|B>.conf`.
+images, then writes a disabled target entry `<A|B>.DIS` pointing at the new
+UKI. systemd-boot only reads `*.conf`, so the target stays unselectable even
+across a reboot. After validating that the target images, UKI, and vbmeta are
+present and the UKI digest matches the staged vbmeta, `finalize` calls
+`/system/bin/bootctl set-active-boot-slot <target-index>`.
+
+BootControl selects slots by entry ordering, not by a loader.conf `default`.
+systemd-boot 257 builds a counted entry's ID by stripping `+LEFT-DONE` while it
+case-folds the pattern, and a pattern would keep matching an entry whose tries
+ran out. So loader.conf has no `default`. Every slot entry carries
+`sort-key matonos` plus `version N`. Activating a slot writes `<A|B>+3-0.conf`
+with a version one higher than the other slot's. systemd-boot boots the highest
+version that still has tries, and exhausted `+0-N` entries sort last, which is
+the fallback. Success marking renames the counted entry to `<A|B>.conf`, and
+`set-slot-as-unbootable` turns it back into `.DIS`.
 `remove-inactive` is a separate, explicit operation. It refuses unless the
 currently running slot is marked successful, then removes the other slot's
 images, vbmeta, loader entries, and UKI.
@@ -58,7 +67,7 @@ channel promotion is server-side metadata.
 ## Failure and disk risk
 
 Every failed write stops the command and logs context. Since only the inactive
-slot's image records, UKI, and counted entry are written before `finalize`,
+slot's image records, UKI, and disabled entry are written before `finalize`,
 failure leaves the running slot's image set and selection intact. Replacement
 is deliberately non-atomic: a power loss can leave the inactive slot unusable,
 but that slot has no loader entry while it is being rewritten. `finalize` checks

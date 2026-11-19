@@ -3,3 +3,8 @@
 # so they are declared here, in system_ext public policy.
 type matonos_install_mount_file, file_type;
 type matonos_install_block_device, dev_type;
+# /mnt/vendor/addons: the vendor add-on manager mounts it, the system_ext slot
+# writer enumerates installed add-ons from it.
+type matonos_addon_mount_file, file_type;
+# /metadata/maton: libfiemap records of the installed image store.
+type matonos_image_metadata_file, file_type;

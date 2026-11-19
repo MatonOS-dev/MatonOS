@@ -14,6 +14,7 @@
 #include <array>
 #include <cerrno>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
@@ -237,112 +238,167 @@ bool WriteState(State state) {
     return true;
 }
 
-bool ReadLoaderDefault(int* slot) {
-    const std::string path = FindCurrentDiskPartition("esp");
-    if (path.empty()) return false;
-    mi::FatVolume volume;
-    std::string error;
-    if (!mi::FatVolume::Open(path, false, &volume, &error)) return false;
+// Slot selection is entry ordering, not loader.conf `default`: systemd-boot
+// 257 derives a counted entry's ID by stripping "+LEFT-DONE" (keeping case)
+// while case-folding the pattern, and a pattern would keep matching an entry
+// whose tries ran out. So loader.conf has no default; every slot entry carries
+// the same sort-key plus a version, systemd-boot boots the highest version
+// that still has tries, and exhausted (+0-N) entries sort last, which is the
+// A/B fallback. Disabled or staged-but-not-activated entries are <stem>.DIS.
+constexpr char kSortKey[] = "matonos";
+
+std::string Stem(int slot) { return slot == 0 ? "A" : "B"; }
+
+struct Entry {
+    std::string name;
+    std::string contents;
+    int tries_left = -1;  // -1: no boot counter (marked successful)
+};
+
+bool ReadEntry(mi::FatVolume& volume, const std::string& name, std::string* contents) {
     std::vector<uint8_t> bytes;
-    if (!volume.ReadFile("loader/loader.conf", &bytes, &error)) return false;
-    const std::string config(bytes.begin(), bytes.end());
-    size_t begin = 0;
-    while (begin <= config.size()) {
-        const size_t end = config.find('\n', begin);
-        const std::string line = config.substr(begin,
-                (end == std::string::npos ? config.size() : end) - begin);
-        const std::string trimmed = Trim(line);
-        if (trimmed.rfind("default ", 0) == 0) {
-            const std::string entry = Trim(trimmed.substr(8));
-            if (entry.rfind("A",0)==0) { *slot = 0; return true; }
-            if (entry.rfind("B",0)==0) { *slot = 1; return true; }
+    std::string error;
+    if (!volume.ReadFile("loader/entries/" + name, &bytes, &error)) return false;
+    contents->assign(bytes.begin(), bytes.end());
+    return true;
+}
+
+std::vector<std::string> CountedNames(const std::string& stem) {
+    std::vector<std::string> names;
+    for (int left = 3; left >= 0; --left)
+        for (int done = 0; done <= 3; ++done)
+            names.push_back(stem + "+" + std::to_string(left) + "-" + std::to_string(done) + ".conf");
+    return names;
+}
+
+// The slot's enabled entry: a counted one (most tries left first), else the plain one.
+bool FindEnabledEntry(mi::FatVolume& volume, int slot, Entry* entry) {
+    const std::string stem = Stem(slot);
+    std::string contents;
+    for (const std::string& name : CountedNames(stem)) {
+        if (ReadEntry(volume, name, &contents)) {
+            *entry = Entry{name, contents, name[stem.size() + 1] - '0'};
+            return true;
         }
+    }
+    if (!ReadEntry(volume, stem + ".conf", &contents)) return false;
+    *entry = Entry{stem + ".conf", contents, -1};
+    return true;
+}
+
+bool HasLine(const std::string& contents, const std::string& key) {
+    size_t begin = 0;
+    while (begin < contents.size()) {
+        const size_t end = contents.find('\n', begin);
+        const std::string line = Trim(contents.substr(begin, (end == std::string::npos ? contents.size() : end) - begin));
+        if (line.rfind(key + " ", 0) == 0) return true;
         if (end == std::string::npos) break;
         begin = end + 1;
     }
     return false;
 }
 
-bool WriteLoaderDefault(int slot) {
-    mi::FatVolume volume;
-    std::string error;
-    if (!OpenCurrentEsp(true, &volume, &error)) {
-        std::fprintf(stderr, "matonos-bootctrl: cannot open ESP to select slot %d: %s\n", slot, error.c_str());
-        return false;
+uint64_t EntryVersion(const std::string& contents) {
+    size_t begin = 0;
+    while (begin < contents.size()) {
+        const size_t end = contents.find('\n', begin);
+        const std::string line = Trim(contents.substr(begin, (end == std::string::npos ? contents.size() : end) - begin));
+        if (line.rfind("version ", 0) == 0) return std::strtoull(Trim(line.substr(8)).c_str(), nullptr, 10);
+        if (end == std::string::npos) break;
+        begin = end + 1;
     }
-    std::vector<uint8_t> old_bytes;
-    if (!volume.ReadFile("loader/loader.conf", &old_bytes, &error)) return false;
-    std::string config(old_bytes.begin(), old_bytes.end());
-    bool replaced = false;
+    return 0;
+}
+
+std::string WithOrdering(const std::string& contents, uint64_t version) {
+    std::string updated;
+    size_t begin = 0;
+    while (begin < contents.size()) {
+        const size_t end = contents.find('\n', begin);
+        const std::string line = contents.substr(begin, (end == std::string::npos ? contents.size() : end) - begin);
+        const std::string trimmed = Trim(line);
+        if (!trimmed.empty() && trimmed.rfind("sort-key ", 0) != 0 && trimmed.rfind("version ", 0) != 0)
+            updated += line + "\n";
+        if (end == std::string::npos) break;
+        begin = end + 1;
+    }
+    return updated + "sort-key " + kSortKey + "\nversion " + std::to_string(version) + "\n";
+}
+
+bool WriteEntry(mi::FatVolume& volume, const std::string& name, const std::string& contents, std::string* error) {
+    return volume.WriteFile("loader/entries/" + name, std::vector<uint8_t>(contents.begin(), contents.end()), error);
+}
+
+bool RemoveEntryIfPresent(mi::FatVolume& volume, const std::string& name, std::string* error) {
+    std::string ignored;
+    if (!ReadEntry(volume, name, &ignored)) return true;
+    return volume.RemoveFile("loader/entries/" + name, error);
+}
+
+// Removes every form of the slot's entry except `keep`.
+bool RemoveSlotEntries(mi::FatVolume& volume, int slot, const std::string& keep, std::string* error) {
+    const std::string stem = Stem(slot);
+    std::vector<std::string> names = CountedNames(stem);
+    names.push_back(stem + ".conf");
+    names.push_back(stem + ".DIS");
+    for (const std::string& name : names)
+        if (name != keep && !RemoveEntryIfPresent(volume, name, error)) return false;
+    return true;
+}
+
+bool DropLoaderDefault(mi::FatVolume& volume, std::string* error) {
+    std::vector<uint8_t> bytes;
+    if (!volume.ReadFile("loader/loader.conf", &bytes, error)) return false;
+    const std::string config(bytes.begin(), bytes.end());
     std::string updated;
     size_t begin = 0;
     while (begin < config.size()) {
         const size_t end = config.find('\n', begin);
-        const size_t length = (end == std::string::npos ? config.size() : end) - begin;
-        const std::string line = config.substr(begin, length);
-        const std::string trimmed = Trim(line);
-        if (!replaced && trimmed.rfind("default ", 0) == 0) {
-            updated += "default matonos-" + std::string(slot == 0 ? "a" : "b") + ".conf";
-            replaced = true;
-        } else {
-            updated += line;
-        }
-        if (end != std::string::npos) updated.push_back('\n');
+        const std::string line = config.substr(begin, (end == std::string::npos ? config.size() : end) - begin);
+        if (Trim(line).rfind("default ", 0) != 0) updated += line + "\n";
         if (end == std::string::npos) break;
         begin = end + 1;
     }
-    const std::string stem = slot == 0 ? "A" : "B";
-    std::string selected = stem + ".conf";
-    for (int left=3; left>=0; --left) {
-        for (int done=0; done<=3; ++done) {
-            const std::string candidate=stem+"+"+std::to_string(left)+"-"+std::to_string(done)+".conf";
-            std::vector<uint8_t> ignored;
-            if (volume.ReadFile("loader/entries/"+candidate,&ignored,&error)) {
-                // systemd-boot renames the entry after each attempt. Match all
-                // retryable counters, but exclude +0-* so the failed slot no
-                // longer matches and the previously good slot is auto-selected.
-                selected=stem+"+[1-3]-*.conf"; left=-1; break;
-            }
-        }
+    if (updated == config) return true;
+    return volume.WriteFile("loader/loader.conf", std::vector<uint8_t>(updated.begin(), updated.end()), error);
+}
+
+// Mirrors systemd-boot's choice: highest version among entries with tries left.
+bool ReadBootTarget(int* slot) {
+    mi::FatVolume volume;
+    std::string error;
+    if (!OpenCurrentEsp(false, &volume, &error)) return false;
+    int best = -1;
+    uint64_t best_version = 0;
+    for (int candidate = 0; candidate < 2; ++candidate) {
+        Entry entry;
+        if (!FindEnabledEntry(volume, candidate, &entry) || entry.tries_left == 0) continue;
+        const uint64_t version = EntryVersion(entry.contents);
+        if (best < 0 || version > best_version) { best = candidate; best_version = version; }
     }
-    if (!replaced) updated = "default " + selected + "\n" + config;
-    else {
-        const std::string old_stem="default ";
-        size_t pos=updated.find(old_stem);
-        if(pos!=std::string::npos){size_t end=updated.find('\n',pos);updated.replace(pos,end==std::string::npos?updated.size()-pos:end-pos,"default "+selected);}
-    }
-    const std::vector<uint8_t> output(updated.begin(), updated.end());
-    return volume.WriteFile("loader/loader.conf", output, &error);
+    if (best < 0) return false;
+    *slot = best;
+    return true;
 }
 
 bool MarkEntrySuccessful(int slot) {
-    mi::FatVolume volume;std::string error;
-    if(!OpenCurrentEsp(true,&volume,&error)) {
+    mi::FatVolume volume;
+    std::string error;
+    if (!OpenCurrentEsp(true, &volume, &error)) {
         std::fprintf(stderr, "matonos-bootctrl: cannot open current ESP while marking slot %d successful: %s\n", slot, error.c_str());
         return false;
     }
-    const std::string stem=slot==0?"A":"B";
-    std::vector<uint8_t> contents;
-    std::string selected;
-    for(int left=3;left>=0&&selected.empty();--left)for(int done=0;done<=3;++done){
-        const std::string candidate=stem+"+"+std::to_string(left)+"-"+std::to_string(done)+".conf";
-        if(volume.ReadFile("loader/entries/"+candidate,&contents,&error)){selected=candidate;break;}
-    }
-    if(selected.empty()) {
-        const bool ok = volume.ReadFile("loader/entries/"+stem+".conf",&contents,&error);
-        if (!ok) std::fprintf(stderr, "matonos-bootctrl: cannot find slot %s entry: %s\n", stem.c_str(), error.c_str());
-        return ok;
-    }
-    if(!volume.WriteFile("loader/entries/"+stem+".conf",contents,&error)) {
-        std::fprintf(stderr, "matonos-bootctrl: cannot write successful slot %s entry: %s\n", stem.c_str(), error.c_str());
+    Entry entry;
+    if (!FindEnabledEntry(volume, slot, &entry)) {
+        std::fprintf(stderr, "matonos-bootctrl: cannot find an enabled slot %s entry\n", Stem(slot).c_str());
         return false;
     }
-    if(!volume.RenameFile("loader/entries/"+selected,"loader/entries/"+stem+".DIS",&error)) {
-        std::fprintf(stderr, "matonos-bootctrl: cannot retire boot-count entry %s: %s\n", selected.c_str(), error.c_str());
-        return false;
-    }
-    if (!WriteLoaderDefault(slot)) {
-        std::fprintf(stderr, "matonos-bootctrl: cannot update systemd-boot default for slot %s\n", stem.c_str());
+    const std::string plain = Stem(slot) + ".conf";
+    if ((entry.tries_left >= 0 &&
+         (!WriteEntry(volume, plain, entry.contents, &error) || !volume.Sync(&error) ||
+          !RemoveEntryIfPresent(volume, entry.name, &error))) ||
+        !DropLoaderDefault(volume, &error) || !volume.Sync(&error)) {
+        std::fprintf(stderr, "matonos-bootctrl: cannot mark slot %s entry successful: %s\n", Stem(slot).c_str(), error.c_str());
         return false;
     }
     return true;
@@ -357,7 +413,7 @@ ndk::ScopedAStatus Failure(int code, const char* message) {
 ndk::ScopedAStatus BootControl::getActiveBootSlot(int32_t* result) {
     if (IsLive()) { *result = 0; return ndk::ScopedAStatus::ok(); }
     int from_loader = -1;
-    if (ReadLoaderDefault(&from_loader)) { *result = from_loader; return ndk::ScopedAStatus::ok(); }
+    if (ReadBootTarget(&from_loader)) { *result = from_loader; return ndk::ScopedAStatus::ok(); }
     State state{};
     if (!ReadState(&state)) return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot read slot state");
     *result = static_cast<int32_t>(state.active_slot);
@@ -436,29 +492,44 @@ ndk::ScopedAStatus BootControl::setActiveBootSlot(int32_t slot) {
     if (!ReadState(&state)) return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot read slot state");
     if (state.merge_status == static_cast<uint32_t>(boot::MergeStatus::MERGING))
         return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot switch slots while snapshot merge is active");
+    const bool keep_successful = slot == CurrentSlot() && (state.successful_mask & (1u << slot)) != 0;
     {
-        mi::FatVolume volume;std::string error;
-        if(!OpenCurrentEsp(true,&volume,&error))
-            return Failure(boot::IBootControl::COMMAND_FAILED,"Cannot open systemd-boot ESP");
-        const std::string stem=slot==0?"A":"B";
-        std::vector<uint8_t> disabled;
-        if(volume.ReadFile("loader/entries/"+stem+".DIS",&disabled,&error)) {
-            if(!volume.WriteFile("loader/entries/"+stem+"+3-0.conf",disabled,&error))
-                return Failure(boot::IBootControl::COMMAND_FAILED,"Cannot restore slot entry");
-            if(!volume.RenameFile("loader/entries/"+stem+".DIS","loader/entries/"+stem+".OLD",&error))
-                return Failure(boot::IBootControl::COMMAND_FAILED,"Cannot restore slot entry");
+        mi::FatVolume volume;
+        std::string error;
+        if (!OpenCurrentEsp(true, &volume, &error))
+            return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot open systemd-boot ESP");
+        const std::string stem = Stem(slot);
+        Entry entry;
+        if (!FindEnabledEntry(volume, slot, &entry)) {
+            entry = Entry{stem + ".DIS", "", -1};
+            if (!ReadEntry(volume, entry.name, &entry.contents))
+                return Failure(boot::IBootControl::COMMAND_FAILED, "Slot has no boot entry");
         }
-        std::vector<uint8_t> successful;
-        if(volume.ReadFile("loader/entries/"+stem+".conf",&successful,&error) &&
-           (!volume.WriteFile("loader/entries/"+stem+"+3-0.conf",successful,&error) ||
-            !volume.RenameFile("loader/entries/"+stem+".conf","loader/entries/"+stem+".BAK",&error)))
-            return Failure(boot::IBootControl::COMMAND_FAILED,"Cannot reset slot boot counter");
+        // Give the other slot ordering fields if it predates them, then outrank it.
+        uint64_t other_version = 0;
+        Entry other;
+        if (FindEnabledEntry(volume, 1 - slot, &other)) {
+            other_version = EntryVersion(other.contents);
+            if (!HasLine(other.contents, "sort-key") &&
+                !WriteEntry(volume, other.name, WithOrdering(other.contents, other_version), &error)) {
+                std::fprintf(stderr, "matonos-bootctrl: cannot order slot %s entry: %s\n", Stem(1 - slot).c_str(), error.c_str());
+                return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot order other slot entry");
+            }
+        }
+        const uint64_t version = std::max(other_version, EntryVersion(entry.contents)) + 1;
+        // Re-activating the running, already successful slot needs no trial boots.
+        const std::string name = keep_successful ? stem + ".conf" : stem + "+3-0.conf";
+        if (!WriteEntry(volume, name, WithOrdering(entry.contents, version), &error) || !volume.Sync(&error) ||
+            !RemoveSlotEntries(volume, slot, name, &error) || !DropLoaderDefault(volume, &error) ||
+            !volume.Sync(&error)) {
+            std::fprintf(stderr, "matonos-bootctrl: cannot activate slot %s entry: %s\n", stem.c_str(), error.c_str());
+            return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot activate slot entry");
+        }
     }
     state.bootable_mask |= 1u << slot;
-    state.successful_mask &= ~(1u << slot);
+    if (!keep_successful) state.successful_mask &= ~(1u << slot);
     state.active_slot = static_cast<uint32_t>(slot);
-    if (!WriteState(state)) return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot persist slot state");
-    return WriteLoaderDefault(slot) ? ndk::ScopedAStatus::ok() : Failure(boot::IBootControl::COMMAND_FAILED, "Cannot select systemd-boot entry");
+    return WriteState(state) ? ndk::ScopedAStatus::ok() : Failure(boot::IBootControl::COMMAND_FAILED, "Cannot persist slot state");
 }
 
 ndk::ScopedAStatus BootControl::setSlotAsUnbootable(int32_t slot) {
@@ -472,33 +543,25 @@ ndk::ScopedAStatus BootControl::setSlotAsUnbootable(int32_t slot) {
     const State previous = state;
     state.bootable_mask &= ~(1u << slot);
     state.successful_mask &= ~(1u << slot);
-    const bool change_default = state.active_slot == static_cast<uint32_t>(slot);
-    if (change_default) {
+    if (state.active_slot == static_cast<uint32_t>(slot)) {
         const uint32_t other = static_cast<uint32_t>(1 - slot);
         if ((state.bootable_mask & (1u << other)) == 0)
             return Failure(boot::IBootControl::COMMAND_FAILED, "No bootable fallback slot");
         state.active_slot = other;
     }
     if (!WriteState(state)) return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot persist slot state");
-    auto rollback = [&]() { (void)WriteState(previous); };
-    {
-        mi::FatVolume volume; std::string error;
-        if (!OpenCurrentEsp(true, &volume, &error)) {
-            rollback(); return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot open systemd-boot ESP");
-        }
-        const std::string stem = slot == 0 ? "A" : "B";
-        std::vector<uint8_t> entry; std::string selected;
-        for (int left = 3; left >= 0 && selected.empty(); --left) for (int done = 0; done <= 3; ++done) {
-            const std::string candidate = stem + "+" + std::to_string(left) + "-" + std::to_string(done) + ".conf";
-            if (volume.ReadFile("loader/entries/" + candidate, &entry, &error)) { selected = candidate; break; }
-        }
-        if (selected.empty() && volume.ReadFile("loader/entries/" + stem + ".conf", &entry, &error)) selected = stem + ".conf";
-        if (!selected.empty() && !volume.RenameFile("loader/entries/" + selected, "loader/entries/" + stem + ".DIS", &error)) {
-            rollback(); return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot disable slot entry");
-        }
+    // A disabled entry is no longer a .conf, so systemd-boot falls back to the other slot.
+    mi::FatVolume volume;
+    std::string error;
+    Entry entry;
+    if (!OpenCurrentEsp(true, &volume, &error)) {
+        (void)WriteState(previous); return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot open systemd-boot ESP");
     }
-    if (change_default && !WriteLoaderDefault(static_cast<int>(state.active_slot))) {
-        rollback(); return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot select fallback systemd-boot entry");
+    if (FindEnabledEntry(volume, slot, &entry) &&
+        (!WriteEntry(volume, Stem(slot) + ".DIS", entry.contents, &error) || !volume.Sync(&error) ||
+         !RemoveSlotEntries(volume, slot, Stem(slot) + ".DIS", &error) || !volume.Sync(&error))) {
+        std::fprintf(stderr, "matonos-bootctrl: cannot disable slot %s entry: %s\n", Stem(slot).c_str(), error.c_str());
+        (void)WriteState(previous); return Failure(boot::IBootControl::COMMAND_FAILED, "Cannot disable slot entry");
     }
     return ndk::ScopedAStatus::ok();
 }

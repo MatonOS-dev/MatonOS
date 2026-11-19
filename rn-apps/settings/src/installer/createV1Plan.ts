@@ -149,7 +149,7 @@ export function createV1Plan(
       kind: "write_files" as const,
       target: { partGuid: esp.partGuid },
       relativeDirectory: "loader",
-      files: [{ relativePath: "loader.conf", inlineContents: "default A.conf\ntimeout 0\neditor no\n" }],
+      files: [{ relativePath: "loader.conf", inlineContents: "timeout 0\neditor no\n" }],
     },
     {
       kind: "write_files" as const,
@@ -157,7 +157,7 @@ export function createV1Plan(
       relativeDirectory: "loader/entries",
       files: [{
         relativePath: "A.conf", // boot-control HAL names: A/B.conf, A+N-M.conf while counting
-        inlineContents: "title MatonOS\nefi /EFI/Linux/matonos-a.efi\n",
+        inlineContents: "title MatonOS\nefi /EFI/Linux/matonos-a.efi\nsort-key matonos\nversion 1\n",
       }],
     },
     // Last: the NVRAM entry points at the files written above.
