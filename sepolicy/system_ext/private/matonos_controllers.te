@@ -17,6 +17,13 @@ allow matonos_fiemap_helper dm_device:chr_file { open read write ioctl getattr }
 allow matonos_fiemap_helper dm_device:blk_file rw_file_perms;
 allow matonos_fiemap_helper matonos_install_block_device:blk_file rw_file_perms;
 allow matonos_fiemap_helper labeledfs:filesystem getattr;
+# libfiemap (as for gsid): walk /sys/block/dm-N/slaves to the bottom device,
+# wait for /dev/block nodes and mapper links, and FIEMAP the image files.
+r_dir_file(matonos_fiemap_helper, sysfs_dm)
+allow matonos_fiemap_helper block_device:dir r_dir_perms;
+allow matonos_fiemap_helper block_device:lnk_file { getattr read };
+allow matonos_fiemap_helper matonos_install_mount_file:file ioctl;
+allowxperm matonos_fiemap_helper matonos_install_mount_file:file ioctl { FS_IOC_FIEMAP FS_IOC_GETFLAGS };
 
 # The slot writer is started only by init after a vendor request property.
 type matonos_slot_writer, domain, coredomain;
