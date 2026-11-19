@@ -44,8 +44,6 @@ allow matonos_driver matonos_driver_helper:process signal;
 # Narrow helper permissions: pw-cat reaches PipeWire's private socket, the
 # VHCI child uses /dev/vhci, and the installer invokes fixed system format/GPT
 # tools plus BLKRRPART after driver-domain validation.
-allow matonos_driver_helper matonos_driver_data_file:dir { search r_dir_perms };
-allow matonos_driver_helper matonos_driver_data_file:file r_file_perms;
 allow matonos_driver_helper matonos_driver_data_file:sock_file write;
 allow matonos_driver_helper matonos_driver:unix_stream_socket connectto;
 allow matonos_driver_helper matonos_vhci_device:chr_file rw_file_perms;

@@ -1,4 +1,4 @@
-service matonos-slot-writer /system_ext/bin/matonos-slot-writer --request /data/misc/matonos-install-ota/.request /data/misc/matonos-install-ota/.result
+service matonos-slot-writer /system_ext/bin/matonos-slot-writer --request /maton_system/ota-staging/.request /maton_system/ota-staging/.result
     class late_start
     user root
     group root

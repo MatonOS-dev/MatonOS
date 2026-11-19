@@ -9,7 +9,6 @@
 /odm/bin/(pipewire|wireplumber) u:object_r:matonos_driver_exec:s0
 /odm/bin/pw-cat u:object_r:matonos_driver_helper_exec:s0
 /data/vendor/maton-audio(/.*)? u:object_r:matonos_driver_data_file:s0
-/data/misc/matonos-install-ota(/.*)? u:object_r:matonos_install_mount_file:s0
 # Add-on ZIP/image intake is mutable only in this private staging directory.
 /data/vendor/matonos-addons(/.*)? u:object_r:matonos_addon_data_file:s0
 # The optional mountpoint may remain an empty directory when no add-on disk exists.

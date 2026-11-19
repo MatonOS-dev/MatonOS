@@ -32,7 +32,7 @@ constexpr char kMetadata[] = "/metadata/maton/images";
 constexpr char kImageDir[] = "/maton_system/images";
 constexpr char kEsp[] = "/dev/block/by-name/esp";
 constexpr char kAddonDir[] = "/mnt/vendor/addons";
-constexpr char kOtaStageRoot[] = "/data/misc/matonos-install-ota";
+constexpr char kOtaStageRoot[] = "/maton_system/ota-staging";
 constexpr char kImages[][16] = {"system", "system_ext", "product", "vendor", "odm"};
 constexpr size_t kCopyBytes = 1024 * 1024;
 

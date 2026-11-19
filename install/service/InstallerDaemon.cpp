@@ -53,9 +53,9 @@ namespace {
 constexpr char kTag[] = "MatonosInstaller";
 constexpr char kImageStoreRoot[] = "/mnt/matonos-install";
 constexpr char kSystemMapper[] = "matonos-install-system";
-constexpr char kOtaStageRoot[] = "/data/misc/matonos-install-ota";
-constexpr char kSlotWriterRequest[] = "/data/misc/matonos-install-ota/.request";
-constexpr char kSlotWriterResult[] = "/data/misc/matonos-install-ota/.result";
+constexpr char kOtaStageRoot[] = "/maton_system/ota-staging";
+constexpr char kSlotWriterRequest[] = "/maton_system/ota-staging/.request";
+constexpr char kSlotWriterResult[] = "/maton_system/ota-staging/.result";
 constexpr const char* kOtaNames[] = {"manifest.json", "manifest.sig", "system.erofs",
     "system_ext.erofs", "product.erofs", "vendor.erofs", "odm.erofs", "vbmeta.img",
     "matonos-a.efi", "matonos-b.efi"};

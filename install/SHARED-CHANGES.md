@@ -323,7 +323,7 @@ The sector-zero dm-linear wrapper remains mandatory because libfiemap records
 the leaf block device and expects the filesystem to start at sector zero.
 
 The OTA slot writer follows the same boundary: the installer stages payloads
-and writes an operation request under `/data/misc/matonos-install-ota`, then
+and writes an operation request under `/maton_system/ota-staging`, then
 sets `vendor.maton.install.slot_writer.request`. Init starts the disabled
 system_ext oneshot and sets the matching done property after exit. The writer
 atomically publishes the matching result in the staging directory. That tree

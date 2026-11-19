@@ -29,7 +29,7 @@ domain. Init starts it as a disabled oneshot after the installer writes a
 request file and sets `vendor.maton.install.slot_writer.request`; init writes
 the matching done id after exit. Request and result files plus the staged
 payload directory use the existing shared `matonos_install_mount_file` type
-under `/data/misc/matonos-install-ota`.
+under `/maton_system/ota-staging`.
 
 The init service runs the request mode:
 

@@ -168,7 +168,7 @@ vendor.erofs, odm.erofs, vbmeta.img, matonos-a.efi, matonos-b.efi
 ```
 
 The service accepts only that inventory and copies the descriptors into a
-service-owned temporary directory under `/data/misc/matonos-install-ota`, whose
+service-owned temporary directory under `/maton_system/ota-staging`, whose
 `matonos_install_mount_file` label is shared by vendor and system_ext policy.
 It writes the request id, `stage` operation, and staging directory to a request
 file there, then sets `vendor.maton.install.slot_writer.request`. Init starts
