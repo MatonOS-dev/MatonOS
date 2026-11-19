@@ -48,6 +48,13 @@ bool Run(const std::vector<std::string>& arguments, uint64_t disk_sequence, std:
         if(arguments[0]=="@rescan") {
             if(arguments.size()!=2)_exit(125);
             helper_args.push_back("--rescan");helper_args.push_back(std::to_string(disk_sequence));helper_args.push_back(arguments[1]);
+        } else if (arguments[0] == "@discard") {
+            if (arguments.size() != 2) _exit(125);
+            helper_args.push_back("--discard");helper_args.push_back(std::to_string(disk_sequence));helper_args.push_back(arguments[1]);
+        } else if (arguments[0] == "@boot-entry") {
+            if (arguments.size() != 3) _exit(125);
+            helper_args.push_back("--boot-entry");helper_args.push_back(std::to_string(disk_sequence));
+            helper_args.push_back(arguments[1]);helper_args.push_back(arguments[2]);
         } else if (arguments[0] == "@prepare-image-store" || arguments[0] == "@finish-image-store") {
             if (arguments.size() != 3) _exit(125);
             helper_args.push_back(arguments[0] == "@prepare-image-store" ? "--prepare-image-store" : "--finish-image-store");
@@ -353,7 +360,12 @@ bool ReadVerifiedGptType(const Drive& drive, const Partition& partition,
     return fail("Selected partition GUID is absent from the verified GPT.");
 }
 
-bool WriteGptToDisk(const WriteGpt& gpt,const Drive& d,std::string* error) {
+bool WriteGptToDisk(const WriteGpt& gpt,const Drive& d,const ProgressCallback& progress,std::string* error) {
+    // The user already confirmed erasing this drive: trim it so the SSD starts
+    // the new layout with every block free. Unsupported drives just log.
+    if(progress)progress({0,0,"Trimming drive"});
+    if(!Run({"@discard",d.path},d.disk_sequence,error))return false;
+    if(progress)progress({0,0,"Writing partition table"});
     std::vector<std::string> args{"/system/bin/sgdisk","--zap-all","--clear","--disk-guid="+gpt.disk_guid};
     for(size_t i=0;i<gpt.partitions.size();++i) {
         const auto& p=gpt.partitions[i];
@@ -463,7 +475,7 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
     if(cancelled&&cancelled()){*error="Operation cancelled before execution.";return false;}
     return std::visit([&](const auto& op)->bool {
         using T=std::decay_t<decltype(op)>;
-        if constexpr(std::is_same_v<T,WriteGpt>) return WriteGptToDisk(op,target,error);
+        if constexpr(std::is_same_v<T,WriteGpt>) return WriteGptToDisk(op,target,progress,error);
         else if constexpr(std::is_same_v<T,CreateLpMetadata>) {
             const auto super=std::find_if(target.partitions.begin(),target.partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==op.super_part_guid;});
             if(super==target.partitions.end()||super->path.empty()){*error="Selected super partition disappeared before LP metadata creation.";return false;}
@@ -500,9 +512,9 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
         } else if constexpr(std::is_same_v<T,Format>) {
             const auto path=PartitionPath(target,op.target); if(path.empty()){*error="Format target disappeared after safety validation.";return false;}
             const auto* part=Find(target,op.target);if(!part||part->logical){*error="Filesystem format is supported only on a physical GPT partition.";return false;}
-            if(op.filesystem==Filesystem::kExt4) return Run({"/system/bin/mke2fs","-t","ext4","-F","-L",op.label,path},target.disk_sequence,error);
+            if(op.filesystem==Filesystem::kExt4) return Run({"/system/bin/mke2fs","-t","ext4","-E","nodiscard","-F","-L",op.label,path},target.disk_sequence,error);
             if(op.filesystem==Filesystem::kVfat) return FatVolume::Format(path,op.label,error,target.disk_sequence);
-            if(op.filesystem==Filesystem::kF2fs) return Run({"/system/bin/make_f2fs","-f","-g","android","-O","encrypt,quota,verity","-l",op.label,path},target.disk_sequence,error);
+            if(op.filesystem==Filesystem::kF2fs) return Run({"/system/bin/make_f2fs","-f","-t","0","-g","android","-O","encrypt,quota,verity","-l",op.label,path},target.disk_sequence,error);
             *error="Unknown filesystem in format operation.";return false;
         } else if constexpr(std::is_same_v<T,CopyPartition>) {
             const auto* dst=Find(target,op.target); const auto dest_path=PartitionPath(target,op.target);
@@ -538,6 +550,11 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
             return Copy(source,dest,target.disk_sequence,src->size_bytes,src->size_bytes,src->logical?src->start_bytes:0,dst->logical?dst->start_bytes:0,std::move(progress),std::move(cancelled),error);
         } else if constexpr(std::is_same_v<T,WriteFiles>) {
             return WriteFilesToPartition(target,op,std::move(progress),std::move(cancelled),error);
+        } else if constexpr(std::is_same_v<T,RegisterBootEntry>) {
+            const auto* esp=Find(target,op.esp);
+            if(!esp||esp->logical||esp->path.empty()){*error="ESP disappeared after safety validation.";return false;}
+            if(progress)progress({0,0,"Adding firmware boot entry"});
+            return Run({"@boot-entry",esp->path,esp->part_guid},target.disk_sequence,error);
         }
         *error="Unsupported operation."; return false;
     },operation);

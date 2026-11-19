@@ -160,6 +160,8 @@ export function createV1Plan(
         inlineContents: "title MatonOS\nefi /EFI/Linux/matonos-a.efi\n",
       }],
     },
+    // Last: the NVRAM entry points at the files written above.
+    { kind: "register_boot_entry" as const, esp: { partGuid: esp.partGuid } },
   ] satisfies InstallerOperation[];
   return {
     operations: ops.map((operation) => ({

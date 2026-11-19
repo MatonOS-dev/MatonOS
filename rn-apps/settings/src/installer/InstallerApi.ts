@@ -72,6 +72,7 @@ export type InstallerOperation =
       target: PartitionRef;
     }
   | { kind: "clone_partition"; source: PartitionRef; target: PartitionRef }
+  | { kind: "register_boot_entry"; esp: PartitionRef }
   | {
       kind: "write_files";
       target: PartitionRef;

@@ -4,3 +4,9 @@
 type matonos_efivarfs, fs_type;
 allow { init ueventd } matonos_efivarfs:dir search;
 allow { init ueventd } matonos_efivarfs:file r_file_perms;
+
+# Live session only (first stage mounts efivarfs read-write when
+# androidboot.matonos.live=1): the installer's storage helper adds the
+# MatonOS Boot#### entry and puts it first in BootOrder.
+allow matonos_driver_helper matonos_efivarfs:dir { r_dir_perms add_name write };
+allow matonos_driver_helper matonos_efivarfs:file { create r_file_perms write };

@@ -73,8 +73,10 @@ struct CopyPartition { CopySourceKind source_kind; std::string live_partition_na
 struct ClonePartition { PartitionRef source; PartitionRef target; };
 struct FilePayload { std::string relative_path; std::string live_payload_path; std::string inline_contents; std::string sha256; };
 struct WriteFiles { PartitionRef target; std::string relative_directory; std::vector<FilePayload> files; };
+// Adds the ESP's fallback loader to the firmware boot menu and BootOrder.
+struct RegisterBootEntry { PartitionRef esp; };
 using Operation = std::variant<WriteGpt, CreateLpMetadata, PopulateImages, Format, CopyPartition,
-                               ClonePartition, WriteFiles>;
+                               ClonePartition, WriteFiles, RegisterBootEntry>;
 struct OperationRequest {
     uint32_t api_version = kOperationApiVersion;
     std::string target_disk_id;  // current locator

@@ -41,18 +41,20 @@ index bbd70bc72..e000beffd 100644
      bool InitDmUser(const std::string& name);
      bool InitDevices(std::set<std::string> devices);
 diff --git a/init/first_stage_init.cpp b/init/first_stage_init.cpp
-index 8b9469906..fdf917ea9 100644
+index 8b9469906..22204b93a 100644
 --- a/init/first_stage_init.cpp
 +++ b/init/first_stage_init.cpp
-@@ -367,6 +367,13 @@ int FirstStageMain(int argc, char** argv) {
+@@ -367,6 +367,15 @@ int FirstStageMain(int argc, char** argv) {
      CHECKCALL(setgroups(arraysize(groups), groups));
      CHECKCALL(mount("sysfs", "/sys", "sysfs", 0, NULL));
      CHECKCALL(mount("selinuxfs", "/sys/fs/selinux", "selinuxfs", 0, NULL));
 +    // MatonOS: the boot partition UUID comes from the boot loader EFI
 +    // variables when the UKI cmdline has none (see fs_mgr GetBootPartUuid).
++    // Only the live installer session writes them (its NVRAM boot entry).
++    const bool live_session = cmdline.find("androidboot.matonos.live=1") != std::string::npos;
 +    if (access("/sys/firmware/efi/efivars", F_OK) == 0 &&
 +        mount("efivarfs", "/sys/firmware/efi/efivars", "efivarfs",
-+              MS_RDONLY | MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr) != 0) {
++              (live_session ? 0 : MS_RDONLY) | MS_NOSUID | MS_NODEV | MS_NOEXEC, nullptr) != 0) {
 +        PLOG(ERROR) << "Could not mount efivarfs";
 +    }
  

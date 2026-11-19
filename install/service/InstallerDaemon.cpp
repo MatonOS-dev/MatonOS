@@ -1,4 +1,5 @@
 #include "InstallerService.h"
+#include "EfiBootEntry.h"
 #include "Json.h"
 #include "matonos_ipc.h"
 
@@ -258,6 +259,10 @@ bool ParseOperation(const js::Value& value, mi::Operation* out, std::string* err
         const auto* source=Get(value,"source"), *target=Get(value,"target"); if (!source||!target) { *error="Clone source or target missing."; return false; }
         *out=mi::ClonePartition{ParseRef(*source),ParseRef(*target)}; return true;
     }
+    if (kind == "register_boot_entry") {
+        const auto* esp=Get(value,"esp"); if (!esp) { *error="Boot entry ESP missing."; return false; }
+        *out=mi::RegisterBootEntry{ParseRef(*esp)}; return true;
+    }
     if (kind == "write_files") {
         const auto* target=Get(value,"target"), *files=Get(value,"files"); if (!target||!files||files->kind!=js::Value::Kind::kArray) { *error="File payload is missing."; return false; }
         mi::WriteFiles op{ParseRef(*target),S(value,"relativeDirectory"),{}};
@@ -413,6 +418,78 @@ int HelperFail(const char* what,const char* path,int err) {
 
 // BLKRRPART returns before ueventd has created the new partition nodes; the
 // next operation opens them by path, so wait until sysfs and /dev agree.
+// Opens `path` and proves it is still the block device the plan verified.
+int OpenExpectedBlock(const char* path,uint64_t expected,int flags,struct stat* st) {
+    const int fd=open(path,flags|O_CLOEXEC|O_NOFOLLOW);
+    if(fd<0){HelperFail("open",path,errno);return -1;}
+    uint64_t actual=0;
+    if(!expected||fstat(fd,st)!=0||!S_ISBLK(st->st_mode)||ioctl(fd,BLKGETDISKSEQ,&actual)!=0||actual!=expected){
+        CLOSE_FD(fd);HelperFail("not the verified block device:",path,0);return -1;
+    }
+    return fd;
+}
+
+// Whole-drive TRIM before the new layout. Drives without discard (HDDs, most
+// USB bridges) only log: trimming is an optimisation, never an install gate.
+int DiscardDisk(uint64_t expected,const char* disk) {
+    struct stat st{};
+    const int fd=OpenExpectedBlock(disk,expected,O_RDWR,&st);
+    if(fd<0)return 1;
+    uint64_t size=0;
+    if(ioctl(fd,BLKGETSIZE64,&size)!=0||size==0){const int e=errno;CLOSE_FD(fd);return HelperFail("BLKGETSIZE64",disk,e);}
+    uint64_t range[2]={0,size};
+    const auto started=std::chrono::steady_clock::now();
+    if(ioctl(fd,BLKDISCARD,range)!=0) {
+        const int e=errno;
+        __android_log_print(e==EOPNOTSUPP?ANDROID_LOG_INFO:ANDROID_LOG_ERROR,kTag,
+                            "storage helper: BLKDISCARD %s (%llu bytes) not done: %s; continuing without trim",
+                            disk,static_cast<unsigned long long>(size),strerror(e));
+    } else {
+        const auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-started).count();
+        __android_log_print(ANDROID_LOG_INFO,kTag,"storage helper: trimmed %s (%llu bytes) in %lld ms",
+                            disk,static_cast<unsigned long long>(size),static_cast<long long>(ms));
+    }
+    CLOSE_FD(fd);
+    return 0;
+}
+
+bool ReadSysfsNumber(const std::string& path,uint64_t* value) {
+    std::ifstream in(path);unsigned long long v=0;
+    if(!(in>>v))return false;
+    *value=v;return true;
+}
+
+// Registers \EFI\BOOT\BOOTX64.EFI on the new ESP in NVRAM. Geometry comes from
+// sysfs for the verified partition node; failure is logged and not fatal.
+int WriteEfiBootEntry(uint64_t expected,const char* esp,const char* part_guid) {
+    struct stat st{};
+    const int fd=OpenExpectedBlock(esp,expected,O_RDONLY,&st);
+    if(fd<0)return 1;
+    CLOSE_FD(fd);
+    const std::string sys="/sys/dev/block/"+std::to_string(major(st.st_rdev))+":"+std::to_string(minor(st.st_rdev));
+    uint64_t number=0,start=0,size=0,logical=0;
+    if(!ReadSysfsNumber(sys+"/partition",&number)||!ReadSysfsNumber(sys+"/start",&start)||
+       !ReadSysfsNumber(sys+"/size",&size)||!ReadSysfsNumber(sys+"/../queue/logical_block_size",&logical)||
+       number==0||number>UINT32_MAX||logical<512||logical%512!=0) {
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"storage helper: ESP geometry unreadable under %s; no NVRAM boot entry",sys.c_str());
+        return 0;
+    }
+    const uint64_t per=logical/512;
+    mi::EfiHardDrive hd{static_cast<uint32_t>(number),start/per,size/per,part_guid};
+    std::string error;
+    if(access("/sys/firmware/efi/efivars",F_OK)!=0) {
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"storage helper: efivarfs missing (%s); no NVRAM boot entry",strerror(errno));
+        return 0;
+    }
+    if(!mi::RegisterBootEntry("/sys/firmware/efi/efivars",hd,&error)) {
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"storage helper: NVRAM boot entry not written: %s; ESP fallback loader still boots",error.c_str());
+        return 0;
+    }
+    __android_log_print(ANDROID_LOG_INFO,kTag,"storage helper: NVRAM boot entry for %s (partition %llu, GUID %s)",
+                        esp,static_cast<unsigned long long>(number),part_guid);
+    return 0;
+}
+
 bool WaitForPartitionNodes(const char* disk_path) {
     const std::string disk=std::string(disk_path).substr(std::string(disk_path).rfind('/')+1);
     const std::string sys="/sys/block/"+disk;
@@ -454,6 +531,10 @@ int HelperMain(int argc,char** argv) {
         CLOSE_FD(fd);
         return WaitForPartitionNodes(argv[3])?0:1;
     }
+    if(argc==4&&std::strcmp(argv[1],"--discard")==0)
+        return DiscardDisk(std::strtoull(argv[2],nullptr,10),argv[3]);
+    if(argc==5&&std::strcmp(argv[1],"--boot-entry")==0)
+        return WriteEfiBootEntry(std::strtoull(argv[2],nullptr,10),argv[3],argv[4]);
     if(argc<5||std::strcmp(argv[1],"--exec-helper")!=0)return -1;
     const uint64_t expected=std::strtoull(argv[2],nullptr,10);
     const std::string command=argv[3];

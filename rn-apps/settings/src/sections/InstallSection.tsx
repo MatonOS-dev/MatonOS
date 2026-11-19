@@ -47,13 +47,14 @@ function parse<T>(value: string): T | null {
 
 function operationTitle(operation: InstallerOperation) {
   const labels: Record<InstallerOperation["kind"], string> = {
-    write_gpt: "Write the target partition table",
+    write_gpt: "Trim the drive and write the partition table",
     create_lp_metadata: "Create dynamic partition metadata",
     populate_images: "Install system images",
     format: "Format a target partition",
     copy_partition: "Copy a system partition",
     clone_partition: "Clone a system partition",
     write_files: "Write boot and loader files",
+    register_boot_entry: "Add MatonOS to the firmware boot menu",
   };
   return labels[operation.kind];
 }

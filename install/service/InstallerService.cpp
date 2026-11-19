@@ -1,4 +1,6 @@
 #include "InstallerService.h"
+
+#include <strings.h>
 #include "LpMetadata.h"
 
 #include <fcntl.h>
@@ -569,6 +571,13 @@ ValidationResult ValidateOperation(const OperationRequest& request,
             if (!CheckRef(*it, op.target) || !SafeRelative(op.relative_directory) || op.files.empty()) { error = "Invalid file write target or directory."; return false; }
             for (const auto& file : op.files) if (!SafeRelative(file.relative_path) ||
                 (file.live_payload_path.empty() == file.inline_contents.empty())) { error = "Invalid file payload path or source."; return false; }
+            return true;
+        } else if constexpr (std::is_same_v<T, RegisterBootEntry>) {
+            const auto* esp = CheckRef(*it, op.esp) ? FindPartition(*it, op.esp) : nullptr;
+            if (!esp || esp->logical || esp->mounted ||
+                strcasecmp(esp->type_guid.c_str(), "c12a7328-f81f-11d2-ba4b-00a0c93ec93b") != 0) {
+                error = "Boot entry target is not an EFI system partition on the target."; return false;
+            }
             return true;
 
         }
