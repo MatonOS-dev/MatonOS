@@ -21,13 +21,19 @@ done
 
 head=$(git -C "$REPO" rev-parse HEAD)
 info "Linux subsystem ($REPO @ ${head:0:7})"
-# Skip the build (and its test suite) when the staged APK is from this exact,
-# clean commit; MATON_SUBSYSTEM_FORCE=1 rebuilds anyway.
-if [[ -z ${MATON_SUBSYSTEM_FORCE:-} && -s $DEST/SOURCE && -s $DEST/MatonLinuxSubsystemBootstrap.apk ]] &&
-   [[ -z $(git -C "$REPO" status --porcelain) ]] &&
-   grep -qx "commit: $head" "$DEST/SOURCE" &&
-   grep -qF "$(cd "$DEST" && sha256sum MatonLinuxSubsystemBootstrap.apk)" "$DEST/SOURCE"; then
-  info "Skipping: staged APK already built from clean $head"
+# Skip the build (and its test suite) when the staged APK was built from
+# exactly this tree state: HEAD + working-tree diff + untracked files. The
+# build itself rewrites a tracked prebuilt, so "clean" is not a usable test.
+# MATON_SUBSYSTEM_FORCE=1 rebuilds anyway.
+tree_stamp() {
+  { git -C "$REPO" rev-parse HEAD; git -C "$REPO" diff --binary HEAD
+    git -C "$REPO" ls-files -o --exclude-standard -z | sort -z | xargs -0r -I{} sha256sum "$REPO/{}"
+  } | sha256sum | cut -d' ' -f1
+}
+stamp=$(tree_stamp)
+if [[ -z ${MATON_SUBSYSTEM_FORCE:-} && -s $DEST/MatonLinuxSubsystemBootstrap.apk && -s $DEST/STAMP ]] &&
+   [[ $(cat "$DEST/STAMP") == "$stamp $(cd "$DEST" && sha256sum MatonLinuxSubsystemBootstrap.apk | cut -d' ' -f1)" ]]; then
+  info "Skipping: staged APK already built from this tree state"
   exit 0
 fi
 MATON_SUBSYSTEM_OUT=$OUT \
@@ -58,4 +64,6 @@ SHA-256:
 $(cd "$DEST" && sha256sum MatonLinuxSubsystemBootstrap.apk)
 $(cd "$OUT" && sha256sum MatonLinuxSubsystem.apk | sed "s/\$/ (embedded, versionCode='$version')/")
 EOF
+# Stamp the tree as it is after the build (the build updates its prebuilt).
+echo "$(tree_stamp) $(cd "$DEST" && sha256sum MatonLinuxSubsystemBootstrap.apk | cut -d' ' -f1)" > "$DEST/STAMP"
 info "Staged $DEST/MatonLinuxSubsystemBootstrap.apk (versionCode $version)"
