@@ -30,6 +30,7 @@ namespace {
 } while (0)
 constexpr char kMetadataDir[] = "/mnt/matonos-install/metadata/maton/images";
 constexpr char kDataDir[] = "/mnt/matonos-install/system/images";
+constexpr char kStoreName[] = "maton_system";
 constexpr char kDevicePrefix[] = "maton-img-";
 constexpr char kRequestPath[] = "/mnt/matonos-install/system/.matonos-fiemap-request";
 constexpr char kResultPath[] = "/mnt/matonos-install/system/.matonos-fiemap-result";
@@ -98,6 +99,22 @@ int Execute(const std::string& command, const std::string& name,
         // Cleanup after a failed map: nothing mapped is already unmapped.
         if (android::dm::DeviceMapper::Instance().GetState(device) == android::dm::DmDeviceState::INVALID) return 0;
         return android::fs_mgr::DestroyLogicalPartition(device) ? 0 : 4;
+    }
+    if (command == "finalize") {
+        // libfiemap records the backing partition's kernel name (nvme0n1p2):
+        // the live session has no by-name link for the target drive. Kernel
+        // names are not stable across boots, and first-stage init waits for
+        // devices by GPT name, so persist the store's GPT name once all
+        // images exist.
+        if (name != kStoreName) return 2;
+        const std::string file = std::string(kMetadataDir) + "/lp_metadata";
+        auto metadata = android::fs_mgr::ReadFromImageFile(file);
+        if (!metadata || metadata->block_devices.size() != 1) return 4;
+        auto& device = metadata->block_devices[0];
+        static_assert(sizeof(kStoreName) <= sizeof(device.partition_name));
+        std::memset(device.partition_name, 0, sizeof(device.partition_name));
+        std::memcpy(device.partition_name, kStoreName, sizeof(kStoreName) - 1);
+        return android::fs_mgr::WriteToImageFile(file, *metadata) ? 0 : 4;
     }
     if (command == "list") {
         auto manager = OpenManager();

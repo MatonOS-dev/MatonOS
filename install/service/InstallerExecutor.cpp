@@ -492,6 +492,8 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
                 std::string unmap_error;
                 if(!RunFiemap("unmap",image.name,0,nullptr,&unmap_error)){if(ok){*error=unmap_error;ok=false;}}
             }
+            // Persist the store's GPT name for first-stage init (see helper).
+            if(ok&&!RunFiemap("finalize","maton_system",0,nullptr,error))ok=false;
             std::string finish_error;
             if(!Run({"@finish-image-store",system->path,metadata->path},target.disk_sequence,&finish_error)){if(ok){*error=finish_error;ok=false;}}
             return ok;
