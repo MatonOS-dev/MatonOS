@@ -1,5 +1,6 @@
 #include <libfiemap/image_manager.h>
 #include <fs_mgr_dm_linear.h>
+#include <libdm/dm.h>
 #include <liblp/liblp.h>
 #include <liblp/partition_opener.h>
 
@@ -75,9 +76,13 @@ int Execute(const std::string& command, const std::string& name,
             if (!metadata) return 4;
             const auto* super = android::fs_mgr::GetMetadataSuperBlockDevice(*metadata);
             if (!super) return 4;
+            // libfiemap records the backing partition's basename (nvme0n1p2);
+            // there is no by-name link for it, so hand fs_mgr the /dev path.
+            const std::string backing = android::fs_mgr::GetBlockDevicePartitionName(*super);
+            if (!ValidName(backing.c_str())) return 4;
             android::fs_mgr::PartitionOpener opener;
             android::fs_mgr::CreateLogicalPartitionParams params = {
-                    .block_device = android::fs_mgr::GetBlockDevicePartitionName(*super),
+                    .block_device = "/dev/block/" + backing,
                     .metadata = metadata.get(),
                     .partition_name = name,
                     .force_writable = true,
@@ -90,6 +95,8 @@ int Execute(const std::string& command, const std::string& name,
             *output = path;
             return 0;
         }
+        // Cleanup after a failed map: nothing mapped is already unmapped.
+        if (android::dm::DeviceMapper::Instance().GetState(device) == android::dm::DmDeviceState::INVALID) return 0;
         return android::fs_mgr::DestroyLogicalPartition(device) ? 0 : 4;
     }
     if (command == "list") {
