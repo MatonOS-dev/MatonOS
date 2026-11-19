@@ -82,6 +82,14 @@ tmp_image=$work/odm.img
   --file-contexts="$DEVICE_DIR/sepolicy/matonos/file_contexts" \
   -zlz4 "$tmp_image" "$root"
 [[ -s $tmp_image ]] || die "mkfs.erofs produced an empty image"
+# AOSP copies BOARD_PREBUILT_ODMIMAGE verbatim, and vbmeta includes odm's
+# descriptors (fstab: avb), so the bundle carries its own hashtree footer.
+AVBTOOL=$HOSTBIN/avbtool
+[[ -x $AVBTOOL ]] || die "AOSP host avbtool missing: $AVBTOOL"
+image_size=$(stat -c %s "$tmp_image")
+partition_size=$(( (image_size + image_size / 50 + 1048576 + 4095) / 4096 * 4096 ))
+"$AVBTOOL" add_hashtree_footer --image "$tmp_image" --partition_name odm --hash_algorithm sha256 \
+  --partition_size "$partition_size" --do_not_generate_fec
 chmod 0644 "$tmp_image"
 mv -f "$tmp_image" "$OUT"
 echo "ODM driver image ready: $OUT ($(du -h "$OUT" | awk '{print $1}'))"
