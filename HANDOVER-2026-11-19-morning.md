@@ -25,31 +25,28 @@ not passed end to end.
   forced unmap could have removed the live device. Image files keep their
   real names for first-stage.
 
-## Where it stands (updated ~08:30)
+## Where it stands (updated ~11:00)
 
-- Install **completes** in the VM (permissive run on build-22; the only
-  enforcing denial was the daemon's dm write, fixed in ce2057a).
-- Installed disk then panicked in first stage: libfiemap stored the
-  store's kernel name `nvme0n1p2`; first stage waits by GPT name. Fixed in
-  0eb4e25 (helper `finalize` renames it to `maton_system`), build-24.
-- **Gap**: installer writes no EFI NVRAM boot entry; it relies on the
-  `\EFI\BOOT\BOOTX64.EFI` fallback. In QEMU, give the NVMe `bootindex=1`
-  and fresh vars. Real firmware without fallback scanning won't boot it.
-- Booting the installed disk needs the same PCI topology as install time:
-  the loader entry pins `androidboot.boot_devices` (partuuid wins anyway).
+- **Install test PASSED** on build-26, merged to main (e67b64b, pushed):
+  enforcing install, installed disk boots `green`, enforcing, slot `_a`,
+  `ro.boot.boot_part_uuid` from EFI `LoaderDevicePartUUID`.
+- Fixes since 08:30: first stage mounts the image store through a dm-linear
+  node (raw-partition mount blocked the image tables with EBUSY);
+  `/maton_system` root mount point; loader entries are `title`+`efi` only
+  (an `options` line replaced the signed UKI cmdline and lost the pinned
+  vbmeta digest); no `boot_devices` pin; SlotWriter writes option-less entries.
+- Booting the installed disk in QEMU: NVMe `bootindex=1`, fresh vars.
 
-Earlier state:
-
-Install flow in the VM: GPT → ESP → image store (mkfs, mount, label) →
-image creation all pass enforcing. The last run (build-21) failed mapping
-the images: fs_mgr looked for the target partition under
-`/dev/block/by-name`. Fixed in 9e3b702 (build-22).
+User decisions 11-19 (memory install-foolproof-2026-11-19): no patch split;
+EFI NVRAM entry; trim the SSD before reformatting; SMART health findings
+(warnings + errors needing a tick-box, never refuse); clone-safe boot
+(re-check image extents, duplicate PARTUUID message); faster wrapper builds.
 
 ## Next, in order
 
-1. Build-22 → VM install (recipe below) → boot the installed disk: check
-   `ro.boot.verifiedbootstate`, enforcing, `/maton_system/ota-staging` exists.
-2. Merge `inst-layout` → main, push.
+1. Installer follow-ups (user 11-19): EFI NVRAM entry + trim, SMART
+   health, clone checks, build-wrapper speed.
+2. (done) merge to main.
 3. OTA A→B→A via the live server's **testing** channel. Note from
    `ota-device` report: Settings has no stage/finalize caller yet, and
    descriptor passing needs a new frozen AIDL version.
