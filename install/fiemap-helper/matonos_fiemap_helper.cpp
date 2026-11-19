@@ -1,4 +1,7 @@
 #include <libfiemap/image_manager.h>
+#include <fs_mgr_dm_linear.h>
+#include <liblp/liblp.h>
+#include <liblp/partition_opener.h>
 
 #include <android-base/unique_fd.h>
 #include <fcntl.h>
@@ -26,6 +29,7 @@ namespace {
 } while (0)
 constexpr char kMetadataDir[] = "/mnt/matonos-install/metadata/maton/images";
 constexpr char kDataDir[] = "/mnt/matonos-install/system/images";
+constexpr char kDevicePrefix[] = "maton-img-";
 constexpr char kRequestPath[] = "/mnt/matonos-install/system/.matonos-fiemap-request";
 constexpr char kResultPath[] = "/mnt/matonos-install/system/.matonos-fiemap-result";
 
@@ -61,13 +65,32 @@ int Execute(const std::string& command, const std::string& name,
         if (!ValidName(name.c_str())) return 2;
         auto manager = OpenManager();
         if (!manager) return 3;
+        // The live session already has dm devices named system_a etc., and
+        // ImageManager names the dm device after the image. Map under a
+        // private prefix instead (same dm-linear path as ImageManager), so the
+        // image keeps the name first-stage init maps on the installed boot.
+        const std::string device = std::string(kDevicePrefix) + name;
         if (command == "map") {
+            const auto metadata = android::fs_mgr::ReadFromImageFile(std::string(kMetadataDir) + "/lp_metadata");
+            if (!metadata) return 4;
+            const auto* super = android::fs_mgr::GetMetadataSuperBlockDevice(*metadata);
+            if (!super) return 4;
+            android::fs_mgr::PartitionOpener opener;
+            android::fs_mgr::CreateLogicalPartitionParams params = {
+                    .block_device = android::fs_mgr::GetBlockDevicePartitionName(*super),
+                    .metadata = metadata.get(),
+                    .partition_name = name,
+                    .force_writable = true,
+                    .timeout_ms = std::chrono::seconds(10),
+                    .device_name = device,
+                    .partition_opener = &opener,
+            };
             std::string path;
-            if (!manager->MapImageDevice(name, std::chrono::seconds(10), &path)) return 4;
+            if (!android::fs_mgr::CreateLogicalPartition(params, &path)) return 4;
             *output = path;
             return 0;
         }
-        return manager->UnmapImageDevice(name) ? 0 : 4;
+        return android::fs_mgr::DestroyLogicalPartition(device) ? 0 : 4;
     }
     if (command == "list") {
         auto manager = OpenManager();

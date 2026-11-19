@@ -8,7 +8,7 @@
 type matonos_fiemap_helper, domain, coredomain;
 type matonos_fiemap_helper_exec, system_file_type, exec_type, file_type;
 init_daemon_domain(matonos_fiemap_helper)
-allow matonos_fiemap_helper matonos_install_mount_file:dir { search write add_name remove_name getattr };
+allow matonos_fiemap_helper matonos_install_mount_file:dir { search read open write add_name remove_name getattr };
 allow matonos_fiemap_helper matonos_install_mount_file:file { create open read write getattr setattr unlink rename map };
 # libfiemap creates and removes dm devices for the install images. Keep this
 # capability and raw block access scoped to the two install-store device types.
