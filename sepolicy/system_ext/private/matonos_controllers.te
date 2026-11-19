@@ -16,6 +16,10 @@ allow matonos_fiemap_helper self:capability sys_admin;
 allow matonos_fiemap_helper dm_device:chr_file { open read write ioctl getattr };
 allow matonos_fiemap_helper dm_device:blk_file rw_file_perms;
 allow matonos_fiemap_helper matonos_install_block_device:blk_file rw_file_perms;
+# liblp GetBlockDeviceInfo: BLKIOMIN/BLKALIGNOFF/BLKSSZGET/BLKGETSIZE64 etc.
+allowxperm matonos_fiemap_helper matonos_install_block_device:blk_file ioctl { 0x1200-0x12ff };
+# libfiemap stats the live super device while resolving block devices.
+allow matonos_fiemap_helper super_block_device_type:blk_file getattr;
 allow matonos_fiemap_helper labeledfs:filesystem getattr;
 # libfiemap (as for gsid): walk /sys/block/dm-N/slaves to the bottom device,
 # wait for /dev/block nodes and mapper links, and FIEMAP the image files.
