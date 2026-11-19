@@ -21,6 +21,7 @@
 #include <sys/epoll.h>
 #include <sys/inotify.h>
 #include <sys/ioctl.h>
+#include <sys/system_properties.h>
 #include <stdatomic.h>
 #include <unistd.h>
 
