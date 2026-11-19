@@ -47,13 +47,36 @@ EFI NVRAM entry; trim the SSD before reformatting; SMART health findings
 1. Installer follow-ups (user 11-19): EFI NVRAM entry + trim, SMART
    health, clone checks, build-wrapper speed.
 2. (done) merge to main.
-3. OTA A→B→A via the live server's **testing** channel. Note from
-   `ota-device` report: Settings has no stage/finalize caller yet, and
-   descriptor passing needs a new frozen AIDL version.
-4. Pointer capture (`wip/pointer-capture` 6a791f9): VM-test Firefox
-   `requestPointerLock`, then merge.
-5. ACK 7.3 is already the running kernel (7.3.0-g8bf243c0128e-dirty); the
-   remaining work is a clean (non-dirty) build.
+3. (done) OTA A→B→A on the **testing** channel: build-33 `_a` → 34 `_b` →
+   35 `_a`, then an enforcing finalize of 35 booted `_b`. Slot writer needed
+   `sys_admin` (dm table ioctls) + `kmsg_debug` append (c34337e); 33/34 lacked
+   it, so those two hops ran stage/finalize with setenforce 0. Settings still
+   has no stage/finalize caller; descriptor passing needs a new frozen AIDL.
+4. (done, 8e97a57) Pointer capture: on build-36, LED_MISC on the MatonOS
+   Pointer node switches QEMU vmmouse relative/absolute and inputd logs it.
+   Still open: an app-level check (Firefox `requestPointerLock`) to confirm
+   InputReader sets the LED.
+5. Clean ACK 7.3 build: `build-kernel.sh` now builds the patch series as
+   reproducible commits on `matonos-build` (1d48001, not pushed until the
+   server kernel build passes). Kernel tree copied clean to the server at
+   `/mnt/data/matonos/ack-7.3`; build there, then stage into prebuilt/.
+
+## ISO / Ventoy (11-19 afternoon)
+
+- ISO boot needs `ide-cd ... bootindex=1` in QEMU (`-cdrom` has no bootindex).
+- Stock first-stage init links `/dev/block/by-name` only for partitions whose
+  parent is MMC, NVMe or SCSI; loop devices are virtual and get none
+  (`realpath failed: /dev/block/by-name/super`). The helper now re-exports the
+  read-only loop as a `tcm_loop` SCSI disk (target_core_mod/iblock + tcm_loop,
+  nexus before LUN link) and detaches its scan mounts before exec'ing init
+  (SwitchRoot aborts on mounts it can't move). debb4a2; debug ISO booted from
+  CD to boot_completed, enforcing.
+- The ISO on maton.hanro50.net.za (matonos-1795085975) predates this and does
+  NOT boot. Replace with one from build-37 (main 8e97a57): upload new + sha256,
+  verify, delete the old pair (one ISO only).
+- Debug loop for the helper: `~/matonos/vm/claude/iso/dbg/` (explicit
+  linux/initrd loader entry + add.cpio.gz; `objcopy --update-section` on the
+  UKI silently keeps the old size, don't use it).
 
 ## Known noise
 
