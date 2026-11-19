@@ -29,6 +29,8 @@
 #   -S  boot with OVMF Secure Boot code and Microsoft keys enrolled
 #   -V  use this persistent writable OVMF vars file (created from the selected template)
 #   -F  full-screen window (default: a fixed window exactly the -r size, no resizing)
+#   MATON_QEMU_MOUSE=relative  plain relative PS/2 mouse; click grabs the host
+#                      pointer, Ctrl+Alt+G releases (default: absolute vmmouse)
 #
 # The image is attached as a USB stick (qemu-xhci + usb-storage): that's the
 # real use case, and androidboot.boot_part_uuid matches SCSI/NVMe/MMC disks
@@ -122,6 +124,14 @@ else
 fi
 
 machine=q35,vmport=on  # vmport: VMware absolute mouse (see input below)
+# MATON_QEMU_MOUSE=relative: no vmport, so the PS/2 AUX port is a plain
+# relative mouse like a real PC's. GTK grabs and confines the host pointer on
+# a click in the window (Ctrl+Alt+G releases); the guest sees raw deltas.
+case ${MATON_QEMU_MOUSE:-absolute} in
+  absolute) ;;
+  relative) machine=q35,vmport=off ;;
+  *) die "MATON_QEMU_MOUSE must be absolute or relative" ;;
+esac
 if [[ $GFX == venus || $GFX == native ]]; then
   # venus/native need blob resources, which need guest RAM in a shareable memfd.
   machine+=",memory-backend=mem0"
