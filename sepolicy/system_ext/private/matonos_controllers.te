@@ -39,17 +39,15 @@ allow matonos_slot_writer matonos_install_mount_file:file { create_file_perms re
 allowxperm matonos_slot_writer matonos_install_mount_file:file ioctl FS_IOC_FIEMAP;
 allow matonos_slot_writer matonos_image_metadata_file:dir create_dir_perms;
 allow matonos_slot_writer matonos_image_metadata_file:file { create_file_perms rename };
-# Add-on gate: read /mnt/vendor/addons/<name>/active-version.
-allow matonos_slot_writer mnt_vendor_file:dir search;
-r_dir_file(matonos_slot_writer, matonos_addon_mount_file)
-# libfiemap maps and unmaps the inactive slot's images through device-mapper.
+# libfiemap and libdm map and unmap the inactive slot's images through device-mapper.
 allow matonos_slot_writer dm_device:chr_file rw_file_perms;
 allow matonos_slot_writer dm_device:blk_file rw_file_perms;
 allowxperm matonos_slot_writer dm_device:blk_file ioctl BLKGETSIZE64;
 r_dir_file(matonos_slot_writer, sysfs_dm)
 allow matonos_slot_writer block_device:dir r_dir_perms;
 allow matonos_slot_writer { metadata_block_device userdata_block_device }:blk_file getattr;
-set_prop(matonos_slot_writer, gsid_prop)
+# libfiemap's IsImageMapped reads gsid.mapped_image.*; mapping never sets it.
+get_prop(matonos_slot_writer, gsid_prop)
 # The ESP: FAT reads/writes plus geometry queries (FAT and libfiemap).
 allow matonos_slot_writer matonos_install_block_device:blk_file rw_file_perms;
 # 0x1280 = BLKGETDISKSEQ (absent from ioctl_defines).

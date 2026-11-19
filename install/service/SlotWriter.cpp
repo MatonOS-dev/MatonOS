@@ -1,5 +1,6 @@
 #include <libdm/dm.h>
 #include <libfiemap/image_manager.h>
+#include <liblp/partition_opener.h>
 #include <openssl/evp.h>
 
 #include "service/FatFilesystem.h"
@@ -22,7 +23,6 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -32,7 +32,6 @@ namespace {
 constexpr char kMetadata[] = "/metadata/maton/images";
 constexpr char kImageDir[] = "/maton_system/images";
 constexpr char kEsp[] = "/dev/block/by-name/esp";
-constexpr char kAddonDir[] = "/mnt/vendor/addons";
 constexpr char kOtaStageRoot[] = "/maton_system/ota-staging";
 constexpr char kImages[][16] = {"system", "system_ext", "product", "vendor", "odm"};
 constexpr size_t kCopyBytes = 1024 * 1024;
@@ -94,31 +93,51 @@ bool ReadRegular(const fs::path& path, int* fd, uint64_t* size) {
     return true;
 }
 
-// First-stage init maps every image with MapAllImages(), which records no
-// libfiemap status file, so ImageManager cannot unmap those devices itself.
-bool UnmapInactive(const std::string& name, android::fiemap::ImageManager* manager) {
-    if (!manager->IsImageMapped(name) || manager->UnmapImageDevice(name)) return true;
-    std::fprintf(stderr, "matonos-slot-writer: %s has no libfiemap mapping record; removing its first-stage dm device\n", name.c_str());
-    if (!android::dm::DeviceMapper::Instance().DeleteDeviceIfExists(name))
-        return Fail("remove first-stage dm device for inactive image " + name);
+// ImageManager::MapImageDevice records each mapping in a gsid.mapped_image.*
+// property, which only gsid, init and update_engine may set. Map through
+// device-mapper directly: the dm device is named after the image, so unmapping
+// needs no record and also removes devices first-stage init mapped.
+bool UnmapImage(const std::string& name) {
+    return android::dm::DeviceMapper::Instance().DeleteDeviceIfExists(name);
+}
+
+bool MapImage(const std::string& name, android::fiemap::ImageManager* manager, std::string* path) {
+    android::fs_mgr::PartitionOpener opener;
+    std::string device;
+    if (!manager->MapImageWithDeviceMapper(opener, name, &device)) return false;
+    if (!android::dm::DeviceMapper::Instance().GetDmDevicePathByName(name, path)) {
+        UnmapImage(name);
+        return false;
+    }
+    // ueventd creates the node asynchronously.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (access(path->c_str(), F_OK) != 0) {
+        if (std::chrono::steady_clock::now() >= deadline) { UnmapImage(name); errno = ETIMEDOUT; return false; }
+        usleep(50 * 1000);
+    }
+    return true;
+}
+
+bool UnmapInactive(const std::string& name) {
+    if (!UnmapImage(name)) return Fail("remove dm device for inactive image " + name);
     return true;
 }
 
 bool CopyToImage(int source, const std::string& name, uint64_t size,
                  android::fiemap::ImageManager* manager) {
     if (size % 512 != 0) return Fail("payload size is not 512-byte aligned for " + name);
-    if (!UnmapInactive(name, manager)) return false;
+    if (!UnmapInactive(name)) return false;
     if (manager->BackingImageExists(name) && !manager->DeleteBackingImage(name))
         return Fail("remove previous inactive image " + name);
     if (!manager->CreateBackingImage(name, size, android::fiemap::IImageManager::CREATE_IMAGE_READONLY, nullptr))
         return Fail("create libfiemap image and extent metadata for " + name);
     std::string block;
-    if (!manager->MapImageDevice(name, std::chrono::seconds(30), &block))
+    if (!MapImage(name, manager, &block))
         return Fail("map new image " + name);
     int output = open(block.c_str(), O_WRONLY | O_CLOEXEC | O_NOFOLLOW);
     if (output < 0) {
         const int e=errno;
-        if(!manager->UnmapImageDevice(name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after open failure\n",name.c_str());
+        if(!UnmapImage(name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after open failure\n",name.c_str());
         errno=e;return Fail("open mapped image " + block);
     }
     std::vector<uint8_t> bytes(kCopyBytes);
@@ -127,19 +146,19 @@ bool CopyToImage(int source, const std::string& name, uint64_t size,
         const size_t want=static_cast<size_t>(std::min<uint64_t>(bytes.size(),size-offset));
         ssize_t got;
         do { got=pread(source,bytes.data(),want,static_cast<off_t>(offset)); } while(got<0&&errno==EINTR);
-        if(got<=0){const int e=got<0?errno:EIO;CLOSE_FD(output);if(!manager->UnmapImageDevice(name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after read failure\n",name.c_str());errno=e;return Fail("read payload for " + name);}
+        if(got<=0){const int e=got<0?errno:EIO;CLOSE_FD(output);if(!UnmapImage(name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after read failure\n",name.c_str());errno=e;return Fail("read payload for " + name);}
         size_t done=0;
         while(done<static_cast<size_t>(got)) {
             ssize_t put;
             do { put=pwrite(output,bytes.data()+done,static_cast<size_t>(got)-done,static_cast<off_t>(offset+done)); } while(put<0&&errno==EINTR);
-            if(put<=0){const int e=put<0?errno:EIO;CLOSE_FD(output);if(!manager->UnmapImageDevice(name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after write failure\n",name.c_str());errno=e;return Fail("write mapped image " + name);}
+            if(put<=0){const int e=put<0?errno:EIO;CLOSE_FD(output);if(!UnmapImage(name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after write failure\n",name.c_str());errno=e;return Fail("write mapped image " + name);}
             done+=static_cast<size_t>(put);
         }
         offset+=static_cast<uint64_t>(got);
     }
-    if(fsync(output)!=0){const int e=errno;CLOSE_FD(output);if(!manager->UnmapImageDevice(name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after fsync failure\n",name.c_str());errno=e;return Fail("fsync mapped image " + name);}
+    if(fsync(output)!=0){const int e=errno;CLOSE_FD(output);if(!UnmapImage(name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after fsync failure\n",name.c_str());errno=e;return Fail("fsync mapped image " + name);}
     CLOSE_FD(output);
-    if(!manager->UnmapImageDevice(name)) return Fail("unmap completed image " + name);
+    if(!UnmapImage(name)) return Fail("unmap completed image " + name);
     return true;
 }
 
@@ -258,25 +277,8 @@ bool Stage(const fs::path& payload) {
     if(!mi::ota::Verify(payload.string(), "/system_ext/etc/security/matonos/ota-ed25519.pub", &manifest, &verify_error)) {
         std::fprintf(stderr,"matonos-slot-writer: OTA manifest verification failed: %s\n",verify_error.c_str());return false;
     }
-    std::set<std::string> installed_addons;
-    std::error_code addon_ec;
-    const bool addon_dir = fs::is_directory(kAddonDir, addon_ec);
-    // Only "no add-on directory" means no add-ons; any other failure (e.g. a denial) must not pass the gate.
-    if (addon_ec == std::errc::no_such_file_or_directory) addon_ec.clear();
-    if (!addon_ec && addon_dir) {
-        for (fs::directory_iterator it(kAddonDir, addon_ec), end; !addon_ec && it != end; it.increment(addon_ec)) {
-            std::error_code type_ec;
-            if (!it->is_directory(type_ec) || type_ec) continue;
-            std::ifstream active(it->path() / "active-version");
-            std::string version;
-            if (std::getline(active, version) && !version.empty()) installed_addons.insert(it->path().filename().string());
-        }
-    }
-    if (addon_ec) { std::fprintf(stderr,"matonos-slot-writer: cannot enumerate installed add-ons at %s: %s\n",kAddonDir,addon_ec.message().c_str());return false; }
-    std::string addon_error;
-    if (!mi::ota::RequireAddons(manifest, installed_addons, &addon_error)) {
-        std::fprintf(stderr,"matonos-slot-writer: %s\n",addon_error.c_str());return false;
-    }
+    // Installed add-ons live under vendor's /mnt/vendor, which Treble keeps from
+    // system processes; the OTA server enforces the add-on gate (missing_addons).
     char release[PROP_VALUE_MAX]{};
     if(__system_property_get("ro.build.version.release",release)<=0) { errno=ENOENT; return Fail("ro.build.version.release is unavailable"); }
     char* base_end=nullptr; errno=0; const unsigned long long installed_base=std::strtoull(release,&base_end,10);
@@ -361,16 +363,16 @@ bool Finalize() {
     const std::string vbmeta_name=ImageName("vbmeta",target);
     if(!manager->BackingImageExists(vbmeta_name)){std::fprintf(stderr,"matonos-slot-writer: cannot finalize; missing %s\n",vbmeta_name.c_str());return false;}
     std::string block;
-    if(!UnmapInactive(vbmeta_name,manager.get()))return false;
-    if(!manager->MapImageDevice(vbmeta_name,std::chrono::seconds(30),&block))return Fail("map target vbmeta for digest verification");
+    if(!UnmapInactive(vbmeta_name))return false;
+    if(!MapImage(vbmeta_name, manager.get(), &block))return Fail("map target vbmeta for digest verification");
     int vbmeta_fd=open(block.c_str(),O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
-    if(vbmeta_fd<0){const int e=errno;if(!manager->UnmapImageDevice(vbmeta_name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after open failure\n",vbmeta_name.c_str());errno=e;return Fail("open mapped target vbmeta for digest verification");}
+    if(vbmeta_fd<0){const int e=errno;if(!UnmapImage(vbmeta_name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after open failure\n",vbmeta_name.c_str());errno=e;return Fail("open mapped target vbmeta for digest verification");}
     uint64_t vbmeta_size=0;
-    if(ioctl(vbmeta_fd,BLKGETSIZE64,&vbmeta_size)!=0||vbmeta_size==0){const int e=errno?errno:EINVAL;CLOSE_FD(vbmeta_fd);if(!manager->UnmapImageDevice(vbmeta_name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after size query failure\n",vbmeta_name.c_str());errno=e;return Fail("get mapped target vbmeta size");}
+    if(ioctl(vbmeta_fd,BLKGETSIZE64,&vbmeta_size)!=0||vbmeta_size==0){const int e=errno?errno:EINVAL;CLOSE_FD(vbmeta_fd);if(!UnmapImage(vbmeta_name))std::fprintf(stderr,"matonos-slot-writer: failed to unmap %s after size query failure\n",vbmeta_name.c_str());errno=e;return Fail("get mapped target vbmeta size");}
     std::string vbmeta_digest;
     const bool hashed=VbmetaDigest(vbmeta_fd,vbmeta_size,&vbmeta_digest);
     CLOSE_FD(vbmeta_fd);
-    if(!manager->UnmapImageDevice(vbmeta_name))return Fail("unmap target vbmeta after digest verification");
+    if(!UnmapImage(vbmeta_name))return Fail("unmap target vbmeta after digest verification");
     if(!hashed)return false;
     mi::FatVolume esp;std::string error;std::vector<uint8_t> contents;
     if(!OpenEsp(false,&esp,&error)||!esp.ReadFile(UkiPath(target),&contents,&error)||contents.empty()){
@@ -401,9 +403,9 @@ bool RemoveInactive() {
     }
     auto manager=android::fiemap::ImageManager::Open(kMetadata,kImageDir);
     if(!manager)return Fail("open libfiemap image manager for inactive-slot removal");
-    for(const char* base:kImages){const std::string name=ImageName(base,target);if(!UnmapInactive(name,manager.get()))return false;if(manager->BackingImageExists(name)&&!manager->DeleteBackingImage(name))return Fail("delete inactive image "+name);}
+    for(const char* base:kImages){const std::string name=ImageName(base,target);if(!UnmapInactive(name))return false;if(manager->BackingImageExists(name)&&!manager->DeleteBackingImage(name))return Fail("delete inactive image "+name);}
     const std::string vbmeta=ImageName("vbmeta",target);
-    if(!UnmapInactive(vbmeta,manager.get()))return false;
+    if(!UnmapInactive(vbmeta))return false;
     if(manager->BackingImageExists(vbmeta)&&!manager->DeleteBackingImage(vbmeta))return Fail("delete inactive vbmeta "+vbmeta);
     std::fprintf(stderr,"matonos-slot-writer: explicitly removed inactive slot %c; running slot %c is successful\n",target.upper,running.upper);return true;
 }
