@@ -25,7 +25,20 @@ not passed end to end.
   forced unmap could have removed the live device. Image files keep their
   real names for first-stage.
 
-## Where it stands
+## Where it stands (updated ~08:30)
+
+- Install **completes** in the VM (permissive run on build-22; the only
+  enforcing denial was the daemon's dm write, fixed in ce2057a).
+- Installed disk then panicked in first stage: libfiemap stored the
+  store's kernel name `nvme0n1p2`; first stage waits by GPT name. Fixed in
+  0eb4e25 (helper `finalize` renames it to `maton_system`), build-24.
+- **Gap**: installer writes no EFI NVRAM boot entry; it relies on the
+  `\EFI\BOOT\BOOTX64.EFI` fallback. In QEMU, give the NVMe `bootindex=1`
+  and fresh vars. Real firmware without fallback scanning won't boot it.
+- Booting the installed disk needs the same PCI topology as install time:
+  the loader entry pins `androidboot.boot_devices` (partuuid wins anyway).
+
+Earlier state:
 
 Install flow in the VM: GPT → ESP → image store (mkfs, mount, label) →
 image creation all pass enforcing. The last run (build-21) failed mapping
