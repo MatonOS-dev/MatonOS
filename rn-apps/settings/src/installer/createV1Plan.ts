@@ -42,7 +42,6 @@ export function createV1Plan(
   diskId: string,
   diskIdentity: string,
   diskBytes: number,
-  rotational = false,
 ): V1Plan {
   if (!diskIdentity)
     throw new Error("Refresh the drive list before confirming this target.");
@@ -105,12 +104,6 @@ export function createV1Plan(
       target: { partGuid: metadata.partGuid },
       filesystem: "ext4" as const,
       label: "metadata",
-    },
-    {
-      kind: "format" as const,
-      target: { partGuid: userdata.partGuid },
-      filesystem: rotational ? "ext4" as const : "f2fs" as const,
-      label: "userdata",
     },
     {
       kind: "populate_images" as const,

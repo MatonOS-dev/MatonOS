@@ -11,7 +11,7 @@ slot, or partition layout.
 | 1 | `esp` | 2 GiB | FAT32 EFI system partition with fallback loader, systemd-boot, one installed UKI and one entry. |
 | 2 | `maton_system` | 16 GiB | ext4 container for libfiemap-backed EROFS images. |
 | 3 | `metadata` | 64 MiB | ext4 libfiemap extent metadata and Android metadata. |
-| 4 | `userdata` | Remainder | F2FS when the selected disk reports non-rotational; ext4 when rotational. |
+| 4 | `userdata` | Remainder | Blank at install; first boot formats through fs_mgr/vold with metadata encryption. The current stock fstab order selects F2FS for a wiped device; ext4-on-HDD selection remains open. |
 
 There is no physical `super`, boot, misc, add-on, or B slot in this profile.
 The live source uses A images; a fresh install writes only the `_a` logical
@@ -22,8 +22,8 @@ image names. Slot selection and OTA writes are outside this task.
 1. Re-enumerate the selected disk and verify its stable identity, capacity,
    in-use state and safety before each destructive operation.
 2. Write GPT with the four partitions above.
-3. Format the ESP as FAT32, metadata as ext4, and userdata as the selected
-   ext4/F2FS filesystem.
+3. Format the ESP as FAT32 and metadata as ext4. Leave userdata blank so
+   first-boot fs_mgr/vold formats it through the dm-default-key mapping.
 4. Open and verify the target `maton_system` and `metadata` block devices.
    Create a dm-linear mapping covering the entire `maton_system` partition
    from sector zero, format ext4 through that mapping, then mount both ext4

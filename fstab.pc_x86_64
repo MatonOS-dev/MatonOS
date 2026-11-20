@@ -7,7 +7,6 @@
 #
 # Mainline-kernel constraints (see NOTES.md):
 #  - AVB hashtree verification uses UKI-pinned vbmeta metadata
-#  - no keydirectory= (metadata encryption needs dm-default-key, ACK-only)
 #  - no checkpoint=block (needs dm-bow, ACK-only)
 #  - no inlinecrypt (PCs have no inline crypto engine)
 #
@@ -29,9 +28,9 @@ vbmeta                     /vbmeta      emmc   defaults                         
 
 /dev/block/by-name/metadata /metadata   ext4   nodev,noatime,nosuid                wait,check,formattable,first_stage_mount
 # fsverity remains for PackageInstallerSession v4 APK integrity (idsig).
-# Installer formats userdata f2fs (SSD) or ext4 (HDD); fs_mgr tries both lines.
-/dev/block/by-name/userdata /data       f2fs   nodev,noatime,nosuid,discard   latemount,wait,check,quota,fsverity,reservedsize=128M,fileencryption=aes-256-xts:aes-256-cts:v2
-/dev/block/by-name/userdata /data       ext4   nodev,noatime,nosuid,errors=panic   latemount,wait,check,quota,fsverity,formattable,reservedsize=128M,fileencryption=aes-256-xts:aes-256-cts:v2
+# Leave userdata blank at install so fs_mgr/vold formats through dm-default-key.
+/dev/block/by-name/userdata /data       f2fs   nodev,noatime,nosuid,discard   latemount,wait,check,quota,fsverity,formattable,reservedsize=128M,fileencryption=aes-256-xts:aes-256-cts:v2,keydirectory=/metadata/vold/metadata_encryption,metadata_encryption=aes-256-xts
+/dev/block/by-name/userdata /data       ext4   nodev,noatime,nosuid,errors=panic   latemount,wait,check,quota,fsverity,formattable,reservedsize=128M,fileencryption=aes-256-xts:aes-256-cts:v2,keydirectory=/metadata/vold/metadata_encryption,metadata_encryption=aes-256-xts
 /dev/block/by-name/misc    /misc        emmc   defaults                            defaults
 
 /dev/block/zram0           none         swap   defaults                            zramsize=50%

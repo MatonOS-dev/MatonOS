@@ -82,8 +82,14 @@ The active install path is `rn-apps/settings/src/sections/InstallSection.tsx`
 new per-partition payload format.
 
 The new planner writes ESP, `maton_system`, metadata, and userdata GPT entries;
-formats userdata based on rotational state; and submits one image-population
-primitive. The executor creates a sector-zero dm-linear wrapper over the full
+formats only ESP and metadata, leaving userdata blank for Android's fs_mgr/vold
+first-boot formatting so dm-default-key creates the metadata-encrypted block
+device before the filesystem is made. The fstab marks both F2FS and ext4
+userdata entries `formattable`. Current stock fs_mgr chooses the first
+formattable entry for a wiped device, so this currently selects F2FS regardless
+of rotational state; ext4-on-HDD selection needs a supported stock mechanism
+to communicate the installer's choice without pre-formatting userdata.
+The planner submits one image-population primitive. The executor creates a sector-zero dm-linear wrapper over the full
 `maton_system` partition, formats/mounts the target ext4 filesystems, calls the
 Soong `matonos-fiemap-helper` to create/map/unmap the readonly libfiemap
 images, copies each live A mapper device, then unmounts and removes the
