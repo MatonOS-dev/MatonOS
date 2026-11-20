@@ -36,7 +36,7 @@ was stopped by its agent. No watchers left.
 5. Clear ~/.gradle when no Gradle daemon runs (16 GB).
 
 ## Order (user, 10-22)
-Flatpak working first (above), then OTA update server + installer, then real PC. Memory `roadmap-order-2026-10-22`.
+Flatpak working first (above), then MatonOS server + installer, then real PC. Memory `roadmap-order-2026-10-22`.
 
 ## Notes
 - VM recipe: `MATON_QEMU_HEADLESS=1 MATON_QEMU_DISK=nvme MATON_QEMU_PERSISTENT=1 MATON_QEMU=~/matonos/qemu-venus/bin/qemu-system-x86_64 tools/run-qemu-live.sh -i ~/matonos/vm/disk-vm/disk.img -g venus -m 12288 -a 5556 -s ~/matonos/vm/disk-vm/serial.log`.

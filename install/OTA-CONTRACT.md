@@ -1,15 +1,15 @@
 # OTA API and storage contract
 
-The OTA service exposes a JSON API and immutable files. It does not upload or
+The MatonOS server exposes a JSON API and immutable files. It does not upload or
 publish builds. A deployment promotes a release by editing its channels
-configuration with `src/promote.ts` in [MatonOS-dev/matonos-ota](https://github.com/MatonOS-dev/matonos-ota), which refuses a lower
+configuration with `src/promote.ts` in [MatonOS-dev/matonos-management-server](https://github.com/MatonOS-dev/matonos-management-server), which refuses a lower
 `android_base` than the channel currently serves. Same-base moves in either
 direction are allowed. The device and slot writer also enforce downgrade
 protection.
 
 ## Configuration and publisher
 
-The server requires `OTA_STORAGE_DIR` and `OTA_CONFIG`; `OTA_PORT` defaults to
+The server requires `MATON_SERVER_STORAGE_DIR` and `MATON_SERVER_CONFIG`; `MATON_SERVER_PORT` defaults to
 8080. The storage directory contains immutable update directories:
 
 ```text

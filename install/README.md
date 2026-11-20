@@ -8,7 +8,7 @@
 The installed-slot writer accepts signed, slot-neutral full image sets. The
 publisher (`tools/ota-publish.sh`) packages the five raw EROFS images, one
 suffix-free root `vbmeta.img`, both UKIs, and a signed manifest under
-`storage/<update_id>/`. The OTA server ([MatonOS-dev/matonos-ota](https://github.com/MatonOS-dev/matonos-ota), live at https://maton.hanro50.net.za) serves the API and immutable files;
+`storage/<update_id>/`. The MatonOS server ([MatonOS-dev/matonos-management-server](https://github.com/MatonOS-dev/matonos-management-server), live at https://maton.hanro50.net.za) serves the API and immutable files;
 its `src/promote.ts` updates the configured channel after checking that
 the Android base does not decrease. The device trusts the signed build
 manifest for downgrade protection, not channel metadata. The AVB

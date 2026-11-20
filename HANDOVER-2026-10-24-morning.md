@@ -46,7 +46,7 @@ PASS), kernel v2 pin restored.
    daemon (memory `mount-daemon`) is the main speed path; proot only as a test-checklist reference (GPL, ptrace). Next: cut raw calls in fd bookkeeping.
 4. **Installs**: VM checks not yet run — cancellation (test installer has no cancel control), fetch dedup
    (needs OSTree fetch counting), forced-failure isolation. Smoke test GTK4/Qt/SDL/Electron apps on a clean disk.
-5. Later: image size trim (memory `image-size-trim`: 540 MB uncompressed .ko, erofs uncompressed); OTA server per
+5. Later: image size trim (memory `image-size-trim`: 540 MB uncompressed .ko, erofs uncompressed); MatonOS server per
    `support-policy` (releases 1–2 strictly 6 months).
 
 ## Gotchas learned
@@ -95,7 +95,7 @@ optimise/simplify/cleanup → parallel installs → bug fixes.
 6. **Smoke tests**: GTK4 (Text Editor), Kate (Qt), SuperTuxKart (SDL), an Electron app, Steam — on a clean disk.
 7. **Build rules**: ISA baseline x86-64-v2 everywhere (kernel too; corei7 Rust patches approved); wrfsbase used when
    AT_HWCAP2 FSGSBASE, else arch_prctl. Multilib x86 libs, 64-bit zygote only; i386 driver parity with 64-bit.
-8. **Later**: image size trim (3,286 MiB; 540 MB uncompressed .ko, erofs compression, Mesa strip); OTA server +
+8. **Later**: image size trim (3,286 MiB; 540 MB uncompressed .ko, erofs compression, Mesa strip); MatonOS server +
    installer per support policy (6 months free per version, free upgrade resets clock, extended to 4 y negotiable —
    releases 1–2 strictly 6 months); GLX minor gaps; real PC after.
 

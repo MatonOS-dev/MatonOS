@@ -95,7 +95,7 @@ class MatonOSExpoModule : Module() {
         ?.takeIf { it.isNotBlank() } ?: Build.MODEL
       mapOf("machineId" to machineId, "deviceName" to deviceName)
     }
-    AsyncFunction("accountComplete") { username: String, email: String, token: String, machineId: String ->
+    AsyncFunction("accountComplete") { username: String, email: String, token: String, refreshToken: String, machineId: String ->
       require(username.isNotBlank() && token.isNotBlank()) { "Account name and session token are required" }
       val context = requireNotNull(appContext.reactContext)
       val manager = android.accounts.AccountManager.get(context)
@@ -108,9 +108,11 @@ class MatonOSExpoModule : Module() {
       manager.setUserData(account, "email", email)
       manager.setUserData(account, "machine_id", machineId)
       manager.setAuthToken(account, "session", token)
+      manager.setPassword(account, refreshToken)
       val result = Intent().putExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME, username)
         .putExtra(android.accounts.AccountManager.KEY_ACCOUNT_TYPE, "org.matonos.account")
         .putExtra(android.accounts.AccountManager.KEY_AUTHTOKEN, token)
+        .putExtra("refresh_token", refreshToken)
         .putExtra(org.matonos.settings.nativebridge.AccountAuthenticator.EXTRA_MACHINE_ID, machineId)
       if (AccountFlowActivity.hasPendingFlow()) appContext.currentActivity?.let { activity ->
         activity.setResult(android.app.Activity.RESULT_OK, result)
@@ -126,8 +128,24 @@ class MatonOSExpoModule : Module() {
       val context = requireNotNull(appContext.reactContext)
       val manager = android.accounts.AccountManager.get(context)
       val account = manager.getAccountsByType("org.matonos.account").firstOrNull() ?: return@AsyncFunction null
-      val token = manager.peekAuthToken(account, "session") ?: return@AsyncFunction null
-      mapOf("username" to account.name, "email" to (manager.getUserData(account, "email") ?: ""), "token" to token)
+      var token = manager.peekAuthToken(account, "session") ?: return@AsyncFunction null
+      val machineId = manager.getUserData(account, "machine_id") ?: return@AsyncFunction null
+      if (org.matonos.settings.nativebridge.AccountAuthenticator(context).tokenExpiry(token) <= System.currentTimeMillis() / 1000 + 300) {
+        val refresh = manager.getPassword(account)
+        if (refresh.isNullOrBlank()) return@AsyncFunction null
+        try {
+          val renewed = org.matonos.settings.nativebridge.AccountAuthenticator(context).refreshCredentials(refresh, machineId)
+          token = renewed.first
+          manager.setAuthToken(account, "session", renewed.first)
+          manager.setPassword(account, renewed.second)
+        } catch (e: org.matonos.settings.nativebridge.AccountAuthenticator.RefreshFailure) {
+          if (!e.unauthorized) throw IllegalStateException(e.message ?: "MatonOS session refresh failed")
+          manager.invalidateAuthToken("org.matonos.account", token)
+          manager.setPassword(account, null)
+          return@AsyncFunction null
+        }
+      }
+      mapOf("username" to account.name, "email" to (manager.getUserData(account, "email") ?: ""), "token" to token, "refreshToken" to (manager.getPassword(account) ?: ""))
     }
     AsyncFunction("accountRemoveLocal") { username: String ->
       val manager = android.accounts.AccountManager.get(requireNotNull(appContext.reactContext))

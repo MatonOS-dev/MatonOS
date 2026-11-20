@@ -8,7 +8,7 @@ import { SettingsCard } from "../components/SettingsUI";
 
 const API = "https://maton.hanro50.net.za/api";
 type Account = { username:string; email:string; verified:boolean };
-type Device = { id:string; name:string; created:number; last_seen:number; current:boolean };
+type Device = { id:string; name:string; created:number; last_refreshed:number; current:boolean };
 type Mode = "signin" | "register" | "forgot" | "reset" | "account" | "approve";
 
 function useField(initial = "") {
@@ -32,7 +32,7 @@ export function AccountSection() {
 
   const loadAccount = useCallback(async () => {
     const session = await MatonOS.accountStoredSession();
-    if (!session) { setAccount(null); setDevices([]); if (params.flow === "approve") setMode("signin"); return; }
+    if (!session) { setAccount(null); setDevices([]); setMode("signin"); if (params.flow !== "approve") setMessage("Your session expired. Sign in again."); return; }
     const info = await MatonOS.accountMachineInfo();
     const headers = { cookie:`maton_session=${session.token}`, "X-Maton-Machine-Id":info.machineId };
     const response = await fetch(`${API}/account`, { headers });
@@ -66,9 +66,9 @@ export function AccountSection() {
       const result = await post(created ? "/account/register" : "/account/login", {
         username:username.get(), ...(created ? { email:email.get() } : {}), password:password.get(),
       });
-      if (typeof result.token !== "string" || typeof result.username !== "string") throw new Error("The account service returned no session token.");
+      if (typeof result.token !== "string" || typeof result.refresh_token !== "string" || typeof result.username !== "string") throw new Error("The account service returned no session tokens.");
       const machine = await MatonOS.accountMachineInfo();
-      await MatonOS.accountComplete(result.username, typeof result.email === "string" ? result.email : email.get(), result.token, machine.machineId);
+      await MatonOS.accountComplete(result.username, typeof result.email === "string" ? result.email : email.get(), result.token, result.refresh_token, machine.machineId);
       setAccount({ username:result.username, email:String(result.email ?? email.get()), verified:Boolean(result.verified) });
       password.set(""); setMode("account"); await loadAccount();
     } catch (error) { setMessage(errorMessage(error)); }
@@ -119,7 +119,7 @@ export function AccountSection() {
         setMode("signin"); throw new Error("Sign in again to approve access.");
       }
       const value = await response.json() as Account;
-      await MatonOS.accountComplete(value.username, value.email, session.token, info.machineId);
+      await MatonOS.accountComplete(value.username, value.email, session.token, session.refreshToken, info.machineId);
     } catch (error) { setMessage(errorMessage(error)); }
     finally { setBusy(false); }
   }
@@ -155,7 +155,7 @@ export function AccountSection() {
   const deviceRows = devices.map((device) => <Row key={device.id} verticalAlignment="center" horizontalArrangement="start" modifiers={[fillMaxWidth(),paddingAll(8)]}>
     <Column modifiers={[weight(1)]} verticalArrangement={{spacedBy:2}}>
       <Text style={{typography:"titleSmall"}}>{device.name}{device.current ? " · This device" : ""}</Text>
-      <Text style={{typography:"bodySmall"}}>Last seen {new Date(device.last_seen).toLocaleString()}</Text>
+      <Text style={{typography:"bodySmall"}}>Last active {new Date(device.last_refreshed).toLocaleString()}</Text>
     </Column>
     <Button enabled={!busy} onClick={() => revoke(device)}><Text>Remove</Text></Button>
   </Row>);
