@@ -101,11 +101,21 @@ bool RemoveDmDevice(const char* name) {
     CLOSE_FD(control);return true;
 }
 
+// init runs the whole mount/unmount action and then always sets the done
+// property, even when a command fails, so there is no deadline: a slow mount
+// (cold disk, first mount of a fresh filesystem) must not abort the install.
+bool WaitForInit(const char* done_prop,const std::string& id,const char* what){
+    for(int waited=10;;waited+=10){
+        if(matonos::props::WaitFor(done_prop,id,std::chrono::seconds(10)))return true;
+        __android_log_print(ANDROID_LOG_WARN,kTag,"installer: still waiting for init %s request %s (%d s)",what,id.c_str(),waited);
+    }
+}
+
 bool UnmountImagePath(const std::string& path) {
     (void)path;
     const std::string id=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     if(!matonos::props::Set("vendor.maton.install.unmount.request",id) ||
-       !matonos::props::WaitFor("vendor.maton.install.unmount.done",id,std::chrono::seconds(10))){
+       !WaitForInit("vendor.maton.install.unmount.done",id,"unmount")){
         __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: init unmount request %s timed out",id.c_str());return false;
     }
     std::ifstream mounts("/proc/self/mountinfo");std::string line;
@@ -120,7 +130,7 @@ bool MountImageStore(const std::string& metadata,const std::string& system,std::
     if(!matonos::props::Set("vendor.maton.install.metadata_source",metadata)||
        !matonos::props::Set("vendor.maton.install.system_source",system)||
        !matonos::props::Set("vendor.maton.install.mount.request",id)||
-       !matonos::props::WaitFor("vendor.maton.install.mount.done",id,std::chrono::seconds(10))){
+       !WaitForInit("vendor.maton.install.mount.done",id,"image-store mount")){
         *error="init image-store mount request "+id+" timed out";return false;
     }
     std::ifstream mounts("/proc/self/mountinfo");std::string line;bool metadata_mounted=false,system_mounted=false;
