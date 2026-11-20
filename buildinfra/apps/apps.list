@@ -2,5 +2,6 @@
 matonos-settings	rn-apps/settings	expo	Settings.apk
 matonos-software	rn-apps/flathub	expo	Software.apk
 matonos-audio-tone-test	audio/testapp	:app:assembleRelease	AudioToneTest.apk
+matonos-pointer-test	input/testapp	:app:assembleRelease	PointerTest.apk
 # store source plugins (preinstalled, enabled by default)
 matonos-fdroid-source	store-sources/fdroid	assembleRelease	FdroidSource.apk
