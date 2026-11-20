@@ -33,6 +33,12 @@ type MatonOSClientModule = NativeEvents<EventMap> & {
     model: string;
     sdk: number;
   }>;
+  accountMachineInfo(): Promise<{ machineId: string; deviceName: string }>;
+  accountComplete(username: string, email: string, token: string, machineId: string): Promise<boolean>;
+  accountInvalidate(token: string): Promise<boolean>;
+  accountStoredSession(): Promise<{ username:string; email:string; token:string } | null>;
+  accountRemoveLocal(username: string): Promise<boolean>;
+  accountCancel(): Promise<boolean>;
   openTrustedApps(): Promise<boolean>;
   finishActivity(): Promise<boolean>;
   reboot(): Promise<boolean>;
@@ -60,6 +66,12 @@ export const MatonOS = {
   getUpdateStatus: () => Native.getUpdateStatus(),
   isLiveImage: () => Native.isLiveImage(),
   getSystemInfo: () => Native.getSystemInfo(),
+  accountMachineInfo: () => Native.accountMachineInfo(),
+  accountComplete: (username: string, email: string, token: string, machineId: string) => Native.accountComplete(username, email, token, machineId),
+  accountInvalidate: (token: string) => Native.accountInvalidate(token),
+  accountStoredSession: () => Native.accountStoredSession(),
+  accountRemoveLocal: (username: string) => Native.accountRemoveLocal(username),
+  accountCancel: () => Native.accountCancel(),
   openTrustedApps: () => Native.openTrustedApps(),
   finishActivity: () => Native.finishActivity(),
   reboot: () => Native.reboot(),

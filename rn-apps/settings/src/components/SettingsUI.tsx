@@ -34,7 +34,7 @@ import infoIcon from "../../assets/icons/info.xml";
 import installIcon from "../../assets/icons/install.xml";
 
 type Section =
-  "install" | "system-update" | "sleep" | "hardware" | "developer" | "about";
+  "install" | "system-update" | "sleep" | "hardware" | "developer" | "about" | "account";
 type NavEntry = {
   id: Section;
   title: string;
@@ -73,6 +73,7 @@ const navItems: Record<Section, NavEntry> = {
     fallback: developerIcon,
   },
   about: { id: "about", title: copy.about, symbol: "info", fallback: infoIcon },
+  account: { id: "account", title: copy.account, symbol: "account_circle", fallback: infoIcon },
 };
 const symbolRequests = new Map<string, Promise<ImageSourcePropType | null>>();
 const symbolSources = new Map<string, ImageSourcePropType>();
@@ -470,6 +471,7 @@ export function NavRail({ live }: { live: boolean }) {
         </InstalledOnly>
         <NavItem section="sleep" selected={current === "sleep"} />
         <NavItem section="hardware" selected={current === "hardware"} />
+        <NavItem section="account" selected={current === "account"} />
         <NavItem section="developer" selected={current === "developer"} />
         <NavItem section="about" selected={current === "about"} />
       </Column>

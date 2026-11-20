@@ -10,6 +10,7 @@ import org.matonos.client.BridgeMode
 import org.matonos.client.MatonOS
 import org.matonos.client.MatonosClient
 import org.matonos.settings.OtaInstallerBridge
+import org.matonos.settings.AccountFlowActivity
 import java.util.concurrent.ConcurrentHashMap
 
 /** Expo adapter over buildinfra/client. All bridge semantics remain in that shared Java client. */
@@ -85,6 +86,61 @@ class MatonOSExpoModule : Module() {
     AsyncFunction("getSystemInfo") {
       mapOf("version" to Build.VERSION.RELEASE, "build" to Build.DISPLAY,
         "device" to Build.DEVICE, "model" to Build.MODEL, "sdk" to Build.VERSION.SDK_INT)
+    }
+    AsyncFunction("accountMachineInfo") {
+      val context = requireNotNull(appContext.reactContext)
+      val machineId = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
+        ?: throw IllegalStateException("This device has no Android ID")
+      val deviceName = android.provider.Settings.Global.getString(context.contentResolver, android.provider.Settings.Global.DEVICE_NAME)
+        ?.takeIf { it.isNotBlank() } ?: Build.MODEL
+      mapOf("machineId" to machineId, "deviceName" to deviceName)
+    }
+    AsyncFunction("accountComplete") { username: String, email: String, token: String, machineId: String ->
+      require(username.isNotBlank() && token.isNotBlank()) { "Account name and session token are required" }
+      val context = requireNotNull(appContext.reactContext)
+      val manager = android.accounts.AccountManager.get(context)
+      val account = android.accounts.Account(username, "org.matonos.account")
+      if (manager.getAccountsByType("org.matonos.account").isEmpty()) {
+        if (!manager.addAccountExplicitly(account, null, android.os.Bundle())) throw IllegalStateException("Could not add MatonOS account")
+      } else if (manager.getAccountsByType("org.matonos.account").none { it.name.equals(username, ignoreCase = true) }) {
+        throw IllegalStateException("Only one MatonOS account can be added")
+      }
+      manager.setUserData(account, "email", email)
+      manager.setUserData(account, "machine_id", machineId)
+      manager.setAuthToken(account, "session", token)
+      val result = Intent().putExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME, username)
+        .putExtra(android.accounts.AccountManager.KEY_ACCOUNT_TYPE, "org.matonos.account")
+        .putExtra(android.accounts.AccountManager.KEY_AUTHTOKEN, token)
+        .putExtra(org.matonos.settings.nativebridge.AccountAuthenticator.EXTRA_MACHINE_ID, machineId)
+      if (AccountFlowActivity.hasPendingFlow()) appContext.currentActivity?.let { activity ->
+        activity.setResult(android.app.Activity.RESULT_OK, result)
+        activity.finish()
+      }
+      true
+    }
+    AsyncFunction("accountInvalidate") { token: String ->
+      android.accounts.AccountManager.get(requireNotNull(appContext.reactContext)).invalidateAuthToken("org.matonos.account", token)
+      true
+    }
+    AsyncFunction("accountStoredSession") {
+      val context = requireNotNull(appContext.reactContext)
+      val manager = android.accounts.AccountManager.get(context)
+      val account = manager.getAccountsByType("org.matonos.account").firstOrNull() ?: return@AsyncFunction null
+      val token = manager.peekAuthToken(account, "session") ?: return@AsyncFunction null
+      mapOf("username" to account.name, "email" to (manager.getUserData(account, "email") ?: ""), "token" to token)
+    }
+    AsyncFunction("accountRemoveLocal") { username: String ->
+      val manager = android.accounts.AccountManager.get(requireNotNull(appContext.reactContext))
+      val account = manager.getAccountsByType("org.matonos.account").firstOrNull { it.name == username }
+      if (account != null) manager.removeAccountExplicitly(account)
+      true
+    }
+    AsyncFunction("accountCancel") {
+      if (AccountFlowActivity.hasPendingFlow()) appContext.currentActivity?.let { activity ->
+        activity.setResult(android.app.Activity.RESULT_CANCELED)
+        activity.finish()
+      }
+      true
     }
     AsyncFunction("openTrustedApps") {
       val context = requireNotNull(appContext.reactContext)

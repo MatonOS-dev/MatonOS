@@ -1,8 +1,27 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.GET_ACCOUNTS" />
+    <uses-permission android:name="android.permission.AUTHENTICATE_ACCOUNTS" />
+    <uses-permission android:name="android.permission.USE_CREDENTIALS" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.REBOOT" />
     <application>
+        <activity
+            android:name="org.matonos.settings.AccountFlowActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <service
+            android:name="org.matonos.settings.nativebridge.AccountAuthenticatorService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCOUNT_AUTHENTICATOR">
+            <intent-filter>
+                <action android:name="android.accounts.AccountAuthenticator" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accounts.AccountAuthenticator"
+                android:resource="@xml/maton_account_authenticator" />
+        </service>
         <activity
             android:name="org.matonos.settings.nativebridge.MediaVolumeActivity"
             android:exported="false"

@@ -9,6 +9,7 @@ const en = {
   hardware: "Hardware",
   developer: "Developer",
   about: "About",
+  account: "Account",
   back: "Back",
   powerIdle: "Power and idle behavior",
   hardwareSummary: "Hardware detected by MatonOS",

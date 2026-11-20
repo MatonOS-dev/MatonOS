@@ -154,7 +154,7 @@ export async function checkForUpdate(
     manifest_url?: string;
     signature_url?: string;
     files?: UpdateFile[];
-  }>("/api/update", {
+  }>("/api/update/check", {
     channel: CHANNEL,
     base_android: installedBase(androidVersion),
     addon_list: addons,
