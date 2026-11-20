@@ -388,7 +388,7 @@ function NavItem({
     <Row
       modifiers={[fillMaxWidth(), paddingAll(4)]}
       verticalAlignment="center"
-      horizontalArrangement="start"
+      horizontalArrangement={{ spacedBy: 12 }}
     >
       <Icon
         source={icon}
@@ -404,21 +404,16 @@ function NavItem({
       </Text>
     </Row>
   );
-  return selected ? (
-    <FilledTonalButton
-      onClick={onClick}
-      colors={{
-        containerColor: colors.secondaryContainer,
-        contentColor: colors.onSecondaryContainer,
-      }}
-      modifiers={[fillMaxWidth()]}
-    >
-      {content}
-    </FilledTonalButton>
-  ) : (
+  // One button type for both states: FilledTonalButton pads its content wider
+  // than TextButton, so switching types shifted the item sideways on select.
+  const foreground = selected ? colors.onSecondaryContainer : colors.onSurfaceVariant;
+  return (
     <TextButton
       onClick={onClick}
-      colors={{ contentColor: colors.onSurfaceVariant }}
+      colors={{
+        containerColor: selected ? colors.secondaryContainer : "transparent",
+        contentColor: foreground,
+      }}
       modifiers={[fillMaxWidth()]}
     >
       {content}
