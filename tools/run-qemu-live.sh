@@ -190,6 +190,11 @@ pid=$$; while [[ $pid -gt 1 ]]; do
 done
 # Monitor count (virtio-gpu heads); >1 tests external-display settings.
 OUTPUTS=${MATON_QEMU_OUTPUTS:-1}
+# GTK puts each output in a tab and only draws the visible one; presents to a
+# hidden tab stall ~1 s each, so the whole guest drops to ~1 fps. SDL opens a
+# window per output and draws them all. SDL starts output 2+ unplugged: press
+# Ctrl+Alt+2 (3, …) in the QEMU window to show it and hotplug it in the guest.
+[[ $OUTPUTS -gt 1 && $gtk_gl == gtk* ]] && gtk_gl="sdl,gl=on"
 case $GFX in
   # xres/yres (-r): virtio-gpu's own default (640x480) is below Android's
   # large-screen size (600 dp), which changes the taskbar/desktop layout.
