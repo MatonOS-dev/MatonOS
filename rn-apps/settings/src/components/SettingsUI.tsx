@@ -179,7 +179,7 @@ export function StatusRow({
   return (
     <ListItem modifiers={[fillMaxWidth()]}>
       <ListItem.HeadlineContent>
-        <Row verticalAlignment="center" horizontalArrangement="start">
+        <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 12 }}>
           <Icon
             source={iconSource}
             size={20}
@@ -488,7 +488,7 @@ export function BackButton() {
     >
       <Row
         verticalAlignment="center"
-        horizontalArrangement="center"
+        horizontalArrangement={{ spacedBy: 6 }}
         modifiers={[paddingAll(4)]}
       >
         <Icon
