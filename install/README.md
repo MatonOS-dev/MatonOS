@@ -85,10 +85,26 @@ The new planner writes ESP, `maton_system`, metadata, and userdata GPT entries;
 formats only ESP and metadata, leaving userdata blank for Android's fs_mgr/vold
 first-boot formatting so dm-default-key creates the metadata-encrypted block
 device before the filesystem is made. The fstab marks both F2FS and ext4
-userdata entries `formattable`. Current stock fs_mgr chooses the first
-formattable entry for a wiped device, so this currently selects F2FS regardless
-of rotational state; ext4-on-HDD selection needs a supported stock mechanism
-to communicate the installer's choice without pre-formatting userdata.
+userdata entries `formattable`. Each installed fstab suffix contains only the
+entry matching the target drive, so stock fs_mgr's first-formattable-entry
+selection formats the requested filesystem through dm-default-key.
+
+Installed filesystem selection uses stock `androidboot.fstab_suffix`. First-stage
+init loads `fstab.${ro.boot.fstab_suffix}`; the build ships
+`fstab.pc_x86_64.ssd` (one F2FS `/data` row) and `fstab.pc_x86_64.hdd` (one ext4
+row), kept aligned with the canonical entries in `fstab.pc_x86_64` by
+`tools/preflight.sh`. The selected drive's existing `rotational` field chooses
+the corresponding UKI in Settings' install plan. The UKIs embed either
+`androidboot.fstab_suffix=pc_x86_64.ssd` or `.hdd` and retain the same pinned
+vbmeta digest; the HDD variants are signed at image-build time and copied
+unchanged to the target ESP. EFI loader options cannot carry this choice
+because the installed UKIs embed a command line and Secure Boot causes
+systemd-stub to ignore invocation options. This avoids changing the signed UKI
+or weakening its AVB pin.
+
+OTA follow-up: slot updates must preserve the installed filesystem choice when
+selecting the replacement UKI. The current OTA payload contract has one UKI per
+slot; this installer selection change does not yet expand that contract.
 The planner submits one image-population primitive. The executor creates a sector-zero dm-linear wrapper over the full
 `maton_system` partition, formats/mounts the target ext4 filesystems, calls the
 Soong `matonos-fiemap-helper` to create/map/unmap the readonly libfiemap

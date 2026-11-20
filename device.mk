@@ -22,6 +22,10 @@ $(call inherit-product, frameworks/native/build/tablet-10in-xhdpi-2048-dalvik-he
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/fstab.pc_x86_64:$(TARGET_COPY_OUT_VENDOR_RAMDISK)/fstab.pc_x86_64 \
     $(LOCAL_PATH)/fstab.pc_x86_64:$(TARGET_COPY_OUT_VENDOR)/etc/fstab.pc_x86_64 \
+    $(LOCAL_PATH)/fstab.pc_x86_64.ssd:$(TARGET_COPY_OUT_VENDOR_RAMDISK)/fstab.pc_x86_64.ssd \
+    $(LOCAL_PATH)/fstab.pc_x86_64.ssd:$(TARGET_COPY_OUT_VENDOR)/etc/fstab.pc_x86_64.ssd \
+    $(LOCAL_PATH)/fstab.pc_x86_64.hdd:$(TARGET_COPY_OUT_VENDOR_RAMDISK)/fstab.pc_x86_64.hdd \
+    $(LOCAL_PATH)/fstab.pc_x86_64.hdd:$(TARGET_COPY_OUT_VENDOR)/etc/fstab.pc_x86_64.hdd \
     $(LOCAL_PATH)/fstab.pc_x86_64.live:$(TARGET_COPY_OUT_VENDOR_RAMDISK)/fstab.pc_x86_64.live \
     $(LOCAL_PATH)/fstab.pc_x86_64.live:$(TARGET_COPY_OUT_VENDOR)/etc/fstab.pc_x86_64.live \
     $(LOCAL_PATH)/init.pc_x86_64.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/hw/init.pc_x86_64.rc \

@@ -1,0 +1,39 @@
+# fstab for pc_x86_64.
+#
+# Installed both into the vendor ramdisk (first-stage mount) and /vendor/etc.
+# Block device names come from GPT partition names created by the installer;
+# systemd-boot slot entries set androidboot.boot_devices from the selected
+# disk's sysfs ancestry so ueventd creates that disk's /dev/block/by-name/*.
+#
+# Mainline-kernel constraints (see NOTES.md):
+#  - AVB hashtree verification uses UKI-pinned vbmeta metadata
+#  - no checkpoint=block (needs dm-bow, ACK-only)
+#  - no inlinecrypt (PCs have no inline crypto engine)
+#
+#<src>                     <mnt_point>  <type> <mnt_flags>                         <fs_mgr_flags>
+# install: slotselect resolves these logical names to *_a or *_b from the
+# systemd-boot androidboot.slot_suffix. The live fstab remains separately named.
+system                     /system      erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb=vbmeta
+system_ext                 /system_ext  erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+product                    /product     erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+vendor                     /vendor      erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+odm                        /odm         erofs  ro                                  wait,logical,first_stage_mount,slotselect,avb
+# AVB's root metadata is mapped from the file-backed image store just like
+# the system images. emmc keeps first-stage init from trying to mount it.
+vbmeta                     /vbmeta      emmc   defaults                            wait,logical,first_stage_mount,slotselect
+
+# Installed image files. First-stage init mounts this only when the boot disk
+# has no super partition; legacy super-based installations can omit it.
+/dev/block/by-name/maton_system /maton_system ext4 nodev,noatime,nosuid    wait,check,first_stage_mount,nofail
+
+/dev/block/by-name/metadata /metadata   ext4   nodev,noatime,nosuid                wait,check,formattable,first_stage_mount
+# fsverity remains for PackageInstallerSession v4 APK integrity (idsig).
+# Leave userdata blank at install so fs_mgr/vold formats through dm-default-key.
+/dev/block/by-name/misc    /misc        emmc   defaults                            defaults
+
+/dev/block/zram0           none         swap   defaults                            zramsize=50%
+
+# Removable storage
+/devices/*/usb*/*          auto         auto   defaults                            voldmanaged=usb:auto
+/devices/*/mmc_host/*      auto         auto   defaults                            voldmanaged=sdcard1:auto
+/dev/block/by-name/userdata /data       f2fs   nodev,noatime,nosuid,discard   latemount,wait,check,quota,fsverity,formattable,reservedsize=128M,fileencryption=aes-256-xts:aes-256-cts:v2,keydirectory=/metadata/vold/metadata_encryption,metadata_encryption=aes-256-xts

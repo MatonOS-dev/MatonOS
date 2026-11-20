@@ -253,21 +253,31 @@ EOF
   # Installed systems do not use RAM-backed /data or /metadata. Keep the
   # ramN nodes absent so the live-only block labels cannot affect installed
   # boots. The kernel default creates RAM disks unless rd_nr is set to zero.
-  installed_a="console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=0 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64 androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=enforcing $avb_cmdline"
+  installed_a="console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=0 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64.ssd androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=enforcing $avb_cmdline"
   installed_b=${installed_a/_a /_b }
+  installed_a_hdd=${installed_a/pc_x86_64.ssd/pc_x86_64.hdd}
+  installed_b_hdd=${installed_b/pc_x86_64.ssd/pc_x86_64.hdd}
   sb_build_uki "$work/matonos-installed-a.efi" "$KERNEL" "$installed_a" "$work/matonos.sbat" "$work" \
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"
   sb_build_uki "$work/matonos-installed-b.efi" "$KERNEL" "$installed_b" "$work/matonos.sbat" "$work" \
+    "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"
+  sb_build_uki "$work/matonos-installed-a-hdd.efi" "$KERNEL" "$installed_a_hdd" "$work/matonos.sbat" "$work" \
+    "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"
+  sb_build_uki "$work/matonos-installed-b-hdd.efi" "$KERNEL" "$installed_b_hdd" "$work/matonos.sbat" "$work" \
     "$work/microcode.cpio" "$PRODUCT_OUT/vendor_ramdisk.img" "$PRODUCT_OUT/ramdisk.img"
   # Keep the full-image OTA inputs beside product outputs for ota-publish.sh.
   cp "$work/vbmeta.img" "$PRODUCT_OUT/vbmeta.img"
   cp "$work/matonos-installed-a.efi" "$PRODUCT_OUT/matonos-installed-a.efi"
   cp "$work/matonos-installed-b.efi" "$PRODUCT_OUT/matonos-installed-b.efi"
+  cp "$work/matonos-installed-a-hdd.efi" "$PRODUCT_OUT/matonos-installed-a-hdd.efi"
+  cp "$work/matonos-installed-b-hdd.efi" "$PRODUCT_OUT/matonos-installed-b-hdd.efi"
   mcopy -i "$esp" "$work/matonos-live.efi" ::/EFI/Linux/matonos-live.efi
   mcopy -i "$esp" "$work/matonos-live-debug.efi" ::/EFI/Linux/matonos-live-debug.efi
   mcopy -i "$esp" "$work/matonos-live-debug-permissive.efi" ::/EFI/Linux/matonos-live-debug-permissive.efi
   mcopy -i "$esp" "$work/matonos-installed-a.efi" ::/EFI/Linux/matonos-installed-a.efi
   mcopy -i "$esp" "$work/matonos-installed-b.efi" ::/EFI/Linux/matonos-installed-b.efi
+  mcopy -i "$esp" "$work/matonos-installed-a-hdd.efi" ::/EFI/Linux/matonos-installed-a-hdd.efi
+  mcopy -i "$esp" "$work/matonos-installed-b-hdd.efi" ::/EFI/Linux/matonos-installed-b-hdd.efi
 else
   mcopy -i "$esp" "$work/ventoy-initrd.img" ::/android/ventoy-initrd.img
 fi

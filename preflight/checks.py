@@ -243,6 +243,38 @@ def check_patches() -> None:
                 error(path, "AOSP patches are disabled by the zero-patches rule; retire or move this file out of patches/ (or record a user-approved exception in APPROVED_PATCHES)")
 
 
+def check_installed_fstabs() -> None:
+    source = DEVICE / "fstab.pc_x86_64"
+    variants = {"ssd": "f2fs", "hdd": "ext4"}
+
+    def active_lines(path: Path) -> list[str]:
+        return [line.strip() for line in path.read_text().splitlines()
+                if line.strip() and not line.lstrip().startswith("#")]
+
+    baseline = active_lines(source)
+    baseline_data = [line for line in baseline if len(line.split()) > 1 and line.split()[1] == "/data"]
+    if len(baseline_data) != 2:
+        error(source, "expected exactly the f2fs and ext4 /data source entries")
+        return
+    for suffix, filesystem in variants.items():
+        path = DEVICE / f"fstab.pc_x86_64.{suffix}"
+        if not path.is_file():
+            error(path, "missing installed filesystem-specific fstab")
+            continue
+        actual = active_lines(path)
+        data = [line for line in actual if len(line.split()) > 1 and line.split()[1] == "/data"]
+        if len(data) != 1 or data[0].split()[2] != filesystem:
+            error(path, f"expected exactly one /data entry with filesystem {filesystem}")
+            continue
+        selected = next(line for line in baseline_data if line.split()[2] == filesystem)
+        if data[0] != selected:
+            error(path, "its /data entry differs from the canonical fstab entry")
+        if [line for line in actual if line.split()[1] != "/data"] != [line for line in baseline if line.split()[1] != "/data"]:
+            error(path, "non-/data entries differ from fstab.pc_x86_64")
+        makefile = (DEVICE / "device.mk").read_text()
+        if makefile.count(f"fstab.pc_x86_64.{suffix}") < 4:
+            error("device.mk", f"does not copy fstab.pc_x86_64.{suffix} into both ramdisk and vendor")
+
 def check_bpfmt() -> None:
     bp_files = files(DEVICE, ("Android.bp",), prune=GENERATED_DIRS)
     if not bp_files:
@@ -270,6 +302,7 @@ def main() -> int:
         ("Android.bp declarations", check_android_bp),
         ("ODM bundle registry", check_bundle_registry),
         ("AOSP patch allowlist", check_patches),
+        ("installed userdata fstabs", check_installed_fstabs),
         ("Android.bp formatting", check_bpfmt),
     )
     print(f"Preflight: {len(checks)} checks", flush=True)

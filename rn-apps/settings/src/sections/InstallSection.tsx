@@ -163,6 +163,7 @@ export function InstallSection() {
         selected.id,
         selected.identity,
         selected.sizeBytes,
+        selected.rotational,
       ).operations;
     } catch (problem) {
       setFailedOperation("Prepare the install plan");

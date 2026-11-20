@@ -42,6 +42,7 @@ export function createV1Plan(
   diskId: string,
   diskIdentity: string,
   diskBytes: number,
+  rotational: boolean,
 ): V1Plan {
   if (!diskIdentity)
     throw new Error("Refresh the drive list before confirming this target.");
@@ -136,7 +137,12 @@ export function createV1Plan(
       kind: "write_files" as const,
       target: { partGuid: esp.partGuid },
       relativeDirectory: "EFI/Linux",
-      files: [{ relativePath: "matonos-a.efi", livePayloadPath: "live/esp/EFI/Linux/matonos-installed-a.efi" }],
+      files: [{
+        relativePath: "matonos-a.efi",
+        livePayloadPath: rotational
+          ? "live/esp/EFI/Linux/matonos-installed-a-hdd.efi"
+          : "live/esp/EFI/Linux/matonos-installed-a.efi",
+      }],
     },
     {
       kind: "write_files" as const,

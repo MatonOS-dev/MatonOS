@@ -279,7 +279,7 @@ function PartitionSummary({
   // Same pure plan the install runs, so sizes shown here are the sizes written.
   let partitions: ReturnType<typeof createV1Plan>["partitions"];
   try {
-    partitions = createV1Plan(drive.id, drive.identity, drive.sizeBytes).partitions;
+    partitions = createV1Plan(drive.id, drive.identity, drive.sizeBytes, drive.rotational).partitions;
   } catch (problem) {
     const message = problem instanceof Error ? problem.message : String(problem);
     return <TextError message={message} />;

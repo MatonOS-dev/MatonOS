@@ -414,7 +414,9 @@ std::string LivePayloadPath(const std::string& id) {
     if(id=="live/esp/EFI/BOOT/matonos-dev.der")return "EFI/BOOT/matonos-dev.der";
     if(id=="live/esp/EFI/systemd/systemd-bootx64.efi")return "EFI/systemd/systemd-bootx64.efi";
     if(id=="live/esp/EFI/Linux/matonos-installed-a.efi")return "EFI/Linux/matonos-installed-a.efi";
+    if(id=="live/esp/EFI/Linux/matonos-installed-a-hdd.efi")return "EFI/Linux/matonos-installed-a-hdd.efi";
     if(id=="live/esp/EFI/Linux/matonos-installed-b.efi")return "EFI/Linux/matonos-installed-b.efi";
+    if(id=="live/esp/EFI/Linux/matonos-installed-b-hdd.efi")return "EFI/Linux/matonos-installed-b-hdd.efi";
     if(id=="live/boot/a/bzImage")return "android/bzImage";
     if(id=="live/boot/a/vendor_ramdisk.img")return "android/vendor_ramdisk.img";
     if(id=="live/boot/a/ramdisk.img")return "android/ramdisk.img";
