@@ -3,7 +3,7 @@ import {
   unstable_getMaterialSymbolSourceAsync,
   type AndroidSymbol,
 } from "expo-symbols";
-import { Linking, type ImageSourcePropType } from "react-native";
+import { type ImageSourcePropType } from "react-native";
 import {
   Card,
   Column,
@@ -63,7 +63,7 @@ const navItems: Record<Section, NavEntry> = {
   display: {
     id: "display",
     title: copy.display,
-    symbol: "brightness_medium",
+    symbol: "desktop_windows",
     fallback: devicesIcon,
   },
   hardware: {
@@ -378,14 +378,7 @@ export function SectionHeader({
   );
 }
 
-// Display opens Android's own Display settings (brightness, dark theme, display
-// and text size, timeout) instead of duplicating them here.
 function openSection(router: ReturnType<typeof useRouter>, section: Section) {
-  if (section === "display") {
-    Linking.sendIntent("android.settings.DISPLAY_SETTINGS").catch((error: unknown) =>
-      console.error("Opening Android display settings failed", error));
-    return;
-  }
   router.push(section === "sleep" ? "/" : `/${section}`);
 }
 
@@ -482,7 +475,7 @@ export function NavRail({ live }: { live: boolean }) {
           />
         </InstalledOnly>
         <NavItem section="sleep" selected={current === "sleep"} />
-        <NavItem section="display" selected={false} />
+        <NavItem section="display" selected={current === "display"} />
         <NavItem section="hardware" selected={current === "hardware"} />
         <NavItem section="account" selected={current === "account"} />
         <NavItem section="developer" selected={current === "developer"} />

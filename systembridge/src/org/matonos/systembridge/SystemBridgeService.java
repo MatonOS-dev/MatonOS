@@ -45,6 +45,9 @@ public final class SystemBridgeService extends Service {
     private final ConcurrentMap<String, Subscription> subscriptions = new ConcurrentHashMap<>();
     // sleep: forward Android's current suspend blockers to the sleep daemon.
     private AndroidWakeStateForwarder sleepWakeForwarder;
+    // display: framework display APIs, served in-process rather than by a vendor daemon.
+    private volatile DisplayChannel displayChannel;
+    private volatile TrustChannel trustChannel;
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
         @Override public int getBridgeApiVersion() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiVersion");
@@ -187,6 +190,8 @@ public final class SystemBridgeService extends Service {
         // sleep: poll off the main thread; failed power inspection keeps sleep blocked.
         sleepWakeForwarder = new AndroidWakeStateForwarder(this);
         sleepWakeForwarder.start();
+        displayChannel = new DisplayChannel(this);
+        trustChannel = new TrustChannel(this);
         // The bridge is bound explicitly by apps. Root/adb administration is exposed
         // through the UID-gated ContentProvider below, never ServiceManager.
     }
@@ -300,7 +305,7 @@ public final class SystemBridgeService extends Service {
 
     private static Set<String> knownTargets() {
         return new HashSet<>(java.util.Arrays.asList("input", "sleep", "wifi", "audio",
-                "camera", "install", "addons", "status"));
+                "camera", "install", "addons", "status", "display", "trust"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {
@@ -638,6 +643,8 @@ public final class SystemBridgeService extends Service {
     }
 
     private IChannel channelFor(String target) {
+        if (DisplayChannel.TARGET.equals(target)) return displayChannel;
+        if (TrustChannel.TARGET.equals(target)) return trustChannel;
         // checkService is deliberately nonblocking: optional hardware instances may be absent.
         IBinder service = ServiceManager.checkService("vendor.matonos.channel.IChannel/" + target);
         return IChannel.Stub.asInterface(service);
@@ -695,6 +702,122 @@ public final class SystemBridgeService extends Service {
             return result.toString();
         } catch (Exception e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * The "trust" target: lists which apps may use which bridge services (built-in and
+     * developer-approved) for MatonOS Settings, and revokes developer trust.
+     */
+    static final class TrustChannel extends vendor.matonos.channel.IChannel.Stub {
+        static final String TARGET = "trust";
+        private static final String REQUESTS = "matonos_allow_bridge_trust_requests";
+        private final android.content.Context context;
+
+        TrustChannel(android.content.Context context) { this.context = context; }
+
+        @Override public int getInterfaceVersion() { return vendor.matonos.channel.IChannel.VERSION; }
+        @Override public String getInterfaceHash() { return vendor.matonos.channel.IChannel.HASH; }
+
+        @Override public String call(String command, String jsonArgs) {
+            long token = android.os.Binder.clearCallingIdentity();
+            try {
+                JSONObject args = new JSONObject(jsonArgs == null ? "{}" : jsonArgs);
+                switch (command) {
+                    case "get_state": return state().toString();
+                    case "revoke": return revoke(args.getString("package"));
+                    case "set_allow_requests": {
+                        boolean allow = args.getBoolean("allow");
+                        Settings.Global.putInt(context.getContentResolver(), REQUESTS, allow ? 1 : 0);
+                        Log.i(TAG, "Bridge trust requests " + (allow ? "allowed" : "blocked"));
+                        return allow ? "\"Apps may ask for trust\"" : "\"Trust requests are blocked\"";
+                    }
+                    default: throw new IllegalArgumentException("unknown trust command: " + command);
+                }
+            } catch (org.json.JSONException e) {
+                throw new IllegalArgumentException("invalid trust arguments for " + command, e);
+            } finally {
+                android.os.Binder.restoreCallingIdentity(token);
+            }
+        }
+
+        private JSONObject state() throws org.json.JSONException {
+            java.util.Map<String, java.util.TreeSet<String>> builtin = new java.util.TreeMap<>();
+            for (String line : readLines(context, R.raw.target_caller_allowlist)) {
+                String[] fields = line.trim().split("\\s+");
+                if (fields.length != 2) continue;
+                builtin.computeIfAbsent(fields[1], k -> new java.util.TreeSet<>()).add(fields[0]);
+            }
+            JSONArray apps = new JSONArray();
+            for (java.util.Map.Entry<String, java.util.TreeSet<String>> entry : builtin.entrySet()) {
+                apps.put(app(entry.getKey(), true, entry.getValue()));
+            }
+            android.content.SharedPreferences prefs = context.getSharedPreferences(
+                    "trusted_developer_apps", MODE_PRIVATE);
+            for (java.util.Map.Entry<String, ?> entry : new java.util.TreeMap<>(prefs.getAll()).entrySet()) {
+                java.util.TreeSet<String> targets = new java.util.TreeSet<>();
+                try {
+                    JSONArray values = new JSONObject((String) entry.getValue()).getJSONArray("targets");
+                    for (int i = 0; i < values.length(); i++) targets.add(values.getString(i));
+                } catch (Exception e) {
+                    Log.e(TAG, "Unreadable trust entry for " + entry.getKey(), e);
+                }
+                apps.put(app(entry.getKey(), false, targets));
+            }
+            JSONObject state = new JSONObject();
+            state.put("allowRequests", Settings.Global.getInt(context.getContentResolver(), REQUESTS, 0) == 1);
+            state.put("apps", apps);
+            return state;
+        }
+
+        private JSONObject app(String packageName, boolean builtin, Set<String> targets)
+                throws org.json.JSONException {
+            JSONObject app = new JSONObject();
+            app.put("package", packageName);
+            app.put("builtin", builtin);
+            app.put("targets", new JSONArray(targets));
+            PackageManager pm = context.getPackageManager();
+            try {
+                app.put("label", pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString());
+                app.put("installed", true);
+            } catch (PackageManager.NameNotFoundException e) {
+                app.put("label", packageName);
+                app.put("installed", false);
+            }
+            return app;
+        }
+
+        private String revoke(String packageName) {
+            android.content.SharedPreferences prefs = context.getSharedPreferences(
+                    "trusted_developer_apps", MODE_PRIVATE);
+            if (!prefs.contains(packageName))
+                throw new IllegalArgumentException(packageName + " has no developer trust to revoke");
+            prefs.edit().remove(packageName).apply();
+            try {
+                PackageInfo info = context.getPackageManager().getPackageInfo(packageName,
+                        PackageManager.GET_SIGNING_CERTIFICATES);
+                android.content.pm.Signature[] signers = info.signingInfo.getApkContentsSigners();
+                String cert = signers.length == 1 ? sha256(signers[0].toByteArray()) : "";
+                revokePermissionUnlessBuiltin(context, packageName, info.applicationInfo.uid, cert);
+            } catch (PackageManager.NameNotFoundException e) {
+                Log.i(TAG, "Revoked trust for uninstalled " + packageName);
+            }
+            Log.i(TAG, "Developer trust revoked for " + packageName);
+            return "\"Trust revoked\"";
+        }
+
+        @Override public void subscribe(String topic, vendor.matonos.channel.IChannelListener listener) {
+            throw new IllegalArgumentException("trust target has no topics");
+        }
+        @Override public void unsubscribe(String topic, vendor.matonos.channel.IChannelListener listener) { }
+        @Override public String stageUpdate(String[] names, android.os.ParcelFileDescriptor[] files) {
+            throw new UnsupportedOperationException("trust target has no updates");
+        }
+        @Override public String finalizeUpdate() {
+            throw new UnsupportedOperationException("trust target has no updates");
+        }
+        @Override public String getUpdateStatus() {
+            throw new UnsupportedOperationException("trust target has no updates");
         }
     }
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, ScrollView } from "react-native";
+import { Alert } from "react-native";
 import { Button, Column, OutlinedTextField, Row, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth, paddingAll, weight } from "@expo/ui/jetpack-compose/modifiers";
 import { useLocalSearchParams } from "expo-router";
@@ -32,7 +32,7 @@ export function AccountSection() {
 
   const loadAccount = useCallback(async () => {
     const session = await MatonOS.accountStoredSession();
-    if (!session) { setAccount(null); setDevices([]); setMode("signin"); if (params.flow !== "approve") setMessage("Your session expired. Sign in again."); return; }
+    if (!session) { setAccount(null); setDevices([]); setMode("signin"); return; }
     const info = await MatonOS.accountMachineInfo();
     const headers = { cookie:`maton_session=${session.token}`, "X-Maton-Machine-Id":info.machineId };
     const response = await fetch(`${API}/account`, { headers });
@@ -161,7 +161,7 @@ export function AccountSection() {
   </Row>);
 
   const field = (value:ReturnType<typeof useField>, label:string, secret=false) => <OutlinedTextField value={value.state} onValueChange={value.set} singleLine visualTransformation={secret ? "password" : "none"}>
-    <OutlinedTextField.Label>{label}</OutlinedTextField.Label>
+    <OutlinedTextField.Label><Text>{label}</Text></OutlinedTextField.Label>
   </OutlinedTextField>;
 
   if (account && mode === "account") return <Column verticalArrangement={{spacedBy:16}}>
@@ -198,7 +198,7 @@ export function AccountSection() {
       <Button enabled={!busy} onClick={() => void MatonOS.accountCancel()}><Text>Deny</Text></Button>
     </SettingsCard>
   </Column>;
-  return <ScrollView><Column verticalArrangement={{spacedBy:14}}>
+  return <Column verticalArrangement={{spacedBy:14}}>
     <Text style={{typography:"headlineMedium"}}>MatonOS account</Text>
     <SettingsCard title={title}>
       {mode === "register" || mode === "signin" ? field(username,"Username") : null}
@@ -206,13 +206,15 @@ export function AccountSection() {
       {mode === "register" || mode === "signin" ? field(password,"Password",true) : null}
       {mode === "reset" ? field(resetToken,"E-mail reset token") : null}
       {mode === "reset" ? field(nextPassword,"New password",true) : null}
-      {mode === "signin" || mode === "register" ? <Button enabled={!busy} onClick={() => void submitAccount()}><Text>{busy ? "Please wait…" : mode === "register" ? "Create account" : "Sign in"}</Text></Button> : null}
-      {mode === "forgot" ? <Button enabled={!busy} onClick={() => void requestReset()}><Text>Send reset instructions</Text></Button> : null}
-      {mode === "reset" ? <Button enabled={!busy} onClick={() => void confirmReset()}><Text>Set new password</Text></Button> : null}
-      {mode === "signin" ? <Button onClick={() => { setMode("register"); setMessage(""); }}><Text>Create account</Text></Button> : null}
-      {mode === "signin" ? <Button onClick={() => { setMode("forgot"); setMessage(""); }}><Text>Forgot password?</Text></Button> : null}
-      {mode !== "signin" ? <Button onClick={() => { setMode("signin"); setMessage(""); }}><Text>Back to sign in</Text></Button> : null}
+      <Row horizontalArrangement={{spacedBy:8}} verticalAlignment="center">
+        {mode === "signin" || mode === "register" ? <Button enabled={!busy} onClick={() => void submitAccount()}><Text>{busy ? "Please wait…" : mode === "register" ? "Create account" : "Sign in"}</Text></Button> : null}
+        {mode === "forgot" ? <Button enabled={!busy} onClick={() => void requestReset()}><Text>Send reset instructions</Text></Button> : null}
+        {mode === "reset" ? <Button enabled={!busy} onClick={() => void confirmReset()}><Text>Set new password</Text></Button> : null}
+        {mode === "signin" ? <Button onClick={() => { setMode("register"); setMessage(""); }}><Text>Create account</Text></Button> : null}
+        {mode === "signin" ? <Button onClick={() => { setMode("forgot"); setMessage(""); }}><Text>Forgot password?</Text></Button> : null}
+        {mode !== "signin" ? <Button onClick={() => { setMode("signin"); setMessage(""); }}><Text>Back to sign in</Text></Button> : null}
+      </Row>
       {message ? <Text color={colors.error}>{message}</Text> : null}
     </SettingsCard>
-  </Column></ScrollView>;
+  </Column>;
 }

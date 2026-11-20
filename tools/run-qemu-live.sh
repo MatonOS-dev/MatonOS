@@ -188,17 +188,19 @@ pid=$$; while [[ $pid -gt 1 ]]; do
   fi
   pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
 done
+# Monitor count (virtio-gpu heads); >1 tests external-display settings.
+OUTPUTS=${MATON_QEMU_OUTPUTS:-1}
 case $GFX in
   # xres/yres (-r): virtio-gpu's own default (640x480) is below Android's
   # large-screen size (600 dp), which changes the taskbar/desktop layout.
   # EDID advertises the requested boot mode. GTK zoom-to-fit scales the window
   # without sending host-window resizes back as guest display-mode changes.
-  virgl) args+=(-device "virtio-vga-gl,edid=on,xres=$XRES,yres=$YRES" -display "$gtk_gl") ;;
+  virgl) args+=(-device "virtio-vga-gl,edid=on,xres=$XRES,yres=$YRES,max_outputs=$OUTPUTS" -display "$gtk_gl") ;;
   venus) args+=(-object "memory-backend-memfd,id=mem0,size=${MEM}M,share=on"
-                -device "virtio-vga-gl,edid=on,hostmem=4G,blob=true,venus=true,xres=$XRES,yres=$YRES"
+                -device "virtio-vga-gl,edid=on,hostmem=4G,blob=true,venus=true,xres=$XRES,yres=$YRES,max_outputs=$OUTPUTS"
                 -display "$gtk_gl") ;;
   native) args+=(-object "memory-backend-memfd,id=mem0,size=${MEM}M,share=on"
-                -device "virtio-vga-gl,edid=on,hostmem=4G,blob=true,venus=true,drm_native_context=on,xres=$XRES,yres=$YRES"
+                -device "virtio-vga-gl,edid=on,hostmem=4G,blob=true,venus=true,drm_native_context=on,xres=$XRES,yres=$YRES,max_outputs=$OUTPUTS"
                 -display "$gtk_gl") ;;
   std)   args+=(-vga std -display "$gtk_plain") ;;
   none)  args+=(-vga none -display none) ;;

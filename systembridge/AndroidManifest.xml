@@ -26,6 +26,10 @@
     <!-- sleep: see system-wide active playback, not only the bridge's own player. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_ROUTING" />
     <uses-permission android:name="android.permission.MANAGE_APP_OPS_MODES" />
+    <!-- display: monitor on/off, arrangement, resolution, rotation. -->
+    <uses-permission android:name="android.permission.MANAGE_DISPLAYS" />
+    <uses-permission android:name="android.permission.MODIFY_USER_PREFERRED_DISPLAY_MODE" />
+    <uses-permission android:name="android.permission.SET_ORIENTATION" />
     <application
         android:label="MatonOS System Bridge"
         android:persistent="true"
