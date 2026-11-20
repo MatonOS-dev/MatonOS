@@ -45,8 +45,8 @@ configuration-driven and may later include versioned names without code
 changes. All update and channel selection paths refuse a release with an
 Android base below the request's `base_android`. They also require every ID in
 the device's `addon_list` to have an entry in the release manifest's `addons`
-object. `/api/update` returns `{"available":false,"reason":"missing_addons",
-"missing_addons":[...]}` listing every missing ID; `/api/channels` hides a
+object. `/api/update/check` returns `{"available":false,"reason":"missing_addons",
+"missing_addons":[...]}` listing every missing ID; `/api/update/channels` hides a
 channel whose current update fails this gate. Channel selection also omits
 channels marked `requires_license` because no license validation is implemented yet.
 The current slot-writer stage cannot repeat the add-on check: its manifest
@@ -58,10 +58,12 @@ the authoritative `addon_list`; adding a device-side inventory is still open.
 
 ## Request schema
 
-All endpoints use `POST`, `Content-Type: application/json`, and accept the
-same object. `machine_id` and `license_hash` are optional strings accepted but
-otherwise unused; neither is logged or stored. When present, each must be a
-string.
+Update endpoints use `POST`, `Content-Type: application/json`, and accept the
+same object. `machine_id` is an optional string and is neither logged nor
+stored by update discovery. A MatonOS account session may accompany an update
+request, but accounts are optional and are not required for updates, installs,
+or anonymous ratings. There is no `license_hash`; support status belongs to an
+account.
 
 ```json
 {
@@ -78,7 +80,7 @@ Successful and error API responses use `Cache-Control: no-store`.
 
 ## Endpoints
 
-`POST /api/channels` returns configured channels this device can switch to.
+`POST /api/update/channels` returns configured channels this device can switch to.
 
 ```json
 {"channels":[{"channel":"testing","update_id":1795430401,"version":"18","android_base":18}]}
@@ -87,7 +89,7 @@ Successful and error API responses use `Cache-Control: no-store`.
 Channels below the installed Android base, license-required channels, and
 channels missing any installed add-on are omitted.
 
-`POST /api/update` checks the configured request channel. An update response
+`POST /api/update/check` checks the configured request channel. An update response
 contains the base files and every requested add-on. If any requested add-on is
 missing, the update is unavailable and the response names those IDs:
 
@@ -112,7 +114,7 @@ If the channel points below `base_android`, the response is
 `{"available":false,"reason":"android_base_too_old"}`. If it points to the
 already installed update, the response is `{"available":false}`.
 
-`POST /api/eol` always returns:
+`POST /api/update/eol` always returns:
 
 ```json
 {"eol":false}
@@ -120,8 +122,9 @@ already installed update, the response is `{"available":false}`.
 
 There is no EOL configuration or date logic.
 
-`POST /api/license` returns `{"status":"none","license":null}` until
-license support is implemented.
+`POST /api/update/license` returns `{"status":"none","license":null}` until
+license support is implemented. Anonymous requests and signed-in account
+requests receive the same response for now.
 
 Errors have `{ "error": "code", "message": "description" }`. API requests
 are logged with method, path, status, and error context; `machine_id` and
