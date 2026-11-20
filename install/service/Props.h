@@ -1,5 +1,6 @@
 // NDK property helpers (the installer service is NDK-built: no libbase).
 #pragma once
+#include <android/log.h>
 #include <sys/system_properties.h>
 #include <chrono>
 #include <cstring>
@@ -36,6 +37,17 @@ inline bool WaitFor(const char* name, const std::string& value, std::chrono::mil
             timespec step{0, 50 * 1000 * 1000};  // property not created yet
             nanosleep(&step, nullptr);
         }
+    }
+}
+
+// init runs the whole request action and then always sets the done property,
+// even when a command fails, so there is no deadline: a slow step (cold or
+// rotational disk, a busy first boot) must not abort the install.
+inline void WaitForInit(const char* done_prop, const std::string& id, const char* what) {
+    for (int waited = 10;; waited += 10) {
+        if (WaitFor(done_prop, id, std::chrono::seconds(10))) return;
+        __android_log_print(ANDROID_LOG_WARN, "MatonosInstaller",
+                            "installer: still waiting for init %s request %s (%d s)", what, id.c_str(), waited);
     }
 }
 

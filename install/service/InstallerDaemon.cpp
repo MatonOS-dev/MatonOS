@@ -101,23 +101,13 @@ bool RemoveDmDevice(const char* name) {
     CLOSE_FD(control);return true;
 }
 
-// init runs the whole mount/unmount action and then always sets the done
-// property, even when a command fails, so there is no deadline: a slow mount
-// (cold disk, first mount of a fresh filesystem) must not abort the install.
-bool WaitForInit(const char* done_prop,const std::string& id,const char* what){
-    for(int waited=10;;waited+=10){
-        if(matonos::props::WaitFor(done_prop,id,std::chrono::seconds(10)))return true;
-        __android_log_print(ANDROID_LOG_WARN,kTag,"installer: still waiting for init %s request %s (%d s)",what,id.c_str(),waited);
-    }
-}
-
 bool UnmountImagePath(const std::string& path) {
     (void)path;
     const std::string id=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    if(!matonos::props::Set("vendor.maton.install.unmount.request",id) ||
-       !WaitForInit("vendor.maton.install.unmount.done",id,"unmount")){
-        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: init unmount request %s timed out",id.c_str());return false;
+    if(!matonos::props::Set("vendor.maton.install.unmount.request",id)){
+        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: set init unmount request %s failed",id.c_str());return false;
     }
+    matonos::props::WaitForInit("vendor.maton.install.unmount.done",id,"unmount");
     std::ifstream mounts("/proc/self/mountinfo");std::string line;
     while(std::getline(mounts,line))if(line.find(" /mnt/matonos-install/")!=std::string::npos){
         __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: target image-store mount remains after init unmount: %s",line.c_str());return false;
@@ -129,10 +119,10 @@ bool MountImageStore(const std::string& metadata,const std::string& system,std::
     const std::string id=std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
     if(!matonos::props::Set("vendor.maton.install.metadata_source",metadata)||
        !matonos::props::Set("vendor.maton.install.system_source",system)||
-       !matonos::props::Set("vendor.maton.install.mount.request",id)||
-       !WaitForInit("vendor.maton.install.mount.done",id,"image-store mount")){
-        *error="init image-store mount request "+id+" timed out";return false;
+       !matonos::props::Set("vendor.maton.install.mount.request",id)){
+        *error="Cannot set init image-store mount request "+id;return false;
     }
+    matonos::props::WaitForInit("vendor.maton.install.mount.done",id,"image-store mount");
     std::ifstream mounts("/proc/self/mountinfo");std::string line;bool metadata_mounted=false,system_mounted=false;
     while(std::getline(mounts,line)){
         if(line.find(" /mnt/matonos-install/metadata ")!=std::string::npos)metadata_mounted=true;
@@ -358,9 +348,7 @@ int RunSlotWriter(const char* command, const char* payload_dir) {
     if(!matonos::props::Set("vendor.maton.install.slot_writer.request",id)){
         __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: set slot-writer request property step=%s request=%s failed",command,id.c_str());return -1;
     }
-    if(!matonos::props::WaitFor("vendor.maton.install.slot_writer.done",id,std::chrono::minutes(30))){
-        __android_log_print(ANDROID_LOG_ERROR,kTag,"installer: timed out waiting for init slot-writer step=%s request=%s",command,id.c_str());return -1;
-    }
+    matonos::props::WaitForInit("vendor.maton.install.slot_writer.done",id,"slot-writer");
     std::ifstream response(kSlotWriterResult);
     std::string result_id,status_text,output;
     if(!std::getline(response,result_id)||!std::getline(response,status_text)||result_id!=id){

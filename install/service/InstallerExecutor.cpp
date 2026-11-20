@@ -114,10 +114,10 @@ bool RunFiemap(const std::string& command, const std::string& name, uint64_t siz
     }
     if(fsync(request_fd)!=0){const int e=errno;CLOSE_FD(request_fd);*error="Cannot sync fiemap request: "+std::string(strerror(e));return false;}
     CLOSE_FD(request_fd);
-    if(!matonos::props::Set("vendor.maton.install.fiemap.request",id)||
-       !matonos::props::WaitFor("vendor.maton.install.fiemap.done",id,std::chrono::seconds(30))){
-        *error="Timed out waiting for init fiemap request "+id;return false;
+    if(!matonos::props::Set("vendor.maton.install.fiemap.request",id)){
+        *error="Cannot set fiemap request property for "+id;return false;
     }
+    matonos::props::WaitForInit("vendor.maton.install.fiemap.done",id,"fiemap");
     std::ifstream response("/mnt/matonos-install/system/.matonos-fiemap-result");
     std::string result_id,status_text,result;std::getline(response,result_id);std::getline(response,status_text);
     if(!response||result_id!=id){*error="Missing or stale fiemap result for request "+id;return false;}
