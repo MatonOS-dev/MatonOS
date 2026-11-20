@@ -156,6 +156,7 @@ final class DisplayChannel extends IChannel.Stub {
             entry.put("id", id);
             entry.put("name", display.getName());
             entry.put("external", type == Display.TYPE_EXTERNAL);
+            entry.put("main", id == Display.DEFAULT_DISPLAY);
             entry.put("enabled", enabled.contains(id));
             entry.put("primary", id == primary);
             Display.Mode mode = display.getMode();
@@ -231,9 +232,11 @@ final class DisplayChannel extends IChannel.Stub {
     }
 
     private String setEnabled(int displayId, boolean enable) {
-        Display display = require(displayId);
-        if (display.getType() != Display.TYPE_EXTERNAL)
-            throw new IllegalArgumentException("only external displays can be turned off");
+        require(displayId);
+        // Any monitor but the main one may be switched off: VMs and some PCs
+        // report secondary outputs as built-in (virtual/eDP connectors).
+        if (displayId == Display.DEFAULT_DISPLAY)
+            throw new IllegalArgumentException("the main display cannot be turned off");
         if (enable) displayManager.enableConnectedDisplay(displayId);
         else displayManager.disableConnectedDisplay(displayId);
         Log.i(TAG, (enable ? "Enabled" : "Disabled") + " display " + displayId);

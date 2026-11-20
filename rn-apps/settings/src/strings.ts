@@ -122,6 +122,7 @@ const en = {
   displayMultiple: "Multiple displays",
   displayMirror: "Mirror displays",
   displayMirrorHint: "Show the same picture on every monitor instead of extending the desktop",
+  displayMain: "Main",
   displayBuiltIn: "Built-in",
   displayExternal: "External monitor",
   displayOff: "Turned off",

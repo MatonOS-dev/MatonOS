@@ -25,6 +25,7 @@ type Monitor = DisplayMode & {
   id: number;
   name: string;
   external: boolean;
+  main: boolean;
   enabled: boolean;
   primary: boolean;
   modes: DisplayMode[];
@@ -47,8 +48,30 @@ function parse<T>(value: string): T | null {
   }
 }
 
+// Whole rates read as "60 Hz"; fractional ones keep two decimals so
+// 60 Hz and 59.94 Hz stay distinguishable.
+function refreshLabel(refresh: number) {
+  const rounded = Math.round(refresh);
+  if (Math.abs(refresh - rounded) < 0.01) return `${rounded} Hz`;
+  return `${refresh.toFixed(2)} Hz`;
+}
+
 function modeLabel(mode: DisplayMode) {
-  return `${mode.width} × ${mode.height} · ${Math.round(mode.refresh)} Hz`;
+  return `${mode.width} × ${mode.height} · ${refreshLabel(mode.refresh)}`;
+}
+
+// Largest resolution first, then highest refresh; one entry per label.
+function sortedModes(modes: DisplayMode[]) {
+  const sorted = [...modes].sort(
+    (a, b) => b.width * b.height - a.width * a.height || b.refresh - a.refresh,
+  );
+  const seen = new Set<string>();
+  return sorted.filter((mode) => {
+    const label = modeLabel(mode);
+    if (seen.has(label)) return false;
+    seen.add(label);
+    return true;
+  });
 }
 
 function sideOf(monitor: Monitor, primary: Monitor | undefined) {
@@ -59,6 +82,13 @@ function sideOf(monitor: Monitor, primary: Monitor | undefined) {
   if (b.left + b.width <= a.left) return "left";
   if (b.top + b.height <= a.top) return "above";
   return "below";
+}
+
+// Identical EDID names (two of the same monitor, or VM outputs) get numbers.
+function monitorTitle(monitor: Monitor, index: number, monitors: Monitor[]) {
+  const shared = monitors.filter((other) => other.name === monitor.name).length > 1;
+  const name = shared ? `${monitor.name} ${index + 1}` : monitor.name;
+  return monitor.main ? `${name} · ${copy.displayMain}` : name;
 }
 
 function ChoiceButton({
@@ -85,7 +115,7 @@ function ResolutionPicker({ monitor, call }: { monitor: Monitor; call: Call }) {
     setOpen(false);
     void call("set_mode", { id: monitor.id, ...mode });
   };
-  const items = monitor.modes.map((mode) => (
+  const items = sortedModes(monitor.modes).map((mode) => (
     <DropdownMenuItem
       key={modeLabel(mode)}
       onClick={() => pick(mode)}
@@ -107,7 +137,7 @@ function ResolutionPicker({ monitor, call }: { monitor: Monitor; call: Call }) {
   );
 }
 
-function ExternalControls({
+function SecondaryControls({
   monitor,
   primary,
   call,
@@ -146,10 +176,12 @@ function ExternalControls({
 
 function MonitorCard({
   monitor,
+  title,
   primary,
   call,
 }: {
   monitor: Monitor;
+  title: string;
   primary: Monitor | undefined;
   call: Call;
 }) {
@@ -171,9 +203,9 @@ function MonitorCard({
       onClick={() => void call("set_rotation", { id: monitor.id, rotation })}
     />
   ));
-  const external = monitor.external ? (
-    <ExternalControls monitor={monitor} primary={primary} call={call} />
-  ) : null;
+  const secondary = monitor.main ? null : (
+    <SecondaryControls monitor={monitor} primary={primary} call={call} />
+  );
   const settings = monitor.enabled ? (
     <Column verticalArrangement={{ spacedBy: 8 }}>
       <Text style={{ typography: "titleSmall" }}>{copy.displayResolution}</Text>
@@ -185,9 +217,9 @@ function MonitorCard({
     </Column>
   ) : null;
   return (
-    <SettingsCard title={monitor.name}>
+    <SettingsCard title={title}>
       <StatusRow label={kind} value={status} />
-      {external}
+      {secondary}
       {settings}
     </SettingsCard>
   );
@@ -238,8 +270,14 @@ export function DisplaySection() {
   const monitors = state?.displays ?? [];
   const primary = monitors.find((monitor) => monitor.primary);
   const hasExternal = monitors.some((monitor) => monitor.external);
-  const cards = monitors.map((monitor) => (
-    <MonitorCard key={monitor.id} monitor={monitor} primary={primary} call={call} />
+  const cards = monitors.map((monitor, index) => (
+    <MonitorCard
+      key={monitor.id}
+      monitor={monitor}
+      title={monitorTitle(monitor, index, monitors)}
+      primary={primary}
+      call={call}
+    />
   ));
   const mirror = hasExternal ? (
     <SettingsCard title={copy.displayMultiple}>
