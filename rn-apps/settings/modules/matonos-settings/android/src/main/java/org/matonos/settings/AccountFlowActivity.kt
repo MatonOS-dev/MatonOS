@@ -20,7 +20,8 @@ class AccountFlowActivity : Activity() {
     val flow = intent.getStringExtra(AccountAuthenticator.EXTRA_FLOW) ?: "signin"
     val caller = intent.getStringExtra(AccountAuthenticator.EXTRA_CALLER)
     val callerQuery = caller?.let { "&caller=${android.net.Uri.encode(it)}" } ?: ""
-    val launch = Intent(this, MainActivity::class.java).setAction(Intent.ACTION_VIEW)
+    // MainActivity lives in the generated app module, which this library module cannot see.
+    val launch = Intent(Intent.ACTION_VIEW).setClassName(this, "$packageName.MainActivity")
       .setData(android.net.Uri.parse("matonos-settings://account?flow=$flow$callerQuery"))
       .putExtra(AccountAuthenticator.EXTRA_FLOW, flow)
       .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
