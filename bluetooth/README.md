@@ -7,7 +7,9 @@ channel. It registers the stable `IBluetoothHci/default` instance for the
 Android Bluetooth stack.
 
 With no controller, the stock HAL reports initialization failure and the
-Bluetooth stack should remain off/unavailable. No virtual controller is
+Bluetooth stack aborts on it (`hci_backend_aidl.cc` checks for SUCCESS). The
+SettingsProvider overlay therefore defaults `bluetooth_on` to off, so boot does
+not enable the stack; a user toggle on a controller-less PC still crashes it. No virtual controller is
 created. Controller selection, hotplug replacement, and the MatonOS Bluetooth
 adapter picker are dropped; the stock HAL binds the kernel's `hci0`. Keep
 `vendor.ser.bt-uart` unset so the HAL follows the kernel HCI path.
