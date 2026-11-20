@@ -3,7 +3,7 @@ import {
   unstable_getMaterialSymbolSourceAsync,
   type AndroidSymbol,
 } from "expo-symbols";
-import { type ImageSourcePropType } from "react-native";
+import { Linking, type ImageSourcePropType } from "react-native";
 import {
   Card,
   Column,
@@ -34,7 +34,7 @@ import infoIcon from "../../assets/icons/info.xml";
 import installIcon from "../../assets/icons/install.xml";
 
 type Section =
-  "install" | "system-update" | "sleep" | "hardware" | "developer" | "about" | "account";
+  "install" | "system-update" | "sleep" | "display" | "hardware" | "developer" | "about" | "account";
 type NavEntry = {
   id: Section;
   title: string;
@@ -59,6 +59,12 @@ const navItems: Record<Section, NavEntry> = {
     title: copy.sleep,
     symbol: "bedtime",
     fallback: bedtimeIcon,
+  },
+  display: {
+    id: "display",
+    title: copy.display,
+    symbol: "brightness_medium",
+    fallback: devicesIcon,
   },
   hardware: {
     id: "hardware",
@@ -372,6 +378,17 @@ export function SectionHeader({
   );
 }
 
+// Display opens Android's own Display settings (brightness, dark theme, display
+// and text size, timeout) instead of duplicating them here.
+function openSection(router: ReturnType<typeof useRouter>, section: Section) {
+  if (section === "display") {
+    Linking.sendIntent("android.settings.DISPLAY_SETTINGS").catch((error: unknown) =>
+      console.error("Opening Android display settings failed", error));
+    return;
+  }
+  router.push(section === "sleep" ? "/" : `/${section}`);
+}
+
 function NavItem({
   section,
   selected,
@@ -383,7 +400,7 @@ function NavItem({
   const router = useRouter();
   const item = navItems[section];
   const icon = useSymbolSource(item.symbol, item.fallback);
-  const onClick = () => router.push(section === "sleep" ? "/" : `/${section}`);
+  const onClick = () => openSection(router, section);
   const content = (
     <Row
       modifiers={[fillMaxWidth(), paddingAll(4)]}
@@ -465,6 +482,7 @@ export function NavRail({ live }: { live: boolean }) {
           />
         </InstalledOnly>
         <NavItem section="sleep" selected={current === "sleep"} />
+        <NavItem section="display" selected={false} />
         <NavItem section="hardware" selected={current === "hardware"} />
         <NavItem section="account" selected={current === "account"} />
         <NavItem section="developer" selected={current === "developer"} />

@@ -6,6 +6,7 @@ const en = {
   install: "Install MatonOS",
   systemUpdate: "System update",
   sleep: "Sleep",
+  display: "Display",
   hardware: "Hardware",
   developer: "Developer",
   about: "About",
