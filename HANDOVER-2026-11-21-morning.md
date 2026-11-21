@@ -18,7 +18,20 @@
 - **F-Droid Install → Open** works (Satunes, 72 s).
 - **"Store open during subsystem reinstall shows only F-Droid"**: not reproduced on this build.
 
-## Blocker (parked, needs your call): GNOME/glycin apps abort at launch
+## Update morning 2026-11-21: Klotski WORKS on `flatpak-pkg-split` (pushed, not merged)
+
+- 50799198 proxy: emulate `RLIMIT_AS` as requested + host-reserved VA (scudo/CFI/bionic ranges);
+  glycin loaders now exec and serve images.
+- c060203c stub: window activities reuse the process Flatpak ref. With launcher splits the ref
+  lives only on the activity-alias, so every per-window StubActivity returned silently and
+  stayed on "Starting application…". Verified on VM: Klotski window renders.
+- Cold start after force-stop: tap → window output ≈ 3 s (the ~28 s was first launch after install).
+- **New: Minecraft (Flathub, extra-data) install fails in apply_extra**: `bwrap: Unable to open lock
+  file /usr/.ref` + `tar: Minecraft.tar.gz: Cannot open`. The package and its icon still get
+  installed on this build. Codex report-only investigation: out/pc-logs/agents/minecraft-extra.final.md.
+  Full log: out/pc-logs/agents/minecraft-apply-extra-error.txt.
+
+## (Original) Blocker: GNOME/glycin apps abort at launch
 
 Klotski installs fine but aborts (exit 134) before showing a window:
 
@@ -47,12 +60,14 @@ semantics.
 
 ## Open notes
 
-- The store shows no progress on the Install button during F-Droid/Flatpak installs (it stays
-  "Install" until it flips to "Open").
-- The installer step list repeats "Write boot and loader files" four times.
-- The Updates badge shows 4 on a fresh install (not investigated).
+- ~~Store shows no install progress~~: false alarm, the button shows "Installing…" during installs.
+- Installer step list repeated "Write boot and loader files" ×4 → fixed (metadata-enc ba98b1e,
+  not yet live-verified).
+- Updates badge 4 is **correct**: the image ships Fennec 156 (F-Droid 160), Thunderbird 33 (34),
+  microG GmsCore + Companion 0.3.16 (microG repo 0.3.18). Bumping the prebuilts in the image clears it.
 - Subsystem stub cold start is ~28 s from process start to the loader (Klotski first launch).
 - Still waiting on your decisions: F-Droid 41 s index parse, RAM disk sizing, Hardware page
-  "Unknown", preapprovals 1–7.
+  "Unknown" (by design: settings `HardwareModule.kt` returns null for Wi-Fi/BT/audio/GPU until a typed
+  vendor-daemon summary is exposed through the bridge; needs a decision on that API), preapprovals 1–7.
 
 VM: `hdd43.img` installed build47 + test APKs, adb `localhost:5557`, headless.
