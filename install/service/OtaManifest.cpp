@@ -21,7 +21,8 @@ namespace matonos::install::ota {
 namespace {
 constexpr const char* kFiles[] = {
     "system.erofs", "system_ext.erofs", "product.erofs", "vendor.erofs",
-    "odm.erofs", "vbmeta.img", "matonos-a.efi", "matonos-b.efi"};
+    "odm.erofs", "vbmeta.img", "matonos-a.efi", "matonos-b.efi",
+    "matonos-a-hdd.efi", "matonos-b-hdd.efi"};
 
 bool Read(const fs::path& path, std::vector<uint8_t>* out, std::string* error) {
     std::ifstream input(path, std::ios::binary);

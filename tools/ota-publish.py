@@ -10,7 +10,8 @@ import tempfile
 from pathlib import Path
 
 FILES = ("system.erofs", "system_ext.erofs", "product.erofs", "vendor.erofs",
-         "odm.erofs", "vbmeta.img", "matonos-a.efi", "matonos-b.efi")
+         "odm.erofs", "vbmeta.img", "matonos-a.efi", "matonos-b.efi",
+         "matonos-a-hdd.efi", "matonos-b-hdd.efi")
 ADDON_ID = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}\Z")
 
 def fail(message):
@@ -56,8 +57,11 @@ def main():
         subprocess.run(["openssl", "pkey", "-pubin", "-in", str(public_key), "-pubout", "-out", str(expected)], check=True)
         if derived.read_bytes() != expected.read_bytes(): fail("MATON_OTA_KEY does not match the installed OTA public key")
         for name in FILES:
+            # Slot UKIs differ only in the data-partition fstab (SSD f2fs, HDD ext4).
             source_name = {"matonos-a.efi": "matonos-installed-a.efi",
-                           "matonos-b.efi": "matonos-installed-b.efi"}.get(name, name)
+                           "matonos-b.efi": "matonos-installed-b.efi",
+                           "matonos-a-hdd.efi": "matonos-installed-a-hdd.efi",
+                           "matonos-b-hdd.efi": "matonos-installed-b-hdd.efi"}.get(name, name)
             source = images / source_name
             if name.endswith(".erofs") and not source.is_file():
                 source = images / (name.removesuffix(".erofs") + ".img")

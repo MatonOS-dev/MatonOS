@@ -21,6 +21,8 @@ const STAGE_NAMES = [
   "vbmeta.img",
   "matonos-a.efi",
   "matonos-b.efi",
+  "matonos-a-hdd.efi",
+  "matonos-b-hdd.efi",
 ] as const;
 const PAYLOAD_NAMES = STAGE_NAMES.slice(2);
 

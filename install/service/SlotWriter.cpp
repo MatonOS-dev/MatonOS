@@ -297,7 +297,14 @@ bool Stage(const fs::path& payload) {
     std::string vbmeta_digest;
     if(!VbmetaDigest(vbmeta,vbmeta_size,&vbmeta_digest)){CLOSE_FD(vbmeta);return false;}
     int uki=-1;uint64_t uki_size=0;
-    const fs::path payload_uki=payload/(std::string("matonos-")+target.letter+".efi");
+    // Keep the installed data layout: an HDD (ext4) install boots the HDD fstab variant.
+    char fstab_suffix[PROP_VALUE_MAX]={};
+    if(__system_property_get("ro.boot.fstab_suffix",fstab_suffix)<=0){errno=ENOENT;return Fail("ro.boot.fstab_suffix is unavailable");}
+    bool hdd;
+    if(std::strcmp(fstab_suffix,"pc_x86_64.ssd")==0)hdd=false;
+    else if(std::strcmp(fstab_suffix,"pc_x86_64.hdd")==0)hdd=true;
+    else{errno=EINVAL;std::fprintf(stderr,"matonos-slot-writer: unknown ro.boot.fstab_suffix %s\n",fstab_suffix);return false;}
+    const fs::path payload_uki=payload/(std::string("matonos-")+target.letter+(hdd?"-hdd":"")+".efi");
     if(!ReadRegular(payload_uki,&uki,&uki_size)){CLOSE_FD(vbmeta);return false;}
     std::vector<uint8_t> uki_bytes(static_cast<size_t>(uki_size));
     size_t read=0;

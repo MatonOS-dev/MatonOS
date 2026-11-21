@@ -60,7 +60,7 @@ constexpr char kSlotWriterRequest[] = "/maton_system/ota-staging/.request";
 constexpr char kSlotWriterResult[] = "/maton_system/ota-staging/.result";
 constexpr const char* kOtaNames[] = {"manifest.json", "manifest.sig", "system.erofs",
     "system_ext.erofs", "product.erofs", "vendor.erofs", "odm.erofs", "vbmeta.img",
-    "matonos-a.efi", "matonos-b.efi"};
+    "matonos-a.efi", "matonos-b.efi", "matonos-a-hdd.efi", "matonos-b-hdd.efi"};
 std::atomic<bool> g_cancel{false};
 std::atomic<bool> g_operation_active{false};
 std::mutex g_operation_mutex;

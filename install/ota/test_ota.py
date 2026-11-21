@@ -9,7 +9,11 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 NAMES = ("system.erofs", "system_ext.erofs", "product.erofs", "vendor.erofs",
-         "odm.erofs", "vbmeta.img", "matonos-a.efi", "matonos-b.efi")
+         "odm.erofs", "vbmeta.img", "matonos-a.efi", "matonos-b.efi",
+         "matonos-a-hdd.efi", "matonos-b-hdd.efi")
+
+SOURCE_NAMES = {"matonos-a.efi": "matonos-installed-a.efi", "matonos-b.efi": "matonos-installed-b.efi",
+                "matonos-a-hdd.efi": "matonos-installed-a-hdd.efi", "matonos-b-hdd.efi": "matonos-installed-b-hdd.efi"}
 
 def run(*args, ok=True, env=None):
     result = subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
@@ -31,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix="matonos-ota-test-") as temp:
     (images / "system").mkdir(parents=True)
     (images / "system/build.prop").write_text("ro.build.date.utc=1795430400\nro.build.version.release=18\n")
     for index, name in enumerate(NAMES):
-        source_name = {"matonos-a.efi": "matonos-installed-a.efi", "matonos-b.efi": "matonos-installed-b.efi"}.get(name, name)
+        source_name = SOURCE_NAMES.get(name, name)
         (images / source_name).write_bytes((f"fake image {index} " * 40).encode())
     output = temp / "published"
     env = os.environ.copy(); env["MATON_OTA_KEY"] = str(key); env["MATON_OTA_PUBLIC_KEY"] = str(pub)
@@ -69,19 +73,16 @@ with tempfile.TemporaryDirectory(prefix="matonos-ota-test-") as temp:
     assert 'relativePath: "A.conf"' in plan
     assert 'relativePath: "matonos-a.efi"' in plan
     assert '"loader/entries/" + slot.upper' not in writer  # paths are centralized in EntryPath
-    invalidation = writer.index('RemoveEspIfPresent(&esp,EntryPath(target,true)')
+    invalidation = writer.index('RemoveSlotEntries(&esp,target,&error)')
     first_image_write = writer.index('CopyToImage(fd,ImageName(base,target)')
     last_image_write = writer.rindex('CopyToImage(')
     counted_entry_write = writer.index('esp.WriteFile(target_entry')
     assert invalidation < first_image_write
     assert last_image_write < counted_entry_write
-    assert 'selected=stem+"+[1-3]-*.conf"' in bootctrl
+    # Slots switch by entry ordering (92d786b); boot success is recorded through bootctrl.
     assert 'MarkEntrySuccessful(slot)' in bootctrl
-    counted_names = [f"B+{tries}-{done}.conf" for tries, done in ((3, 0), (2, 1), (1, 2), (0, 3))]
-    retry_glob = "B+[1-3]-*.conf"
-    assert all(fnmatch.fnmatchcase(name, retry_glob) for name in counted_names[:3])
-    assert not fnmatch.fnmatchcase(counted_names[3], retry_glob)
-    assert "EntryPath(target,true)" in writer and "RunBootctl(\"set-active-boot-slot\"" in writer
+    assert "RunBootctl(\"set-active-boot-slot\"" in writer
+    assert '"-hdd"' in writer and "ro.boot.fstab_suffix" in writer  # HDD installs keep the ext4 UKI
     service_rc = (ROOT / "install/matonos-installer-service.rc").read_text()
     assert "on post-fs-data" in service_rc and "start matonos-installer-service" in service_rc
     installed_ids = temp / "installed-addon-ids"
@@ -101,14 +102,14 @@ with tempfile.TemporaryDirectory(prefix="matonos-ota-test-") as temp:
     (newer_images / "system").mkdir(parents=True)
     (newer_images / "system/build.prop").write_text("ro.build.date.utc=1795430401\nro.build.version.release=18\n")
     for index, name in enumerate(NAMES):
-        source_name = {"matonos-a.efi": "matonos-installed-a.efi", "matonos-b.efi": "matonos-installed-b.efi"}.get(name, name)
+        source_name = SOURCE_NAMES.get(name, name)
         (newer_images / source_name).write_bytes((f"new fake image {index} " * 40).encode())
     run(str(ROOT / "tools/ota-publish.sh"), str(newer_images), str(output), env=env)
     older_base_images = temp / "older-base-images"
     (older_base_images / "system").mkdir(parents=True)
     (older_base_images / "system/build.prop").write_text("ro.build.date.utc=1795430402\nro.build.version.release=17\n")
     for index, name in enumerate(NAMES):
-        source_name = {"matonos-a.efi": "matonos-installed-a.efi", "matonos-b.efi": "matonos-installed-b.efi"}.get(name, name)
+        source_name = SOURCE_NAMES.get(name, name)
         (older_base_images / source_name).write_bytes((f"older base image {index} " * 40).encode())
     run(str(ROOT / "tools/ota-publish.sh"), str(older_base_images), str(output), env=env)
     older_base_id = "1795430402"
