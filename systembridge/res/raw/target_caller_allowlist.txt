@@ -7,3 +7,4 @@ sleep org.matonos.settings
 wifi org.matonos.settings
 display org.matonos.settings
 trust org.matonos.settings
+hardware org.matonos.settings

@@ -48,6 +48,7 @@ public final class SystemBridgeService extends Service {
     // display: framework display APIs, served in-process rather than by a vendor daemon.
     private volatile DisplayChannel displayChannel;
     private volatile TrustChannel trustChannel;
+    private final HardwareChannel hardwareChannel = new HardwareChannel();
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
         @Override public int getBridgeApiVersion() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiVersion");
@@ -305,7 +306,7 @@ public final class SystemBridgeService extends Service {
 
     private static Set<String> knownTargets() {
         return new HashSet<>(java.util.Arrays.asList("input", "sleep", "wifi", "audio",
-                "camera", "install", "addons", "status", "display", "trust"));
+                "camera", "install", "addons", "status", "display", "trust", "hardware"));
     }
 
     private static void grantTrust(android.content.Context context, String packageName, Set<String> targets) {
@@ -645,6 +646,7 @@ public final class SystemBridgeService extends Service {
     private IChannel channelFor(String target) {
         if (DisplayChannel.TARGET.equals(target)) return displayChannel;
         if (TrustChannel.TARGET.equals(target)) return trustChannel;
+        if (HardwareChannel.TARGET.equals(target)) return hardwareChannel;
         // checkService is deliberately nonblocking: optional hardware instances may be absent.
         IBinder service = ServiceManager.checkService("vendor.matonos.channel.IChannel/" + target);
         return IChannel.Stub.asInterface(service);

@@ -66,9 +66,8 @@ class HardwareModule : Module() {
         "charging" to (status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL),
         "pluggedIn" to (plugged != 0),
       ),
-      // Physical selection lives in vendor-owned daemons. Do not reflect into
-      // hidden SystemProperties from an app; unknown remains explicit until the
-      // bridge exposes the typed hardware summary.
+      // Daemon-detected hardware: Hardware.ts fills these from the System Bridge
+      // "hardware" summary; null here means unknown.
       "wifi" to mapOf("present" to null, "virtual" to null),
       "bluetooth" to mapOf("present" to null, "virtual" to null),
       "audio" to mapOf("present" to null),

@@ -1,4 +1,5 @@
 import {requireNativeModule, type EventSubscription} from 'expo-modules-core';
+import {MatonOS} from '../bridge/MatonOS';
 
 /** What hardware is REALLY present (MatonOS spoofs missing Wi-Fi/Bluetooth). */
 export type HardwareState = {
@@ -16,9 +17,25 @@ type HardwareModule = {
 };
 const NativeHardware = requireNativeModule<HardwareModule>('MatonHardware');
 
+type BridgeSummary = Pick<HardwareState, 'wifi' | 'bluetooth' | 'audio' | 'gpu'>;
+
+/** Daemon-detected hardware comes from the System Bridge; unavailable stays null (unknown). */
+async function withBridgeSummary(state: HardwareState): Promise<HardwareState> {
+  const result = await MatonOS.call('hardware', 'summary');
+  if (!result.available) {
+    console.warn(`hardware summary unavailable: ${result.reason}`);
+    return state;
+  }
+  const summary = JSON.parse(result.value) as BridgeSummary;
+  return {...state, ...summary};
+}
+
 export const Hardware = {
-  getState: (): Promise<HardwareState> => NativeHardware.getHardwareState(),
+  getState: async (): Promise<HardwareState> =>
+    withBridgeSummary(await NativeHardware.getHardwareState()),
   /** Battery/charging changes, Wi-Fi/Bluetooth state changes. */
   onChange: (listener: (state: HardwareState) => void): EventSubscription =>
-    NativeHardware.addListener('hardwareChanged', listener),
+    NativeHardware.addListener('hardwareChanged', state => {
+      withBridgeSummary(state).then(listener, error => console.error('hardware summary failed', error));
+    }),
 };
