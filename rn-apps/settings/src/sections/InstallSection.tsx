@@ -45,7 +45,28 @@ function parse<T>(value: string): T | null {
   }
 }
 
+const formatTitles: Record<string, string> = {
+  MATON_ESP: "Format the boot partition",
+  metadata: "Format the encryption metadata partition",
+};
+
+const writeFilesTitles: Record<string, string> = {
+  EFI: "Write the boot loaders",
+  "EFI/Linux": "Write the MatonOS boot image",
+  loader: "Write the boot menu settings",
+  "loader/entries": "Write the MatonOS boot entry",
+};
+
 function operationTitle(operation: InstallerOperation) {
+  if (operation.kind === "format") {
+    return formatTitles[operation.label] ?? `Format the ${operation.label} partition`;
+  }
+  if (operation.kind === "write_files") {
+    return (
+      writeFilesTitles[operation.relativeDirectory] ??
+      `Write boot files to ${operation.relativeDirectory}`
+    );
+  }
   const labels: Record<InstallerOperation["kind"], string> = {
     write_gpt: "Trim the drive and write the partition table",
     create_lp_metadata: "Create dynamic partition metadata",
