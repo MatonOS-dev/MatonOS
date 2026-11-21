@@ -66,7 +66,6 @@ module.exports = function withMatonSettings(config) {
       $:{'android:name':'.InstallAlias','android:targetActivity':installAliasActivity,'android:enabled':'false','android:exported':'true','android:label':'@string/install_alias_title','android:icon':'@drawable/ic_maton_install'},
       'intent-filter':[
         {'action':[{$:{'android:name':'android.intent.action.MAIN'}}],'category':[{$:{'android:name':'android.intent.category.LAUNCHER'}}]},
-        {'action':[{$:{'android:name':'android.intent.action.VIEW'}}],'category':[{$:{'android:name':'android.intent.category.DEFAULT'}},{$:{'android:name':'android.intent.category.BROWSABLE'}}],'data':[{$:{'android:scheme':'matonos-settings','android:host':'install'}}]},
       ],
     });
     return mod;
