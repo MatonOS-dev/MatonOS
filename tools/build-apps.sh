@@ -106,6 +106,7 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   [[ -n $project_rel && -n $task && -n $apk_name ]] || die "bad app registry row: $key_id"
   [[ $key_id =~ ^[a-z0-9][a-z0-9_-]*$ && $apk_name =~ ^[A-Za-z0-9._-]+\.apk$ ]] || die "unsafe app registry row: $key_id"
   # MATON_APPS_ONLY="id ...": build only these apps (others keep their staged APKs).
+  # MATON_CREATE_APP_KEYS=1: allow creating a signing key for an app that has none (new apps only).
   if [[ -n ${MATON_APPS_ONLY:-} && " ${MATON_APPS_ONLY} " != *" $key_id "* ]]; then continue; fi
   # MATON_SKIP_APPS="id ...": keep the already-staged APK (e.g. an app mid-rewrite).
   if [[ " ${MATON_SKIP_APPS:-} " == *" $key_id "* ]]; then info "Skipping $key_id (MATON_SKIP_APPS), keeping staged $apk_name"; continue; fi
@@ -122,6 +123,8 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   key_file=$KEY_DIR/$key_id.jks
   password_file=$KEY_DIR/$key_id.pass
   if [[ ! -s $key_file ]]; then
+    # A new key is a new app identity: installed copies can never update to it.
+    [[ ${MATON_CREATE_APP_KEYS:-} == 1 ]] || die "missing signing key $key_file (copy $KEY_DIR from the machine that signed the shipped apps; MATON_CREATE_APP_KEYS=1 only for a brand-new app)"
     umask 077
     openssl rand -hex 24 > "$password_file"
     keypass=$(cat "$password_file")
