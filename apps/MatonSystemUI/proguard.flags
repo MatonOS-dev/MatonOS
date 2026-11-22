@@ -4,3 +4,9 @@
 }
 
 -keep,allowoptimization,allowaccessmodification class org.matonos.systemui.DaggerMatonGlobalRootComponent** { !synthetic *; }
+
+# Only the manifest names the factory. Without this rule R8 strips its methods and
+# the base class, so providers never get their context callback and SystemUI crashes.
+-keep class org.matonos.systemui.MatonSystemUIAppComponentFactory {
+    *;
+}
