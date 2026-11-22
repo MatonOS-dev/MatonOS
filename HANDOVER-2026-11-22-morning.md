@@ -66,5 +66,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   button "Installing…" for ~4 min → package flatpak.org.gnome.Klotski (+ .Locale) →
   button "Open"; Klotski window renders (screenshot out/pc-logs/iso52/klotski52.png).
   So (c) busy status works and the Klotski/glycin crash (a) does not reproduce here.
-- Still open: Updates badge shows "4" on this fresh install (item d) — not looked at yet.
+- Updates badge "4" on a fresh install (item d) is CORRECT, not a bug: the image bundles
+  Fennec 156 (F-Droid 160), Thunderbird 24.0 (F-Droid 25.0), microG GmsCore + Companion,
+  all older than their repos. Store "Update" on Thunderbird installed 25.0 over
+  /product/app/MatonThunderbird in ~10 s (same signer) and the list dropped to 3.
+  Optional later: bump the bundled pins so a fresh image starts with 0 updates.
 - Earlier plan: release ISO from the last build, VM install-test, stage on the server (not public).
