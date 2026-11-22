@@ -46,6 +46,5 @@ PRODUCT_MAINLINE_SEPOLICY_DEV_CERTIFICATES := $(MATON_RELEASE_KEY_DIR)
 PRODUCT_MAINLINE_BLUETOOTH_SEPOLICY_DEV_CERTIFICATES := $(MATON_RELEASE_KEY_DIR)
 PRODUCT_MAINLINE_NFC_SEPOLICY_DEV_CERTIFICATES := $(MATON_RELEASE_KEY_DIR)
 
-# Direct userdebug image builds do not pass through sign_target_files_apks,
-# which normally converts dev-keys to release-keys after signing.
-PRODUCT_SYSTEM_PROPERTIES += ro.build.tags=release-keys
+# With a non-test default certificate AOSP tags the build dev-keys
+# (build/make/core/config.mk BUILD_KEYS); no manual ro.build.tags override.
