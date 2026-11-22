@@ -1,5 +1,7 @@
 package org.matonos.caption;
 
+import org.matonos.caption.ICaptionSettingsHost;
+
 import android.os.IBinder;
 
 interface ICaptionSettings {

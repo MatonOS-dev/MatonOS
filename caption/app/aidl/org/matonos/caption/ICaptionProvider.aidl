@@ -1,5 +1,7 @@
 package org.matonos.caption;
 
+import org.matonos.caption.ICaptionHost;
+
 import android.os.Bundle;
 import android.os.IBinder;
 
