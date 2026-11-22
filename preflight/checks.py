@@ -219,6 +219,9 @@ APPROVED_PATCHES = {
     # 2026-09-27: user-approved GMS-replacement support (microG, NOTES.md v3).
     "frameworks/base/0002-microg-signature-spoofing.patch",
     "frameworks/base/0003-pinned-gms-update.patch",
+    # 2026-11-22: user-approved ("1-> yes"): WM Shell optional caption-provider hook
+    # (caption app via MatonSystemUI; maximize = desktop immersive).
+    "frameworks/base/0004-WM-Shell-add-optional-desktop-caption-provider-hook.patch",
     # 2026-09-30: small upstreamable fix for an obvious AOSP bug (Bluetooth HAL
     # missing `return` after UNABLE_TO_OPEN_INTERFACE); stops a crash loop with
     # no controller.
