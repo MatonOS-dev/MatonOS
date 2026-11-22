@@ -139,3 +139,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   `wip/fat-dates` together; no workaround code. For dev rollbacks to ≤ 53, delete
   the marker first.
   The test disk's B entry still has the verbose options line (disk only, harmless).
+- **Merged (user OK, 15:2x):** wip/no-capex + wip/fat-dates → fc374a1. Build 55 (1795354159) from it:
+  ISO install on blank 64 GiB HDD VM passed; ESP entries carry real dates; first disk boot 130 s
+  (was 896 s with capex). ISO staged (not public) at build-server staging/iso/matonos-1795354159-x86_64.iso
+  (+ .sha256); build-52/53 staged ISOs deleted. VM disk: out/pc-logs/b55/hdd55.img (port 5558).
+- **User 2026-11-22:** public ISO waits for the custom desktop caption (Steam looks wrong without it).
+  Codex caption-design (luna-high, read-only) running → out/pc-logs/agents/caption-design.report.md.
