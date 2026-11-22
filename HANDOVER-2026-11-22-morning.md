@@ -52,7 +52,8 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   **OTA A→B→A on the testing channel is done** (testing = 1795310854; stable untouched).
 - **Release ISO staged, NOT public:** matonos-1795310854-x86_64.iso (3.4 GB, build 52)
   + .sha256 in build-server /mnt/data/matonos/staging/iso/ (0700, not served; 404 from
-  the site). Made on the host: the server lacks sgdisk (make-iso.sh needs sgdisk, mcopy,
+  the site). Made on the host (server lacked sgdisk/genisoimage; since installed, make-iso.sh 0d34081
+  adds /usr/sbin to PATH, server ISO build verified). Tools: sgdisk, mcopy,
   mformat, genisoimage). VM test: ISO as SATA DVD + blank 64 GiB HDD → firmware falls
   through to the DVD → live boot → Settings installer "Installation complete" → installed
   disk boots alone (slot _a, pc_x86_64.hdd, 1795310854). Kept VM: iso/hdd52b.img + vars-52b.fd.
