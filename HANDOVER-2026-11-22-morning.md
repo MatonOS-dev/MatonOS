@@ -145,3 +145,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   (+ .sha256); build-52/53 staged ISOs deleted. VM disk: out/pc-logs/b55/hdd55.img (port 5558).
 - **User 2026-11-22:** public ISO waits for the custom desktop caption (Steam looks wrong without it).
   Codex caption-design (luna-high, read-only) running → out/pc-logs/agents/caption-design.report.md.
+
+## 2026-11-22 17:55 — MatonSystemUI skeleton runs (wip/systemui-variant 4ffd3433)
+- Variant SystemUI (own GlobalRoot + MatonWMComponent {WMShellModule, MatonCaptionModule}) is stable on the build-55 VM (5558): same PID 90 s, no new crashes; status bar, captions, taskbar as stock.
+- Fixes needed: keep rule for MatonSystemUIAppComponentFactory; `-include` of stock proguard_common.flags (as Car does; included_proguard_flags_files alone doesn't apply it).
+- Bind-mount test recipe: push APK, `chcon u:object_r:system_file:s0`, bind over /system_ext/priv-app/SystemUI/SystemUI.apk, delete /data/system/package_cache/*/SystemUI-*, `stop; start`, then pm grant the runtime perms (image builds get default grants on first boot).
+- Next: framework caption-factory hook (~50–80 lines, waits on user OK), RRO left buttons + centred title, Steam test.
