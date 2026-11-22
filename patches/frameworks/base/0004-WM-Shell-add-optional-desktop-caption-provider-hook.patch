@@ -1,13 +1,29 @@
-From 0e703b22bbd641a7a836dd958051ed622c8aa06a Mon Sep 17 00:00:00 2001
-From: Codex <codex@openai.com>
-Date: Sun, 22 Nov 2026 20:30:00 +0200
-Subject: [PATCH] WM Shell: support interactive regions for caption providers
+From c22970c5b5ada14661751eaa139e97ca9ee679ce Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Sun, 22 Nov 2026 21:44:11 +0200
+Subject: [PATCH] WM Shell: optional desktop caption provider hook
 
-Add a surface-local touchable-region setter to SurfaceControlViewHost.SurfacePackage, then include the optional Maton caption provider hook and apply its regions to the embedded input window.
+Optional @DynamicOverride DesktopCaptionFactory lets a SystemUI variant host a caption
+provider surface per task; absent = stock. SurfacePackage gains a hidden touchable-region
+setter so only provider-declared button regions take input; the rest of the caption stays
+Shell's drag strip. Maximize enters desktop immersive (exclusive full screen).
 
-Agent: Codex
-Task: caption-regions
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01HaUq5t3s78G1bwWoNFi22L
 ---
+ .../android/view/ISurfaceControlViewHost.aidl |  3 ++
+ .../android/view/SurfaceControlViewHost.java  | 23 +++++++++
+ .../res/layout/desktop_mode_app_header.xml    |  7 +++
+ .../wm/shell/dagger/WMShellModule.java        | 14 +++++-
+ .../windowdecor/DesktopCaptionFactory.java    | 37 ++++++++++++++
+ .../DesktopModeTouchEventListener.java        |  3 +-
+ .../DesktopModeWindowDecorViewModel.java      |  7 +++
+ .../DesktopModeWindowDecoration.java          | 30 +++++++++++
+ .../windowdecor/WindowDecorationWrapper.kt    |  4 ++
+ .../viewholder/AppHeaderViewHolder.kt         | 50 ++++++++++++++-----
+ 10 files changed, 162 insertions(+), 16 deletions(-)
+ create mode 100644 libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
+
 diff --git a/core/java/android/view/ISurfaceControlViewHost.aidl b/core/java/android/view/ISurfaceControlViewHost.aidl
 index 0c0172ba17a0..7411ce55766b 100644
 --- a/core/java/android/view/ISurfaceControlViewHost.aidl
@@ -96,7 +112,7 @@ index 8d06c8de54b6..54b2c6d9b316 100644
          android:id="@+id/minimize_window"
          android:layout_width="44dp"
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java b/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
-index 237f47124837..04d0b17ec0c0 100644
+index 237f47124837..30047901fa82 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
 @@ -223,6 +223,7 @@ import com.android.wm.shell.unfold.animation.UnfoldTaskAnimator;
@@ -107,7 +123,15 @@ index 237f47124837..04d0b17ec0c0 100644
  import com.android.wm.shell.windowdecor.DesktopModeWindowDecorViewModel;
  import com.android.wm.shell.windowdecor.FluidTaskResizer;
  import com.android.wm.shell.windowdecor.MultiDisplayTaskMover;
-@@ -1363,6 +1364,7 @@ public abstract class WMShellModule {
+@@ -245,6 +246,7 @@ import com.android.wm.shell.windowdecor.viewholder.AppHandleNotifier;
+ import com.google.android.msdl.domain.MSDLPlayer;
+ 
+ import dagger.Binds;
++import dagger.BindsOptionalOf;
+ import dagger.Lazy;
+ import dagger.Module;
+ import dagger.Provides;
+@@ -1363,6 +1365,7 @@ public abstract class WMShellModule {
              WindowDecorTaskResourceLoader taskResourceLoader,
              PerDisplayRecentsTransitionStateListener perDisplayRecentsTransitionStateListener,
              DesktopModeCompatPolicy desktopModeCompatPolicy,
@@ -115,7 +139,7 @@ index 237f47124837..04d0b17ec0c0 100644
              DesktopTilingDecorViewModel desktopTilingDecorViewModel,
              MultiDisplayDragMoveIndicatorController multiDisplayDragMoveIndicatorController,
              Optional<CompatUIHandler> compatUI,
-@@ -1382,7 +1384,8 @@ public abstract class WMShellModule {
+@@ -1382,7 +1385,8 @@ public abstract class WMShellModule {
          if (!shelldesktopState.canEnterDesktopModeOrShowAppHandle()) {
              return Optional.empty();
          }
@@ -125,7 +149,7 @@ index 237f47124837..04d0b17ec0c0 100644
                  mainChoreographer, mainDispatcher, mainScope, mainImmediateScope, bgScope,
                  bgExecutor, shellInit, shellCommandHandler, windowManager,
                  taskOrganizer, desktopUserRepositories, displayController, shellController,
-@@ -1400,9 +1403,15 @@ public abstract class WMShellModule {
+@@ -1400,9 +1404,15 @@ public abstract class WMShellModule {
                  desksOrganizer, shelldesktopState, desktopConfig, userProfileContexts,
                  lockTaskChangeListener, pinnedLayerController.orElse(null),
                  pinnedLayerUiState.orElse(null), fluidTaskResizer, veiledTaskResizer,
@@ -464,3 +488,6 @@ index 747f5f7820df..6449905932b1 100644
          // Maximize button.
          maximizeButtonView.apply {
              setAnimationTints(
+-- 
+2.43.0
+
