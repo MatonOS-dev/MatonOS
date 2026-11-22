@@ -16,7 +16,7 @@ import android.view.SurfaceHolder;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
-import android.widget.SurfaceView;
+import android.view.SurfaceView;
 import android.widget.TextView;
 import expo.modules.kotlin.AppContext;
 import expo.modules.kotlin.views.ExpoView;
@@ -90,7 +90,7 @@ public final class CaptionSettingsSlotView extends ExpoView {
         }
     };
 
-    private final SurfaceView.SurfaceHolder.Callback surfaceCallback = new SurfaceView.SurfaceHolder.Callback() {
+    private final SurfaceHolder.Callback surfaceCallback = new SurfaceHolder.Callback() {
         @Override public void surfaceCreated(SurfaceHolder holder) { openWhenReady(); }
         @Override public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
             openWhenReady();
