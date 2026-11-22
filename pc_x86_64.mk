@@ -10,6 +10,10 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/generic_system.mk)
 
 PRODUCT_ENFORCE_ARTIFACT_PATH_REQUIREMENTS := relaxed
 
+# Ship APEXes uncompressed: otherwise apexd unpacks ~30 .capex files to /data on
+# first boot, which took ~13 min on a spinning disk. The system partition has room.
+PRODUCT_COMPRESSED_APEX := false
+
 #
 # All components inherited here go to system_ext image
 #
