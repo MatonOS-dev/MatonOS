@@ -32,6 +32,8 @@ while getopts "i:d:" opt; do
 done
 [[ -f $IMAGE ]] || die "live image not found: $IMAGE (run make-live.sh first)"
 ISO=${ISO:-${IMAGE%.img}.iso}
+# Debian keeps sgdisk in /usr/sbin, outside a normal user's PATH.
+PATH=$PATH:/usr/sbin:/sbin
 for t in sgdisk mcopy mformat genisoimage; do
   command -v "$t" >/dev/null || die "missing tool: $t"
 done
