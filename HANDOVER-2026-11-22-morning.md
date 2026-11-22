@@ -151,3 +151,4 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Fixes needed: keep rule for MatonSystemUIAppComponentFactory; `-include` of stock proguard_common.flags (as Car does; included_proguard_flags_files alone doesn't apply it).
 - Bind-mount test recipe: push APK, `chcon u:object_r:system_file:s0`, bind over /system_ext/priv-app/SystemUI/SystemUI.apk, delete /data/system/package_cache/*/SystemUI-*, `stop; start`, then pm grant the runtime perms (image builds get default grants on first boot).
 - Next: framework caption-factory hook (~50–80 lines, waits on user OK), RRO left buttons + centred title, Steam test.
+- 18:55 wip/systemui-variant 854fac68: caption layout override in the app (close/maximize/minimize left, centred title chip, 156dp right spacer). VM 5558: stable, close/maximize(+restore icon)/minimize all work. Screens: out/pc-logs/sysui/maton-sysui3.png, max.png. Not yet checked: maximize long-press menu anchor, TalkBack order.
