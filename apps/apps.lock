@@ -2,5 +2,5 @@
 # re-pins to the newest versions). F-Droid updates them later, so they must
 # stay exactly as F-Droid ships them (see apps/Android.bp).
 # <soong module> <package> <versionCode> <apk sha256> <signer cert sha256>
-MatonFennec org.mozilla.fennec_fdroid 1560010 62cabfbbdd7fbbd00215edf5323010e103e166650028f4e03f413a38a7df7c11 06665358efd8ba05be236a47a12cb0958d7d75dd939d77c2b31f5398537ebdc5
-MatonThunderbird net.thunderbird.android 33 473b33da5963d0a4261a834c845aaf8e3878309565e9f40e61f6e5def21565e5 b6524779b3dbbc5ac17a5ac271ddb29dcfbf723578c238e03c3c217811356dd1
+MatonFennec org.mozilla.fennec_fdroid 1600010 dccf9ffc2dcb80e61877568567c19ad01e2b01bf912ea0cfd3b73b07136a2039 06665358efd8ba05be236a47a12cb0958d7d75dd939d77c2b31f5398537ebdc5
+MatonThunderbird net.thunderbird.android 34 c9f474e81439641deca161eddfefa5704a97ab0602b14efbd7324eb3835632bd b6524779b3dbbc5ac17a5ac271ddb29dcfbf723578c238e03c3c217811356dd1
