@@ -1,3 +1,5 @@
+-include ../../../../../frameworks/base/packages/SystemUI/proguard_common.flags
+
 # Keep the variant initializer and generated root component through app shrinking.
 -keep class org.matonos.systemui.MatonSystemUIInitializer {
     *;
