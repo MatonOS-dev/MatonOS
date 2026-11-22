@@ -102,3 +102,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   build with `PRODUCT_COMPRESSED_APEX := false` (the 16 GiB system partition has room;
   this also saves /data space). NOT changed yet, product decision.
   Logs: out/pc-logs/b53/firstboot-{logcat,dmesg}.txt. Kept VM: b53/hdd53b.img + vars53b.fd.
+- **No-capex fix tested, NOT merged:** branch `wip/no-capex` (95e41f3, pushed) adds
+  `PRODUCT_COMPRESSED_APEX := false` to pc_x86_64.mk. Build 54 (1795336420, 0 .capex /
+  38 .apex) → ISO (server scratch/b54, not staged) → VM install on the spinning host disk
+  → first boot 115 s (build 53: 896 s). Merge = `git merge --ff-only wip/no-capex` on
+  metadata-enc, waiting for the user. Kept VM: out/pc-logs/b54/hdd54.img + vars54.fd.
+  Server checkout is back on metadata-enc.
