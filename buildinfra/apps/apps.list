@@ -1,5 +1,6 @@
 # key-id<TAB>project-path-from-device-tree<TAB>gradle-task<TAB>staged-apk-name
 matonos-settings	rn-apps/settings	expo	Settings.apk
+matonos-caption	caption	:app:assembleRelease	MatonCaption.apk
 matonos-software	rn-apps/flathub	expo	Software.apk
 matonos-audio-tone-test	audio/testapp	:app:assembleRelease	AudioToneTest.apk
 matonos-pointer-test	input/testapp	:app:assembleRelease	PointerTest.apk

@@ -11,6 +11,7 @@
       "versionCode": 1,
       "permissions": [
         "org.matonos.permission.SYSTEM_BRIDGE",
+        "org.matonos.permission.BIND_CAPTION_PROVIDER",
         "android.permission.RECEIVE_BOOT_COMPLETED"
       ]
     },

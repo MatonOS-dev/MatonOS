@@ -8,6 +8,8 @@ const en = {
   sleep: "Sleep",
   display: "Display",
   hardware: "Hardware",
+  windowTitleBars: "Window title bars",
+  windowTitleBarsSummary: "Choose the appearance of window captions",
   developer: "Developer",
   about: "About",
   account: "Account",

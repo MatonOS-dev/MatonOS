@@ -50,6 +50,14 @@ android_app_import {
 }
 
 android_app_import {
+    name: "MatonCaption",
+    apk: "apps-built/MatonCaption.apk",
+    product_specific: true,
+    // Keep the APK byte-for-byte so F-Droid updates retain the app's signer.
+    preprocessed: true,
+}
+
+android_app_import {
     name: "MatonOSSoftware",
     optional_uses_libs: [
         "androidx.window.extensions",

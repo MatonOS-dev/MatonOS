@@ -34,7 +34,15 @@ import infoIcon from "../../assets/icons/info.xml";
 import installIcon from "../../assets/icons/install.xml";
 
 type Section =
-  "install" | "system-update" | "sleep" | "display" | "hardware" | "developer" | "about" | "account";
+  | "install"
+  | "system-update"
+  | "sleep"
+  | "display"
+  | "hardware"
+  | "captions"
+  | "developer"
+  | "about"
+  | "account";
 type NavEntry = {
   id: Section;
   title: string;
@@ -70,6 +78,12 @@ const navItems: Record<Section, NavEntry> = {
     id: "hardware",
     title: copy.hardware,
     symbol: "devices",
+    fallback: devicesIcon,
+  },
+  captions: {
+    id: "captions",
+    title: copy.windowTitleBars,
+    symbol: "title",
     fallback: devicesIcon,
   },
   developer: {
@@ -477,6 +491,7 @@ export function NavRail({ live }: { live: boolean }) {
         <NavItem section="sleep" selected={current === "sleep"} />
         <NavItem section="display" selected={current === "display"} />
         <NavItem section="hardware" selected={current === "hardware"} />
+        <NavItem section="captions" selected={current === "captions"} />
         <NavItem section="account" selected={current === "account"} />
         <NavItem section="developer" selected={current === "developer"} />
         <NavItem section="about" selected={current === "about"} />
