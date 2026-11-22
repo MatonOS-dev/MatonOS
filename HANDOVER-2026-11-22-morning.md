@@ -83,3 +83,13 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   true first boot on real HDD can be slower; re-measure on real hardware.
 - (g) MEMORY.md is 24,192 bytes (< 24.4 KB): nothing to trim.
 - Cron queue a–g is now fully closed.
+- **Release ISO from build 53 staged, NOT public:** build-server
+  /mnt/data/matonos/staging/iso/matonos-1795325641-x86_64.iso (+ .sha256), built on the
+  server; the build-52 ISO is still next to it. VM: ISO + blank 64 GiB HDD → installer
+  "Installation complete" → installed disk boots (slot _a, pc_x86_64.hdd, 1795325641).
+  Kept VM: out/pc-logs/b53/hdd53.img + vars53.fd (port 5558); hdd52b.img deleted.
+- Watch item: the FIRST boot of the installed build-53 disk loaded MatonOS from the ESP
+  but adbd stayed "offline" for ~15 min (disk kept being written); after a VM restart it
+  booted in ~1 min. Boot reason then: "reboot,factory_reset". No pstore/log survived.
+  My test was messy (two launches fought over slots), so not proven to be an image bug;
+  build-52 first boot was fine. Re-check on the next install test, with logcat captured.
