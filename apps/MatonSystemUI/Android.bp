@@ -27,7 +27,6 @@ android_app {
         "wmshell_defaults",
     ],
     static_libs: ["MatonSystemUI-core"],
-    resource_dirs: ["res"],
     enable_ksp: true,
     use_resource_processor: true,
     overrides: ["SystemUI"],
