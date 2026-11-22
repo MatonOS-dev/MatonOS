@@ -1,25 +1,82 @@
-From aae31da3b3f327cade21fc916814b898d23c0f0d Mon Sep 17 00:00:00 2001
-From: Hanro <hlareman2@gmail.com>
-Date: Sun, 22 Nov 2026 19:45:16 +0200
-Subject: [PATCH] WM Shell: add optional desktop caption provider hook
+From 0e703b22bbd641a7a836dd958051ed622c8aa06a Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Sun, 22 Nov 2026 20:30:00 +0200
+Subject: [PATCH] WM Shell: support interactive regions for caption providers
 
-Expose an optional DynamicOverride factory for per-task caption content. Preserve stock behavior without the override, keep client-decorated caption gestures in Shell, and route the Maton maximize control through the existing immersive action.
+Add a surface-local touchable-region setter to SurfaceControlViewHost.SurfacePackage, then include the optional Maton caption provider hook and apply its regions to the embedded input window.
 
 Agent: Codex
-Task: caption-host
-Change-Id: I769f97ef52e9f6f96242b3359a4a26640c4d0b45
+Task: caption-regions
 ---
- .../res/layout/desktop_mode_app_header.xml    |  7 +++
- .../wm/shell/dagger/WMShellModule.java        | 13 ++++-
- .../windowdecor/DesktopCaptionFactory.java    | 37 ++++++++++++++
- .../DesktopModeTouchEventListener.java        |  3 +-
- .../DesktopModeWindowDecorViewModel.java      |  7 +++
- .../DesktopModeWindowDecoration.java          | 30 +++++++++++
- .../windowdecor/WindowDecorationWrapper.kt    |  4 ++
- .../viewholder/AppHeaderViewHolder.kt         | 50 ++++++++++++++-----
- 8 files changed, 135 insertions(+), 16 deletions(-)
- create mode 100644 libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
-
+diff --git a/core/java/android/view/ISurfaceControlViewHost.aidl b/core/java/android/view/ISurfaceControlViewHost.aidl
+index 0c0172ba17a0..7411ce55766b 100644
+--- a/core/java/android/view/ISurfaceControlViewHost.aidl
++++ b/core/java/android/view/ISurfaceControlViewHost.aidl
+@@ -16,6 +16,8 @@
+ 
+ package android.view;
+ 
++import android.graphics.Region;
++
+ import android.content.res.Configuration;
+ import android.graphics.Rect;
+ import android.view.InsetsState;
+@@ -36,6 +38,7 @@ interface ISurfaceControlViewHost {
+     oneway void onDispatchAttachedToWindow(in InputTransferToken token);
+     oneway void onDispatchDetachedFromWindow();
+     oneway void onInsetsChanged(in InsetsState state, in Rect insetFrame);
++    oneway void setTouchableRegion(in Region region);
+     ISurfaceSyncGroup getSurfaceSyncGroup();
+     /**
+      * Attaches the parent interface so the embedded content can communicate back to the parent.
+diff --git a/core/java/android/view/SurfaceControlViewHost.java b/core/java/android/view/SurfaceControlViewHost.java
+index 7888385f0318..3fab05f37778 100644
+--- a/core/java/android/view/SurfaceControlViewHost.java
++++ b/core/java/android/view/SurfaceControlViewHost.java
+@@ -24,6 +24,7 @@ import android.content.Context;
+ import android.content.res.Configuration;
+ import android.graphics.PixelFormat;
+ import android.graphics.Rect;
++import android.graphics.Region;
+ import android.os.IBinder;
+ import android.os.Parcel;
+ import android.os.Parcelable;
+@@ -117,6 +118,19 @@ public class SurfaceControlViewHost {
+             mWm.setInsetsState(state);
+         }
+ 
++        @Override
++        public void setTouchableRegion(Region region) {
++            if (mViewRoot == null) {
++                return;
++            }
++            Region regionCopy = region == null ? new Region() : new Region(region);
++            mViewRoot.mHandler.post(() -> {
++                if (mViewRoot != null) {
++                    mViewRoot.setTouchableRegion(regionCopy);
++                }
++            });
++        }
++
+         @Override
+         public ISurfaceSyncGroup getSurfaceSyncGroup() {
+             CompletableFuture<ISurfaceSyncGroup> surfaceSyncGroup = new CompletableFuture<>();
+@@ -227,6 +241,15 @@ public class SurfaceControlViewHost {
+             return mSurfaceControl;
+         }
+ 
++        /**
++         * Sets the touchable region for the embedded view hierarchy in surface-local pixels.
++         * A null or empty region makes the embedded hierarchy non-touchable.
++         * @hide
++         */
++        public void setTouchableRegion(@Nullable Region region) {
++            mRemoteInterface.setTouchableRegion(region);
++        }
++
+         /**
+          * Gets an accessibility embedded connection interface for this SurfaceControlViewHost.
+          *
 diff --git a/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml b/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml
 index 8d06c8de54b6..54b2c6d9b316 100644
 --- a/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml
@@ -407,6 +464,3 @@ index 747f5f7820df..6449905932b1 100644
          // Maximize button.
          maximizeButtonView.apply {
              setAnimationTints(
--- 
-2.43.0
-

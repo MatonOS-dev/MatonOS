@@ -9,6 +9,7 @@ import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Rect;
+import android.graphics.Region;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
@@ -335,13 +336,25 @@ final class CaptionProviderController implements DesktopCaptionFactory {
                 mHandler.removeCallbacks(b.timeout);
                 b.surfacePackage = p;
                 b.surface.setChildSurfacePackage(p);
+                p.setTouchableRegion(b.interactiveRegion);
                 setSystemHeaderState(b, true);
             });
         }
 
         @Override public void setInteractiveRegions(int taskId, Rect[] regions) {
             if (!allowed(taskId)) return;
-            // SurfacePackage input is scoped to the embedded view; Shell keeps the rest as drag strip.
+            Region region = new Region();
+            if (regions != null) {
+                for (Rect rect : regions) {
+                    if (rect == null) continue;
+                    region.op(rect, Region.Op.UNION);
+                }
+            }
+            mHandler.post(() -> {
+                if (!isCurrent(taskId)) return;
+                b.interactiveRegion = region;
+                if (b.surfacePackage != null) b.surfacePackage.setTouchableRegion(region);
+            });
         }
 
         @Override public void close(int taskId) {
@@ -385,6 +398,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
         int providerUid;
         ComponentName component;
         ComponentName requestedComponent;
+        Region interactiveRegion = new Region();
         ServiceConnection connection;
         ICaptionProvider provider;
         Host host;
