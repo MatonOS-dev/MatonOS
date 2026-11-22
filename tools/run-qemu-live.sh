@@ -37,6 +37,7 @@
 # writes to the image directly; use this for a prepared installed disk.
 # MATON_QEMU_DISK=nvme attaches the image as an internal NVMe disk instead
 # (installed disks: emulated usb-storage makes Android boots take ~20 min).
+# MATON_QEMU_DISK=hdd attaches it as a rotational SATA disk (HDD installs).
 set -Eeuo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -137,7 +138,8 @@ esac
 case ${MATON_QEMU_DISK:-usb} in
   usb)  disk_dev="usb-storage,bus=xhci.0,drive=live,bootindex=0" ;;
   nvme) disk_dev="nvme,serial=matonos0,drive=live,bootindex=0" ;;
-  *)    die "MATON_QEMU_DISK must be usb or nvme" ;;
+  hdd)  disk_dev="ide-hd,bus=ide.0,drive=live,rotation_rate=7200,bootindex=0" ;;
+  *)    die "MATON_QEMU_DISK must be usb, nvme or hdd" ;;
 esac
 
 args=(
