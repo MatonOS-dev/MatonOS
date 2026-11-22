@@ -18,20 +18,40 @@ effect factory. `audio_effects_config.xml` remains installed.
 
 The imported service fragment advertises audio core v3 and includes
 Bluetooth. Our ODM VINTF override replaces its core declaration with the
-modules configured here and excludes Bluetooth/LE audio. This AOSP checkout
-has frozen `android.hardware.audio.core` through v4; v5 does not exist in the
-source tree, so the override advertises v4. The APEX's audio effect factory
+modules configured here. This AOSP checkout has frozen
+`android.hardware.audio.core` through v4; v5 does not exist in the source
+tree, so the override advertises v4. The APEX's audio effect factory
 declaration remains intact.
 
-The static schema-7.0 policy config includes exactly four modules:
+The static schema-7.0 policy config includes five modules:
 
 - `default` — the primary ALSA endpoint, registered as `IModule/default`.
 - `r_submix` — system remote submix.
 - `usb` — USB audio hotplug ports.
 - `stub` — an available fallback module.
+- `bluetooth` — A2DP, hearing-aid, and LE Audio ports and routes.
 
-No Bluetooth or LE-audio policy is included. ODM and vendor fallback policy
-use the same module set. `mixer_controls.xml` uses BayLibre's generic Master,
+ODM and vendor fallback policy use the same module set. The core-v4 VINTF
+override declares `IModule/bluetooth` with the other configured modules. This
+module is static and controller-independent: its constructor creates audio
+profile interfaces and the provider factory but does not probe or wait for an
+HCI controller. The Bluetooth stack supplies connected device ports when a
+controller and peer are active. With Bluetooth off or no controller there are
+no connected Bluetooth device routes. The default Bluetooth setting remains
+off, avoiding the known controller-less stack initialization failure during
+boot.
+
+BayLibre's audio service links AOSP's stock
+`android.hardware.bluetooth.audio-impl` shared library. That library
+implements `IBluetoothAudioProviderFactory/default` for software A2DP and LE
+sessions. The factory is registered in the audio HAL process when the
+Bluetooth module is created; there is no separate init service or daemon to
+start. The ODM manifest declares the same provider instance as AOSP's stock
+VINTF fragment because the BayLibre APEX does not bundle that fragment.
+AOSP's existing `hal_audio_service` service-manager label and `hal_audio`
+policy cover registration, so this feature adds no SELinux policy.
+
+`mixer_controls.xml` uses BayLibre's generic Master,
 headphone/PCM/speaker, and capture control names; absent controls are
 gracefully unavailable.
 
@@ -65,9 +85,8 @@ Linux-app audio path until binaries, libraries, configuration and proxy are
 installed under ODM and verified on a fresh boot.
 
 `audio/native-hal/` is also unshipped reference work. It is not installed or
-registered by the product. Its source still registers a `bluetooth` module,
-which intentionally does not match the shipped ODM VINTF (`default`,
-`r_submix`, `usb`, `stub`); do not treat it as a usable alternative HAL.
+registered by the product. Do not treat it as an alternative shipped HAL; the
+product uses BayLibre's generic service and the fixed policy files above.
 
 ## HDA controller options and codec driver preload
 
@@ -131,6 +150,15 @@ that only the BayLibre audio APEX is installed, and that
 `dumpsys media.audio_policy`/`dumpsys media.audio_flinger` show registered
 modules and a primary output thread.
 
+With no controller attached, check that `sys.boot_completed=1`, the audio
+policy and flinger dumps show `bluetooth` registered, and the primary output
+still plays audio. There should be no Bluetooth device route until a peer is
+connected. Check crash and all log buffers for audioserver failures. With a
+USB Bluetooth controller and paired A2DP headphones, select the headset, play
+`out/pc-logs/agents/test-media/ovmuz.mp3`, and confirm playback advances and is
+audible. A LE Audio headset needs a LE-capable controller and peer; verify its
+BLE route and software encoded session separately.
+
 With HDA attached, inspect `/proc/asound/cards` and `cat /proc/asound/pcm`,
 confirm the selector chose the first playback-capable non-loopback card, play
 `out/pc-logs/agents/test-media/ovmuz.mp3` through Fossify Music or an ACTION_VIEW
@@ -161,11 +189,14 @@ service with an unreadable ALSA proc path in a test build) and verify
 
 ## Current test state
 
-The 2026-09-26 09:15 image boots Android with QEMU HDA attached, but HDA
+The 2026-09-26 09:15 image boots based on AOSP with QEMU HDA attached, but HDA
 detection failed: `snd_hda_intel` logged `Cannot probe codecs, giving up`,
 `/proc/asound/cards` was empty, and the selector reported `no_card`. The first
 preload attempt used `/system/bin/modprobe`; the revised service now uses
 `/vendor/bin/modprobe` with an explicit transition to `vendor_modprobe`. The
 revision needs a fresh image and runtime verification. The 09:15 QEMU run did
 not produce playback evidence: its WAV was empty/header-only. No-card fresh
-boot and actual playback remain unverified for this BayLibre image.
+boot and actual playback remain unverified for this BayLibre image. Bluetooth
+audio configuration has only received source inspection and XML validation in
+this branch; it has not been built or booted, and no A2DP or LE Audio playback
+has been tested.
