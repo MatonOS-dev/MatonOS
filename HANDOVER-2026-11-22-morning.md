@@ -123,3 +123,19 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   logs from slot B are still needed. This affects rolling back from a no-capex build to
   a compressed one, so look at it before merging `wip/no-capex`. Build 54 is uploaded to
   OTA storage/1795336420 but on no channel; the testing channel is still 1795310854.
+- **SOLVED: why build 52 can't boot after build 54.** Build 54 has no .capex and an
+  empty /data/apex/active, so at boot-complete upstream apexd touches
+  `/metadata/apex/config/mount_before_data` (one-way migration to a single mount
+  namespace; on the VM, `ro.init.mnt_ns.count=1`). /metadata is shared by both slots,
+  so build 52's init also picks a single namespace. apexd-bootstrap can't mount .capex
+  ("Cannot directly mount compressed APEX …tethering.capex"), normal-mode apexd skips
+  activation ("19 packages restored", OnStart 0 ms), bpfloader falls back to
+  /system/bin/false, and the boot ends with `reboot,netbpfload-missing`. Proof: verbose
+  slot-B serial log at out/pc-logs/b54/slotB-verbose-serial.log (that boot used an
+  options line with loglevel=7 on the B entry).
+  Effect: after any no-capex build has booted, rolling back to a compressed build
+  (≤ 53) fails. Those builds never shipped and every later build is no-capex, so this
+  is dev-only once `wip/no-capex` is merged. Recommendation: merge `wip/no-capex` +
+  `wip/fat-dates` together; no workaround code. For dev rollbacks to ≤ 53, delete
+  the marker first.
+  The test disk's B entry still has the verbose options line (disk only, harmless).
