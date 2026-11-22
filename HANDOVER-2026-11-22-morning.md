@@ -108,3 +108,18 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   → first boot 115 s (build 53: 896 s). Merge = `git merge --ff-only wip/no-capex` on
   metadata-enc, waiting for the user. Kept VM: out/pc-logs/b54/hdd54.img + vars54.fd.
   Server checkout is back on metadata-enc.
+- **BUG: A/B fallback never happened; fix on `wip/fat-dates` (7763d4b, pushed, NOT merged).**
+  The installer's FatFilesystem.cpp wrote every ESP entry with FAT date 0 (`1980-00-00`).
+  OVMF refuses SetInfo on that, so systemd-boot could not rename `B+3-0.conf` to count down
+  tries ("Failed to rename ... Invalid parameter"); a slot that cannot boot looped forever
+  (1008 reboots seen). Fix: stamp the current time on new files and dirs. Host test: valid
+  dates, fsck.fat clean. Firmware proof: entries re-dated with mtools → B counted down to
+  `B+0-3` over 3 failed boots → slot A booted in 72 s. Existing test disks keep zero dates
+  (no migrations). Note: the writer's own RenameFile accepts 8.3 names only.
+- **OPEN: build 52 cannot boot after build 54** (OTA 54→52 on the b54 VM, slot B).
+  It reboots about 8 s in with reason `netbpfload-missing`. The two builds have the same
+  APEX versions (370399999) and differ only in compressed vs uncompressed APEXes. A→B→A
+  between two compressed builds (51/52) worked. The kernel console shows no cause, so
+  logs from slot B are still needed. This affects rolling back from a no-capex build to
+  a compressed one, so look at it before merging `wip/no-capex`. Build 54 is uploaded to
+  OTA storage/1795336420 but on no channel; the testing channel is still 1795310854.
