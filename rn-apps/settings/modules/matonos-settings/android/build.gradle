@@ -10,6 +10,7 @@ android {
   namespace 'org.matonos.settings.nativebridge'
   defaultConfig { minSdk 32; versionCode 1; versionName '0.1.0' }
   buildFeatures { aidl true }
+  sourceSets.main.aidl.srcDirs = [file('aidl')]
 }
 
 dependencies {
