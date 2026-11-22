@@ -72,3 +72,10 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   /product/app/MatonThunderbird in ~10 s (same signer) and the list dropped to 3.
   Optional later: bump the bundled pins so a fresh image starts with 0 updates.
 - Earlier plan: release ISO from the last build, VM install-test, stage on the server (not public).
+- (f) stub cold start, build-52 installed VM (HDD, venus): Klotski process start → first
+  xdg_surface = 2.7 s warm, 3.5 s after guest drop_caches (02:36:57.840 → 02:37:01.328;
+  loader started at +0.4 s, the remaining ~3 s is the app itself). The ~28 s from earlier
+  builds does not reproduce. Caveat: the host page cache still holds the disk image, so a
+  true first boot on real HDD can be slower; re-measure on real hardware.
+- (g) MEMORY.md is 24,192 bytes (< 24.4 KB): nothing to trim.
+- Cron queue a–g is now fully closed.
