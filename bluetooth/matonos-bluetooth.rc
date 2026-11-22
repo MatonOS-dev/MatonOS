@@ -1,0 +1,8 @@
+# The generic Linux HCI HAL needs AF_BLUETOOTH and /dev/rfkill. Both are modules
+# (CONFIG_BT=m, CONFIG_RFKILL=m) that only load on demand when an adapter driver
+# such as btusb probes. Without an adapter nothing loads them, the HAL reports an
+# initialization error, and the stack aborts in hci_backend_aidl.cc and crash-loops.
+# With them loaded the HAL waits on the management socket for hci0, so the stack
+# stays in BLE_TURNING_ON until an adapter appears (hot-plugged USB works).
+on early-boot
+    exec u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules rfkill bluetooth
