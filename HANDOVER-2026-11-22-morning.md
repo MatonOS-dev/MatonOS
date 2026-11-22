@@ -43,4 +43,24 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   Removing system/build.prop is not enough (build-50 = same id): the Soong intermediate
   only rebuilds when BUILD_NUMBER changes, and it defaulted to a fixed eng.hanro5.
   Fixed: tools/build.sh sets BUILD_NUMBER=matonos.<UTC date> for image builds.
-- Then release ISO from the last build, VM install-test, stage on the server (not public).
+- **A→B PASSED (03:2x):** build-51 (1795308870) published to testing (server
+  /mnt/data/matonos/ota/storage/1795308870, channels.json testing), ota-stage.sh stage →
+  finalize → reboot: slot _b, fstab pc_x86_64.hdd, incremental matonos.20261122.005355.
+  Note: stage alone does not switch slots; finalize sets the boot entry.
+- **B→A PASSED (03:4x):** build-52 (1795310854) published to testing, stage → finalize →
+  reboot: slot _a, fstab pc_x86_64.hdd, incremental matonos.20261122.012716.
+  **OTA A→B→A on the testing channel is done** (testing = 1795310854; stable untouched).
+- **Release ISO staged, NOT public:** matonos-1795310854-x86_64.iso (3.4 GB, build 52)
+  + .sha256 in build-server /mnt/data/matonos/staging/iso/ (0700, not served; 404 from
+  the site). Made on the host: the server lacks sgdisk (make-iso.sh needs sgdisk, mcopy,
+  mformat, genisoimage). VM test: ISO as SATA DVD + blank 64 GiB HDD → firmware falls
+  through to the DVD → live boot → Settings installer "Installation complete" → installed
+  disk boots alone (slot _a, pc_x86_64.hdd, 1795310854). Kept VM: iso/hdd52b.img + vars-52b.fd.
+  Publishing it is the user's call.
+- Host issue: the first ISO boot (port 5557) wedged QEMU in D state (__vm_munmap) and
+  after kill -9 it plus its virgl_render_server stay zombies holding port 5557 and the
+  old hdd52.img lock. Likely host amdgpu/venus teardown; reboot of the host clears it.
+  Test continued on port 5558.
+- Old superseded VM images/ISO deleted; /home 88%.
+- Next if time: (c) store Install button progress re-check on the build-52 VM.
+- Earlier plan: release ISO from the last build, VM install-test, stage on the server (not public).
