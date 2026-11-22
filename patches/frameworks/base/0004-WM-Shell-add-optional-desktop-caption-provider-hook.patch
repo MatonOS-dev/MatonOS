@@ -1,6 +1,6 @@
-From c22970c5b5ada14661751eaa139e97ca9ee679ce Mon Sep 17 00:00:00 2001
+From 14bb9d7bf74f35101a567f74992c36a5650b101d Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
-Date: Sun, 22 Nov 2026 21:44:11 +0200
+Date: Sun, 22 Nov 2026 22:08:51 +0200
 Subject: [PATCH] WM Shell: optional desktop caption provider hook
 
 Optional @DynamicOverride DesktopCaptionFactory lets a SystemUI variant host a caption
@@ -20,8 +20,9 @@ Claude-Session: https://claude.ai/code/session_01HaUq5t3s78G1bwWoNFi22L
  .../DesktopModeWindowDecorViewModel.java      |  7 +++
  .../DesktopModeWindowDecoration.java          | 30 +++++++++++
  .../windowdecor/WindowDecorationWrapper.kt    |  4 ++
+ .../caption/AppHeaderController.kt            |  7 ++-
  .../viewholder/AppHeaderViewHolder.kt         | 50 ++++++++++++++-----
- 10 files changed, 162 insertions(+), 16 deletions(-)
+ 11 files changed, 167 insertions(+), 18 deletions(-)
  create mode 100644 libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
 
 diff --git a/core/java/android/view/ISurfaceControlViewHost.aidl b/core/java/android/view/ISurfaceControlViewHost.aidl
@@ -343,6 +344,24 @@ index ed802273ef76..2e1d01fe24ab 100644
      val layoutMenuController: LayoutMenuController?
          get() =
              when {
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/AppHeaderController.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/AppHeaderController.kt
+index 036ba0cf5a52..d5276dd1af7e 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/AppHeaderController.kt
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/AppHeaderController.kt
+@@ -602,8 +602,11 @@ class AppHeaderController(
+                     isTaskMaximized(taskInfo, displayLayout),
+                     inFullImmersive,
+                     hasGlobalFocus,
+-                    canOpenLayoutMenu(animatingTaskResizeOrReposition),
+-                    isCaptionVisible,
++                    isClientDecorated = false,
++                    hasProviderCaption = false,
++                    useImmersiveMaximize = false,
++                    enableMaximizeLongClick = canOpenLayoutMenu(animatingTaskResizeOrReposition),
++                    isCaptionVisible = isCaptionVisible,
+                 )
+             )
+         }
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
 index 747f5f7820df..6449905932b1 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
