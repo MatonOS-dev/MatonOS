@@ -44,7 +44,8 @@ final class CaptionProviderController implements DesktopCaptionFactory {
 
     private final Context mContext;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
-    private final ExecutorService mIpcExecutor = Executors.newCachedThreadPool();
+    // One thread: attach/update/detach for a task must reach the provider in order.
+    private final ExecutorService mIpcExecutor = Executors.newSingleThreadExecutor();
     private final Map<Integer, Binding> mBindings = new ConcurrentHashMap<>();
 
     CaptionProviderController(Context context) {
@@ -71,8 +72,9 @@ final class CaptionProviderController implements DesktopCaptionFactory {
     public void bindCaption(Context context, ViewGroup slot, RunningTaskInfo taskInfo,
             WindowDecorationActions actions, int widthPx, int heightPx) {
         Binding binding = mBindings.get(taskInfo.taskId);
-        ComponentName desired = selectedComponent(context);
-        if (binding != null && !java.util.Objects.equals(binding.requestedComponent, desired)) {
+        ComponentName desired = selectedComponent(context, taskInfo.userId);
+        // Compare with what was selected, not with the fallback a broken selection fell back to.
+        if (binding != null && !java.util.Objects.equals(binding.selectedComponent, desired)) {
             unbindCaption(taskInfo.taskId);
             binding = null;
         }
@@ -86,11 +88,25 @@ final class CaptionProviderController implements DesktopCaptionFactory {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             slot.addView(binding.surface);
             slot.setVisibility(View.VISIBLE);
+            final Binding laidOut = binding;
+            // Shell passes the task width; the provider must render at the slot's real size.
+            binding.surface.addOnLayoutChangeListener((v, l, t, r, bt, ol, ot, or, ob) -> {
+                int w = r - l;
+                int h = bt - t;
+                if (w <= 0 || h <= 0 || (w == laidOut.width && h == laidOut.height)) return;
+                laidOut.width = w;
+                laidOut.height = h;
+                if (laidOut.provider != null && mBindings.get(laidOut.taskInfo.taskId) == laidOut) {
+                    update(laidOut);
+                }
+            });
             connect(binding, widthPx, heightPx);
         } else {
             binding.taskInfo = taskInfo;
-            binding.width = widthPx;
-            binding.height = heightPx;
+            int w = binding.surface.getWidth();
+            int h = binding.surface.getHeight();
+            binding.width = w > 0 ? w : widthPx;
+            binding.height = h > 0 ? h : heightPx;
             if (binding.provider != null) update(binding);
         }
     }
@@ -125,7 +141,8 @@ final class CaptionProviderController implements DesktopCaptionFactory {
     }
 
     private void connect(Binding b, int width, int height) {
-        connect(b, width, height, selectedComponent(b.context));
+        b.selectedComponent = selectedComponent(b.context, b.taskInfo.userId);
+        connect(b, width, height, b.selectedComponent);
     }
 
     private void connect(Binding b, int width, int height, ComponentName requestedComponent) {
@@ -141,8 +158,8 @@ final class CaptionProviderController implements DesktopCaptionFactory {
                 b.component = name;
                 b.provider = ICaptionProvider.Stub.asInterface(service);
                 try {
-                    b.providerUid = b.context.getPackageManager()
-                            .getApplicationInfo(name.getPackageName(), 0).uid;
+                    b.providerUid = UserHandle.getUid(b.taskInfo.userId, b.context
+                            .getPackageManager().getApplicationInfo(name.getPackageName(), 0).uid);
                 } catch (PackageManager.NameNotFoundException e) {
                     fail(b, "provider package missing", e);
                     return;
@@ -216,8 +233,9 @@ final class CaptionProviderController implements DesktopCaptionFactory {
         }
     }
 
-    private ComponentName selectedComponent(Context context) {
-        String setting = Settings.Secure.getString(context.getContentResolver(), SETTING_PROVIDER);
+    private ComponentName selectedComponent(Context context, int userId) {
+        String setting = Settings.Secure.getStringForUser(
+                context.getContentResolver(), SETTING_PROVIDER, userId);
         return setting == null || setting.isEmpty() ? null : ComponentName.unflattenFromString(setting);
     }
 
@@ -326,14 +344,23 @@ final class CaptionProviderController implements DesktopCaptionFactory {
         }
 
         @Override public void setSurface(int taskId, SurfaceControlViewHost.SurfacePackage p) {
-            if (!allowed(taskId)) return;
+            if (!allowed(taskId)) {
+                if (p != null) p.release();
+                return;
+            }
             if (p == null) {
                 mHandler.post(() -> fail(b, "provider returned null surface", null));
                 return;
             }
             mHandler.post(() -> {
-                if (!isCurrent(taskId)) return;
+                if (!isCurrent(taskId)) {
+                    p.release();
+                    return;
+                }
                 mHandler.removeCallbacks(b.timeout);
+                // setChildSurfacePackage only releases the old package once the SurfaceView
+                // has a surface; clear explicitly so a re-publish never leaks one.
+                if (b.surfacePackage != null) b.surface.clearChildSurfacePackage();
                 b.surfacePackage = p;
                 b.surface.setChildSurfacePackage(p);
                 p.setTouchableRegion(b.interactiveRegion);
@@ -373,12 +400,13 @@ final class CaptionProviderController implements DesktopCaptionFactory {
 
     private void setSystemHeaderState(Binding b, boolean providerActive) {
         View root = b.slot.getRootView();
+        // Same rule as AppHeaderViewHolder.bindData: the provider (or the client-decorated
+        // app) draws the window buttons, so Shell's copies go away while it is active.
         setViewVisibility(root, "open_menu_button", !providerActive);
-        boolean hideControls = providerActive && hasTransparentCaption(b.taskInfo);
-        setViewVisibility(root, "close_window", !hideControls);
-        setViewVisibility(root, "maximize_button_view", !hideControls);
-        setViewVisibility(root, "maximize_window", !hideControls);
-        setViewVisibility(root, "minimize_window", !hideControls);
+        setViewVisibility(root, "close_window", !providerActive);
+        setViewVisibility(root, "maximize_button_view", !providerActive);
+        setViewVisibility(root, "maximize_window", !providerActive);
+        setViewVisibility(root, "minimize_window", !providerActive);
     }
 
     private void setViewVisibility(View root, String name, boolean visible) {
@@ -397,6 +425,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
         int height;
         int providerUid;
         ComponentName component;
+        ComponentName selectedComponent;
         ComponentName requestedComponent;
         Region interactiveRegion = new Region();
         ServiceConnection connection;

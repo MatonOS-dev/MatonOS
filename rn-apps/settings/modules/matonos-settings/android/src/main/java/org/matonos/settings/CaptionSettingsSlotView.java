@@ -139,8 +139,9 @@ public final class CaptionSettingsSlotView extends ExpoView {
     }
 
     private void bindProvider() {
-        ComponentName configured = ComponentName.unflattenFromString(
-                Settings.Secure.getString(getContext().getContentResolver(), PROVIDER_SETTING));
+        String setting = Settings.Secure.getString(getContext().getContentResolver(), PROVIDER_SETTING);
+        ComponentName configured = setting == null || setting.isEmpty()
+                ? null : ComponentName.unflattenFromString(setting);
         String packageName = configured == null ? DEFAULT_PACKAGE : configured.getPackageName();
         Intent intent = new Intent(ACTION).setPackage(packageName);
         if (configured != null && !configured.getClassName().isEmpty()) intent.setComponent(configured);
@@ -176,7 +177,7 @@ public final class CaptionSettingsSlotView extends ExpoView {
         }
         opened = false;
         handler.removeCallbacks(openTimeout);
-        surface.setChildSurfacePackage(null);
+        surface.clearChildSurfacePackage();
     }
 
     private void showFailure(String text) {

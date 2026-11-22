@@ -1,6 +1,6 @@
-From 14bb9d7bf74f35101a567f74992c36a5650b101d Mon Sep 17 00:00:00 2001
+From dc848567f431368668521a74eb55c6a2425dfe93 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
-Date: Sun, 22 Nov 2026 22:08:51 +0200
+Date: Sun, 22 Nov 2026 23:33:39 +0200
 Subject: [PATCH] WM Shell: optional desktop caption provider hook
 
 Optional @DynamicOverride DesktopCaptionFactory lets a SystemUI variant host a caption
@@ -12,17 +12,17 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01HaUq5t3s78G1bwWoNFi22L
 ---
  .../android/view/ISurfaceControlViewHost.aidl |  3 ++
- .../android/view/SurfaceControlViewHost.java  | 23 +++++++++
- .../res/layout/desktop_mode_app_header.xml    |  7 +++
- .../wm/shell/dagger/WMShellModule.java        | 14 +++++-
- .../windowdecor/DesktopCaptionFactory.java    | 37 ++++++++++++++
+ .../android/view/SurfaceControlViewHost.java  | 23 ++++++++
+ .../res/layout/desktop_mode_app_header.xml    | 21 ++++++--
+ .../wm/shell/dagger/WMShellModule.java        | 14 ++++-
+ .../windowdecor/DesktopCaptionFactory.java    | 37 +++++++++++++
  .../DesktopModeTouchEventListener.java        |  3 +-
  .../DesktopModeWindowDecorViewModel.java      |  7 +++
  .../DesktopModeWindowDecoration.java          | 30 +++++++++++
  .../windowdecor/WindowDecorationWrapper.kt    |  4 ++
  .../caption/AppHeaderController.kt            |  7 ++-
- .../viewholder/AppHeaderViewHolder.kt         | 50 ++++++++++++++-----
- 11 files changed, 167 insertions(+), 18 deletions(-)
+ .../viewholder/AppHeaderViewHolder.kt         | 53 ++++++++++++++-----
+ 11 files changed, 180 insertions(+), 22 deletions(-)
  create mode 100644 libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
 
 diff --git a/core/java/android/view/ISurfaceControlViewHost.aidl b/core/java/android/view/ISurfaceControlViewHost.aidl
@@ -95,23 +95,38 @@ index 7888385f0318..3fab05f37778 100644
           * Gets an accessibility embedded connection interface for this SurfaceControlViewHost.
           *
 diff --git a/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml b/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml
-index 8d06c8de54b6..54b2c6d9b316 100644
+index 8d06c8de54b6..662db28a4358 100644
 --- a/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml
 +++ b/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml
-@@ -95,6 +95,13 @@
-         android:layout_height="40dp"
-         android:layout_weight="1"/>
+@@ -89,11 +89,24 @@
+             android:layout_gravity="center_vertical"/>
+     </LinearLayout>
  
+-    <View
+-        android:id="@+id/caption_handle"
+-        android:layout_width="wrap_content"
++    <!-- The optional caption provider slot overlays the drag handle; touches outside the
++         provider's touchable region fall through to caption_handle. -->
 +    <FrameLayout
-+        android:id="@+id/caption_provider_slot"
 +        android:layout_width="0dp"
-+        android:layout_height="40dp"
-+        android:layout_weight="1"
-+        android:visibility="gone" />
+         android:layout_height="40dp"
+-        android:layout_weight="1"/>
++        android:layout_weight="1">
 +
++        <View
++            android:id="@+id/caption_handle"
++            android:layout_width="match_parent"
++            android:layout_height="match_parent"/>
++
++        <FrameLayout
++            android:id="@+id/caption_provider_slot"
++            android:layout_width="match_parent"
++            android:layout_height="match_parent"
++            android:visibility="gone" />
++    </FrameLayout>
+ 
      <ImageButton
          android:id="@+id/minimize_window"
-         android:layout_width="44dp"
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java b/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
 index 237f47124837..30047901fa82 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
@@ -363,7 +378,7 @@ index 036ba0cf5a52..d5276dd1af7e 100644
              )
          }
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
-index 747f5f7820df..6449905932b1 100644
+index 747f5f7820df..dd52159f1343 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
 @@ -105,6 +105,9 @@ class AppHeaderViewHolder(
@@ -493,17 +508,20 @@ index 747f5f7820df..6449905932b1 100644
          }
          // Minimize button.
          minimizeWindowButton.apply {
-+            visibility = if (isClientDecorated) View.GONE else View.VISIBLE
++            visibility = if (isClientDecorated || hasProviderCaption) View.GONE else View.VISIBLE
              imageTintList = colorStateList
              background =
                  createBackgroundDrawable(
-@@ -632,6 +653,9 @@ class AppHeaderViewHolder(
+@@ -632,6 +653,12 @@ class AppHeaderViewHolder(
                      drawableInsets = dimensions.minimizeBackgroundInsets,
                  )
          }
-+        maximizeButtonView.visibility = if (isClientDecorated) View.GONE else View.VISIBLE
-+        maximizeWindowButton.visibility = if (isClientDecorated) View.GONE else View.VISIBLE
-+        closeWindowButton.visibility = if (isClientDecorated) View.GONE else View.VISIBLE
++        maximizeButtonView.visibility =
++            if (isClientDecorated || hasProviderCaption) View.GONE else View.VISIBLE
++        maximizeWindowButton.visibility =
++            if (isClientDecorated || hasProviderCaption) View.GONE else View.VISIBLE
++        closeWindowButton.visibility =
++            if (isClientDecorated || hasProviderCaption) View.GONE else View.VISIBLE
          // Maximize button.
          maximizeButtonView.apply {
              setAnimationTints(
