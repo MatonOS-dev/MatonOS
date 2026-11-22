@@ -56,7 +56,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
         Binding binding = mBindings.get(taskInfo.taskId);
         return binding != null && binding.surfacePackage != null
                 && taskInfo.taskDescription != null
-                && (taskInfo.taskDescription.topOpaqueSystemBarsAppearance
+                && (taskInfo.taskDescription.getTopOpaqueSystemBarsAppearance()
                 & android.view.WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND)
                 != 0;
     }
@@ -259,7 +259,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
 
     private boolean hasTransparentCaption(RunningTaskInfo taskInfo) {
         return taskInfo.taskDescription != null
-                && (taskInfo.taskDescription.topOpaqueSystemBarsAppearance
+                && (taskInfo.taskDescription.getTopOpaqueSystemBarsAppearance()
                 & android.view.WindowInsetsController.APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND)
                 != 0;
     }
