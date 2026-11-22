@@ -3,7 +3,10 @@
 
 android_library {
     name: "MatonSystemUI-core",
-    srcs: ["src/**/*.java"],
+    srcs: ["src/**/*.java", "aidl/**/*.aidl"],
+    aidl: {
+        local_include_dirs: ["aidl"],
+    },
     resource_dirs: [],
     manifest: "AndroidManifest.xml",
     static_libs: [
