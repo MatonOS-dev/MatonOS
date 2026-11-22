@@ -1,6 +1,6 @@
-From dc848567f431368668521a74eb55c6a2425dfe93 Mon Sep 17 00:00:00 2001
+From edbb1d8e67e429d0adc9f656e07eff6d4d91fb06 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
-Date: Sun, 22 Nov 2026 23:33:39 +0200
+Date: Sun, 22 Nov 2026 23:46:58 +0200
 Subject: [PATCH] WM Shell: optional desktop caption provider hook
 
 Optional @DynamicOverride DesktopCaptionFactory lets a SystemUI variant host a caption
@@ -12,17 +12,16 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01HaUq5t3s78G1bwWoNFi22L
 ---
  .../android/view/ISurfaceControlViewHost.aidl |  3 ++
- .../android/view/SurfaceControlViewHost.java  | 23 ++++++++
+ .../android/view/SurfaceControlViewHost.java  | 27 ++++++++++
  .../res/layout/desktop_mode_app_header.xml    | 21 ++++++--
  .../wm/shell/dagger/WMShellModule.java        | 14 ++++-
  .../windowdecor/DesktopCaptionFactory.java    | 37 +++++++++++++
- .../DesktopModeTouchEventListener.java        |  3 +-
  .../DesktopModeWindowDecorViewModel.java      |  7 +++
  .../DesktopModeWindowDecoration.java          | 30 +++++++++++
  .../windowdecor/WindowDecorationWrapper.kt    |  4 ++
  .../caption/AppHeaderController.kt            |  7 ++-
  .../viewholder/AppHeaderViewHolder.kt         | 53 ++++++++++++++-----
- 11 files changed, 180 insertions(+), 22 deletions(-)
+ 10 files changed, 182 insertions(+), 21 deletions(-)
  create mode 100644 libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
 
 diff --git a/core/java/android/view/ISurfaceControlViewHost.aidl b/core/java/android/view/ISurfaceControlViewHost.aidl
@@ -47,7 +46,7 @@ index 0c0172ba17a0..7411ce55766b 100644
      /**
       * Attaches the parent interface so the embedded content can communicate back to the parent.
 diff --git a/core/java/android/view/SurfaceControlViewHost.java b/core/java/android/view/SurfaceControlViewHost.java
-index 7888385f0318..3fab05f37778 100644
+index 7888385f0318..90f679b1a3d3 100644
 --- a/core/java/android/view/SurfaceControlViewHost.java
 +++ b/core/java/android/view/SurfaceControlViewHost.java
 @@ -24,6 +24,7 @@ import android.content.Context;
@@ -78,7 +77,7 @@ index 7888385f0318..3fab05f37778 100644
          @Override
          public ISurfaceSyncGroup getSurfaceSyncGroup() {
              CompletableFuture<ISurfaceSyncGroup> surfaceSyncGroup = new CompletableFuture<>();
-@@ -227,6 +241,15 @@ public class SurfaceControlViewHost {
+@@ -227,6 +241,19 @@ public class SurfaceControlViewHost {
              return mSurfaceControl;
          }
  
@@ -88,7 +87,11 @@ index 7888385f0318..3fab05f37778 100644
 +         * @hide
 +         */
 +        public void setTouchableRegion(@Nullable Region region) {
-+            mRemoteInterface.setTouchableRegion(region);
++            try {
++                mRemoteInterface.setTouchableRegion(region);
++            } catch (RemoteException e) {
++                e.rethrowAsRuntimeException();
++            }
 +        }
 +
          /**
@@ -225,20 +228,6 @@ index 000000000000..3e1d77057444
 +    /** Whether provider content is currently attached for this task. */
 +    boolean hasProviderCaption(RunningTaskInfo taskInfo);
 +}
-diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeTouchEventListener.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeTouchEventListener.java
-index 252ffaaad3e5..b969b62d1346 100644
---- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeTouchEventListener.java
-+++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeTouchEventListener.java
-@@ -302,7 +302,8 @@ public class DesktopModeTouchEventListener
-             // the drag-move or other caption gestures should take priority outside those
-             // regions.
-             mIsCustomHeaderGesture = downInCustomizableCaptionRegion
--                    && downInExclusionRegion && isTransparentCaption;
-+                    && downInExclusionRegion && isTransparentCaption
-+                    && !decoration.isClientDecorated();
- 
-             WdLog.motionEventLogD(TAG, mTaskId,
-                     "%s(%s) handling DOWN(%d, %d) - mIsCustomHeaderGesture=%b, "
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
 index 3633fdebb0b0..a31ba196f289 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java

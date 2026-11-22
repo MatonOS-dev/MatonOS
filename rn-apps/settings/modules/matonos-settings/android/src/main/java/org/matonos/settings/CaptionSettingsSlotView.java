@@ -107,6 +107,9 @@ public final class CaptionSettingsSlotView extends ExpoView {
         setBackgroundColor(Color.TRANSPARENT);
         FrameLayout box = new FrameLayout(context);
         surface = new SurfaceView(context);
+        // Above this window, or the window takes the touches meant for the provider's controls.
+        surface.setZOrderOnTop(true);
+        surface.getHolder().setFormat(android.graphics.PixelFormat.TRANSLUCENT);
         box.addView(surface, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         status = new TextView(context);
         status.setTextColor(Color.GRAY);

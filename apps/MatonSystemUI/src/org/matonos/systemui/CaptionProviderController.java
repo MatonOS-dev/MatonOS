@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.Region;
 import android.os.Binder;
@@ -43,13 +44,16 @@ final class CaptionProviderController implements DesktopCaptionFactory {
     private static final long ATTACH_TIMEOUT_MS = 2000;
 
     private final Context mContext;
-    private final Handler mHandler = new Handler(Looper.getMainLooper());
+    // Shell's main thread owns the caption views (config_enableShellMainThread=true); every
+    // view change, binding change and service callback runs here.
+    private final Handler mHandler;
     // One thread: attach/update/detach for a task must reach the provider in order.
     private final ExecutorService mIpcExecutor = Executors.newSingleThreadExecutor();
     private final Map<Integer, Binding> mBindings = new ConcurrentHashMap<>();
 
-    CaptionProviderController(Context context) {
+    CaptionProviderController(Context context, Handler shellMainHandler) {
         mContext = context;
+        mHandler = shellMainHandler;
     }
 
     @Override
@@ -84,6 +88,10 @@ final class CaptionProviderController implements DesktopCaptionFactory {
             mBindings.put(taskInfo.taskId, binding);
             slot.removeAllViews();
             binding.surface = new SurfaceView(context);
+            // Above the header window, or the header window takes every touch first and the
+            // provider's buttons never see input. Transparent so client-decorated apps show.
+            binding.surface.setZOrderOnTop(true);
+            binding.surface.getHolder().setFormat(PixelFormat.TRANSLUCENT);
             binding.surface.setLayoutParams(new ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             slot.addView(binding.surface);
@@ -118,6 +126,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
         mHandler.removeCallbacks(binding.timeout);
         if (binding.provider != null) {
             ICaptionProvider provider = binding.provider;
+            binding.provider = null;
             mIpcExecutor.execute(() -> {
                 try {
                     provider.detach(taskId);
@@ -133,6 +142,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
             } catch (IllegalArgumentException e) {
                 Log.e(TAG, "unbind failed task=" + taskId + " component=" + binding.component, e);
             }
+            binding.connection = null;
         }
         SurfaceControlViewHost.SurfacePackage p = binding.surfacePackage;
         if (p != null) binding.surface.clearChildSurfacePackage();
@@ -158,8 +168,8 @@ final class CaptionProviderController implements DesktopCaptionFactory {
                 b.component = name;
                 b.provider = ICaptionProvider.Stub.asInterface(service);
                 try {
-                    b.providerUid = UserHandle.getUid(b.taskInfo.userId, b.context
-                            .getPackageManager().getApplicationInfo(name.getPackageName(), 0).uid);
+                    b.providerUid = b.context.getPackageManager().getApplicationInfoAsUser(
+                            name.getPackageName(), 0, b.taskInfo.userId).uid;
                 } catch (PackageManager.NameNotFoundException e) {
                     fail(b, "provider package missing", e);
                     return;
@@ -172,20 +182,25 @@ final class CaptionProviderController implements DesktopCaptionFactory {
                     mHandler.postDelayed(b.timeout, ATTACH_TIMEOUT_MS);
                     ICaptionProvider provider = b.provider;
                     ICaptionHost host = b.host;
+                    // Snapshot view/task state here on the Shell thread, not on the IPC thread.
+                    IBinder hostToken = b.surface.getHostToken();
+                    if (hostToken == null) {
+                        fail(b, "caption host token unavailable", null);
+                        return;
+                    }
+                    int taskId = b.taskInfo.taskId;
+                    int displayId = b.taskInfo.displayId;
+                    int width = Math.max(1, b.width);
+                    int height = Math.max(1, b.height);
+                    Bundle state = taskState(b.taskInfo);
                     mIpcExecutor.execute(() -> {
                         try {
                             if (provider.getVersion() != ICaptionProvider.VERSION) {
                                 mHandler.post(() -> fail(b, "version mismatch", null));
                                 return;
                             }
-                            IBinder hostToken = b.surface.getHostToken();
-                            if (hostToken == null) {
-                                mHandler.post(() -> fail(b, "caption host token unavailable", null));
-                                return;
-                            }
-                            provider.attach(b.taskInfo.taskId, b.taskInfo.displayId,
-                                    hostToken, Math.max(1, b.width), Math.max(1, b.height),
-                                    taskState(b.taskInfo), host);
+                            provider.attach(taskId, displayId, hostToken, width, height, state,
+                                    host);
                         } catch (Exception e) {
                             mHandler.post(() -> fail(b, "attach failed", e));
                         }
@@ -213,7 +228,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
         };
         try {
             if (!b.context.bindServiceAsUser(intent, b.connection, Context.BIND_AUTO_CREATE,
-                    UserHandle.of(b.taskInfo.userId))) {
+                    mHandler, UserHandle.of(b.taskInfo.userId))) {
                 if (b.requestedComponent != null) {
                     Log.e(TAG, "selected provider unbindable task=" + b.taskInfo.taskId
                             + " component=" + componentLabel(b));
@@ -241,9 +256,13 @@ final class CaptionProviderController implements DesktopCaptionFactory {
 
     private void update(Binding b) {
         ICaptionProvider provider = b.provider;
+        int taskId = b.taskInfo.taskId;
+        int width = b.width;
+        int height = b.height;
+        Bundle state = taskState(b.taskInfo);
         mIpcExecutor.execute(() -> {
             try {
-                provider.update(b.taskInfo.taskId, b.width, b.height, taskState(b.taskInfo));
+                provider.update(taskId, width, height, state);
             } catch (Exception e) {
                 mHandler.post(() -> fail(b, "update failed", e));
             }
@@ -289,13 +308,15 @@ final class CaptionProviderController implements DesktopCaptionFactory {
     }
 
     private void fallback(Binding b) {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
+        if (Looper.myLooper() != mHandler.getLooper()) {
             mHandler.post(() -> fallback(b));
             return;
         }
         mHandler.removeCallbacks(b.timeout);
-        mBindings.remove(b.taskInfo.taskId, b);
-        if (b.provider != null) {
+        // A stale failure of a replaced binding must not detach the task's new caption or
+        // touch the slot it now shares: only release what this binding still owns.
+        boolean current = mBindings.remove(b.taskInfo.taskId, b);
+        if (current && b.provider != null) {
             ICaptionProvider provider = b.provider;
             mIpcExecutor.execute(() -> {
                 try {
@@ -317,6 +338,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
         }
         b.provider = null;
         b.host = null;
+        if (!current) return;
         b.slot.setVisibility(View.GONE);
         setSystemHeaderState(b, false);
         if (b.surfacePackage != null) {
