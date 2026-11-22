@@ -29,7 +29,7 @@ public final class CaptionSettingsSlotView extends ExpoView {
     private static final String DEFAULT_PACKAGE = "org.matonos.caption";
     private static final String PROVIDER_SETTING = "matonos_caption_provider";
     private final SurfaceView surface;
-    private final TextView status;
+    private TextView status;
     private ICaptionSettings service;
     private boolean bound;
     private boolean opened;
