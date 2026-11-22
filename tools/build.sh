@@ -87,6 +87,10 @@ if [[ $DO_AOSP == 1 ]]; then
   # evaluates BoardConfig.mk. Release signing uses a separately provisioned key.
   source "$DEVICE_DIR/secureboot/avb.sh"
   avb_ensure_dev_key || die "could not provision the AVB development key"
+  # ro.build.date.utc is the OTA update id. Soong only regenerates build.prop
+  # when an input changes, and the default BUILD_NUMBER (eng.<user>) never
+  # does, so every image build gets its own number.
+  [[ -z $MODULES ]] && export BUILD_NUMBER=${BUILD_NUMBER:-matonos.$(date -u +%Y%m%d.%H%M%S)}
 fi
 start=$SECONDS
 
