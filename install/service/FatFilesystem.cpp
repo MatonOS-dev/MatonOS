@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cctype>
 #include <cstring>
+#include <ctime>
 #include <fcntl.h>
 #include <linux/fs.h>
 #include <sys/ioctl.h>
@@ -24,6 +25,16 @@ uint16_t U16(const uint8_t* p){return uint16_t(p[0])|(uint16_t(p[1])<<8);}
 uint32_t U32(const uint8_t* p){return uint32_t(p[0])|(uint32_t(p[1])<<8)|(uint32_t(p[2])<<16)|(uint32_t(p[3])<<24);}
 void P16(uint8_t* p,uint16_t x){p[0]=uint8_t(x);p[1]=uint8_t(x>>8);}
 void P32(uint8_t* p,uint32_t x){p[0]=uint8_t(x);p[1]=uint8_t(x>>8);p[2]=uint8_t(x>>16);p[3]=uint8_t(x>>24);}
+// Creation, access and write dates. A zero date (month 0, day 0) is invalid, and
+// UEFI FAT drivers then refuse SetInfo, so systemd-boot cannot rename an entry
+// to count down its boot tries.
+void StampTimes(uint8_t* entry){
+    const time_t now=time(nullptr);struct tm t{};gmtime_r(&now,&t);
+    const int year=std::clamp(t.tm_year+1900,1980,2107);
+    const uint16_t date=static_cast<uint16_t>(((year-1980)<<9)|((t.tm_mon+1)<<5)|t.tm_mday);
+    const uint16_t clock=static_cast<uint16_t>((t.tm_hour<<11)|(t.tm_min<<5)|(t.tm_sec/2));
+    P16(entry+14,clock);P16(entry+16,date);P16(entry+18,date);P16(entry+22,clock);P16(entry+24,date);
+}
 bool ReadAt(int fd,void* data,size_t size,uint64_t off){size_t done=0;while(done<size){ssize_t n=pread(fd,static_cast<uint8_t*>(data)+done,size-done,off+done);if(n<0&&errno==EINTR)continue;if(n<=0)return false;done+=static_cast<size_t>(n);}return true;}
 bool WriteAt(int fd,const void* data,size_t size,uint64_t off){size_t done=0;while(done<size){ssize_t n=pwrite(fd,static_cast<const uint8_t*>(data)+done,size-done,off+done);if(n<0&&errno==EINTR)continue;if(n<=0)return false;done+=static_cast<size_t>(n);}return true;}
 std::string Upper(std::string s){for(char& c:s)c=static_cast<char>(std::toupper(static_cast<unsigned char>(c)));return s;}
@@ -231,7 +242,7 @@ bool FatVolume::WriteFile(const std::string& path,const std::vector<uint8_t>& co
     if(!writable_||contents.size()>UINT32_MAX){*error="Target FAT output is read-only or exceeds the FAT32 file-size field.";return false;}
     const auto components=Components(path);if(components.empty()){*error="Target FAT path is empty.";return false;}std::vector<uint32_t> dir;std::string chain_error;if(!DirectoryChain(root_cluster_,&dir,&chain_error)){*error=chain_error;return false;}
     for(size_t i=0;i+1<components.size();++i){uint8_t entry[32]{};error->clear();if(Find(dir,components[i],entry,error)){if(!(entry[11]&0x10)){*error="Target path component exists as a file.";return false;}uint32_t c=(uint32_t(U16(entry+20))<<16)|U16(entry+26);if(!DirectoryChain(c,&dir,error))return false;}
-        else{if(!error->empty())return false;uint32_t child;if(!Allocate(&child,error))return false;std::vector<uint8_t> dot_data(cluster_size_,0);dot_data[0]='.';std::fill(dot_data.begin()+1,dot_data.begin()+11,' ');dot_data[11]=0x10;P16(dot_data.data()+20,static_cast<uint16_t>(child>>16));P16(dot_data.data()+26,static_cast<uint16_t>(child));dot_data[32]='.';dot_data[33]='.';std::fill(dot_data.begin()+34,dot_data.begin()+43,' ');dot_data[43]=0x10;const uint32_t parent_cluster=dir.back()==root_cluster_?0:dir.back();P16(dot_data.data()+52,static_cast<uint16_t>(parent_cluster>>16));P16(dot_data.data()+58,static_cast<uint16_t>(parent_cluster));if(!WriteCluster(child,dot_data)){*error="Unable to initialize target FAT directory.";return false;}uint8_t new_entry[32]{};new_entry[11]=0x10;P16(new_entry+20,static_cast<uint16_t>(child>>16));P16(new_entry+26,static_cast<uint16_t>(child));if(!Insert(&dir,components[i],new_entry,error))return false;if(!DirectoryChain(child,&dir,error))return false;}}
+        else{if(!error->empty())return false;uint32_t child;if(!Allocate(&child,error))return false;std::vector<uint8_t> dot_data(cluster_size_,0);dot_data[0]='.';std::fill(dot_data.begin()+1,dot_data.begin()+11,' ');dot_data[11]=0x10;StampTimes(dot_data.data());P16(dot_data.data()+20,static_cast<uint16_t>(child>>16));P16(dot_data.data()+26,static_cast<uint16_t>(child));dot_data[32]='.';dot_data[33]='.';std::fill(dot_data.begin()+34,dot_data.begin()+43,' ');dot_data[43]=0x10;StampTimes(dot_data.data()+32);const uint32_t parent_cluster=dir.back()==root_cluster_?0:dir.back();P16(dot_data.data()+52,static_cast<uint16_t>(parent_cluster>>16));P16(dot_data.data()+58,static_cast<uint16_t>(parent_cluster));if(!WriteCluster(child,dot_data)){*error="Unable to initialize target FAT directory.";return false;}uint8_t new_entry[32]{};new_entry[11]=0x10;StampTimes(new_entry);P16(new_entry+20,static_cast<uint16_t>(child>>16));P16(new_entry+26,static_cast<uint16_t>(child));if(!Insert(&dir,components[i],new_entry,error))return false;if(!DirectoryChain(child,&dir,error))return false;}}
     uint8_t existing_entry[32]{};uint64_t existing_offset=0;error->clear();const bool replacing=Find(dir,components.back(),existing_entry,error,&existing_offset);
     if(!replacing&&!error->empty())return false;
     if(replacing&&(existing_entry[11]&0x10)){*error="FAT output path already exists as a directory.";return false;}
@@ -248,7 +259,7 @@ bool FatVolume::WriteFile(const std::string& path,const std::vector<uint8_t>& co
     uint8_t entry[32]{};
     if(replacing)std::memcpy(entry,existing_entry,32);
     else entry[11]=0x20;
-    entry[11]=0x20;P16(entry+20,static_cast<uint16_t>(first_cluster>>16));P16(entry+26,static_cast<uint16_t>(first_cluster));P32(entry+28,static_cast<uint32_t>(contents.size()));
+    entry[11]=0x20;StampTimes(entry);P16(entry+20,static_cast<uint16_t>(first_cluster>>16));P16(entry+26,static_cast<uint16_t>(first_cluster));P32(entry+28,static_cast<uint32_t>(contents.size()));
     const bool wrote=replacing?WriteAt(fd_,entry,32,existing_offset):Insert(&dir,components.back(),entry,error);
     if(!wrote){if(replacing)*error="Unable to update existing FAT file entry.";release_new();return false;}
     for(uint32_t cluster:old_chain)if(!SetFatEntry(cluster,0)){*error="Unable to release the replaced FAT file data.";return false;}
