@@ -1102,6 +1102,17 @@ Apps stay ordinary SDK apps, so the standard Android dev tools apply.
 
 ## TODO (user reminders)
 
+- **Triage of the early backlog (user, 2026-11-23)**:
+  - Queued: GPU warning notifications. The NVIDIA classes below, and also
+    ANY fallback to software Vulkan posts a warning notification (small change).
+  - Queued: Bluetooth audio through our HAL (was v5) is worth fixing.
+  - Queued: support for `.flatpak` bundle files (instead of AppImage).
+  - Low priority: boot under the motherboard's EFI logo.
+  - Future add-ons, not near: Nix packages, Podman. Far future: native arm64
+    build (v9).
+  - DROPPED: car mode launcher; AppImage support (v6); NVIDIA proprietary
+    stack for Linux apps (v7, predates the GPU forwarder work).
+
 - **Enable NVK in our Mesa builds** (user, 2026-09-25): add `nouveau` to
   `-Dvulkan-drivers` in tools/build-mesa.sh (NVIDIA Vulkan on the nouveau
   kernel driver) and use Zink on NVK for GLES on NVIDIA. Needs Rust
