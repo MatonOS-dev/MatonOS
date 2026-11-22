@@ -71,7 +71,10 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   Fennec 156 (F-Droid 160), Thunderbird 24.0 (F-Droid 25.0), microG GmsCore + Companion,
   all older than their repos. Store "Update" on Thunderbird installed 25.0 over
   /product/app/MatonThunderbird in ~10 s (same signer) and the list dropped to 3.
-  Optional later: bump the bundled pins so a fresh image starts with 0 updates.
+  Done 96003d6: re-pinned Fennec 160.0.0, Thunderbird 25.0, microG 0.3.18 (hash +
+  signer verified, signers unchanged). build-53 (1795325641) live VM: versions match,
+  store shows no Updates badge and "No updates are available.", no crashes.
+  The staged ISO is still build 52 (old pins); rebuild it from 53+ if wanted.
 - Earlier plan: release ISO from the last build, VM install-test, stage on the server (not public).
 - (f) stub cold start, build-52 installed VM (HDD, venus): Klotski process start → first
   xdg_surface = 2.7 s warm, 3.5 s after guest drop_caches (02:36:57.840 → 02:37:01.328;
