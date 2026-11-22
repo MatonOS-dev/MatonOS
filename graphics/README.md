@@ -48,6 +48,12 @@ Mesa software rendering if no expected render node appears. Detection errors
 leave Android's boot path free to continue; the software Vulkan HAL is the
 default when no GPU-specific Vulkan driver is selected.
 
+When the selected Vulkan HAL is `swrast`, the detector also publishes
+`vendor.maton.graphics.vulkan_reason`: no display GPU, no compatible Vulkan
+driver for the detected GPU, or a hardware driver that did not start. At boot,
+MatonOS System Bridge posts a dismissible Graphics notification with this
+reason. Hardware Vulkan selections do not produce a warning.
+
 The vgem/llvmpipe no-GPU path has not been verified on physical hardware. Its
 DMA-BUF import and scanout behavior depends on the active KMS driver; keep
 the boot fallback report and test checklist below current as that path is
