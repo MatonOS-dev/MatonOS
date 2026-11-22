@@ -53,7 +53,17 @@ PATH=$HOME/.nvm/versions/node/v24.21.0/bin:$PATH
 ANDROID_NDK=$HOME/Documents/android-ndk-r30
 MATON_ANDROID_SDK=$HOME/Documents/matonos-android-sdk
 MATON_SPIRV_PREFIX=$HOME/.local/opt/spirv-llvm-21
+MATON_RELEASE_KEY_DIR=$HOME/.config/matonos/release-keys
 ```
+
+`tools/build.sh` provisions missing AOSP signing key pairs in
+`MATON_RELEASE_KEY_DIR` before the image build. Keep this directory private
+and backed up securely: the same keys are required for future app updates and
+OTA packages. The script creates the generic APK certs (`releasekey`,
+`platform`, `shared`, `media`, `networkstack`, `sdk_sandbox`, `bluetooth`,
+`nfc`) as unencrypted PKCS#8 private keys and X.509 certificates. APEX payload
+keys remain the module-specific keys recorded in AOSP target-files metadata;
+the default release key signs their containers and OTA packages.
 
 `tools/build-kernel.sh` and `tools/build-mesa.sh` take the kernel and Mesa
 source paths as `-s` / `-m` (or `LINUX_DIR` / `MESA_DIR`).

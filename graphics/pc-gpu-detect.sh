@@ -139,6 +139,19 @@ if [ -n "$supported_drivers" ] && ! find_render_node "$supported_drivers"; then
     vk=swrast
 fi
 
+# Explain why Vulkan is software-rendered for the boot warning. Keep the
+# reasons stable and user-facing; hardware Vulkan needs no warning reason.
+vulkan_reason=""
+if [ "${vk:-swrast}" = "swrast" ]; then
+    if [ -z "$primary" ]; then
+        vulkan_reason="No display GPU was detected."
+    elif [ -z "${vk:-}" ]; then
+        vulkan_reason="No compatible hardware Vulkan driver was found for GPU $vendor:$device."
+    else
+        vulkan_reason="The hardware Vulkan driver could not start for GPU $vendor:$device."
+    fi
+fi
+
 if { [ -z "$supported_drivers" ] || ! find_render_node "$supported_drivers"; } &&
    ! find_render_node "vgem"; then
     # vgem is a shmem-backed DRM render node. Mesa's kms_swrast/llvmpipe
@@ -195,3 +208,4 @@ setprop vendor.maton.graphics.mode "$mode"
 # No hardware Vulkan driver for this GPU (old Intel, VMware, unknown): swrast
 # is Mesa's LLVM software Vulkan implementation.
 setprop vendor.maton.graphics.vulkan "${vk:-swrast}"
+setprop vendor.maton.graphics.vulkan_reason "${vulkan_reason:-none}"

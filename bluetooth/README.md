@@ -14,8 +14,45 @@ created. Controller selection, hotplug replacement, and the MatonOS Bluetooth
 adapter picker are dropped; the stock HAL binds the kernel's `hci0`. Keep
 `vendor.ser.bt-uart` unset so the HAL follows the kernel HCI path.
 
-Bluetooth audio is deferred to v5. The ODM audio policy has no Bluetooth audio
-module, and no live audio code reads `vendor.maton.bluetooth.present`.
+## Bluetooth audio
+
+The static audio policy includes AOSP's A2DP, hearing-aid, and LE Audio
+device ports and routes. The audio core-v4 manifest declares the matching
+`IModule/bluetooth`; the HAL builds that module from policy at startup. This
+does not depend on Bluetooth being powered on or on an HCI controller being
+present. When there is no controller, the Bluetooth setting defaults off and
+no Bluetooth stack connection is established, so the policy module has no
+connected device route while primary audio remains usable.
+
+The audio HAL links AOSP's stock `android.hardware.bluetooth.audio-impl` and
+registers `IBluetoothAudioProviderFactory/default` from the HAL process. The
+provider and Bluetooth stack supply software A2DP encoding and LE Audio
+encoding/decoding sessions. The ODM audio manifest declares the stock
+`android.hardware.bluetooth.audio` provider instance because the BayLibre
+APEX does not bundle AOSP's provider VINTF fragment. AOSP's stock SELinux
+`service_contexts` maps this factory to `hal_audio_service`; the existing
+`hal_audio` service policy permits the registration. No MatonOS init service,
+HAL, or SELinux policy is added for audio.
+
+The no-controller behavior is supported by the stock source path:
+
+- `hardware/interfaces/audio/aidl/default/Module.cpp:114-141` maps the
+  configured `bluetooth` module name to `ModuleBluetooth`.
+- `hardware/interfaces/audio/aidl/default/bluetooth/ModuleBluetoothBase.cpp:78-128`
+  creates the A2DP and LE profile interfaces without discovering an HCI
+  controller; `getBluetooth()` only returns a SCO interface if a SCO port is
+  configured.
+- `hardware/interfaces/bluetooth/audio/aidl/default/Android.bp:10-29` defines
+  the stock provider as a shared library with a VINTF fragment. Its
+  `hardware/interfaces/bluetooth/audio/aidl/default/BluetoothAudioProviderFactory.cpp:52-70`
+  creates the A2DP software and LE software providers.
+- `system/sepolicy/private/service_contexts:45` labels the factory as
+  `hal_audio_service`; `system/sepolicy/private/hal_audio.te:1-8` gives
+  `hal_audio` the stock service registration policy.
+
+The shipping configuration is in `audio/config-odm/` and the matching vendor
+fallback is in `audio/config/`. Both declare the same `bluetooth` module. The
+audio README records source and validation details.
 
 The stock HAL runs in AOSP's `hal_bluetooth_default` domain. The shared fixed
 MatonOS policy labels `/dev/rfkill` and grants that domain access to the node;
@@ -38,9 +75,12 @@ After a fresh QEMU boot with no host Bluetooth passthrough:
 
 With a real Bluetooth controller attached to a test PC, fresh boot and
 confirm `hci0` appears in `dumpsys bluetooth_manager`/`dmesg`, and
-`IBluetoothHci/default` initializes without an HCI bind error. QEMU's generic
-environment does not pass through host controllers, so the real-controller
-case needs physical hardware.
+`IBluetoothHci/default` initializes without an HCI bind error. Then pair a
+classic A2DP headset, select it as output, play the audio test track, and
+confirm audible output. For LE Audio, repeat with an LE-capable controller and
+peer and verify a BLE output route and an active software-encoded session.
+QEMU test limitations and the proposed VM plan are documented in
+`/mnt/data/aosp/out/pc-logs/agents/bt-audio.report.md`.
 
 ## Real hardware test sequence
 
@@ -51,7 +91,11 @@ case needs physical hardware.
    initialize `hci0`, then scan and pair a device.
 3. On HP ProDesk 600 G1 with no Bluetooth controller, confirm boot completes,
    Bluetooth stays unavailable/off, Developer options opens, and no Bluetooth
-   process abort loop occurs.
+   process abort loop occurs. Confirm primary audio still plays and the
+   Bluetooth audio module is registered without connected device routes.
+4. On the build PC, pair an A2DP headset and verify normal media playback over
+   Bluetooth. If an LE Audio headset is available, check its output and input
+   routes separately.
 
 ## Dropped behavior
 

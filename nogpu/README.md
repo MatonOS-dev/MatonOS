@@ -1,5 +1,9 @@
 # No-GPU graphics fallback
 
+When early GPU detection selects `vendor.maton.graphics.vulkan=swrast`, the
+MatonOS System Bridge posts one dismissible Graphics notification per boot.
+It includes `vendor.maton.graphics.vulkan_reason` to explain the fallback.
+
 MatonOS uses the upstream `vgem` DRM module as a render device when no
 supported PCI GPU driver is present. Mesa's llvmpipe
 renders into linear, shmem-backed dma-bufs; drm_hwcomposer presents those

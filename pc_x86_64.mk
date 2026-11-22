@@ -38,3 +38,16 @@ PRODUCT_MODEL := MatonOS on x86_64 PC
 
 # MatonSystemUI keeps the stock SystemUI graph and provides the WM Shell variant seam.
 PRODUCT_PACKAGES += MatonSystemUI
+
+# Private, machine-provisioned signing keys. tools/build.sh creates missing
+# pairs before Make/Soong starts; the key directory is never part of this repo.
+ifeq ($(strip $(MATON_RELEASE_KEY_DIR)),)
+$(error MATON_RELEASE_KEY_DIR must be set by MatonOS machine configuration)
+endif
+PRODUCT_DEFAULT_DEV_CERTIFICATE := $(MATON_RELEASE_KEY_DIR)/releasekey
+PRODUCT_MAINLINE_SEPOLICY_DEV_CERTIFICATES := $(MATON_RELEASE_KEY_DIR)
+PRODUCT_MAINLINE_BLUETOOTH_SEPOLICY_DEV_CERTIFICATES := $(MATON_RELEASE_KEY_DIR)
+PRODUCT_MAINLINE_NFC_SEPOLICY_DEV_CERTIFICATES := $(MATON_RELEASE_KEY_DIR)
+
+# With a non-test default certificate AOSP tags the build dev-keys
+# (build/make/core/config.mk BUILD_KEYS); no manual ro.build.tags override.
