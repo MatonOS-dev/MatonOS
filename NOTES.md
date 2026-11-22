@@ -1677,7 +1677,11 @@ selector failure. Assess SOF firmware/topology separately if needed.
   that need a newer Flatpak than the device has, instead of failing at
   install time.
 
-- Google Play services (**decided: v4, via the add-on slot**): system partitions are read-only erofs, so GApps can't
+- Google Play services: superseded by "Bring your own GApps" in Settings (above,
+  user 2026-09-28). The add-on slot is for ARM64 app support on x86 (native
+  bridge), not for GApps; the two were discussed together early on (user
+  2026-11-22). Original notes follow.
+  System partitions are read-only erofs, so GApps can't
   be added by copying into /system after install. Options: build-time switch
   (e.g. WITH_GMS=true inheriting MindTheGapps x86_64), an add-on partition
   overlaid on /product (same mechanism as the protected add-on hooks), or
