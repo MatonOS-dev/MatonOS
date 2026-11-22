@@ -1,0 +1,6 @@
+# Keep the variant initializer and generated root component through app shrinking.
+-keep class org.matonos.systemui.MatonSystemUIInitializer {
+    *;
+}
+
+-keep,allowoptimization,allowaccessmodification class org.matonos.systemui.DaggerMatonGlobalRootComponent** { !synthetic *; }

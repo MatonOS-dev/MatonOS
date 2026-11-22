@@ -35,3 +35,6 @@ PRODUCT_DEVICE := pc_x86_64
 PRODUCT_BRAND := MatonOS
 PRODUCT_MANUFACTURER := MatonOS
 PRODUCT_MODEL := MatonOS on x86_64 PC
+
+# MatonSystemUI keeps the stock SystemUI graph and provides the WM Shell variant seam.
+PRODUCT_PACKAGES += MatonSystemUI

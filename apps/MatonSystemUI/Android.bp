@@ -1,0 +1,39 @@
+// SPDX-License-Identifier: Apache-2.0
+// MatonOS SystemUI replacement skeleton. Keep the stock SystemUI graph intact.
+
+android_library {
+    name: "MatonSystemUI-core",
+    srcs: ["src/**/*.java"],
+    resource_dirs: [],
+    manifest: "AndroidManifest.xml",
+    static_libs: [
+        "SystemUI-application",
+        "SystemUI-core",
+    ],
+    plugins: ["dagger2-compiler"],
+}
+
+android_app {
+    name: "MatonSystemUI",
+    defaults: [
+        "platform_app_defaults",
+        "SystemUI_optimized_defaults",
+        "wmshell_defaults",
+    ],
+    static_libs: ["MatonSystemUI-core"],
+    resource_dirs: [],
+    enable_ksp: true,
+    use_resource_processor: true,
+    overrides: ["SystemUI"],
+    platform_apis: true,
+    system_ext_specific: true,
+    certificate: "platform",
+    privileged: true,
+    kotlincflags: ["-Xjvm-default=all"],
+    dxflags: ["--multi-dex"],
+    optimize: {
+        proguard_flags_files: ["proguard.flags"],
+        included_proguard_flags_files: [":sysui_proguard_common_and_kotlin"],
+    },
+    required: ["privapp_whitelist_com.android.systemui"],
+}
