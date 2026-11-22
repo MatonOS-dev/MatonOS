@@ -6,6 +6,7 @@
     <permission
         android:name="org.matonos.permission.BIND_CAPTION_PROVIDER"
         android:protectionLevel="signature|privileged" />
+    <uses-permission android:name="org.matonos.permission.BIND_CAPTION_PROVIDER" />
     <application
         tools:replace="android:appComponentFactory"
         android:appComponentFactory="org.matonos.systemui.MatonSystemUIAppComponentFactory" />
