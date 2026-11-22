@@ -93,3 +93,12 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   booted in ~1 min. Boot reason then: "reboot,factory_reset". No pstore/log survived.
   My test was messy (two launches fought over slots), so not proven to be an image bug;
   build-52 first boot was fine. Re-check on the next install test, with logcat captured.
+- **First-boot stall explained (reproduced on a clean install, 09:34):** adbd comes up
+  after 896 s. dmesg: `init: Wait for property 'apexd.status=activated' took 802574ms`.
+  apexd decompresses ~30 compressed APEXes (.capex) from /system to
+  /data/apex/decompressed, 10–90 s each. The VM image sat on the host's spinning
+  /mnt/data disk (rotational=1); build-52's test disk was on NVMe, so it looked fine.
+  Real HDD installs (supported layout) will hit this. Recommendation for the user:
+  build with `PRODUCT_COMPRESSED_APEX := false` (the 16 GiB system partition has room;
+  this also saves /data space). NOT changed yet, product decision.
+  Logs: out/pc-logs/b53/firstboot-{logcat,dmesg}.txt. Kept VM: b53/hdd53b.img + vars53b.fd.
