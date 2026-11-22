@@ -1,0 +1,412 @@
+From aae31da3b3f327cade21fc916814b898d23c0f0d Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Sun, 22 Nov 2026 19:45:16 +0200
+Subject: [PATCH] WM Shell: add optional desktop caption provider hook
+
+Expose an optional DynamicOverride factory for per-task caption content. Preserve stock behavior without the override, keep client-decorated caption gestures in Shell, and route the Maton maximize control through the existing immersive action.
+
+Agent: Codex
+Task: caption-host
+Change-Id: I769f97ef52e9f6f96242b3359a4a26640c4d0b45
+---
+ .../res/layout/desktop_mode_app_header.xml    |  7 +++
+ .../wm/shell/dagger/WMShellModule.java        | 13 ++++-
+ .../windowdecor/DesktopCaptionFactory.java    | 37 ++++++++++++++
+ .../DesktopModeTouchEventListener.java        |  3 +-
+ .../DesktopModeWindowDecorViewModel.java      |  7 +++
+ .../DesktopModeWindowDecoration.java          | 30 +++++++++++
+ .../windowdecor/WindowDecorationWrapper.kt    |  4 ++
+ .../viewholder/AppHeaderViewHolder.kt         | 50 ++++++++++++++-----
+ 8 files changed, 135 insertions(+), 16 deletions(-)
+ create mode 100644 libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
+
+diff --git a/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml b/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml
+index 8d06c8de54b6..54b2c6d9b316 100644
+--- a/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml
++++ b/libs/WindowManager/Shell/res/layout/desktop_mode_app_header.xml
+@@ -95,6 +95,13 @@
+         android:layout_height="40dp"
+         android:layout_weight="1"/>
+ 
++    <FrameLayout
++        android:id="@+id/caption_provider_slot"
++        android:layout_width="0dp"
++        android:layout_height="40dp"
++        android:layout_weight="1"
++        android:visibility="gone" />
++
+     <ImageButton
+         android:id="@+id/minimize_window"
+         android:layout_width="44dp"
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java b/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
+index 237f47124837..04d0b17ec0c0 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
+@@ -223,6 +223,7 @@ import com.android.wm.shell.unfold.animation.UnfoldTaskAnimator;
+ import com.android.wm.shell.unfold.qualifier.UnfoldShellTransition;
+ import com.android.wm.shell.unfold.qualifier.UnfoldTransition;
+ import com.android.wm.shell.windowdecor.CaptionWindowDecorViewModel;
++import com.android.wm.shell.windowdecor.DesktopCaptionFactory;
+ import com.android.wm.shell.windowdecor.DesktopModeWindowDecorViewModel;
+ import com.android.wm.shell.windowdecor.FluidTaskResizer;
+ import com.android.wm.shell.windowdecor.MultiDisplayTaskMover;
+@@ -1363,6 +1364,7 @@ public abstract class WMShellModule {
+             WindowDecorTaskResourceLoader taskResourceLoader,
+             PerDisplayRecentsTransitionStateListener perDisplayRecentsTransitionStateListener,
+             DesktopModeCompatPolicy desktopModeCompatPolicy,
++            @DynamicOverride Optional<DesktopCaptionFactory> desktopCaptionFactory,
+             DesktopTilingDecorViewModel desktopTilingDecorViewModel,
+             MultiDisplayDragMoveIndicatorController multiDisplayDragMoveIndicatorController,
+             Optional<CompatUIHandler> compatUI,
+@@ -1382,7 +1384,8 @@ public abstract class WMShellModule {
+         if (!shelldesktopState.canEnterDesktopModeOrShowAppHandle()) {
+             return Optional.empty();
+         }
+-        return Optional.of(new DesktopModeWindowDecorViewModel(context, shellExecutor, mainHandler,
++        DesktopModeWindowDecorViewModel viewModel = new DesktopModeWindowDecorViewModel(
++                context, shellExecutor, mainHandler,
+                 mainChoreographer, mainDispatcher, mainScope, mainImmediateScope, bgScope,
+                 bgExecutor, shellInit, shellCommandHandler, windowManager,
+                 taskOrganizer, desktopUserRepositories, displayController, shellController,
+@@ -1400,9 +1403,15 @@ public abstract class WMShellModule {
+                 desksOrganizer, shelldesktopState, desktopConfig, userProfileContexts,
+                 lockTaskChangeListener, pinnedLayerController.orElse(null),
+                 pinnedLayerUiState.orElse(null), fluidTaskResizer, veiledTaskResizer,
+-                multiDisplayTaskMover, snapController, decorThemeUtilFactory));
++                multiDisplayTaskMover, snapController, decorThemeUtilFactory);
++        desktopCaptionFactory.ifPresent(viewModel::setDesktopCaptionFactory);
++        return Optional.of(viewModel);
+     }
+ 
++    @BindsOptionalOf
++    @DynamicOverride
++    abstract DesktopCaptionFactory optionalDesktopCaptionFactory();
++
+     @WMSingleton
+     @Provides
+     static LockTaskChangeListener provideLockTaskChangeListener(ShellInit shellInit,
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
+new file mode 100644
+index 000000000000..3e1d77057444
+--- /dev/null
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
+@@ -0,0 +1,37 @@
++/*
++ * Copyright (C) 2026 The Android Open Source Project
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *      http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package com.android.wm.shell.windowdecor;
++
++import android.app.ActivityManager.RunningTaskInfo;
++import android.content.Context;
++import android.view.ViewGroup;
++
++/** Optional Shell seam for app supplied desktop caption content. */
++public interface DesktopCaptionFactory {
++    /** Adds or updates provider content in the supplied caption slot. */
++    void bindCaption(Context context, ViewGroup slot, RunningTaskInfo taskInfo,
++            WindowDecorationActions actions, int widthPx, int heightPx);
++
++    /** Releases the provider content and any per-task binding. */
++    void unbindCaption(int taskId);
++
++    /** Whether this task draws its own caption and therefore needs a drag-only system strip. */
++    boolean isClientDecorated(RunningTaskInfo taskInfo);
++
++    /** Whether provider content is currently attached for this task. */
++    boolean hasProviderCaption(RunningTaskInfo taskInfo);
++}
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeTouchEventListener.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeTouchEventListener.java
+index 252ffaaad3e5..b969b62d1346 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeTouchEventListener.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeTouchEventListener.java
+@@ -302,7 +302,8 @@ public class DesktopModeTouchEventListener
+             // the drag-move or other caption gestures should take priority outside those
+             // regions.
+             mIsCustomHeaderGesture = downInCustomizableCaptionRegion
+-                    && downInExclusionRegion && isTransparentCaption;
++                    && downInExclusionRegion && isTransparentCaption
++                    && !decoration.isClientDecorated();
+ 
+             WdLog.motionEventLogD(TAG, mTaskId,
+                     "%s(%s) handling DOWN(%d, %d) - mIsCustomHeaderGesture=%b, "
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
+index 3633fdebb0b0..a31ba196f289 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
+@@ -284,6 +284,12 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+     private final CompatUIHandler mCompatUI;
+     private final UserProfileContexts mUserProfileContexts;
+     private CaptionTouchStatusListener mCaptionTouchStatusListener;
++    private DesktopCaptionFactory mDesktopCaptionFactory;
++
++    /** Installs the optional caption provider before tasks create decorations. */
++    public void setDesktopCaptionFactory(DesktopCaptionFactory factory) {
++        mDesktopCaptionFactory = factory;
++    }
+ 
+     private final LockTaskChangeListener mLockTaskChangeListener;
+ 
+@@ -1910,6 +1916,7 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+                             mPinnedLayerController,
+                             mDesktopTasksController,
+                             mDecorThemeUtilFactory);
++            desktopModeWindowDecoration.setDesktopCaptionFactory(mDesktopCaptionFactory);
+             windowDecoration = mWindowDecoratioWrapperFactory
+                     .fromDesktopDecoration(desktopModeWindowDecoration);
+         }
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java
+index 5b9a63dcce07..d93231dc6925 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java
+@@ -69,6 +69,7 @@ import android.view.MotionEvent;
+ import android.view.SurfaceControl;
+ import android.view.View;
+ import android.view.ViewConfiguration;
++import android.view.ViewGroup;
+ import android.view.WindowInsets;
+ import android.view.WindowManager;
+ import android.view.WindowManagerGlobal;
+@@ -173,6 +174,7 @@ public class DesktopModeWindowDecoration extends WindowDecoration<WindowDecorLin
+     private final DesktopState mDesktopState;
+     private final DesktopConfig mDesktopConfig;
+     private final WindowDecorationActions mWindowDecorationActions;
++    private DesktopCaptionFactory mDesktopCaptionFactory;
+     private final LockTaskChangeListener mLockTaskChangeListener;
+ 
+     private WindowDecorationViewHolder mWindowDecorViewHolder;
+@@ -391,6 +393,16 @@ public class DesktopModeWindowDecoration extends WindowDecoration<WindowDecorLin
+         mDecorThemeUtilFactory = decorThemeUtilFactory;
+     }
+ 
++    /** Sets the optional Maton caption factory before this decoration is first laid out. */
++    public void setDesktopCaptionFactory(@Nullable DesktopCaptionFactory factory) {
++        mDesktopCaptionFactory = factory;
++    }
++
++    public boolean isClientDecorated() {
++        return mDesktopCaptionFactory != null
++                && mDesktopCaptionFactory.isClientDecorated(mTaskInfo);
++    }
++
+     /** Returns the last valid drag area of the task or null if the task cannot be dragged. */
+     public Rect getLastValidDragArea() {
+         return mLastValidDragArea;
+@@ -1013,10 +1025,20 @@ public class DesktopModeWindowDecoration extends WindowDecoration<WindowDecorLin
+                 DesktopModeUtils.isTaskMaximized(mTaskInfo, displayLayout),
+                 inFullImmersive,
+                 hasGlobalFocus,
++                mDesktopCaptionFactory != null
++                        && mDesktopCaptionFactory.isClientDecorated(mTaskInfo),
++                mDesktopCaptionFactory != null
++                        && mDesktopCaptionFactory.hasProviderCaption(mTaskInfo),
++                mDesktopCaptionFactory != null,
+                 /* maximizeHoverEnabled= */ canOpenLayoutMenu(
+                     /* animatingTaskResizeOrReposition= */ false),
+                 isCaptionVisible()
+         ));
++        if (mDesktopCaptionFactory != null) {
++            ViewGroup slot = mResult.mRootView.requireViewById(R.id.caption_provider_slot);
++            mDesktopCaptionFactory.bindCaption(mDecorWindowContext, slot, mTaskInfo,
++                    mWindowDecorationActions, mResult.mWidth, mResult.mCaptionHeight);
++        }
+     }
+ 
+     private WindowDecorationViewHolder createViewHolder() {
+@@ -1764,6 +1786,9 @@ public class DesktopModeWindowDecoration extends WindowDecoration<WindowDecorLin
+ 
+     @Override
+     void releaseViews(WindowContainerTransaction wct) {
++        if (mDesktopCaptionFactory != null) {
++            mDesktopCaptionFactory.unbindCaption(mTaskInfo.taskId);
++        }
+         closeHandleMenu();
+         closeManageWindowsMenu();
+         closeLayoutMenu();
+@@ -2023,6 +2048,11 @@ public class DesktopModeWindowDecoration extends WindowDecoration<WindowDecorLin
+                 DesktopModeUtils.isTaskMaximized(mTaskInfo, displayLayout),
+                 inFullImmersive,
+                 isFocused(),
++                mDesktopCaptionFactory != null
++                        && mDesktopCaptionFactory.isClientDecorated(mTaskInfo),
++                mDesktopCaptionFactory != null
++                        && mDesktopCaptionFactory.hasProviderCaption(mTaskInfo),
++                mDesktopCaptionFactory != null,
+                 /* maximizeHoverEnabled= */ canOpenLayoutMenu(animatingTaskResizeOrReposition),
+                 isCaptionVisible()));
+     }
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt
+index ed802273ef76..2e1d01fe24ab 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt
+@@ -140,6 +140,10 @@ private constructor(
+                 else -> error("Expected Non-null default or desktop window decoration")
+             }
+ 
++    /** Whether the app supplies its own caption content. */
++    val isClientDecorated: Boolean
++        get() = desktopWindowDecor?.isClientDecorated() ?: false
++
+     val layoutMenuController: LayoutMenuController?
+         get() =
+             when {
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
+index 747f5f7820df..6449905932b1 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
+@@ -105,6 +105,9 @@ class AppHeaderViewHolder(
+         val isTaskMaximized: Boolean,
+         val inFullImmersiveState: Boolean,
+         val hasGlobalFocus: Boolean,
++        val isClientDecorated: Boolean,
++        val hasProviderCaption: Boolean,
++        val useImmersiveMaximize: Boolean,
+         val enableMaximizeLongClick: Boolean,
+         val isCaptionVisible: Boolean,
+     ) : Data()
+@@ -161,6 +164,7 @@ class AppHeaderViewHolder(
+     private lateinit var a11yTextRestore: String
+     private lateinit var currentTaskInfo: RunningTaskInfo
+     private var isTaskInFullImmersiveState: Boolean = false
++    private var useImmersiveMaximize: Boolean = false
+ 
+     init {
+         if (Flags.interceptTouchEventForAppHeaderDragMove()) {
+@@ -193,11 +197,9 @@ class AppHeaderViewHolder(
+             windowDecorationActions.onClose(currentTaskInfo)
+         }
+         maximizeWindowButton.throttleFirstClicks(CLICK_DELAY) { v ->
+-            if (isTaskInFullImmersiveState) {
+-                // Task is in immersive and should exit.
++            if (useImmersiveMaximize || isTaskInFullImmersiveState) {
+                 windowDecorationActions.onImmersiveOrRestore(currentTaskInfo)
+             } else {
+-                // Just toggle between maximize/restore states.
+                 windowDecorationActions.onMaximizeOrRestore(
+                     currentTaskInfo.taskId,
+                     AmbiguousSource.HEADER_BUTTON,
+@@ -298,11 +300,15 @@ class AppHeaderViewHolder(
+                                 currentTaskInfo,
+                                 A11Y_ACTION_MAXIMIZE_RESTORE,
+                             )
+-                            windowDecorationActions.onMaximizeOrRestore(
+-                                currentTaskInfo.taskId,
+-                                AmbiguousSource.HEADER_BUTTON,
+-                                InputMethod.ACCESSIBILITY,
+-                            )
++                            if (useImmersiveMaximize || isTaskInFullImmersiveState) {
++                                windowDecorationActions.onImmersiveOrRestore(currentTaskInfo)
++                            } else {
++                                windowDecorationActions.onMaximizeOrRestore(
++                                    currentTaskInfo.taskId,
++                                    AmbiguousSource.HEADER_BUTTON,
++                                    InputMethod.ACCESSIBILITY,
++                                )
++                            }
+                         }
+                     }
+ 
+@@ -360,11 +366,15 @@ class AppHeaderViewHolder(
+                                 currentTaskInfo,
+                                 A11Y_ACTION_MAXIMIZE_RESTORE,
+                             )
+-                            windowDecorationActions.onMaximizeOrRestore(
+-                                currentTaskInfo.taskId,
+-                                AmbiguousSource.HEADER_BUTTON,
+-                                InputMethod.ACCESSIBILITY,
+-                            )
++                            if (useImmersiveMaximize || isTaskInFullImmersiveState) {
++                                windowDecorationActions.onImmersiveOrRestore(currentTaskInfo)
++                            } else {
++                                windowDecorationActions.onMaximizeOrRestore(
++                                    currentTaskInfo.taskId,
++                                    AmbiguousSource.HEADER_BUTTON,
++                                    InputMethod.ACCESSIBILITY,
++                                )
++                            }
+                         }
+                     }
+ 
+@@ -440,11 +450,14 @@ class AppHeaderViewHolder(
+     }
+ 
+     override fun bindData(data: HeaderData) {
++        useImmersiveMaximize = data.useImmersiveMaximize
+         bindData(
+             data.taskInfo,
+             data.isTaskMaximized,
+             data.inFullImmersiveState,
+             data.hasGlobalFocus,
++            data.isClientDecorated,
++            data.hasProviderCaption,
+             data.enableMaximizeLongClick,
+             data.isCaptionVisible,
+         )
+@@ -524,6 +537,8 @@ class AppHeaderViewHolder(
+         isTaskMaximized: Boolean,
+         inFullImmersiveState: Boolean,
+         hasGlobalFocus: Boolean,
++        isClientDecorated: Boolean,
++        hasProviderCaption: Boolean,
+         enableMaximizeLongClick: Boolean,
+         isCaptionVisible: Boolean,
+     ) {
+@@ -535,6 +550,8 @@ class AppHeaderViewHolder(
+             isTaskMaximized,
+             inFullImmersiveState,
+             hasGlobalFocus,
++            isClientDecorated,
++            hasProviderCaption,
+             enableMaximizeLongClick,
+             isCaptionVisible,
+         )
+@@ -568,6 +585,8 @@ class AppHeaderViewHolder(
+         isTaskMaximized: Boolean,
+         inFullImmersiveState: Boolean,
+         hasGlobalFocus: Boolean,
++        isClientDecorated: Boolean,
++        hasProviderCaption: Boolean,
+         enableMaximizeLongClick: Boolean,
+         isCaptionVisible: Boolean,
+     ) {
+@@ -596,6 +615,7 @@ class AppHeaderViewHolder(
+         val colorStateList = ColorStateList.valueOf(foregroundColor).withAlpha(foregroundAlpha)
+         // App chip.
+         openMenuButton.apply {
++            visibility = if (isClientDecorated || hasProviderCaption) View.GONE else View.VISIBLE
+             val isRestartMenuEnabledForDisplayMove =
+                 currentTaskInfo.appCompatTaskInfo.isRestartMenuEnabledForDisplayMove
+             background =
+@@ -624,6 +644,7 @@ class AppHeaderViewHolder(
+         }
+         // Minimize button.
+         minimizeWindowButton.apply {
++            visibility = if (isClientDecorated) View.GONE else View.VISIBLE
+             imageTintList = colorStateList
+             background =
+                 createBackgroundDrawable(
+@@ -632,6 +653,9 @@ class AppHeaderViewHolder(
+                     drawableInsets = dimensions.minimizeBackgroundInsets,
+                 )
+         }
++        maximizeButtonView.visibility = if (isClientDecorated) View.GONE else View.VISIBLE
++        maximizeWindowButton.visibility = if (isClientDecorated) View.GONE else View.VISIBLE
++        closeWindowButton.visibility = if (isClientDecorated) View.GONE else View.VISIBLE
+         // Maximize button.
+         maximizeButtonView.apply {
+             setAnimationTints(
+-- 
+2.43.0
+
