@@ -62,5 +62,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   old hdd52.img lock. Likely host amdgpu/venus teardown; reboot of the host clears it.
   Test continued on port 5558.
 - Old superseded VM images/ISO deleted; /home 88%.
-- Next if time: (c) store Install button progress re-check on the build-52 VM.
+- Build-52 installed VM (port 5558, hdd52b.img), store: searched "klotski" → Install →
+  button "Installing…" for ~4 min → package flatpak.org.gnome.Klotski (+ .Locale) →
+  button "Open"; Klotski window renders (screenshot out/pc-logs/iso52/klotski52.png).
+  So (c) busy status works and the Klotski/glycin crash (a) does not reproduce here.
+- Still open: Updates badge shows "4" on this fresh install (item d) — not looked at yet.
 - Earlier plan: release ISO from the last build, VM install-test, stage on the server (not public).
