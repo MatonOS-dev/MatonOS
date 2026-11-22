@@ -1,0 +1,8 @@
+service vendor.matonos-sensors /vendor/bin/hw/matonos-sensors-service
+    class hal
+    user system
+    group system
+    disabled
+
+on boot
+    start vendor.matonos-sensors

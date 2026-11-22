@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: Apache-2.0
+package {
+    default_applicable_licenses: ["hardware_interfaces_license"],
+}
+
+cc_binary {
+    name: "matonos-sensors-service",
+    vendor: true,
+    relative_install_path: "hw",
+    srcs: [
+        "main.cpp",
+        "Sensors.cpp",
+        "IioAccelerometer.cpp",
+    ],
+    cflags: ["-Wall", "-Werror", "-std=c++17"],
+    shared_libs: [
+        "libbase",
+        "libbinder_ndk",
+        "libfmq",
+        "liblog",
+        "libutils",
+        "android.hardware.common-V2-ndk",
+        "android.hardware.common.fmq-V1-ndk",
+        "android.hardware.sensors-V3-ndk",
+    ],
+}

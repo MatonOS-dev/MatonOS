@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <resources>
+    <!-- sensors: enable framework auto-rotation when an accelerometer exists. -->
+    <bool name="config_supportAutoRotation">true</bool>
     <!-- Stock Launcher3 (Quickstep) is home, recents provider and taskbar
          (user, 2026-09-27). Its taskbar needs the navigation bar enabled on
          large screens. Zero-patch config. -->

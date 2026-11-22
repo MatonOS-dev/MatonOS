@@ -4,6 +4,10 @@
 /odm/etc(/.*)? u:object_r:vendor_configs_file:s0
 /odm/bin/matonos-addons-service u:object_r:matonos_addon_manager_exec:s0
 /odm/bin/(hw/)?(matonos|maton)-.* u:object_r:matonos_driver_exec:s0
+/vendor/bin/hw/matonos-sensors-service u:object_r:matonos_driver_exec:s0
+# IIO sysfs nodes live under model-specific /devices paths. File-context
+# matching labels each dynamically placed IIO device subtree.
+/sys/devices(/[^/]+)*/iio:device[0-9]+(/.*)? -- u:object_r:sysfs_iio_devices:s0
 /mnt/matonos-install(/.*)? u:object_r:matonos_install_mount_file:s0
 /maton_system/ota-staging(/.*)? u:object_r:matonos_install_mount_file:s0
 /odm/bin/maton-audio-select\.sh u:object_r:matonos_audio_select_exec:s0
