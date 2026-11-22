@@ -59,6 +59,7 @@ info() { echo; echo "######## $* [$(date +%T)]"; }
 
 TOOLS=$(dirname "$(readlink -f "$0")")
 DEVICE_DIR=$(dirname "$TOOLS")
+. "$TOOLS/local-env.sh"
 AOSP=$(readlink -f "$DEVICE_DIR/../../..")
 PRODUCT=pc_x86_64
 RELEASE=aosp_current
@@ -83,6 +84,7 @@ done
 
 PRODUCT_OUT=$AOSP/out/target/product/$PRODUCT
 if [[ $DO_AOSP == 1 ]]; then
+  "$TOOLS/release-keys.sh"
   # The AVB development key is machine-local and must exist before Soong/Make
   # evaluates BoardConfig.mk. Release signing uses a separately provisioned key.
   source "$DEVICE_DIR/secureboot/avb.sh"

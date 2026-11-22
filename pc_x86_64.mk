@@ -35,3 +35,17 @@ PRODUCT_DEVICE := pc_x86_64
 PRODUCT_BRAND := MatonOS
 PRODUCT_MANUFACTURER := MatonOS
 PRODUCT_MODEL := MatonOS on x86_64 PC
+
+# Private, machine-provisioned signing keys. tools/build.sh creates missing
+# pairs before Make/Soong starts; the key directory is never part of this repo.
+ifeq ($(strip $(MATON_RELEASE_KEY_DIR)),)
+$(error MATON_RELEASE_KEY_DIR must be set by MatonOS machine configuration)
+endif
+PRODUCT_DEFAULT_DEV_CERTIFICATE := $(MATON_RELEASE_KEY_DIR)/releasekey
+PRODUCT_MAINLINE_SEPOLICY_DEV_CERTIFICATES := $(MATON_RELEASE_KEY_DIR)
+PRODUCT_MAINLINE_BLUETOOTH_SEPOLICY_DEV_CERTIFICATES := $(MATON_RELEASE_KEY_DIR)
+PRODUCT_MAINLINE_NFC_SEPOLICY_DEV_CERTIFICATES := $(MATON_RELEASE_KEY_DIR)
+
+# Direct userdebug image builds do not pass through sign_target_files_apks,
+# which normally converts dev-keys to release-keys after signing.
+PRODUCT_SYSTEM_PROPERTIES += ro.build.tags=release-keys
