@@ -1112,6 +1112,14 @@ Apps stay ordinary SDK apps, so the standard Android dev tools apply.
     build (v9).
   - DROPPED: car mode launcher; AppImage support (v6); NVIDIA proprietary
     stack for Linux apps (v7, predates the GPU forwarder work).
+- **Second triage (user, 2026-11-23)**:
+  - Queued: screen rotation (sensor HAL), Surface Pro 3 through the newest
+    Surface; MIPI/IPU laptop cameras via libcamera (test with the host webcam);
+    Wi-Fi hotspot and Wi-Fi Direct; check secure-release status.
+  - Low priority: display blanking before suspend; per-device suspend tuning.
+  - Dropped: per-app X11/Wayland override (per-app behaviour is banned);
+    game-mode compositor.
+  - Accepted cost: mapper memory in every app process (no working alternative).
 
 - **Enable NVK in our Mesa builds** (user, 2026-09-25): add `nouveau` to
   `-Dvulkan-drivers` in tools/build-mesa.sh (NVIDIA Vulkan on the nouveau
@@ -1341,9 +1349,9 @@ Each entry: what, why no non-patch way, what it would need.
       `ANDROID_LOW_MEMORY_KILLER`, `ANDROID_PARANOID_NETWORK`.
       Watch for: netd `xt_quota2` (data-usage alerts) failing, battery-stats
       per-UID CPU/IO numbers missing. Expected to be non-fatal.
-- [ ] android-base disables `SYSVIPC` and `FHANDLE`; a future glibc Linux
+- [x] (obsolete/settled 2026-11-23) android-base disables `SYSVIPC` and `FHANDLE`; a future glibc Linux
       container would want SYSVIPC (X11 MIT-SHM etc.).
-- [ ] Firmware for ~6k modules is large (nouveau GSP, amdgpu, iwlwifi,
+- [x] (obsolete/settled 2026-11-23) Firmware for ~6k modules is large (nouveau GSP, amdgpu, iwlwifi,
       ath, mediatek...). Check vendor image size vs the 8 GiB super.
 - [ ] Suspend on real hardware: Android only turns the screen on for keys
       flagged WAKE; verify that a USB keyboard/mouse wake actually wakes the
@@ -1352,16 +1360,16 @@ Each entry: what, why no non-patch way, what it would need.
       dwarves zstd shellcheck qemu-system-x86 ovmf gdisk dosfstools mtools
       systemd-boot-efi zip. (`sgdisk`/`mkfs.vfat`/`modinfo` live in
       /usr/sbin, not on the user PATH; scripts add it.)
-- [ ] Build host has 23 GB RAM + 30 GB swap and ~200 GB free; AOSP `out/`
+- [x] (obsolete/settled 2026-11-23) Build host has 23 GB RAM + 30 GB swap and ~200 GB free; AOSP `out/`
       will be tight on disk.
-- [ ] Graphics untested: Mesa NDK build, minigbm `pc` patch compile, u_gralloc
+- [x] (obsolete/settled 2026-11-23) Graphics untested: Mesa NDK build, minigbm `pc` patch compile, u_gralloc
       cros backend with minigbm, drm_hwcomposer on simpledrm/amdgpu/i915.
-- [ ] `repo sync` of external/minigbm now follows android-generic 14-x86;
+- [x] (obsolete/settled 2026-11-23) `repo sync` of external/minigbm now follows android-generic 14-x86;
       re-run `tools/apply-patches.sh` after syncing. Undo: delete
       `.repo/local_manifests/maton.xml`, `repo sync --force-sync external/minigbm`.
-- [ ] Mapper runs in every app process (sphal) and dlopens the GBM wrapper →
+- [x] (obsolete/settled 2026-11-23) Mapper runs in every app process (sphal) and dlopens the GBM wrapper →
       libgbm_mesa → dri_gbm → libgallium: check memory cost per process.
-- [ ] No GL fallback check yet for GPUs without a Mesa driver (QEMU std
+- [x] (obsolete/settled 2026-11-23) No GL fallback check yet for GPUs without a Mesa driver (QEMU std
       VGA, old hardware): softpipe via EGL may need forcing.
 - [x] Rust for NVK (user-level rustup, ~/.cargo/bin): rustc 1.98.1 with
       target x86_64-linux-android + rust-src, bindgen 0.73.2, cbindgen
