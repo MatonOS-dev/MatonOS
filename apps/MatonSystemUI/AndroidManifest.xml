@@ -8,6 +8,10 @@
         android:protectionLevel="signature|privileged" />
     <uses-permission android:name="org.matonos.permission.BIND_CAPTION_PROVIDER" />
     <permission
+        android:name="org.matonos.permission.BIND_EMBEDDED_SETTINGS"
+        android:protectionLevel="signature|privileged" />
+    <uses-permission android:name="org.matonos.permission.BIND_EMBEDDED_SETTINGS" />
+    <permission
         android:name="org.matonos.permission.BIND_TRAY_HOST"
         android:protectionLevel="signature|privileged" />
     <uses-permission android:name="org.matonos.permission.BIND_TRAY_HOST" />

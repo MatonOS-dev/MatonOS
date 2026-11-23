@@ -11,6 +11,7 @@ import android.os.BatteryManager
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.matonos.settings.SystemComponents
+import org.matonos.settings.EmbeddedSettingsDiscovery
 
 /**
  * What hardware is REALLY present, so UIs can hide icons for missing hardware
@@ -26,6 +27,9 @@ class HardwareModule : Module() {
     Events("hardwareChanged")
 
     AsyncFunction("getHardwareState") { state(requireNotNull(appContext.reactContext)) }
+    AsyncFunction("getEmbeddedSettings") {
+      EmbeddedSettingsDiscovery.list(requireNotNull(appContext.reactContext))
+    }
     AsyncFunction("getSystemComponents") {
       SystemComponents.read(requireNotNull(appContext.reactContext))
     }

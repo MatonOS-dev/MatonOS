@@ -2,23 +2,26 @@
 
 The `org.matonos.caption` APK is the default caption provider. It implements
 the version 1 `org.matonos.caption` AIDL contract and hosts one
-`SurfaceControlViewHost` per task. A second binding action exposes its caption
-settings surface. Shell retains window movement, resize, focus, immersive and
+`SurfaceControlViewHost` per task. A separate `org.matonos.appsettings` service exposes its settings surface
+through the generic MatonOS App settings contract. Shell retains window movement, resize, focus, immersive and
 fallback behavior.
 
 The provider draws nothing and reports no interactive regions when the task is
 client decorated or buttons are disallowed. Otherwise, the caption contains
 close, maximize/restore and minimize actions, plus the task icon and title.
 Preferences live in the provider's private SharedPreferences and immediately
-redraw attached task captions. The Settings slot binds the active package
-named by `Settings.Secure/matonos_caption_provider`, defaulting to
-`org.matonos.caption`, and shows an inline message if binding or surface
-creation fails.
+redraw attached task captions. Settings discovers this surface under App settings and binds the exact
+service component. The caption provider remains selected independently for
+window decorations.
 
 The app is registered in `buildinfra/apps/apps.list` and installed as the
 fixed `MatonCaption` product APK import from `buildinfra/buildinfra.mk`.
-Settings requests `org.matonos.permission.BIND_CAPTION_PROVIDER`; its
-privileged permission allowlist includes the grant. The app itself does not
+The caption provider service requires
+`org.matonos.permission.BIND_CAPTION_PROVIDER`; the separate embedded
+settings service requires `org.matonos.permission.BIND_EMBEDDED_SETTINGS`.
+Settings is allowlisted for both permissions. See
+[`docs/embedded-app-settings.md`](../docs/embedded-app-settings.md) for the
+service contract. The app itself does not
 request privileged permissions.
 
 ## Validation
@@ -39,9 +42,9 @@ After the coordinator has built and booted a fresh image:
    button/title regions.
 3. Test a client-decorated task and a task with buttons disallowed; both
    captions should be transparent and report an empty region list.
-4. Open Settings → Window title bars. Change button side, style, title
-   alignment and accent, then confirm all attached task captions update
-   immediately.
+4. Open Settings → App settings → MatonOS Captions. Change button side,
+   style, title alignment and accent, then confirm attached task captions
+   update immediately.
 5. Set `Settings.Secure/matonos_caption_provider` to an uninstalled provider
    component and confirm Settings shows an explanatory text line. Clear it to
    restore the built-in provider.

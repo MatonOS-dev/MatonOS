@@ -5,6 +5,7 @@ import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.os.RemoteException;
+import org.matonos.appsettings.IEmbeddedSettingsHost;
 import android.util.TypedValue;
 import android.view.Display;
 import android.view.Gravity;
@@ -18,14 +19,14 @@ import android.widget.TextView;
 
 final class CaptionSettingsSession {
     private final Context context;
-    private final ICaptionSettingsHost host;
+    private final IEmbeddedSettingsHost host;
     private final SurfaceControlViewHost surfaceHost;
     private final LinearLayout content;
     private int width;
     private int height;
 
     CaptionSettingsSession(Context context, Display display, android.os.IBinder token,
-            ICaptionSettingsHost host) {
+            IEmbeddedSettingsHost host) {
         this.context = context;
         this.host = host;
         surfaceHost = new SurfaceControlViewHost(context, display, token);

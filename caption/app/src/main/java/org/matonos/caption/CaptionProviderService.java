@@ -18,7 +18,6 @@ public final class CaptionProviderService extends Service {
     static final String TAG = "MatonCaptionApp";
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private final ConcurrentHashMap<Integer, TaskCaption> tasks = new ConcurrentHashMap<>();
-    private CaptionSettingsSession settingsSession;
     private final ICaptionProvider.Stub provider = new ICaptionProvider.Stub() {
         @Override public int getVersion() { return VERSION; }
 
@@ -51,48 +50,7 @@ public final class CaptionProviderService extends Service {
     };
 
     @Override public IBinder onBind(Intent intent) {
-        if ("org.matonos.caption.SETTINGS".equals(intent.getAction())) return settingsBinder;
         return provider;
-    }
-
-    private final ICaptionSettings.Stub settingsBinder = new ICaptionSettings.Stub() {
-        @Override public int getVersion() { return VERSION; }
-        @Override public void open(IBinder hostToken, int displayId, int widthPx, int heightPx,
-                ICaptionSettingsHost host) {
-            MAIN.post(() -> openSettings(hostToken, displayId, widthPx, heightPx, host));
-        }
-        @Override public void resize(int widthPx, int heightPx) {
-            MAIN.post(() -> {
-                if (settingsSession == null) {
-                    Log.e(TAG, "settings resize failed: no open settings surface");
-                    return;
-                }
-                try { settingsSession.resize(widthPx, heightPx); }
-                catch (RuntimeException e) { Log.e(TAG, "settings resize failed", e); }
-            });
-        }
-        @Override public void close() {
-            MAIN.post(() -> {
-                if (settingsSession != null) {
-                    settingsSession.release();
-                    settingsSession = null;
-                }
-            });
-        }
-    };
-
-    private void openSettings(IBinder token, int displayId, int widthPx, int heightPx,
-            ICaptionSettingsHost host) {
-        try {
-            if (settingsSession != null) settingsSession.release();
-            Display display = getSystemService(android.hardware.display.DisplayManager.class).getDisplay(displayId);
-            if (display == null) throw new IllegalStateException("displayId=" + displayId + " missing");
-            settingsSession = new CaptionSettingsSession(this, display, token, host);
-            settingsSession.resize(widthPx, heightPx);
-        } catch (Exception e) {
-            Log.e(TAG, "settings open failed displayId=" + displayId, e);
-            settingsSession = null;
-        }
     }
 
     private void attachOnMain(int taskId, int displayId, IBinder hostToken, int widthPx,

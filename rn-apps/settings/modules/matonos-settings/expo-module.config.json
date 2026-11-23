@@ -7,7 +7,7 @@
       "org.matonos.settings.nativebridge.MatonOSExpoModule",
       "org.matonos.settings.nativebridge.SystemIconModule",
       "org.matonos.settings.nativebridge.HardwareModule",
-      "org.matonos.settings.CaptionSettingsSlotModule"
+      "org.matonos.settings.EmbeddedSettingsSlotModule"
     ]
   }
 }
