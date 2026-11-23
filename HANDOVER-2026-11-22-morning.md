@@ -177,3 +177,10 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Merged wip/flatpak-safe-insets (subsystem 330a36ef): stub surface keeps gesture/cutout (+ visible bars) insets. VM check: Steam BPM maximized.
 - build-72/73 superseded; build-74 (dt b2a82552, sub 330a36ef) running.
 - Codex audio-boost (luna high) in ~/matonos/build/dt-audioboost: DynamicsProcessing on session 0, 100–200 % slider.
+
+## 11:15
+- build-74 (dt b2a82552, sub 330a36ef) VM PASS: real subsystem APK installs over the bootstrap; maximize hides status bar + caption; top-edge hover (MatonOS Pointer, relative evdev event5 via sendevent) reveals both and auto-hides; restore via revealed caption; App settings lists Linux D-Bus services + MatonOS Captions; D-Bus page renders ("No D-Bus providers" is correct, none on the image). Not tested: provider-absent fallback; Steam insets (needs Steam login).
+- wip/systemui-variant fast-forwarded into metadata-enc (64644169), pushed. fwb-caption worktree removed (work lives in patch 0004).
+- Headless VM tip: QEMU usb-tablet shows as ROTARY_ENCODER in Android, HMP mouse_move is relative → use sendevent on "MatonOS Pointer".
+- audio-boost round 1 (04028a08) NOT merged: Settings background service dies when the app idles. Round 2 (audio-boost2) moves the effect owner into MatonSystemUI.
+- vold-fs (luna high) started in ~/matonos/build/vold-fs (system/vold branch maton/linux-fs); patches will go to patches/system/vold/.
