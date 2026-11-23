@@ -1,0 +1,24 @@
+From: MatonOS audio team
+Subject: [PATCH] spa: alsa-udev: do not require SOUND_INITIALIZED on Android
+
+The property is set by udev rules (alsa-restore) that Android does not run;
+with libudev-zero no card was ever reported, so only the fallback sink existed.
+---
+diff --git a/spa/plugins/alsa/alsa-udev.c b/spa/plugins/alsa/alsa-udev.c
+index fdc255864..98c37e388 100644
+--- a/spa/plugins/alsa/alsa-udev.c
++++ b/spa/plugins/alsa/alsa-udev.c
+@@ -165,8 +165,13 @@ static unsigned int get_card_nr(struct impl *this, struct udev_device *udev_devi
+ 	if ((str = udev_device_get_property_value(udev_device, "SOUND_CLASS")) && spa_streq(str, "modem"))
+ 		return SPA_ID_INVALID;
+ 
++#ifndef __ANDROID__
++	/* Android has no udev rules or alsactl restore that would set this; the
++	 * kernel only emits the card uevent after its PCM/control devices are
++	 * registered, so the card is usable as soon as it is announced. */
+ 	if (udev_device_get_property_value(udev_device, "SOUND_INITIALIZED") == NULL)
+ 		return SPA_ID_INVALID;
++#endif
+ 
+ 	if ((str = udev_device_get_property_value(udev_device, "DEVPATH")) == NULL)
+ 		return SPA_ID_INVALID;
