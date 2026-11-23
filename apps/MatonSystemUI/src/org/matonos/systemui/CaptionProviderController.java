@@ -410,7 +410,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
             if (allowed(taskId)) mHandler.post(() -> b.actions.onClose(b.taskInfo));
         }
         @Override public void toggleMaximize(int taskId) {
-            if (allowed(taskId)) mHandler.post(() -> b.actions.onImmersiveOrRestore(b.taskInfo));
+            if (allowed(taskId)) mHandler.post(() -> b.actions.onImmersiveOrRestoreWithStatusBarHidden(b.taskInfo));
         }
         @Override public void minimize(int taskId) {
             if (allowed(taskId)) mHandler.post(() -> b.actions.onMinimize(b.taskInfo));
