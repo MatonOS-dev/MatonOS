@@ -2,7 +2,10 @@
 <!-- Stock AOSP External Camera HAL defaults tuned for generic PC webcams. -->
 <ExternalCamera>
     <Provider>
-        <!-- No generic ID exclusions: video node numbering is not stable across PCs. -->
+        <!-- No generic ID exclusions: video node numbering is not stable across PCs.
+             The empty element is required: the stock parser stops before <Device>
+             when <ignore> is missing. -->
+        <ignore/>
     </Provider>
     <Device>
         <MaxJpegBufferSize bytes="12582912"/>
@@ -11,7 +14,7 @@
         <FpsList>
             <Limit width="640" height="480" fpsBound="30.0"/>
             <Limit width="1280" height="720" fpsBound="30.0"/>
-            <Limit width="1920" height="1080" fpsBound="15.0"/>
+            <Limit width="1920" height="1080" fpsBound="30.0"/>
         </FpsList>
     </Device>
 </ExternalCamera>

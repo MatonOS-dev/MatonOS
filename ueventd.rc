@@ -24,3 +24,6 @@ firmware_directories /mnt/vendor/addons/firmware/
 /dev/ntsync               0666   root       root
 # sensors: Linux IIO character-device interface consumed by the AIDL HAL.
 /dev/iio:device* 0660 system system
+# camera: the stock external provider runs as cameraserver (group camera) and
+# opens UVC nodes O_RDWR; without a rule they are root 0600.
+/dev/video*               0660   root       camera
