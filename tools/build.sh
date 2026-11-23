@@ -234,6 +234,19 @@ if [[ $DO_AOSP == 1 ]]; then
   # Show action counts as Soong receives Ninja/Siso status updates.
   export NINJA_STATUS='[%p %f/%t done, %r running, %l remaining, %e sec] '
 
+  # The audio APEX consumes Soong-built HAL/effects binaries. First build those
+  # installable inputs with the prebuilt APEX hidden, then package and rebuild
+  # the product with the prebuilt APEX selected.
+  if [[ -z $MODULES ]]; then
+    export MATON_AUDIO_APEX_READY=false
+    python3 - "$DEVICE_DIR/audio/apex/Android.bp" <<'PY_BOOTSTRAP'
+from pathlib import Path
+import sys
+Path(sys.argv[1]).unlink(missing_ok=True)
+PY_BOOTSTRAP
+    touch "$DEVICE_DIR/audio/apex/.find-ignore"
+  fi
+
   # envsetup/lunch aren't set -u clean; run them in a subshell without it.
   (
     set +u
@@ -366,6 +379,31 @@ if [[ $DO_AOSP == 1 ]]; then
       m -j"$JOBS" $(tr ',' ' ' <<<"$MODULES") || build_status=$?
     else
       m -j"$JOBS" || build_status=$?
+      if (( build_status == 0 )); then
+        info "Package updateable audio APEX from Soong outputs (pass 1)"
+        "$TOOLS/build-audio-apex.sh" || build_status=$?
+      fi
+      if (( build_status == 0 )); then
+        install -m 0644 "$DEVICE_DIR/audio/apex/Android.bp.in" "$DEVICE_DIR/audio/apex/Android.bp"
+        export MATON_AUDIO_APEX_READY=true
+        python3 - "$DEVICE_DIR/audio/apex/.find-ignore" <<'PY_IGNORE'
+from pathlib import Path
+import sys
+Path(sys.argv[1]).unlink(missing_ok=True)
+PY_IGNORE
+        info "Clean bootstrap audio binaries before final product install"
+        m installclean || build_status=$?
+      fi
+      if (( build_status == 0 )); then
+        info "Build final product with prebuilt audio APEX (pass 2)"
+        m -j"$JOBS" || build_status=$?
+      fi
+      touch "$DEVICE_DIR/audio/apex/.find-ignore"
+      python3 - "$DEVICE_DIR/audio/apex/Android.bp" <<'PY_CLEANUP'
+from pathlib import Path
+import sys
+Path(sys.argv[1]).unlink(missing_ok=True)
+PY_CLEANUP
     fi
     : > "$build_progress_done"
     wait "$build_progress_watcher" || true

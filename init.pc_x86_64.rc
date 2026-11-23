@@ -59,3 +59,15 @@ on init
 on boot
     chown root root /sys/power/autosleep
     chmod 0600 /sys/power/autosleep
+
+# audioapex1: activate the pre-packaged audio services only after data and
+# APEX activation; failures stay asynchronous and never hold up boot.
+on post-fs-data && property:ro.vendor.matonos.audio.pipewire=true
+    mkdir /data/vendor/maton-audio 0770 audio audio
+    mkdir /data/vendor/maton-audio/state 0770 audio audio
+    start vendor.pipewire
+    start vendor.audio-effect-hal-aidl
+
+on property:init.svc.vendor.pipewire=running
+    start vendor.wireplumber
+    start vendor.audio-hal-aidl

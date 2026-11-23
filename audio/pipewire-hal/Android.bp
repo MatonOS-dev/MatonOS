@@ -1,6 +1,7 @@
 cc_prebuilt_library_shared {
     name: "libpipewire_matonos",
     vendor: true,
+    installable: false,
     srcs: ["prebuilt/libpipewire-0.3.so"],
     stem: "libpipewire-0.3",
     strip: {

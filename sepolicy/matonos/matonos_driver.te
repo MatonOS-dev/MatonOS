@@ -442,3 +442,9 @@ allow { bootanim matonos_bootlogo } tmpfs:dir search;
 allow bootanim matonos_bootlogo_file:file r_file_perms;
 # The BGRT subtree gets a dedicated sysfs type so only the compositor reads it.
 type sysfs_bgrt, fs_type, sysfs_type;
+
+# audioapex1: the HAL reads its private native libraries from the vendor APEX namespace.
+allow hal_audio_default vendor_file:dir r_dir_perms;
+allow hal_audio_default vendor_file:file { getattr map open read };
+allow hal_audio_default vendor_configs_file:dir r_dir_perms;
+allow hal_audio_default vendor_configs_file:file r_file_perms;

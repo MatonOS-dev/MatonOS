@@ -12,14 +12,15 @@ NDK=${ANDROID_NDK:-}
 API=35
 JOBS=${MATON_BUILD_JOBS:-$(nproc)}
 OUT=${MATON_PIPEWIRE_BUILD:-$MATON_ROOT/out/pipewire-stack}
-STAGE=$DEVICE_DIR/buildinfra/native-built/pipewire
+STAGE=$DEVICE_DIR/buildinfra/native-built/audio-apex
 TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 CC=$TOOLCHAIN/bin/x86_64-linux-android$API-clang
 CXX=$TOOLCHAIN/bin/x86_64-linux-android$API-clang++
 AR=$TOOLCHAIN/bin/llvm-ar
 STRIP=$TOOLCHAIN/bin/llvm-strip
 SRC=$OUT/src
-PREFIX=/vendor
+APEX_NAME=com.matonos.hardware.audio
+PREFIX=/apex/$APEX_NAME
 DEST=$OUT/dest
 
 while getopts "n:o:j:h" opt; do
@@ -130,7 +131,7 @@ export CC CXX AR STRIP
 export CFLAGS="-O2 -march=x86-64-v2 -fPIC -D_FILE_OFFSET_BITS=64 -I$DEVICE_DIR/audio/compat/include"
 export CXXFLAGS="-O2 -march=x86-64-v2 -fPIC -D_FILE_OFFSET_BITS=64"
 export LDFLAGS="-Wl,-z,relro -Wl,-z,now"
-export PKG_CONFIG_PATH="$DEST/vendor/lib64/pkgconfig"
+export PKG_CONFIG_PATH="$DEST$PREFIX/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
 export PKG_CONFIG_SYSROOT_DIR="$DEST"
 
@@ -145,10 +146,10 @@ make -C "$SRC/libudev-zero" clean
 make -C "$SRC/libudev-zero" -j"$JOBS" CC="$CC" AR="$AR" \
   CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" PREFIX="$PREFIX" \
   LIBDIR="$PREFIX/lib64" INCLUDEDIR="$PREFIX/include" DESTDIR="$DEST" \
-  USB_IDS_PATH=/vendor/etc/usb.ids install-shared
+  USB_IDS_PATH=$PREFIX/etc/usb.ids install-shared
 
 info "Building GLib/GIO (WirePlumber runtime dependency)"
-if [[ ! -f $DEST/vendor/lib64/libgio-2.0.so ]]; then
+if [[ ! -f $DEST$PREFIX/lib64/libgio-2.0.so ]]; then
   meson_configure "$OUT/glib" "$SRC/glib" --cross-file "$OUT/android-x86_64.ini" \
     --prefix="$PREFIX" --libdir=lib64 --buildtype=release -Ddefault_library=shared \
     -Dtests=false -Dintrospection=disabled -Dman-pages=disabled -Dnls=disabled \
@@ -182,22 +183,22 @@ HOST_GLIB_MKENUMS=$OUT/glib-host/gobject/glib-mkenums
 HOST_GDBUS_CODEGEN=$OUT/glib-host/gio/gdbus-2.0/codegen/gdbus-codegen
 
 info "Building ALSA-lib"
-if [[ ! -f $DEST/vendor/lib64/libasound.so.2 ]]; then
+if [[ ! -f $DEST$PREFIX/lib64/libasound.so.2 ]]; then
   mkdir -p "$OUT/alsa-lib"
   (cd "$OUT/alsa-lib" && "$SRC/alsa-lib-1.2.15/configure" --host=x86_64-linux-android \
-    --prefix=/vendor --libdir=/vendor/lib64 --with-configdir=/vendor/etc/alsa \
-    --with-plugindir=/vendor/lib64/alsa-lib --disable-python --disable-old-symbols \
+    --prefix=$PREFIX --libdir=$PREFIX/lib64 --with-configdir=$PREFIX/etc/alsa \
+    --with-plugindir=$PREFIX/lib64/alsa-lib --disable-python --disable-old-symbols \
     --disable-alisp --disable-aserver --disable-topology)
   make -C "$OUT/alsa-lib" -j"$JOBS"
   make -C "$OUT/alsa-lib" DESTDIR="$DEST" install
 fi
 
 info "Building PipeWire (ALSA SPA backend; systemd, D-Bus and BlueZ disabled)"
-export PKG_CONFIG_PATH="$DEST/vendor/lib64/pkgconfig"
+export PKG_CONFIG_PATH="$DEST$PREFIX/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
 meson_configure "$OUT/pipewire" "$SRC/pipewire" --cross-file "$OUT/android-x86_64.ini" \
   -Dc_args="-march=x86-64-v2 -I$DEVICE_DIR/audio/compat/include" \
-  --prefix=/vendor --libdir=lib64 --buildtype=release -Ddefault_library=shared \
+  --prefix=$PREFIX --libdir=lib64 --buildtype=release -Ddefault_library=shared \
   -Dalsa=enabled -Dspa-plugins=enabled -Dsupport=enabled \
   -Djack=disabled -Dv4l2=disabled \
   -Daudioconvert=enabled -Daudiomixer=enabled -Dlibsystemd=disabled \
@@ -221,18 +222,18 @@ for tool in "$HOST_GLIB_RESOURCES:glib-compile-resources" \
             "$HOST_GDBUS_CODEGEN:gdbus-codegen"; do
   source_tool=${tool%%:*}
   tool_name=${tool##*:}
-  cp -L "$source_tool" "$DEST/vendor/bin/$tool_name"
+  cp -L "$source_tool" "$DEST$PREFIX/bin/$tool_name"
 done
 sed -i \
   -e 's|^glib_compile_resources=.*|glib_compile_resources=${bindir}/glib-compile-resources|' \
   -e 's|^gdbus_codegen=.*|gdbus_codegen=${bindir}/gdbus-codegen|' \
-  "$DEST/vendor/lib64/pkgconfig/gio-2.0.pc"
+  "$DEST$PREFIX/lib64/pkgconfig/gio-2.0.pc"
 sed -i \
   -e 's|^glib_mkenums=.*|glib_mkenums=${bindir}/glib-mkenums|' \
-  "$DEST/vendor/lib64/pkgconfig/glib-2.0.pc"
+  "$DEST$PREFIX/lib64/pkgconfig/glib-2.0.pc"
 meson_configure "$OUT/wireplumber" "$SRC/wireplumber" --cross-file "$OUT/android-x86_64.ini" \
   -Dc_args="-march=x86-64-v2 -I$DEVICE_DIR/audio/compat/include" \
-  --prefix=/vendor --libdir=lib64 --buildtype=release -Ddefault_library=shared \
+  --prefix=$PREFIX --libdir=lib64 --buildtype=release -Ddefault_library=shared \
   -Dsystem-lua=false -Dsystemd=disabled -Dsystemd-system-service=false \
   -Dsystemd-user-service=false -Dintrospection=disabled \
   -Ddoc=disabled -Dtests=false -Dtools=true
@@ -241,49 +242,47 @@ LD_LIBRARY_PATH="$OUT/glib-host/gio:$OUT/glib-host/glib:$OUT/glib-host/gobject:$
 DESTDIR="$DEST" ninja -C "$OUT/wireplumber" install
 
 info "Staging ALSA UCM profiles and vendor files"
-mkdir -p "$DEST/vendor/etc/alsa/ucm2"
-cp -a "$SRC/alsa-ucm-conf/ucm2/." "$DEST/vendor/etc/alsa/ucm2/"
-mkdir -p "$DEST/vendor/etc/pipewire" "$DEST/vendor/etc/wireplumber"
-cp "$DEST/vendor/share/pipewire/pipewire.conf" "$DEST/vendor/etc/pipewire/pipewire.conf"
-# PipeWire clients (WirePlumber and the HAL proxy) load client.conf before
-# connecting. The private ODM prefix differs from the compiled /vendor path,
-# so install the defaults beside pipewire.conf and set PIPEWIRE_CONFIG_DIR in
-# each service's init environment.
-cp "$DEST/vendor/share/pipewire/client.conf" "$DEST/vendor/etc/pipewire/client.conf"
-cp "$DEST/vendor/share/wireplumber/wireplumber.conf" "$DEST/vendor/etc/wireplumber/wireplumber.conf"
-mkdir -p "$DEST/vendor/etc/wireplumber/wireplumber.conf.d"
+mkdir -p "$DEST$PREFIX/etc/alsa/ucm2"
+cp -a "$SRC/alsa-ucm-conf/ucm2/." "$DEST$PREFIX/etc/alsa/ucm2/"
+mkdir -p "$DEST$PREFIX/etc/pipewire" "$DEST$PREFIX/etc/wireplumber"
+cp "$DEST$PREFIX/share/pipewire/pipewire.conf" "$DEST$PREFIX/etc/pipewire/pipewire.conf"
+# PipeWire clients (WirePlumber and the HAL) load client.conf before connecting.
+# Keep defaults at the compiled APEX prefix beside the main config.
+cp "$DEST$PREFIX/share/pipewire/client.conf" "$DEST$PREFIX/etc/pipewire/client.conf"
+cp "$DEST$PREFIX/share/wireplumber/wireplumber.conf" "$DEST$PREFIX/etc/wireplumber/wireplumber.conf"
+mkdir -p "$DEST$PREFIX/etc/wireplumber/wireplumber.conf.d"
 cp "$DEVICE_DIR/audio/config/wireplumber/wireplumber.conf.d/10-maton.conf" \
-  "$DEST/vendor/etc/wireplumber/wireplumber.conf.d/10-maton.conf"
-mkdir -p "$DEST/vendor/etc/pipewire/pipewire.conf.d"
+  "$DEST$PREFIX/etc/wireplumber/wireplumber.conf.d/10-maton.conf"
+mkdir -p "$DEST$PREFIX/etc/pipewire/pipewire.conf.d"
 cp "$DEVICE_DIR/audio/config/pipewire/pipewire.conf.d/10-maton-fallback.conf" \
-  "$DEST/vendor/etc/pipewire/pipewire.conf.d/10-maton-fallback.conf"
+  "$DEST$PREFIX/etc/pipewire/pipewire.conf.d/10-maton-fallback.conf"
 # Keep only runtime assets in the image; cross-build headers, pkg-config files
 # and GLib development utilities are build-time dependencies.
-for bin in "$DEST/vendor/bin"/*; do
+for bin in "$DEST$PREFIX/bin"/*; do
   case $(basename "$bin") in pipewire|wireplumber|pw-cli|wpctl) ;; *) rm -f "$bin" ;; esac
 done
 # PipeWire 1.6.9 always builds its Pulse protocol module. No Meson switch
 # exists for that module, so omit it (and the daemon alias) from the runtime.
-rm -f "$DEST/vendor/lib64/pipewire-0.3/libpipewire-module-protocol-pulse.so"
+rm -f "$DEST$PREFIX/lib64/pipewire-0.3/libpipewire-module-protocol-pulse.so"
 # These optional protocol/configuration assets are not part of this runtime.
-rm -f "$DEST/vendor/etc/pipewire/jack.conf" \
-  "$DEST/vendor/etc/pipewire/pipewire-pulse.conf" \
-  "$DEST/vendor/share/pipewire/jack.conf" \
-  "$DEST/vendor/share/pipewire/pipewire-pulse.conf"
-rm -rf "$DEST/vendor/share/pipewire/pipewire-pulse.conf.avail"
-rm -rf "$DEST/vendor/share/doc"
-rm -f "$DEST/vendor/lib64/pipewire-0.3/libpipewire-module-netjack2-driver.so" \
-  "$DEST/vendor/lib64/pipewire-0.3/libpipewire-module-netjack2-manager.so"
+rm -f "$DEST$PREFIX/etc/pipewire/jack.conf" \
+  "$DEST$PREFIX/etc/pipewire/pipewire-pulse.conf" \
+  "$DEST$PREFIX/share/pipewire/jack.conf" \
+  "$DEST$PREFIX/share/pipewire/pipewire-pulse.conf"
+rm -rf "$DEST$PREFIX/share/pipewire/pipewire-pulse.conf.avail"
+rm -rf "$DEST$PREFIX/share/doc"
+rm -f "$DEST$PREFIX/lib64/pipewire-0.3/libpipewire-module-netjack2-driver.so" \
+  "$DEST$PREFIX/lib64/pipewire-0.3/libpipewire-module-netjack2-manager.so"
 # WirePlumber has no Meson switch for its optional D-Bus integrations. Keep
 # the ALSA/Lua default policy modules and omit the unrequested integrations.
 for module in dbus-connection portal-permissionstore reserve-device \
               modem-manager mpris notifications-api; do
-  rm -f "$DEST/vendor/lib64/wireplumber-0.5/libwireplumber-module-$module.so"
+  rm -f "$DEST$PREFIX/lib64/wireplumber-0.5/libwireplumber-module-$module.so"
 done
-rm -rf "$DEST/vendor/share/wireplumber/scripts/monitors/bluez" \
-  "$DEST/vendor/share/wireplumber/scripts/monitors/v4l2" \
-  "$DEST/vendor/share/wireplumber/scripts/monitors/libcamera"
-rm -f "$DEST/vendor/share/wireplumber/scripts/monitors/bluez-midi.lua"
+rm -rf "$DEST$PREFIX/share/wireplumber/scripts/monitors/bluez" \
+  "$DEST$PREFIX/share/wireplumber/scripts/monitors/v4l2" \
+  "$DEST$PREFIX/share/wireplumber/scripts/monitors/libcamera"
+rm -f "$DEST$PREFIX/share/wireplumber/scripts/monitors/bluez-midi.lua"
 # PRODUCT_COPY_FILES installs regular files only. Dereference the versioned
 # upstream library symlinks into regular vendor files so DT_NEEDED names resolve.
 while IFS= read -r -d '' link; do
@@ -291,18 +290,17 @@ while IFS= read -r -d '' link; do
   tmp=$link.copy
   cp -L "$link" "$tmp"
   mv "$tmp" "$link"
-done < <(find "$DEST/vendor" -type l -print0)
+done < <(find "$DEST$PREFIX" -type l -print0)
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
 for component in bin etc lib64 share; do
-  [[ ! -d $DEST/vendor/$component ]] || cp -a "$DEST/vendor/$component" "$STAGE/$component"
+  [[ ! -d $DEST$PREFIX/$component ]] || cp -a "$DEST$PREFIX/$component" "$STAGE/$component"
 done
 # Soong HAL inputs (audio/pipewire-hal/Android.bp): Soong only accepts paths
 # inside the module directory, and headers do not belong in the ODM image.
 HAL_PREBUILT=$DEVICE_DIR/audio/pipewire-hal/prebuilt
-rm -rf "$HAL_PREBUILT"
 mkdir -p "$HAL_PREBUILT/include"
-for include_root in "$DEST/vendor/include/pipewire-0.3" "$DEST/vendor/include/spa-0.2"; do
+for include_root in "$DEST$PREFIX/include/pipewire-0.3" "$DEST$PREFIX/include/spa-0.2"; do
   [[ -d $include_root ]] || die "PipeWire header dir missing: $include_root"
   cp -a "$include_root" "$HAL_PREBUILT/include/"
 done
@@ -385,4 +383,4 @@ for required in include/pipewire-0.3/pipewire/pipewire.h \
   [[ -e $HAL_PREBUILT/$required ]] || die "missing HAL prebuilt: $required"
 done
 du -sh "$STAGE" >&2
-echo "PipeWire ODM bundle contents staged in $STAGE (DT_NEEDED: $NEEDED_REPORT)"
+echo "PipeWire APEX contents staged in $STAGE (DT_NEEDED: $NEEDED_REPORT)"

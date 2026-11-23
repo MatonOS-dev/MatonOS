@@ -41,3 +41,6 @@ matonos.local.env
 *.pem
 *.pk8
 /audio/pipewire-hal/prebuilt/
+
+/audio/apex/prebuilt/
+/audio/apex/Android.bp

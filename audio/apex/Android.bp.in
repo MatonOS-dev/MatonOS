@@ -1,0 +1,7 @@
+prebuilt_apex {
+    name: "com.matonos.hardware.audio",
+    src: "prebuilt/com.matonos.hardware.audio.apex",
+    filename: "com.matonos.hardware.audio.apex",
+    prefer: true,
+    vendor: true,
+}

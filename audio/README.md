@@ -1,5 +1,42 @@
 # MatonOS audio
 
+## Updateable vendor audio APEX (audioapex1)
+
+The default PipeWire audio stack is packaged as one signed, prebuilt vendor
+APEX, `com.matonos.hardware.audio`. Its payload contains PipeWire,
+WirePlumber, ALSA-lib/UCM, GLib/GIO, libffi, libudev-zero, the Soong-built
+PipeWire HAL, AOSP effects service and its configured generic effect
+libraries, `audio_effects_config.xml`, init rc, and VINTF fragments. The APEX payload version is a UTC build timestamp;
+`tools/build-audio-apex.sh` increments it for each package. The payload key
+and container signing keys are machine-local under `MATON_RELEASE_KEY_DIR`.
+The payload key must remain stable across staged updates. The release key
+provisioning work will add this APEX key to the release `apex-keys` mapping.
+
+`tools/build.sh` uses two AOSP passes: the bootstrap product installs the
+Soong HAL/effects executables, then host `apexer` packages those binaries with
+the NDK-built PipeWire stage and the final pass imports the generated APEX
+through `prebuilt_apex`. `audio/apex/.find-ignore` hides that prebuilt module
+until the APEX exists. The ODM bundle continues to carry audio selector and
+codec-preload glue; PipeWire, HAL/effects services and their VINTF fragment
+are no longer bundle contents.
+
+The APEX rc file declares services only. The vendor init trigger in
+`init.pc_x86_64.rc` starts them at `post-fs-data`, after APEX activation and
+/data setup. Runtime variables are limited to HOME and XDG/PipeWire runtime
+paths under `/data`; compiled prefix, config paths, linker namespace and SPA
+plugin paths use `/apex/com.matonos.hardware.audio`. HAL and effect-service
+VINTF declarations name this APEX with `updatable-via-apex`. SELinux labels
+for all executable paths are fixed in both `audio/apex/file_contexts` and
+the existing `sepolicy/matonos/` policy files, so updates keep the same
+labels.
+
+No AOSP build or VM boot was run in the isolated worktree. On the server,
+build a fresh image and check `apexd`/`/apex` show the APEX, all four services
+are running, `pw-cli ls Node` sees the ALSA card, and `IModule/default` plus
+`IFactory/default` are registered. Test a staged update using a higher-version APEX signed by the same payload
+and container keys: run `adb install --staged /path/to/com.matonos.hardware.audio.apex`,
+reboot, then check `adb shell cmd apexservice getActivePackages`.
+
 ## Design
 
 The default HAL is MatonOS's PipeWire-backed AIDL implementation in
@@ -35,8 +72,7 @@ through libudev-zero. These services are asynchronous and do not gate audio
 startup.
 
 PipeWire 1.6.9 and WirePlumber 0.5.17 are staged under
-`buildinfra/native-built/pipewire`; `bundle/contents.list` installs that tree
-in ODM. `tools/build-pipewire.sh` builds the stack with NDK r30. See
+`buildinfra/native-built/audio-apex`; the APEX build consumes that tree. `tools/build-pipewire.sh` builds the stack with NDK r30. See
 `audio/pipewire-PROVENANCE.md` for revision pins, license review and patch
 rationale.
 
@@ -77,12 +113,13 @@ at runtime. Previous HDA/QEMU results apply to the legacy BayLibre backend.
 `tools/build-pipewire.sh` builds PipeWire 1.6.9, WirePlumber 0.5.17,
 ALSA-lib/UCM, GLib/GIO, libffi and libudev-zero for x86_64/API 35. It stages
 runtime files, configs, UCM profiles and licenses under
-`buildinfra/native-built/pipewire`; the bundle installs that tree in ODM. The
+`buildinfra/native-built/audio-apex`; `tools/build-audio-apex.sh` packages that
+tree with the Soong HAL and effects binaries. The
 NDK build completed previously. `NEEDED.txt` records the staged ELF
 dependencies. `audio/pipewire-PROVENANCE.md` documents upstream pins, license
 review and compatibility patches.
 
-## PipeWire runtime (P4)
+## Previous PipeWire runtime design (superseded by audioapex1)
 
 `MATON_AUDIO_PIPEWIRE_HAL` defaults to `true`. `audio/maton-pipewire.rc` starts
 PipeWire as the `audio` user after `/data` is ready, with XDG and PipeWire

@@ -1,12 +1,25 @@
-# PipeWire is the supported audio HAL; the legacy BayLibre APEX is not in the default image.
+# PipeWire is the supported HAL; the generic audio APEX is bootstrap-only for extracting its effects binary and libraries.
 MATON_AUDIO_PIPEWIRE_HAL ?= true
-PRODUCT_PACKAGES := $(filter-out com.android.hardware.audio audio_effects_config.xml,$(PRODUCT_PACKAGES))
-# The generic APEX supplies the effect service (its core service is replaced by
-# the ODM vendor.audio-hal-aidl override). Not the stock com.android.hardware.audio
-# APEX: it declares IBluetoothAudioProviderFactory, which conflicts with the vintf
-# fragment android.hardware.bluetooth.audio-impl installs for the PipeWire HAL.
+PRODUCT_PACKAGES := $(filter-out com.android.hardware.audio com.android.hardware.audio.generic audio_effects_config.xml,$(PRODUCT_PACKAGES))
+# Bootstrap pass builds the APEX-compiled effects implementation; the final
+# product uses only com.matonos.hardware.audio and has no generic audio APEX.
 ifeq ($(MATON_AUDIO_PIPEWIRE_HAL),true)
-PRODUCT_PACKAGES += android.hardware.audio.service-aidl.matonos
+ifeq ($(MATON_AUDIO_APEX_READY),true)
+PRODUCT_PACKAGES += com.matonos.hardware.audio
+else
+# Bootstrap pass: build the Soong HAL and APEX-compiled effects implementation before apexer packages them.
+PRODUCT_PACKAGES += \
+    android.hardware.audio.service-aidl.matonos \
+    com.android.hardware.audio.generic \
+    libbundleaidl \
+    libdownmixaidl \
+    libdynamicsprocessingaidl \
+    libhapticgeneratoraidl \
+    libloudnessenhanceraidl \
+    libpreprocessingaidl \
+    libreverbaidl \
+    libvisualizeraidl
+endif
 endif
 
 # Keep ODM and vendor policy copies aligned with the PipeWire HAL modules.
@@ -44,3 +57,7 @@ PRODUCT_COPY_FILES += \
 
 # The AudioTrack smoke-test app is a Gradle project in audio/testapp and is
 # installed with adb for QEMU checks; it is not an image product package.
+
+ifeq ($(MATON_AUDIO_APEX_READY),true)
+PRODUCT_COPY_FILES := $(filter-out device/maton/pc_x86_64/audio/effects/audio_effects_config.xml:%,$(PRODUCT_COPY_FILES))
+endif

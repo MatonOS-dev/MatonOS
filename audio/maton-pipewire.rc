@@ -1,17 +1,5 @@
 # PipeWire is a system-wide ODM service. Audio owns the runtime socket directory.
-on post-fs-data
-    mkdir /data/vendor/maton-audio 0770 audio audio
-    mkdir /data/vendor/maton-audio/state 0770 audio audio
-    chown audio audio /data/vendor/maton-audio
-    chown audio audio /data/vendor/maton-audio/state
-    chmod 0770 /data/vendor/maton-audio
-    chmod 0770 /data/vendor/maton-audio/state
-
-on post-fs-data && property:ro.vendor.matonos.audio.pipewire=true
-    start vendor.pipewire
-    start vendor.audio-hal-aidl
-
-service vendor.pipewire /odm/bin/pipewire
+service vendor.pipewire /apex/com.matonos.hardware.audio/bin/pipewire
     class late_start
     disabled
     user audio
@@ -20,22 +8,13 @@ service vendor.pipewire /odm/bin/pipewire
     setenv XDG_STATE_HOME /data/vendor/maton-audio/state
     setenv XDG_RUNTIME_DIR /data/vendor/maton-audio
     setenv PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
-    setenv PIPEWIRE_CONFIG_DIR /odm/etc/pipewire
-    setenv PIPEWIRE_MODULE_DIR /odm/lib64/pipewire-0.3
-    setenv SPA_PLUGIN_DIR /odm/lib64/spa-0.2
-    setenv ALSA_CONFIG_DIR /odm/etc/alsa
-    setenv ALSA_CONFIG_PATH /odm/etc/alsa/alsa.conf
-    setenv ALSA_CONFIG_UCM2 /odm/etc/alsa/ucm2
-    setenv LD_LIBRARY_PATH /odm/lib64:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
     capabilities SYS_NICE
     rlimit rtprio 10 10
     task_profiles ProcessCapacityHigh HighPerformance
     onrestart restart vendor.wireplumber
 
-on property:init.svc.vendor.pipewire=running
-    start vendor.wireplumber
 
-service vendor.wireplumber /odm/bin/wireplumber
+service vendor.wireplumber /apex/com.matonos.hardware.audio/bin/wireplumber
     class late_start
     disabled
     user audio
@@ -44,16 +23,6 @@ service vendor.wireplumber /odm/bin/wireplumber
     setenv XDG_STATE_HOME /data/vendor/maton-audio/state
     setenv XDG_RUNTIME_DIR /data/vendor/maton-audio
     setenv PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
-    setenv PIPEWIRE_CONFIG_DIR /odm/etc/pipewire
-    setenv WIREPLUMBER_CONFIG_DIR /odm/etc/wireplumber
-    setenv WIREPLUMBER_DATA_DIR /odm/share/wireplumber
-    setenv WIREPLUMBER_MODULE_DIR /odm/lib64/wireplumber-0.5
-    setenv PIPEWIRE_MODULE_DIR /odm/lib64/pipewire-0.3
-    setenv SPA_PLUGIN_DIR /odm/lib64/spa-0.2
-    setenv ALSA_CONFIG_DIR /odm/etc/alsa
-    setenv ALSA_CONFIG_PATH /odm/etc/alsa/alsa.conf
-    setenv ALSA_CONFIG_UCM2 /odm/etc/alsa/ucm2
-    setenv LD_LIBRARY_PATH /odm/lib64:/odm/lib64/wireplumber-0.5:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
     capabilities SYS_NICE
     rlimit rtprio 10 10
     task_profiles ProcessCapacityHigh HighPerformance
