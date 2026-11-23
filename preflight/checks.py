@@ -18,7 +18,7 @@ GENERATED_DIRS = ("build", "out", "prebuilt", "node_modules", ".gradle", ".cxx")
 # Written by tools/build.sh steps that run after preflight (build-pipewire,
 # build-native, build-bundle's bootanim generator); build-bundle.sh still
 # fails on a missing input at use time.
-BUILD_STEP_OUTPUTS = ("buildinfra/native-built/", "bootanim/out/")
+BUILD_STEP_OUTPUTS = ("buildinfra/native-built/", "bootanim/out/", "audio/pipewire-hal/prebuilt/")
 
 
 def build_step_output(path: Path) -> bool:

@@ -294,15 +294,17 @@ while IFS= read -r -d '' link; do
 done < <(find "$DEST/vendor" -type l -print0)
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
-for component in bin etc include lib64 share; do
+for component in bin etc lib64 share; do
   [[ ! -d $DEST/vendor/$component ]] || cp -a "$DEST/vendor/$component" "$STAGE/$component"
 done
-# Keep only the public PipeWire/SPA headers needed by the Soong HAL; the other
-# upstream development headers, pkg-config metadata, and build tools stay out.
-rm -rf "$STAGE/include"
-mkdir -p "$STAGE/include"
+# Soong HAL inputs (audio/pipewire-hal/Android.bp): Soong only accepts paths
+# inside the module directory, and headers do not belong in the ODM image.
+HAL_PREBUILT=$DEVICE_DIR/audio/pipewire-hal/prebuilt
+rm -rf "$HAL_PREBUILT"
+mkdir -p "$HAL_PREBUILT/include"
 for include_root in "$DEST/vendor/include/pipewire-0.3" "$DEST/vendor/include/spa-0.2"; do
-  [[ ! -d $include_root ]] || cp -a "$include_root" "$STAGE/include/"
+  [[ -d $include_root ]] || die "PipeWire header dir missing: $include_root"
+  cp -a "$include_root" "$HAL_PREBUILT/include/"
 done
 rm -rf "$STAGE/lib64/pkgconfig" "$STAGE/lib64/glib-2.0/include" \
   "$STAGE/share/bash-completion" "$STAGE/share/gettext" \
@@ -344,8 +346,6 @@ done
 } > "$STAGE/SOURCE"
 
 for required in bin/pipewire bin/wireplumber \
-                include/pipewire-0.3/pipewire/pipewire.h \
-                include/spa-0.2/spa/param/audio/format-utils.h \
                 lib64/libpipewire-0.3.so lib64/libwireplumber-0.5.so \
                 lib64/libasound.so \
                 lib64/spa-0.2/support/libspa-support.so \
@@ -379,5 +379,10 @@ while IFS= read -r -d '' elf; do
     printf '  %s\n' "$needed" >> "$NEEDED_REPORT"
   done < <("$READELF" -d "$elf" | sed -n 's/.*Shared library: \[\(.*\)\].*/\1/p')
 done < <(find "$STAGE/bin" "$STAGE/lib64" -type f -print0)
+install -m 0644 "$STAGE/lib64/libpipewire-0.3.so" "$HAL_PREBUILT/libpipewire-0.3.so"
+for required in include/pipewire-0.3/pipewire/pipewire.h \
+                include/spa-0.2/spa/param/audio/format-utils.h libpipewire-0.3.so; do
+  [[ -e $HAL_PREBUILT/$required ]] || die "missing HAL prebuilt: $required"
+done
 du -sh "$STAGE" >&2
 echo "PipeWire ODM bundle contents staged in $STAGE (DT_NEEDED: $NEEDED_REPORT)"

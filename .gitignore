@@ -40,3 +40,4 @@ matonos.local.env
 # Private signing keys never go into this public repo
 *.pem
 *.pk8
+/audio/pipewire-hal/prebuilt/

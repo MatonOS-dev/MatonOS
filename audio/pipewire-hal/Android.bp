@@ -1,14 +1,14 @@
 cc_prebuilt_library_shared {
     name: "libpipewire_matonos",
     vendor: true,
-    srcs: ["../../buildinfra/native-built/pipewire/lib64/libpipewire-0.3.so"],
+    srcs: ["prebuilt/libpipewire-0.3.so"],
     stem: "libpipewire-0.3",
     strip: {
         none: true,
     },
     export_include_dirs: [
-        "../../buildinfra/native-built/pipewire/include/pipewire-0.3",
-        "../../buildinfra/native-built/pipewire/include/spa-0.2",
+        "prebuilt/include/pipewire-0.3",
+        "prebuilt/include/spa-0.2",
     ],
 }
 
