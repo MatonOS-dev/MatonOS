@@ -20,6 +20,9 @@ MKFS_EROFS=$HOSTBIN/mkfs.erofs
 LIST=$DEVICE_DIR/bundle/contents.list
 [[ -s $LIST ]] || die "bundle registry missing: $LIST"
 
+# Generate boot assets before consuming the bundle rows that install them.
+python3 "$DEVICE_DIR/bootanim/generate.py" --out "$DEVICE_DIR/bootanim/out"
+
 mkdir -p "$(dirname "$OUT")"
 work=$(mktemp -d --tmpdir="$(dirname "$OUT")" .odm-bundle.XXXXXX)
 trap 'rm -rf "$work"' EXIT

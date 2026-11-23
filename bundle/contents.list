@@ -7,10 +7,14 @@ file buildinfra/native-built/libmatonos-ipc.so lib64/libmatonos-ipc.so
 file buildinfra/native-built/matonos-sleepd bin/matonos-sleepd
 file buildinfra/native-built/matonos-wifid bin/matonos-wifid
 file buildinfra/native-built/matonos-inputd bin/matonos-inputd
+file buildinfra/native-built/matonos-bootlogo bin/matonos-bootlogo
+file bootanim/out/wordmark.rgba etc/bootanim/wordmark.rgba
+file bootanim/out/fallback.zip etc/bootanim/fallback.zip
 # PipeWire, custom-HAL, detector, and snd-aloop files remain in the tree only;
 # the shipped implementation is BayLibre's generic AIDL audio APEX.
 
 file buildinfra/init/matonos-sleepd.rc etc/init/matonos-sleepd.rc
+file buildinfra/init/matonos-bootlogo.rc etc/init/matonos-bootlogo.rc
 file wifi/matonos-wifid.rc etc/init/matonos-wifid.rc
 file bluetooth/matonos-bluetooth.rc etc/init/matonos-bluetooth.rc
 file storage/matonos-linux-fs.rc etc/init/matonos-linux-fs.rc
