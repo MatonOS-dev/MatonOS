@@ -15,12 +15,16 @@ block radios, subscribe to hotplug, or poll sysfs. At its one-shot startup it
 looks for physical `phy80211` devices. If none exist, it asks init once to
 load `mac80211_hwsim` with its default one-radio parameter. This gives generic
 PCs a normal empty nl80211 `wlan0`; the fallback is never requested when a
-physical phy was present in the snapshot. A module-load failure leaves Wi-Fi
-unavailable and does not delay boot. Real adapter/interface choice remains
-the stock kernel/Android stack's responsibility.
+physical phy was present in the snapshot. The simulated radio keeps the stock
+Wi-Fi stack available for empty scans, but is not reported as physical
+hardware: `vendor.maton.wifi.present` remains `0`. The daemon does not start an
+AP. A module-load failure leaves Wi-Fi unavailable and does not delay boot.
+Real adapter/interface choice remains the stock kernel/Android stack's
+responsibility.
 
-The daemon publishes `vendor.maton.wifi.present` and retains
-`persist.vendor.maton.wifi.device` as the Settings selection preference.
+The daemon publishes `vendor.maton.wifi.present` as physical-radio presence
+and retains `persist.vendor.maton.wifi.device` as the Settings selection
+preference.
 `get_state`, `list_devices`, and `select_device` remain available on
 `/dev/socket/matonos/wifi`. Selection records a discovered physical device
 identifier; it does not rename or power-manage hardware. The process stays
@@ -32,6 +36,21 @@ when WifiService creates its STA interface. Init prepares its data directories
 before Settings requests Wi-Fi. The generic `CONFIG_DRIVER_NL80211` backend
 supports generic PC chipsets. `regulatory.db`, its signature, and the upstream
 license are staged from the pinned wireless-regdb release.
+
+Stock SoftAP uses AOSP's `hostapd` AIDL service. The `hostapd` module carries
+its init service and VINTF fragment; WifiService uses `wifi.interface=wlan0`.
+The stock Tethering Wi-Fi regex accepts `wlan0`. P2P is compiled into the
+stock supplicant; the framework defaults to `p2p0`, so no
+`wifi.direct.interface` override is needed. The Wi-Fi Direct feature is
+declared for capability discovery. No SoftAP overlay is needed for interface
+naming or the stock channel/security defaults.
+
+There is no zero-patch stock property that prevents WifiService from accepting
+an explicit hotspot request when only hwsim is present. The daemon does not
+create or start an AP, and its presence property stays false for hwsim, so
+MatonOS-owned controls can hide hotspot actions without physical hardware.
+Preventing the stock framework UI/API from starting hostapd on hwsim would need
+a framework gate; that behavior is dropped under the zero-AOSP-patch rule.
 
 ## Build and verification
 
@@ -51,12 +70,14 @@ cmd wifi status
 
 With no Wi-Fi device, verify boot reaches `sys.boot_completed=1`, the empty
 hwsim radio provides `wlan0` where the kernel module loads, Wi-Fi scans return
-no networks, and Developer options opens. If the module is unavailable, Wi-Fi
-should remain cleanly unavailable without affecting boot. With a physical
-adapter, verify the kernel's real interface is used and no hwsim radio appears
-beside it. Use Settings to enumerate and select a device, then verify the
-preference persists across reboot. On real hardware test scan, WPA2/WPA3
-connection, DHCP, DNS, Ethernet coexistence, and suspend/resume.
+no networks, `vendor.maton.wifi.present` remains `0`, and Developer options
+opens. If the module is unavailable, Wi-Fi should remain cleanly unavailable
+without affecting boot. With a physical adapter, verify the kernel's real
+interface is used and no hwsim radio appears beside it; `present` should be
+`1`. Use Settings to enumerate and select a device, then verify the preference
+persists across reboot. On real hardware test scan, WPA2/WPA3 connection, DHCP,
+DNS, Ethernet coexistence, and suspend/resume. Exercise hotspot and P2P only
+after confirming the radio's interface combinations with `iw list`.
 
 ### Hardware checklist
 
@@ -70,11 +91,14 @@ connection, DHCP, DNS, Ethernet coexistence, and suspend/resume.
 
 ## Open issues
 
-- This change still needs a fresh-image QEMU boot and physical adapter tests.
+- Hotspot, tether DHCP/NAT, and P2P still need fresh-image QEMU and physical
+  adapter tests.
 - The selection API stores a preference, while the stock stack chooses the
   active kernel interface; honoring multiple-adapter selection without
   renaming, rfkill, or a custom HAL needs a stock-stack mechanism.
 - Hotplug is left to the kernel and stock Wi-Fi stack; the daemon does not
   refresh its Settings device list after startup.
-- The WPA2 hwsim AP fixture is no longer part of this daemon.
+- hwsim can still be explicitly asked by stock WifiService to start an AP;
+  only MatonOS-owned hotspot controls can honor physical presence without an
+  AOSP framework change.
 - Update the regulatory database when the pinned kernel/regdb version changes.

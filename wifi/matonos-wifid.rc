@@ -23,7 +23,6 @@ on property:vendor.maton.wifi.hwsim.load=1
     start vendor.matonos-hwsim-loader
 
 on property:init.svc.vendor.matonos-hwsim-loader=stopped && property:vendor.maton.wifi.hwsim.load=1
-    setprop vendor.maton.wifi.present 1
     setprop vendor.maton.wifi.hwsim.load 0
 
 service vendor.matonos-hwsim-loader /vendor/bin/modprobe -d /vendor/lib/modules mac80211_hwsim radios=1
