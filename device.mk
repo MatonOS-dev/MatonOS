@@ -20,8 +20,11 @@ $(call inherit-product, frameworks/native/build/tablet-10in-xhdpi-2048-dalvik-he
 # present (frameworks/libs/binary_translation is supplied by the manifest).
 $(call inherit-product-if-exists, frameworks/libs/binary_translation/enable_arm64_to_x86_64.mk)
 # Our product keeps generic_system's artifact path requirement; Digitalis adds
-# system/ files and properties outside its own allowlist.
+# system/ files and properties outside its own allowlist. lib64/arm64 and
+# bin/arm64 hold only guest (native bridge) binaries.
 PRODUCT_ARTIFACT_PATH_REQUIREMENT_ALLOWED_LIST += \
+    system/lib64/arm64/% \
+    system/bin/arm64/% \
     system/lib/libberberis_exec_region.so \
     system/lib/libblasV8.so \
     system/lib64/libblasV8.so
