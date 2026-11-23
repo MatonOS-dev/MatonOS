@@ -201,3 +201,8 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Merged wip/efi-logo (bfd08b7a) + vold Linux-FS labels (102493e5) into wip/systemui-variant, pushed. dt-efilogo worktree removed.
 - pw-run (P4: daemons, SELinux, HAL registration, AOSP effect service, default on) running PID 277916.
 - BLOCKER: build server lacks python3-pil (bootlogo generator) and meson (PipeWire build); sudo helper gone — user asked to apt install. Next server build waits on it.
+
+## 15:22 hourly
+- Merged docs-caption-tray + pipewire-build (PipeWire HAL default ON, BayLibre APEX out, AOSP effect APEX in) → e86fecfc, pushed.
+- pw-p3 (device mirroring/hotplug/per-device boost + Settings page) running PID 380923, worktree dt-pwp3.
+- STILL BLOCKED: build server needs python3-pil + meson (user to apt install). Next build = first PipeWire image; VM checks listed in pw-run.report.md.
