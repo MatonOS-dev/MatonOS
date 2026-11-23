@@ -26,6 +26,9 @@ type MatonOSClientModule = NativeEvents<EventMap> & {
   finalizeUpdate(): Promise<CallResult>;
   getUpdateStatus(): Promise<CallResult>;
   isLiveImage(): Promise<boolean>;
+  pickAndInstallGapps(): Promise<{ cancelled?: boolean; ok?: boolean; message: string; installed?: string[] }>;
+  uninstallGappsUpdates(): Promise<{ ok: boolean; message: string }>;
+  getGappsDeviceId(): Promise<string>;
   getSystemInfo(): Promise<{
     version: string;
     build: string;
@@ -66,6 +69,9 @@ export const MatonOS = {
   getUpdateStatus: () => Native.getUpdateStatus(),
   isLiveImage: () => Native.isLiveImage(),
   getSystemInfo: () => Native.getSystemInfo(),
+  pickAndInstallGapps: () => Native.pickAndInstallGapps(),
+  uninstallGappsUpdates: () => Native.uninstallGappsUpdates(),
+  getGappsDeviceId: () => Native.getGappsDeviceId(),
   accountMachineInfo: () => Native.accountMachineInfo(),
   accountComplete: (username: string, email: string, token: string, refreshToken: string, machineId: string) => Native.accountComplete(username, email, token, refreshToken, machineId),
   accountInvalidate: (token: string) => Native.accountInvalidate(token),

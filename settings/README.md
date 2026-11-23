@@ -102,3 +102,15 @@ and fail-closed behavior before any write primitive is enabled.
    verification have passed.
 7. Repeat entry-point and hardware fallback checks on the Surface Pro 3 and
    HP ProDesk 600 G1.
+
+## Bring your own GApps
+
+The **Bring your own GApps** page starts with the fixed red risk warning and requires acknowledgement before it enables file selection or update removal. The page accepts user-selected APKs or zip archives, extracts flat and nested APK layouts plus LiteGapps `files/files.tar.xz`, checks each supported package for x86_64 native ABI, a version newer than the preinstalled stand-in, and Google's pinned signing lineage, then installs it through privileged PackageInstaller sessions. It also displays the Android ID used for uncertified-device registration. MatonOS does not ship, link to, host, or download Google APKs and does not claim Play certification or Play Integrity support.
+
+The current GMS image includes stand-ins for Play services and Play Store. It does not include a GsfProxy package, so a Google Services Framework APK cannot update a stand-in until the GMS integration restores that privileged package. This is recorded in `SHARED-CHANGES.md`; the approved `patches/frameworks/base/0003-pinned-gms-update.patch` already contains the GsfProxy-to-GSF signer transition.
+
+### Verification and hardware checks
+
+- Java installer/picker sources compile with `javac` against the Android 37 SDK jar and the XZ Java API; XML manifests and app config parse. TypeScript and ESLint checks require the worktree's missing `node_modules` and remain pending.
+- After the coordinator builds and boots a fresh image, acknowledge the warning, select a user-supplied x86_64 MindTheGapps zip, and confirm the UI reports separate ABI, version, and signing-lineage failures when given corresponding invalid packages. Confirm valid APKs install as updates and Google packages appear in Package Manager.
+- Confirm the device ID is visible, then use PackageInstaller's update removal action and verify the microG stand-ins are restored. Repeat on the Ryzen/RX 6600/Intel 7265 PC, Surface Pro 3, and HP ProDesk 600 G1; also verify the page is usable without GSF and the error explains its missing stand-in.
