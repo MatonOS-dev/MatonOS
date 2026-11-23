@@ -49,7 +49,30 @@ After the coordinator wires in the product rule and builds a fresh image:
 ## Open issues and verification
 
 - No AOSP patch, new daemon, SELinux policy, or kernel change is needed.
-- The product rule is intentionally not wired yet, so the animation has not
-  been tested in a booted image. A fresh image/QEMU run is deferred to the
-  coordinator's next build.
+- The static animation has not been validated in a fresh boot for this task.
 - No shared-file changes are requested.
+
+## Firmware logo handoff status (2026-11-23)
+
+Normal live and installed loader entries route kernel messages to serial and
+leave `tty0` out of the kernel console list. The kernel config already enables
+`CONFIG_ACPI_BGRT=y` and
+`CONFIG_FRAMEBUFFER_CONSOLE_DEFERRED_TAKEOVER=y`; debug entries explicitly add
+`console=tty0` and retain verbose kernel output. This avoids asking fbcon to
+take over the firmware framebuffer during normal boot. It still needs a fresh
+image boot to verify that OVMF and physical firmware preserve the image through
+the graphics handoff.
+
+The current stock bootanimation lookup checks the APEX ZIP,
+`/product/media/bootanimation.zip`, `/oem/media/bootanimation.zip`, then the
+system ZIP. It does not read an archive from `/data` or an arbitrary tmpfs path,
+and its ZIP frames cannot read BGRT sysfs at playback time. The existing
+`generate.py` only runs when building the static animation and therefore cannot
+compose a per-boot firmware bitmap. No BGRT composition service or SELinux
+changes are included yet. A stock-compatible follow-up can generate a ZIP at
+boot and expose it at `/oem/media/bootanimation.zip`; it needs a bounded BMP
+reader/PNG-ZIP writer, panel-size/position handling, an early non-blocking
+oneshot, and BGRT sysfs read policy. Until that exists, boots use the current
+static MatonOS animation.
+
+No image build, booted VM test, or hardware test was run for the loader change.

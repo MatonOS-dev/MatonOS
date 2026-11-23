@@ -135,9 +135,9 @@ info "super: $((super_size / 1048576)) MiB"
 
 # ---------------------------------------------------------------- ESP
 esp_uuid=$(cat /proc/sys/kernel/random/uuid)
-cmdline="console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet"
-# Keep the screen black until Android's boot animation: no blinking cursor, only
-# real errors, and the kernel console on a VT nobody looks at (serial keeps all).
+cmdline="console=ttyS0,115200 audit_backlog_limit=8192 quiet"
+# Keep kernel output on serial only during normal boot. CONFIG_FRAMEBUFFER_CONSOLE_DEFERRED_TAKEOVER
+# preserves the firmware framebuffer until userspace draws; debug entries add tty0 back.
 cmdline+=" loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6"
 cmdline+=" firmware_class.path=/vendor/firmware"
 cmdline+=" brd.rd_nr=2 brd.rd_size=16777216"
@@ -151,7 +151,7 @@ cmdline+=" androidboot.boot_part_uuid=$esp_uuid"
 avb_cmdline=$(avb_vbmeta_cmdline "$work/vbmeta.img" "$HOSTBIN/avbtool") || die "could not derive AVB boot parameters"
 cmdline+=" androidboot.selinux=$MATON_SELINUX_MODE $avb_cmdline"
 [[ -n $EXTRA_CMDLINE ]] && cmdline+=" $EXTRA_CMDLINE"
-debug_cmdline="loglevel=7 printk.devkmsg=on androidboot.console=ttyS0 vt.global_cursor_default=1 fbcon=vc:1-6"
+debug_cmdline="console=tty0 loglevel=7 printk.devkmsg=on androidboot.console=ttyS0 vt.global_cursor_default=1 fbcon=vc:1-6"
 
 info "Building ESP (${ESP_MIB} MiB)"
 esp=$work/esp.img
@@ -253,7 +253,7 @@ EOF
   # Installed systems do not use RAM-backed /data or /metadata. Keep the
   # ramN nodes absent so the live-only block labels cannot affect installed
   # boots. The kernel default creates RAM disks unless rd_nr is set to zero.
-  installed_a="console=ttyS0,115200 console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=0 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64.ssd androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=enforcing $avb_cmdline"
+  installed_a="console=ttyS0,115200 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware brd.rd_nr=0 androidboot.hardware=pc_x86_64 androidboot.fstab_suffix=pc_x86_64.ssd androidboot.slot_suffix=_a androidboot.matonos.live=0 androidboot.selinux=enforcing $avb_cmdline"
   installed_b=${installed_a/_a /_b }
   installed_a_hdd=${installed_a/pc_x86_64.ssd/pc_x86_64.hdd}
   installed_b_hdd=${installed_b/pc_x86_64.ssd/pc_x86_64.hdd}

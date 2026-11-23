@@ -30,7 +30,7 @@ source "$DEVICE_DIR/tools/selinux-boot.sh"
 OUT=""
 KERNEL=""
 BOOTEFI="/usr/lib/systemd/boot/efi/systemd-bootx64.efi"
-CMDLINE="console=tty0 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware androidboot.hardware=pc_x86_64"
+CMDLINE="console=ttyS0,115200 audit_backlog_limit=8192 quiet loglevel=3 vt.global_cursor_default=0 fbcon=vc:2-6 firmware_class.path=/vendor/firmware androidboot.hardware=pc_x86_64"
 PAYLOAD="$PWD/payload"
 SECURE_BOOT=0
 
@@ -158,7 +158,7 @@ cat > "$PAYLOAD/payload.conf" <<EOF
 ESP_SIZE_MIB=2048
 MIN_USERDATA_MIB=8192
 KERNEL_CMDLINE="$CMDLINE"
-DEBUG_CMDLINE="loglevel=7 printk.devkmsg=on vt.global_cursor_default=1 fbcon=vc:1-6"
+DEBUG_CMDLINE="console=tty0 loglevel=7 printk.devkmsg=on vt.global_cursor_default=1 fbcon=vc:1-6"
 SECURE_BOOT=$SECURE_BOOT
 EOF
 
