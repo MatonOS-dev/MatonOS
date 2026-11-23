@@ -123,7 +123,9 @@ int main() {
         if (__system_property_set(kHwsimLoad, "1") != 0) ALOGW("could not request hwsim fallback");
     }
     gSelected = GetProperty(kChoice);
-    gPresent = physical || fs::exists("/sys/module/mac80211_hwsim");
+    // hwsim only keeps the stock Wi-Fi stack usable for empty scans. It is not
+    // physical hardware and must not make hotspot controls appear available.
+    gPresent = physical;
     __system_property_set(kPresent, gPresent ? "1" : "0");
 
     gServer = matonos_ipc_create("wifi");

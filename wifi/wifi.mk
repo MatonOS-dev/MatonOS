@@ -3,6 +3,8 @@
 LOCAL_PATH := device/maton/pc_x86_64
 
 PRODUCT_PACKAGES += \
+    hostapd \
+    wpa_cli \
     wpa_supplicant \
     wificond
 
@@ -14,6 +16,7 @@ $(call soong_config_set_bool,wpa_supplicant_8,wifi_hidl_unified_supplicant_servi
 
 PRODUCT_COPY_FILES += \
     frameworks/native/data/etc/android.hardware.wifi.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.wifi.xml \
+    frameworks/native/data/etc/android.hardware.wifi.direct.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.wifi.direct.xml \
     $(LOCAL_PATH)/wifi/wpa_supplicant.conf:$(TARGET_COPY_OUT_VENDOR)/etc/wifi/wpa_supplicant.conf \
     $(LOCAL_PATH)/wifi/firmware/regulatory.db:$(TARGET_COPY_OUT_VENDOR)/firmware/regulatory.db \
     $(LOCAL_PATH)/wifi/firmware/regulatory.db.p7s:$(TARGET_COPY_OUT_VENDOR)/firmware/regulatory.db.p7s
