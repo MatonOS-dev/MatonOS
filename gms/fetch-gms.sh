@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 HERE=$(dirname "$(readlink -f "$0")")
 DEVICE_DIR=$(dirname "$HERE")
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+AOSP=${MATON_AOSP_ROOT:-$(readlink -f "$DEVICE_DIR/../../..")}
 JAVA=$AOSP/prebuilts/jdk/jdk21/linux-x86/bin/java
 APKSIGNER=$AOSP/prebuilts/sdk/tools/linux/lib/apksigner.jar
 LOCK=$HERE/gms.lock

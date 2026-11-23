@@ -1,0 +1,5 @@
+<permissions>
+    <!-- GsfProxy requests no Android privileged permissions. Keep the package
+         allowlist explicit so the privileged preinstall remains auditable. -->
+    <privapp-permissions package="com.google.android.gsf" />
+</permissions>

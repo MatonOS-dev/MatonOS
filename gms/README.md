@@ -1,6 +1,6 @@
 # microG and app installation
 
-MatonOS is based on AOSP. This area installs the hash-pinned, upstream microG GmsCore and Companion APKs as privileged product apps. `gms.lock` records their versions, APK SHA-256 values and actual signer digest; `fetch-gms.sh` verifies each download. GsfProxy is omitted (user 2026-11-19): only microG Services and its Companion ship.
+MatonOS is based on AOSP. This area installs hash-pinned, upstream microG GmsCore, Companion and GsfProxy APKs as privileged product apps. `gms.lock` records their versions, APK SHA-256 values and actual signer digest; `fetch-gms.sh` verifies each download. GsfProxy v8 is the small upstream legacy C2DM/GCM redirector; current GmsCore remains its destination service, rather than replacing that compatibility component.
 
 F-Droid Basic and Neo Store are not installed in the image. F-Droid Basic was removed on 2026-10-05 under the GPLv3 rule; the MatonOS software centre will provide that role later. The former Neo Store installer flow described in historical test records is not a current image feature.
 
@@ -15,6 +15,13 @@ Patch 0002 contains the PackageManager hook and policy-call diagnostics. The hoo
 The permission belongs to the platform `android` package. Declaring an `android.*` permission from the `org.matonos.systembridge` APK did not register it and the image omitted SystemBridge at runtime. The permission definition is therefore in the existing signature-spoofing patch's `framework-res` manifest hunk. GmsCore is listed in both the privileged permission allowlist and the default runtime permission grants. The Android platform permission policy disallows OEM apps from defining permissions in the `android` namespace; see the [AOSP permission policy test](https://android.googlesource.com/platform/cts/+/c72d7f99ecdef7c61117ad61967548ffb552dd02/tests/tests/permission2/src/android/permission2/cts/PermissionPolicyTest.java).
 
 ## Build and verify
+
+The GsfProxy stand-in is the official microG F-Droid artifact
+`com.google.android.gsf-8.apk` (versionCode 8), pinned by SHA-256 and signer
+in `gms.lock`. Its source is Apache-2.0 at
+`microg/android_packages_apps_GsfProxy`. The APK is not committed; run
+`gms/fetch-gms.sh` to stage and verify it. It requests no Android privileged
+permissions, but has an explicit empty privapp allowlist.
 
 The coordinator runs `gms/fetch-gms.sh`, applies the patches, and builds the image. `tools/preflight.sh` passed before the latest request. The 08:17 image built successfully, but a fresh QEMU run showed the permission was still missing (`DefaultPermGrantPolicy: Permission not found`) and `pm path org.matonos.systembridge` returned no package. The cause was the attempted OEM permission definition in the bridge manifest; that declaration has been removed and moved to `framework-res`. A corrected full-image build and fresh-boot verification are pending.
 
