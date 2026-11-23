@@ -1,6 +1,6 @@
-From edbb1d8e67e429d0adc9f656e07eff6d4d91fb06 Mon Sep 17 00:00:00 2001
+From 1c882ade8041547910018de48b5892156fbf6e39 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
-Date: Sun, 22 Nov 2026 23:46:58 +0200
+Date: Mon, 23 Nov 2026 02:22:21 +0200
 Subject: [PATCH] WM Shell: optional desktop caption provider hook
 
 Optional @DynamicOverride DesktopCaptionFactory lets a SystemUI variant host a caption
@@ -15,13 +15,14 @@ Claude-Session: https://claude.ai/code/session_01HaUq5t3s78G1bwWoNFi22L
  .../android/view/SurfaceControlViewHost.java  | 27 ++++++++++
  .../res/layout/desktop_mode_app_header.xml    | 21 ++++++--
  .../wm/shell/dagger/WMShellModule.java        | 14 ++++-
+ .../windowdecor/DefaultWindowDecoration.kt    |  6 +++
  .../windowdecor/DesktopCaptionFactory.java    | 37 +++++++++++++
- .../DesktopModeWindowDecorViewModel.java      |  7 +++
+ .../DesktopModeWindowDecorViewModel.java      | 10 +++-
  .../DesktopModeWindowDecoration.java          | 30 +++++++++++
- .../windowdecor/WindowDecorationWrapper.kt    |  4 ++
- .../caption/AppHeaderController.kt            |  7 ++-
+ .../windowdecor/WindowDecorationWrapper.kt    |  7 +++
+ .../caption/AppHeaderController.kt            | 22 +++++++-
  .../viewholder/AppHeaderViewHolder.kt         | 53 ++++++++++++++-----
- 10 files changed, 182 insertions(+), 21 deletions(-)
+ 11 files changed, 208 insertions(+), 22 deletions(-)
  create mode 100644 libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
 
 diff --git a/core/java/android/view/ISurfaceControlViewHost.aidl b/core/java/android/view/ISurfaceControlViewHost.aidl
@@ -185,6 +186,37 @@ index 237f47124837..30047901fa82 100644
      @WMSingleton
      @Provides
      static LockTaskChangeListener provideLockTaskChangeListener(ShellInit shellInit,
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
+index 2233fc581a63..acf1102fa4d6 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
+@@ -166,6 +166,7 @@ constructor(
+     val pinnedLayerController: PinnedLayerController?,
+     private val desktopTasksController: DesktopTasksController,
+     private val decorThemeUtilFactory: DecorThemeUtil.Factory,
++    private val desktopCaptionFactory: DesktopCaptionFactory? = null,
+ ) :
+     WindowDecoration2<WindowDecorLinearLayout>(
+         taskInfo,
+@@ -229,6 +230,10 @@ constructor(
+         decorThemeUtilFactory.create(context).getAppTheme(taskInfo)
+     }
+ 
++    /** Whether the app supplies its own caption content. */
++    fun isClientDecorated(): Boolean =
++        desktopCaptionFactory?.isClientDecorated(taskInfo) ?: false
++
+     init {
+         taskResourceLoader.onWindowDecorCreated(taskInfo)
+     }
+@@ -1097,6 +1102,7 @@ constructor(
+                     focusTransitionObserver = focusTransitionObserver,
+                     appHeaderViewHolderFactory = appHeaderViewHolderFactory,
+                     decorThemeUtilFactory = decorThemeUtilFactory,
++                    desktopCaptionFactory = desktopCaptionFactory,
+                 )
+             }
+ 
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
 new file mode 100644
 index 000000000000..3e1d77057444
@@ -229,7 +261,7 @@ index 000000000000..3e1d77057444
 +    boolean hasProviderCaption(RunningTaskInfo taskInfo);
 +}
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
-index 3633fdebb0b0..a31ba196f289 100644
+index 3633fdebb0b0..571a15f8ac98 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
 @@ -284,6 +284,12 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
@@ -245,7 +277,17 @@ index 3633fdebb0b0..a31ba196f289 100644
  
      private final LockTaskChangeListener mLockTaskChangeListener;
  
-@@ -1910,6 +1916,7 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+@@ -1868,7 +1874,8 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+                     mLockTaskChangeListener,
+                     mPinnedLayerController,
+                     mDesktopTasksController,
+-                    mDecorThemeUtilFactory);
++                    mDecorThemeUtilFactory,
++                    mDesktopCaptionFactory);
+             windowDecoration =
+                     mWindowDecoratioWrapperFactory.fromDefaultDecoration(defaultWindowDecoration);
+         } else {
+@@ -1910,6 +1917,7 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
                              mPinnedLayerController,
                              mDesktopTasksController,
                              mDecorThemeUtilFactory);
@@ -334,38 +376,91 @@ index 5b9a63dcce07..d93231dc6925 100644
                  isCaptionVisible()));
      }
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt
-index ed802273ef76..2e1d01fe24ab 100644
+index ed802273ef76..720ec5109d0b 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt
-@@ -140,6 +140,10 @@ private constructor(
+@@ -140,6 +140,13 @@ private constructor(
                  else -> error("Expected Non-null default or desktop window decoration")
              }
  
 +    /** Whether the app supplies its own caption content. */
 +    val isClientDecorated: Boolean
-+        get() = desktopWindowDecor?.isClientDecorated() ?: false
++        get() =
++            defaultWindowDecor?.isClientDecorated()
++                ?: desktopWindowDecor?.isClientDecorated()
++                ?: false
 +
      val layoutMenuController: LayoutMenuController?
          get() =
              when {
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/AppHeaderController.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/AppHeaderController.kt
-index 036ba0cf5a52..d5276dd1af7e 100644
+index 036ba0cf5a52..6425db5bd0e5 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/AppHeaderController.kt
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/caption/AppHeaderController.kt
-@@ -602,8 +602,11 @@ class AppHeaderController(
+@@ -27,6 +27,7 @@ import android.view.MotionEvent
+ import android.view.SurfaceControl
+ import android.view.View
+ import android.view.View.OnLongClickListener
++import android.view.ViewGroup
+ import android.view.WindowInsets
+ import android.window.TaskSnapshot
+ import android.window.WindowContainerTransaction
+@@ -58,6 +59,7 @@ import com.android.wm.shell.splitscreen.SplitScreenController
+ import com.android.wm.shell.transition.FocusTransitionObserver
+ import com.android.wm.shell.transition.Transitions
+ import com.android.wm.shell.windowdecor.DefaultLayoutMenuFactory
++import com.android.wm.shell.windowdecor.DesktopCaptionFactory
+ import com.android.wm.shell.windowdecor.DesktopHeaderManageWindowsMenu
+ import com.android.wm.shell.windowdecor.HandleMenu
+ import com.android.wm.shell.windowdecor.HandleMenu.Companion.shouldShowChangeAspectRatioButton
+@@ -133,6 +135,7 @@ class AppHeaderController(
+         SurfaceControl.Transaction()
+     },
+     private val decorThemeUtilFactory: DecorThemeUtil.Factory,
++    private val desktopCaptionFactory: DesktopCaptionFactory? = null,
+ ) :
+     CaptionController<WindowDecorLinearLayout>(
+         taskInfo,
+@@ -241,6 +244,15 @@ class AppHeaderController(
+ 
+             updateViewHolder(params.hasGlobalFocus)
+ 
++            desktopCaptionFactory?.bindCaption(
++                decorWindowContext,
++                viewHolder.rootView.requireViewById<ViewGroup>(R.id.caption_provider_slot),
++                taskInfo,
++                windowDecorationActions,
++                captionLayout.captionWidth,
++                captionLayout.captionHeight,
++            )
++
+             notifyCaptionStateChanged()
+             return captionLayout
+         }
+@@ -602,8 +614,13 @@ class AppHeaderController(
                      isTaskMaximized(taskInfo, displayLayout),
                      inFullImmersive,
                      hasGlobalFocus,
 -                    canOpenLayoutMenu(animatingTaskResizeOrReposition),
 -                    isCaptionVisible,
-+                    isClientDecorated = false,
-+                    hasProviderCaption = false,
-+                    useImmersiveMaximize = false,
++                    isClientDecorated =
++                        desktopCaptionFactory?.isClientDecorated(taskInfo) ?: false,
++                    hasProviderCaption =
++                        desktopCaptionFactory?.hasProviderCaption(taskInfo) ?: false,
++                    useImmersiveMaximize = desktopCaptionFactory != null,
 +                    enableMaximizeLongClick = canOpenLayoutMenu(animatingTaskResizeOrReposition),
 +                    isCaptionVisible = isCaptionVisible,
                  )
              )
          }
+@@ -712,6 +729,7 @@ class AppHeaderController(
+ 
+     override fun close(wct: WindowContainerTransaction, t: SurfaceControl.Transaction): Boolean {
+         loadAppInfoJob?.cancel()
++        desktopCaptionFactory?.unbindCaption(taskInfo.taskId)
+         closeHandleMenu()
+         closeManageWindowsMenu()
+         closeLayoutMenu()
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
 index 747f5f7820df..dd52159f1343 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
