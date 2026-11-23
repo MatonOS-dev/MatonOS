@@ -14,6 +14,13 @@
             <instance>r_submix</instance>
             <instance>usb</instance>
             <instance>stub</instance>
+            <instance>bluetooth</instance>
         </interface>
+    </hal>
+    <!-- AOSP Bluetooth audio provider, registered inside the audio HAL. -->
+    <hal format="aidl">
+        <name>android.hardware.bluetooth.audio</name>
+        <version>6</version>
+        <fqname>IBluetoothAudioProviderFactory/default</fqname>
     </hal>
 </manifest>

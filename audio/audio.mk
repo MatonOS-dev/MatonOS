@@ -4,10 +4,10 @@
 PRODUCT_PACKAGES := $(filter-out com.android.hardware.audio,$(PRODUCT_PACKAGES))
 PRODUCT_PACKAGES += com.android.hardware.audio.generic
 
-# Keep ODM and vendor fallback policy copies aligned with the HAL's modules.
+# Keep ODM and vendor fallback policy copies aligned with the HAL's modules,
+# including the controller-independent Bluetooth audio module.
 
-# Keep the vendor fallback policy aligned with the ODM policy. Bluetooth audio
-# is disabled; do not copy the AOSP A2DP/LE Audio module configuration.
+# Keep the vendor fallback policy aligned with the ODM policy.
 PRODUCT_COPY_FILES := $(filter-out \
     frameworks/av/services/audiopolicy/config/audio_policy_configuration_generic.xml:% \
     frameworks/av/services/audiopolicy/config/primary_audio_policy_configuration.xml:% \

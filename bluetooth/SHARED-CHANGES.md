@@ -10,5 +10,6 @@ Please update the system bridge in its owned directory:
    retired target cannot be trusted or called.
 
 No app-side typed Bluetooth wrapper or adapter picker exists in this checkout.
-There is no audio code dependency on `vendor.maton.bluetooth.present`; the
-audio policy continues to omit Bluetooth audio (deferred to v5).
+There is no audio code dependency on `vendor.maton.bluetooth.present`. Audio
+now uses the static stock A2DP/LE Audio module and provider; it does not need a
+Bluetooth control channel or a bridge API.
