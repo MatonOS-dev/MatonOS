@@ -218,3 +218,8 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Merged wip/byo-gapps (5aaebae9; fixed device ID → GSF gservices android_id). Open: no GSF stand-in → gsf-standin round PID see log.
 - hotspot scope done (no AOSP patch needed); hotspot1 round (stock hostapd/P2P wiring + hwsim VM plan) running.
 - Worktrees 4/4: main, dt-fdroid, dt-hotspot, dt-gsf.
+
+## 18:22 hourly
+- build-84 failed: file_contexts clash /oem(/.*)? vs AOSP oemfs → bootlogo labels only /oem/media (842c2ad9). build-85 running.
+- Merged gsf-standin (872412f0: pinned microG GsfProxy v8, GappsInstaller reads real versions) and hotspot (b46312a2: stock hostapd + wpa_cli + wifi.direct; wifi.present = physical only). Hotspot VM plan in out/pc-logs/agents/hotspot1.report.md (hwsim radios=2; DHCP needs a test helper). Limit: stock framework can still start AP on hwsim (zero-patch rule).
+- Started cleanup1 (privapp allowlist single source + stale TITLE-BARS/NOTES tray docs, dt-cleanup) and libcamera-scope (report only).
