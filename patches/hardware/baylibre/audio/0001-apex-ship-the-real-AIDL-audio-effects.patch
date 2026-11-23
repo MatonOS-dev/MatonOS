@@ -1,0 +1,21 @@
+diff --git a/apex/com.android.hardware.audio/Android.bp b/apex/com.android.hardware.audio/Android.bp
+index 507f2e0..bd06c8c 100644
+--- a/apex/com.android.hardware.audio/Android.bp
++++ b/apex/com.android.hardware.audio/Android.bp
+@@ -35,6 +35,16 @@ apex {
+         "libvisualizersw_generic",
+         "libvolumesw_generic",
+         "libeffectconfig_generic",
++        // Real AOSP AIDL effects (the *sw_generic ones copy input to output);
++        // device/maton/pc_x86_64/audio/effects/audio_effects_config.xml uses them.
++        "libbundleaidl",
++        "libdownmixaidl",
++        "libdynamicsprocessingaidl",
++        "libhapticgeneratoraidl",
++        "libloudnessenhanceraidl",
++        "libpreprocessingaidl",
++        "libreverbaidl",
++        "libvisualizeraidl",
+     ],
+     prebuilts: [
+         "android.hardware.audio.service-aidl.generic.rc",

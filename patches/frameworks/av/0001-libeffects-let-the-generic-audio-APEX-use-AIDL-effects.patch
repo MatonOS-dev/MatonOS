@@ -1,0 +1,86 @@
+diff --git a/media/libeffects/downmix/Android.bp b/media/libeffects/downmix/Android.bp
+index 29c2774315..b1b828a807 100644
+--- a/media/libeffects/downmix/Android.bp
++++ b/media/libeffects/downmix/Android.bp
+@@ -70,5 +70,6 @@ cc_library_shared {
+     relative_install_path: "soundfx",
+     visibility: [
+         "//hardware/interfaces/audio/aidl/default:__subpackages__",
++        "//hardware/baylibre/audio:__subpackages__",
+     ],
+ }
+diff --git a/media/libeffects/dynamicsproc/Android.bp b/media/libeffects/dynamicsproc/Android.bp
+index 3166111e7f..ea7469d7b3 100644
+--- a/media/libeffects/dynamicsproc/Android.bp
++++ b/media/libeffects/dynamicsproc/Android.bp
+@@ -95,5 +95,6 @@ cc_library_shared {
+ 
+     visibility: [
+         "//hardware/interfaces/audio/aidl/default:__subpackages__",
++        "//hardware/baylibre/audio:__subpackages__",
+     ],
+ }
+diff --git a/media/libeffects/hapticgenerator/Android.bp b/media/libeffects/hapticgenerator/Android.bp
+index 794719408d..5f6c9d7bcb 100644
+--- a/media/libeffects/hapticgenerator/Android.bp
++++ b/media/libeffects/hapticgenerator/Android.bp
+@@ -90,5 +90,6 @@ cc_library_shared {
+ 
+     visibility: [
+         "//hardware/interfaces/audio/aidl/default:__subpackages__",
++        "//hardware/baylibre/audio:__subpackages__",
+     ],
+ }
+diff --git a/media/libeffects/loudness/Android.bp b/media/libeffects/loudness/Android.bp
+index 2aad421c52..16b2cc3253 100644
+--- a/media/libeffects/loudness/Android.bp
++++ b/media/libeffects/loudness/Android.bp
+@@ -71,5 +71,6 @@ cc_library_shared {
+     relative_install_path: "soundfx",
+     visibility: [
+         "//hardware/interfaces/audio/aidl/default:__subpackages__",
++        "//hardware/baylibre/audio:__subpackages__",
+     ],
+ }
+diff --git a/media/libeffects/lvm/wrapper/Android.bp b/media/libeffects/lvm/wrapper/Android.bp
+index d0553685ee..13b174f225 100644
+--- a/media/libeffects/lvm/wrapper/Android.bp
++++ b/media/libeffects/lvm/wrapper/Android.bp
+@@ -130,6 +130,7 @@ cc_library_shared {
+     relative_install_path: "soundfx",
+     visibility: [
+         "//hardware/interfaces/audio/aidl/default:__subpackages__",
++        "//hardware/baylibre/audio:__subpackages__",
+     ],
+ }
+ 
+@@ -160,5 +161,6 @@ cc_library_shared {
+     relative_install_path: "soundfx",
+     visibility: [
+         "//hardware/interfaces/audio/aidl/default:__subpackages__",
++        "//hardware/baylibre/audio:__subpackages__",
+     ],
+ }
+diff --git a/media/libeffects/preprocessing/Android.bp b/media/libeffects/preprocessing/Android.bp
+index 01fa47b1d8..94cfa78d8e 100644
+--- a/media/libeffects/preprocessing/Android.bp
++++ b/media/libeffects/preprocessing/Android.bp
+@@ -92,5 +92,6 @@ cc_library_shared {
+     relative_install_path: "soundfx",
+     visibility: [
+         "//hardware/interfaces/audio/aidl/default:__subpackages__",
++        "//hardware/baylibre/audio:__subpackages__",
+     ],
+ }
+diff --git a/media/libeffects/visualizer/Android.bp b/media/libeffects/visualizer/Android.bp
+index 5cbcab3c36..97ada547e4 100644
+--- a/media/libeffects/visualizer/Android.bp
++++ b/media/libeffects/visualizer/Android.bp
+@@ -71,6 +71,7 @@ cc_library_shared {
+     relative_install_path: "soundfx",
+     visibility: [
+         "//hardware/interfaces/audio/aidl/default:__subpackages__",
++        "//hardware/baylibre/audio:__subpackages__",
+     ],
+ }
+ 
