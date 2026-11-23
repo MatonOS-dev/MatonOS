@@ -1,6 +1,6 @@
-From 1c882ade8041547910018de48b5892156fbf6e39 Mon Sep 17 00:00:00 2001
+From 8b42ec4768877c362216e0b4e10c18aed87543ce Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
-Date: Mon, 23 Nov 2026 02:22:21 +0200
+Date: Mon, 23 Nov 2026 03:30:07 +0200
 Subject: [PATCH] WM Shell: optional desktop caption provider hook
 
 Optional @DynamicOverride DesktopCaptionFactory lets a SystemUI variant host a caption
@@ -15,14 +15,14 @@ Claude-Session: https://claude.ai/code/session_01HaUq5t3s78G1bwWoNFi22L
  .../android/view/SurfaceControlViewHost.java  | 27 ++++++++++
  .../res/layout/desktop_mode_app_header.xml    | 21 ++++++--
  .../wm/shell/dagger/WMShellModule.java        | 14 ++++-
- .../windowdecor/DefaultWindowDecoration.kt    |  6 +++
+ .../windowdecor/DefaultWindowDecoration.kt    |  8 +++
  .../windowdecor/DesktopCaptionFactory.java    | 37 +++++++++++++
- .../DesktopModeWindowDecorViewModel.java      | 10 +++-
+ .../DesktopModeWindowDecorViewModel.java      |  8 +++
  .../DesktopModeWindowDecoration.java          | 30 +++++++++++
  .../windowdecor/WindowDecorationWrapper.kt    |  7 +++
  .../caption/AppHeaderController.kt            | 22 +++++++-
  .../viewholder/AppHeaderViewHolder.kt         | 53 ++++++++++++++-----
- 11 files changed, 208 insertions(+), 22 deletions(-)
+ 11 files changed, 209 insertions(+), 21 deletions(-)
  create mode 100644 libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
 
 diff --git a/core/java/android/view/ISurfaceControlViewHost.aidl b/core/java/android/view/ISurfaceControlViewHost.aidl
@@ -187,21 +187,16 @@ index 237f47124837..30047901fa82 100644
      @Provides
      static LockTaskChangeListener provideLockTaskChangeListener(ShellInit shellInit,
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
-index 2233fc581a63..acf1102fa4d6 100644
+index 2233fc581a63..0170b1a918bc 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
-@@ -166,6 +166,7 @@ constructor(
-     val pinnedLayerController: PinnedLayerController?,
-     private val desktopTasksController: DesktopTasksController,
-     private val decorThemeUtilFactory: DecorThemeUtil.Factory,
-+    private val desktopCaptionFactory: DesktopCaptionFactory? = null,
- ) :
-     WindowDecoration2<WindowDecorLinearLayout>(
-         taskInfo,
-@@ -229,6 +230,10 @@ constructor(
+@@ -229,6 +229,13 @@ constructor(
          decorThemeUtilFactory.create(context).getAppTheme(taskInfo)
      }
  
++    /** Optional caption provider; set by the view model right after construction. */
++    var desktopCaptionFactory: DesktopCaptionFactory? = null
++
 +    /** Whether the app supplies its own caption content. */
 +    fun isClientDecorated(): Boolean =
 +        desktopCaptionFactory?.isClientDecorated(taskInfo) ?: false
@@ -209,7 +204,7 @@ index 2233fc581a63..acf1102fa4d6 100644
      init {
          taskResourceLoader.onWindowDecorCreated(taskInfo)
      }
-@@ -1097,6 +1102,7 @@ constructor(
+@@ -1097,6 +1104,7 @@ constructor(
                      focusTransitionObserver = focusTransitionObserver,
                      appHeaderViewHolderFactory = appHeaderViewHolderFactory,
                      decorThemeUtilFactory = decorThemeUtilFactory,
@@ -261,7 +256,7 @@ index 000000000000..3e1d77057444
 +    boolean hasProviderCaption(RunningTaskInfo taskInfo);
 +}
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
-index 3633fdebb0b0..571a15f8ac98 100644
+index 3633fdebb0b0..2aba77cf8bf4 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
 @@ -284,6 +284,12 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
@@ -277,13 +272,11 @@ index 3633fdebb0b0..571a15f8ac98 100644
  
      private final LockTaskChangeListener mLockTaskChangeListener;
  
-@@ -1868,7 +1874,8 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
-                     mLockTaskChangeListener,
+@@ -1869,6 +1875,7 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
                      mPinnedLayerController,
                      mDesktopTasksController,
--                    mDecorThemeUtilFactory);
-+                    mDecorThemeUtilFactory,
-+                    mDesktopCaptionFactory);
+                     mDecorThemeUtilFactory);
++            defaultWindowDecoration.setDesktopCaptionFactory(mDesktopCaptionFactory);
              windowDecoration =
                      mWindowDecoratioWrapperFactory.fromDefaultDecoration(defaultWindowDecoration);
          } else {
