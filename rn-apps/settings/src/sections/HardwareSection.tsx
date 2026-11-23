@@ -52,6 +52,27 @@ export function HardwareSection() {
     : hardware.battery.present
       ? `${hardware.battery.level}%${hardware.battery.charging ? " · charging" : ""}`
       : copy.notDetected;
+  const audioDeviceRows = audioDevices.map((device) => (
+    <Column key={device.id} modifiers={[fillMaxWidth()]} verticalArrangement={{ spacedBy: 6 }}>
+      <Text style={{ typography: "titleMedium" }} color={colors.onSurface}>
+        {device.name}: {device.multiplier.toFixed(2)}×
+      </Text>
+      <Slider
+        value={Math.round(device.multiplier * 100)}
+        min={50}
+        max={150}
+        steps={99}
+        onValueChange={(value) => updateDeviceBoost(device.id, value / 100)}
+      />
+    </Column>
+  ));
+  if (audioDeviceRows.length === 0) {
+    audioDeviceRows.push(
+      <Text key="none" style={{ typography: "bodySmall" }} color={colors.onSurfaceVariant}>
+        {copy.noAudioDevices}
+      </Text>,
+    );
+  }
   const powerStatus = hardware?.battery.pluggedIn
     ? copy.connectedToPower
     : copy.batteryOrDesktop;
@@ -106,24 +127,7 @@ export function HardwareSection() {
         </SettingsCard>
         <SettingsCard title={copy.audioGraphics}>
           <StatusRow label={copy.audioOutput} value={audioStatus} />
-          {audioDevices.length === 0 ? (
-            <Text style={{ typography: "bodySmall" }} color={colors.onSurfaceVariant}>
-              {copy.noAudioDevices}
-            </Text>
-          ) : audioDevices.map((device) => (
-            <Column key={device.id} modifiers={[fillMaxWidth()]} verticalArrangement={{ spacedBy: 6 }}>
-              <Text style={{ typography: "titleMedium" }} color={colors.onSurface}>
-                {device.name}: {device.multiplier.toFixed(2)}×
-              </Text>
-              <Slider
-                value={Math.round(device.multiplier * 100)}
-                min={50}
-                max={150}
-                steps={99}
-                onValueChange={(value) => updateDeviceBoost(device.id, value / 100)}
-              />
-            </Column>
-          ))}
+          {audioDeviceRows}
           <StatusRow label={copy.graphicsRenderer} value={graphicsStatus} />
         </SettingsCard>
         <SettingsCard title={copy.camera}>
