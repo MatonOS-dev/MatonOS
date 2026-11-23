@@ -28,8 +28,8 @@ for y in range(wh):
     a=255 if (x+y)%4 else 0; data += bytes((255,255,255,a))
 (p/'wordmark/wordmark.rgba').write_bytes(b'MRGBA1\0'+b'\0'+struct.pack('<II',ww,wh)+data)
 PY
-cc -std=c11 -Wall -Wextra -Werror -O2 "$ROOT/native/matonos-efi-logo2/matonos-efi-logo2.c" -o "$WORK/matonos-efi-logo2"
-"$WORK/matonos-efi-logo2" --root "$WORK/sys" --output "$WORK/bootanimation.zip" --wordmark "$WORK/wordmark/wordmark.rgba"
+cc -std=c11 -Wall -Wextra -Werror -O2 "$ROOT/native/matonos-bootlogo/matonos-bootlogo.c" -o "$WORK/matonos-bootlogo"
+"$WORK/matonos-bootlogo" --root "$WORK/sys" --output "$WORK/bootanimation.zip" --wordmark "$WORK/wordmark/wordmark.rgba"
 unzip -t "$WORK/bootanimation.zip"
 python3 - "$WORK/bootanimation.zip" <<'PY'
 import io,struct,sys,zipfile
@@ -49,18 +49,18 @@ pixels=b''.join(bytes((30,120,240,255)) for _ in range(w*h)); off=54
 bmp=b'BM'+struct.pack('<IHHI',off+len(pixels),0,0,off)+struct.pack('<IiiHHIIiiII',40,w,-h,1,32,0,len(pixels),2835,2835,0,0)+pixels
 (p/'sys/sys/firmware/acpi/bgrt/image').write_bytes(bmp)
 PY32
-"$WORK/matonos-efi-logo2" --root "$WORK/sys" --output "$WORK/bootanimation-32bit.zip" --wordmark "$WORK/wordmark/wordmark.rgba"
+"$WORK/matonos-bootlogo" --root "$WORK/sys" --output "$WORK/bootanimation-32bit.zip" --wordmark "$WORK/wordmark/wordmark.rgba"
 unzip -t "$WORK/bootanimation-32bit.zip"
 
 # Missing BGRT is a normal no-output fallback, not an error.
 mkdir -p "$WORK/no-bgrt"
 printf 'static-fallback' > "$WORK/no-bgrt.zip"
-"$WORK/matonos-efi-logo2" --root "$WORK/no-bgrt" --output "$WORK/no-bgrt.zip" --wordmark "$WORK/wordmark/wordmark.rgba"
+"$WORK/matonos-bootlogo" --root "$WORK/no-bgrt" --output "$WORK/no-bgrt.zip" --wordmark "$WORK/wordmark/wordmark.rgba"
 test "$(cat "$WORK/no-bgrt.zip")" = static-fallback
 # Malformed BGRT must report failure while preserving the staged fallback.
 printf '1\n' > "$WORK/sys/sys/firmware/acpi/bgrt/status"
 printf 'not-a-bmp' > "$WORK/sys/sys/firmware/acpi/bgrt/image"
-if "$WORK/matonos-efi-logo2" --root "$WORK/sys" --output "$WORK/no-bgrt.zip" --wordmark "$WORK/wordmark/wordmark.rgba"; then
+if "$WORK/matonos-bootlogo" --root "$WORK/sys" --output "$WORK/no-bgrt.zip" --wordmark "$WORK/wordmark/wordmark.rgba"; then
   echo 'expected malformed BMP to fail' >&2; exit 1
 fi
 test "$(cat "$WORK/no-bgrt.zip")" = static-fallback

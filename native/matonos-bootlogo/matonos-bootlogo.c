@@ -19,7 +19,7 @@
 #define FRAME_COUNT 4
 #define FPS 8
 
-static const char *prog = "matonos-efi-logo2";
+static const char *prog = "matonos-bootlogo";
 static void logmsg(const char *level, const char *fmt, ...) {
     va_list ap;
     fprintf(stderr, "%s: %s: ", prog, level);

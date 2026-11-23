@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22)
+project(matonos-bootlogo C)
+add_executable(matonos-bootlogo matonos-bootlogo.c)
+target_compile_options(matonos-bootlogo PRIVATE -Wall -Wextra -Werror -O2)
+install(TARGETS matonos-bootlogo RUNTIME DESTINATION bin)

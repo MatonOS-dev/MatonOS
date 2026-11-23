@@ -2,17 +2,18 @@
 # runs before init's on boot action starts the core class. exec_start waits for
 # this bounded, oneshot service to finish; missing BGRT is a quiet fallback.
 on early-init
+    mount tmpfs tmpfs /oem nodev nosuid noexec mode=0755
+    restorecon /oem
     mkdir /oem/media 0755 root root
+    restorecon /oem/media
 
 on post-fs
-    mount tmpfs tmpfs /oem/media nodev nosuid noexec mode=0755
-    restorecon /oem/media
     copy /odm/etc/bootanim/fallback.zip /oem/media/bootanimation.zip
     restorecon /oem/media/bootanimation.zip
     chmod 0644 /oem/media/bootanimation.zip
-    exec_start matonos-efi-logo2
+    exec_start matonos-bootlogo
 
-service matonos-efi-logo2 /odm/bin/matonos-efi-logo2
+service matonos-bootlogo /odm/bin/matonos-bootlogo
     class core
     user root
     group root

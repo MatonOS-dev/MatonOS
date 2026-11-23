@@ -120,7 +120,7 @@ def write_animation(out: Path, frames: list[Image.Image], fps: int) -> None:
     desc = f"{size[0]} {size[1]} {fps}\np 0 0 part0\n"
     (out / "desc.txt").write_text(desc, encoding="ascii")
 
-    archive = out / "bootanimation.zip"
+    archive = out / "fallback.zip"
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as bundle:
         bundle.write(out / "desc.txt", "desc.txt")
         for path in sorted(part.glob("*.png")):

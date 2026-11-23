@@ -375,27 +375,27 @@ allow matonos_driver_helper sysfs:file r_file_perms;
 
 # Boot animation composer: reads only ACPI BGRT and connected DRM mode sysfs,
 # plus the immutable generated wordmark; writes a ZIP into the init-mounted OEM tmpfs.
-type matonos_bootanim_composer, domain;
-type matonos_bootanim_composer_exec, exec_type, vendor_file_type, file_type;
-type matonos_bootanim_file, file_type;
-init_daemon_domain(matonos_bootanim_composer)
-allow init matonos_bootanim_file:dir { create_dir_perms mounton relabelto relabelfrom };
-allow init matonos_bootanim_file:file { create_file_perms relabelto relabelfrom };
+type matonos_bootlogo, domain;
+type matonos_bootlogo_exec, exec_type, vendor_file_type, file_type;
+type matonos_bootlogo_file, file_type;
+init_daemon_domain(matonos_bootlogo)
+allow init matonos_bootlogo_file:dir { create_dir_perms mounton relabelto relabelfrom };
+allow init matonos_bootlogo_file:file { create_file_perms relabelto relabelfrom };
 allow init vendor_configs_file:dir r_dir_perms;
 allow init vendor_configs_file:file r_file_perms;
-allow matonos_bootanim_composer sysfs:dir { search getattr open read };
-allow matonos_bootanim_composer sysfs:lnk_file { getattr read };
+allow matonos_bootlogo sysfs:dir { search getattr open read };
+allow matonos_bootlogo sysfs:lnk_file { getattr read };
 # DRM connector sysfs nodes are dynamically rooted below PCI devices, so their
 # mode attributes retain the generic sysfs label; this daemon only reads them.
-allow matonos_bootanim_composer sysfs:file r_file_perms;
-allow matonos_bootanim_composer sysfs_bgrt:dir r_dir_perms;
-allow matonos_bootanim_composer sysfs_bgrt:file r_file_perms;
-allow matonos_bootanim_composer vendor_configs_file:dir r_dir_perms;
-allow matonos_bootanim_composer vendor_configs_file:file r_file_perms;
-allow matonos_bootanim_composer matonos_bootanim_file:dir { create_dir_perms search };
-allow matonos_bootanim_composer matonos_bootanim_file:file create_file_perms;
-type_transition matonos_bootanim_composer matonos_bootanim_file:file matonos_bootanim_file;
-allow bootanim matonos_bootanim_file:dir r_dir_perms;
-allow bootanim matonos_bootanim_file:file r_file_perms;
+allow matonos_bootlogo sysfs:file r_file_perms;
+allow matonos_bootlogo sysfs_bgrt:dir r_dir_perms;
+allow matonos_bootlogo sysfs_bgrt:file r_file_perms;
+allow matonos_bootlogo vendor_configs_file:dir r_dir_perms;
+allow matonos_bootlogo vendor_configs_file:file r_file_perms;
+allow matonos_bootlogo matonos_bootlogo_file:dir { create_dir_perms search };
+allow matonos_bootlogo matonos_bootlogo_file:file create_file_perms;
+type_transition matonos_bootlogo matonos_bootlogo_file:file matonos_bootlogo_file;
+allow bootanim matonos_bootlogo_file:dir r_dir_perms;
+allow bootanim matonos_bootlogo_file:file r_file_perms;
 # The BGRT subtree gets a dedicated sysfs type so only the compositor reads it.
 type sysfs_bgrt, fs_type, sysfs_type;
