@@ -25,6 +25,7 @@ namespace matonos::sensors {
 using aidl::android::hardware::common::fmq::MQDescriptor;
 using aidl::android::hardware::common::fmq::SynchronizedReadWrite;
 using EventPayload = aidl::android::hardware::sensors::Event::EventPayload;
+using ::android::status_t;
 
 Sensors::Sensors() : mAccelerometer(IioAccelerometer::discover(this)) {
     if (mAccelerometer) {
