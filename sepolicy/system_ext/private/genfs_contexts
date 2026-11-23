@@ -1,0 +1,6 @@
+# Removable-disk filesystems without xattr labels (patches/system/vold):
+# label them like vfat public volumes.
+genfscon ntfs3 / u:object_r:vfat:s0
+genfscon iso9660 / u:object_r:vfat:s0
+genfscon udf / u:object_r:vfat:s0
+genfscon hfsplus / u:object_r:vfat:s0

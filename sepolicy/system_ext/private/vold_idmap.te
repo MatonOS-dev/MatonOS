@@ -2,3 +2,9 @@
 # volumes. A forked vold child creates an empty user namespace; vold writes its
 # uid/gid maps and passes /proc/<child>/ns/user to mount_setattr.
 allow vold self:user_namespace create;
+
+# Linux filesystems on removable disks get the same label as vfat public
+# volumes, so MediaProvider/FUSE policy is unchanged. ext*/btrfs/xfs/f2fs are
+# mounted with context=u:object_r:vfat:s0 (their own xattr labels are foreign).
+allow vold labeledfs:filesystem relabelfrom;
+allow vold vfat:filesystem relabelto;

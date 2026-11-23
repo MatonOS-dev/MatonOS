@@ -1,4 +1,4 @@
-From 3d60db5ad766fd86a965114704b77fae2624c71b Mon Sep 17 00:00:00 2001
+From b35705b0095bf34c47ce0c3c09b51c4f6a35b7af Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
 Date: Mon, 23 Nov 2026 11:33:19 +0200
 Subject: [PATCH] Add Linux filesystems to public volumes
@@ -7,24 +7,15 @@ Task: vold-fs
 Agent: Codex
 Change-Id: Iecb4366e1f5605e0279387e46512188cf533a07b
 ---
- model/PublicVolume.cpp | 273 ++++++++++++++++++++++++++++++++++++++---
+ model/PublicVolume.cpp | 271 ++++++++++++++++++++++++++++++++++++++---
  model/PublicVolume.h   |   2 +
- 2 files changed, 255 insertions(+), 20 deletions(-)
+ 2 files changed, 253 insertions(+), 20 deletions(-)
 
 diff --git a/model/PublicVolume.cpp b/model/PublicVolume.cpp
-index 5a30fca..ff477e9 100644
+index 5a30fca..2723ff4 100644
 --- a/model/PublicVolume.cpp
 +++ b/model/PublicVolume.cpp
-@@ -20,6 +20,8 @@
- #include "Utils.h"
- #include "VolumeManager.h"
- #include "fs/Exfat.h"
-+#include "fs/Ext4.h"
-+#include "fs/F2fs.h"
- #include "fs/Vfat.h"
- 
- #include <android-base/logging.h>
-@@ -29,13 +31,22 @@
+@@ -29,13 +29,22 @@
  #include <private/android_filesystem_config.h>
  #include <utils/Timers.h>
  
@@ -47,7 +38,7 @@ index 5a30fca..ff477e9 100644
  #include <android_vold_flags.h>
  
  using android::base::GetBoolProperty;
-@@ -45,6 +56,160 @@ namespace flags = android::vold::flags;
+@@ -45,6 +54,160 @@ namespace flags = android::vold::flags;
  namespace android {
  namespace vold {
  
@@ -196,10 +187,10 @@ index 5a30fca..ff477e9 100644
 +
 +static status_t MountUnixFilesystem(const std::string& fsType, const std::string& source,
 +                                    const std::string& target) {
-+    if (fsType == "ext4") return ext4::Mount(source, target, false, false, false);
-+    if (fsType == "f2fs") return f2fs::Mount(source, target);
++    // Removable disk: one label for every file; the disk's own xattr labels mean nothing here.
++    const char* data = "context=u:object_r:vfat:s0";
 +    unsigned long flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC | MS_NOEXEC;
-+    int rc = mount(source.c_str(), target.c_str(), fsType.c_str(), flags, nullptr);
++    int rc = mount(source.c_str(), target.c_str(), fsType.c_str(), flags, data);
 +    if (rc != 0)
 +        PLOG(ERROR) << "mount failed fs=" << fsType << " source=" << source << " target=" << target;
 +    return rc;
@@ -208,7 +199,7 @@ index 5a30fca..ff477e9 100644
  static const char* kSdcardFsPath = "/system/bin/sdcard";
  
  static const char* kAsecPath = "/mnt/secure/asec";
-@@ -111,31 +276,40 @@ status_t PublicVolume::doMount() {
+@@ -111,31 +274,40 @@ status_t PublicVolume::doMount() {
      bool isVisible = isVisibleForWrite();
      readMetadata();
  
@@ -261,7 +252,7 @@ index 5a30fca..ff477e9 100644
      if (isVisible) {
          setPath(StringPrintf("/storage/%s", stableName.c_str()));
      } else {
-@@ -143,10 +317,27 @@ status_t PublicVolume::doMount() {
+@@ -143,10 +315,27 @@ status_t PublicVolume::doMount() {
      }
  
      if (fs_prepare_dir(mRawPath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
@@ -290,7 +281,7 @@ index 5a30fca..ff477e9 100644
      if (mFsType == "vfat") {
          if (vfat::Mount(mDevPath, mRawPath, false, false, false, AID_ROOT,
                          (isVisible ? AID_MEDIA_RW : AID_EXTERNAL_STORAGE), 0007, true)) {
-@@ -159,6 +350,33 @@ status_t PublicVolume::doMount() {
+@@ -159,6 +348,33 @@ status_t PublicVolume::doMount() {
              PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
              return -EIO;
          }
@@ -313,8 +304,8 @@ index 5a30fca..ff477e9 100644
 +        const char* mountType = mFsType == "ntfs" ? "ntfs3" : mFsType.c_str();
 +        unsigned long mountFlags = MS_NODEV | MS_NOSUID | MS_NOATIME | MS_NOEXEC;
 +        if (readOnly) mountFlags |= MS_RDONLY;
-+        std::string mountData = StringPrintf("uid=%u,gid=%u,umask=0007", AID_ROOT,
-+                                             isVisible ? AID_MEDIA_RW : AID_EXTERNAL_STORAGE);
++        std::string mountData = StringPrintf(mFsType == "iso9660" ? "uid=%u,gid=%u,mode=0440,dmode=0550" : "uid=%u,gid=%u,umask=0007",
++                                             AID_ROOT, isVisible ? AID_MEDIA_RW : AID_EXTERNAL_STORAGE);
 +        if (::mount(mDevPath.c_str(), mRawPath.c_str(), mountType, mountFlags, mountData.c_str()) !=
 +            0) {
 +            PLOG(ERROR) << getId() << " mount failed fs=" << mFsType << " kernel_type=" << mountType
@@ -324,7 +315,7 @@ index 5a30fca..ff477e9 100644
      }
  
      if (getMountFlags() & MountFlags::kPrimary) {
-@@ -190,7 +408,7 @@ status_t PublicVolume::doMount() {
+@@ -190,7 +406,7 @@ status_t PublicVolume::doMount() {
                          "-g", "1023", // AID_MEDIA_RW
                          "-U", std::to_string(getMountUserId()).c_str(),
                          "-w",
@@ -333,7 +324,7 @@ index 5a30fca..ff477e9 100644
                          stableName.c_str(),
                          NULL)) {
                      // clang-format on
-@@ -202,7 +420,7 @@ status_t PublicVolume::doMount() {
+@@ -202,7 +418,7 @@ status_t PublicVolume::doMount() {
                          "-u", "1023", // AID_MEDIA_RW
                          "-g", "1023", // AID_MEDIA_RW
                          "-U", std::to_string(getMountUserId()).c_str(),
@@ -342,7 +333,7 @@ index 5a30fca..ff477e9 100644
                          stableName.c_str(),
                          NULL)) {
                      // clang-format on
-@@ -230,7 +448,8 @@ status_t PublicVolume::doMount() {
+@@ -230,7 +446,8 @@ status_t PublicVolume::doMount() {
                  return -ETIMEDOUT;
              }
          }
@@ -352,7 +343,7 @@ index 5a30fca..ff477e9 100644
          TEMP_FAILURE_RETRY(waitpid(sdcardFsPid, nullptr, 0));
      }
  
-@@ -276,8 +495,9 @@ status_t PublicVolume::doMount() {
+@@ -276,8 +493,9 @@ status_t PublicVolume::doMount() {
              // No need to bind if the user does not share storage with the mount owner
              continue;
          }
@@ -364,7 +355,7 @@ index 5a30fca..ff477e9 100644
          auto mountDirStatus = PrepareMountDirForUser(started_user);
          if (mountDirStatus != OK) {
              LOG(ERROR) << "Failed to create Mount Directory for user " << started_user;
-@@ -384,8 +604,21 @@ status_t PublicVolume::doUnmount() {
+@@ -384,8 +602,21 @@ status_t PublicVolume::doUnmount() {
          mSdcardFsFull.clear();
      }
  
