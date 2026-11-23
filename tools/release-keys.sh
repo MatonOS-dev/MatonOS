@@ -61,3 +61,14 @@ provision_key networkstack '/CN=MatonOS NetworkStack/O=MatonOS'
 provision_key sdk_sandbox '/CN=MatonOS SDK Sandbox/O=MatonOS'
 provision_key bluetooth '/CN=MatonOS Bluetooth/O=MatonOS'
 provision_key nfc '/CN=MatonOS NFC/O=MatonOS'
+
+# Soong only accepts certificate paths inside the source tree. Expose the
+# private key directory through an untracked symlink at the tree root (outside
+# every git project); pc_x86_64.mk refers to maton-release-keys/.
+TOP=$(realpath -- "$REPO/../../..")
+LINK="$TOP/maton-release-keys"
+if [[ -L $LINK || ! -e $LINK ]]; then
+  ln -sfn -- "$KEY_DIR" "$LINK"
+else
+  die "$LINK exists and is not a symlink; move it away"
+fi
