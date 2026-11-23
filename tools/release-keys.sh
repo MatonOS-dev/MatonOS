@@ -61,6 +61,8 @@ provision_key networkstack '/CN=MatonOS NetworkStack/O=MatonOS'
 provision_key sdk_sandbox '/CN=MatonOS SDK Sandbox/O=MatonOS'
 provision_key bluetooth '/CN=MatonOS Bluetooth/O=MatonOS'
 provision_key nfc '/CN=MatonOS NFC/O=MatonOS'
+# system/sepolicy/private/keys.conf reads $DEFAULT_SYSTEM_DEV_CERTIFICATE/testkey.x509.pem.
+provision_key testkey '/CN=MatonOS Test/O=MatonOS'
 
 # Soong only accepts certificate paths inside the source tree. Expose the
 # private key directory through an untracked symlink at the tree root (outside
