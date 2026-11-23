@@ -1,5 +1,5 @@
 diff --git a/Android.bp b/Android.bp
-index 46d199d1ca..e69195f730 100644
+index 46d199d1ca..8b740d8738 100644
 --- a/Android.bp
 +++ b/Android.bp
 @@ -55,6 +55,7 @@ filegroup {
@@ -10,7 +10,19 @@ index 46d199d1ca..e69195f730 100644
          "quickstep/src/**/*.kt",
          "quickstep/src/**/*.java",
      ],
-@@ -518,6 +519,9 @@ android_library {
+@@ -377,7 +378,10 @@ android_app {
+         "Home",
+         "Launcher2",
+     ],
+-    required: ["privapp_whitelist_com.android.launcher3"],
++    required: [
++        "privapp_whitelist_com.android.launcher3",
++        "privapp-permissions-com.android.launcher3",
++    ],
+ 
+     jacoco: {
+         include_filter: ["com.android.launcher3.**"],
+@@ -518,6 +522,9 @@ android_library {
      platform_apis: true,
      plugins: ["dagger2-compiler"],
      min_sdk_version: "current",
@@ -20,6 +32,33 @@ index 46d199d1ca..e69195f730 100644
      // TODO(b/319712088): re-enable use_resource_processor
      use_resource_processor: false,
      kotlincflags: [
+@@ -596,7 +603,10 @@ android_app {
+         "Launcher3",
+         "Launcher3QuickStep",
+     ],
+-    required: ["privapp_whitelist_com.android.launcher3"],
++    required: [
++        "privapp_whitelist_com.android.launcher3",
++        "privapp-permissions-com.android.launcher3",
++    ],
+ 
+     additional_manifests: [
+         "go/AndroidManifest.xml",
+diff --git a/AndroidManifest.xml b/AndroidManifest.xml
+index 2579786d50..c85c73043b 100644
+--- a/AndroidManifest.xml
++++ b/AndroidManifest.xml
+@@ -21,6 +21,10 @@
+     xmlns:android="http://schemas.android.com/apk/res/android"
+     package="com.android.launcher3">
+     <uses-sdk android:targetSdkVersion="33" android:minSdkVersion="30"/>
++    <uses-permission android:name="org.matonos.permission.BIND_TRAY_HOST" />
++    <queries>
++        <intent><action android:name="org.matonos.tray.HOST" /></intent>
++    </queries>
+     <!--
+     Manifest entries specific to Launcher3. This is merged with AndroidManifest-common.xml.
+     Refer comments around specific entries on how to extend individual components.
 diff --git a/quickstep/aidl/org/matonos/tray/IPillCallback.aidl b/quickstep/aidl/org/matonos/tray/IPillCallback.aidl
 new file mode 100644
 index 0000000000..e1cc9d0e57
@@ -33,10 +72,10 @@ index 0000000000..e1cc9d0e57
 +}
 diff --git a/quickstep/aidl/org/matonos/tray/ITrayHost.aidl b/quickstep/aidl/org/matonos/tray/ITrayHost.aidl
 new file mode 100644
-index 0000000000..07a0e092cb
+index 0000000000..49ed78cf0e
 --- /dev/null
 +++ b/quickstep/aidl/org/matonos/tray/ITrayHost.aidl
-@@ -0,0 +1,17 @@
+@@ -0,0 +1,18 @@
 +package org.matonos.tray;
 +
 +import android.os.IBinder;
@@ -46,6 +85,7 @@ index 0000000000..07a0e092cb
 +import org.matonos.tray.IPillCallback;
 +
 +interface ITrayHost {
++    const String ACTION_HOST = "org.matonos.tray.HOST";
 +    void register(ITrayListener listener);
 +    void unregister(ITrayListener listener);
 +    oneway void activate(String key, in Rect anchor);
@@ -152,10 +192,10 @@ index 1bc193667a..66f1dae574 100644
          taskbarDragLayerController.onDestroy();
 diff --git a/quickstep/src/com/android/launcher3/taskbar/tray/TrayClient.java b/quickstep/src/com/android/launcher3/taskbar/tray/TrayClient.java
 new file mode 100644
-index 0000000000..fe1d71cb3c
+index 0000000000..c011644756
 --- /dev/null
 +++ b/quickstep/src/com/android/launcher3/taskbar/tray/TrayClient.java
-@@ -0,0 +1,335 @@
+@@ -0,0 +1,409 @@
 +/*
 + * Copyright (C) 2026 The Android Open Source Project
 + * Licensed under the Apache License, Version 2.0.
@@ -166,6 +206,7 @@ index 0000000000..fe1d71cb3c
 +import static com.android.launcher3.util.Executors.UI_HELPER_EXECUTOR;
 +
 +import android.content.ComponentName;
++import android.database.ContentObserver;
 +import android.content.BroadcastReceiver;
 +import android.content.Context;
 +import android.content.Intent;
@@ -176,6 +217,7 @@ index 0000000000..fe1d71cb3c
 +import android.os.Handler;
 +import android.os.IBinder;
 +import android.os.RemoteException;
++import android.provider.Settings;
 +import android.util.Log;
 +import android.view.SurfaceControlViewHost;
 +
@@ -191,8 +233,8 @@ index 0000000000..fe1d71cb3c
 +/** Process-wide client for the MatonOS StatusNotifier tray service. */
 +public final class TrayClient {
 +    private static final String TAG = "LauncherTrayClient";
-+    private static final String ACTION_HOST = "org.matonos.tray.HOST";
-+    private static final String PACKAGE = "org.matonos.tray";
++    private static final String SETTING_HOST = "matonos_tray_host";
++    private static final String DEFAULT_PACKAGE = "org.matonos.tray";
 +    private static final Handler WORKER = new Handler(UI_HELPER_EXECUTOR.getLooper());
 +    private static TrayClient sInstance;
 +
@@ -245,18 +287,12 @@ index 0000000000..fe1d71cb3c
 +
 +        @Override
 +        public void onBindingDied(ComponentName name) {
-+            WORKER.post(() -> {
-+                forgetHost();
-+                rebind();
-+            });
++            WORKER.post(() -> fallbackAfterBindFailure(name, "binding died"));
 +        }
 +
 +        @Override
 +        public void onNullBinding(ComponentName name) {
-+            WORKER.post(() -> {
-+                Log.e(TAG, "Tray service returned a null binding: " + name);
-+                unbind();
-+            });
++            WORKER.post(() -> fallbackAfterBindFailure(name, "null binding"));
 +        }
 +    };
 +    private final ITrayListener.Stub mRemoteListener = new ITrayListener.Stub() {
@@ -277,30 +313,32 @@ index 0000000000..fe1d71cb3c
 +            new CopyOnWriteArrayList<>();
 +    private ITrayHost mHost;
 +    private boolean mBound;
-+    private boolean mMissingLogged;
++    private ComponentName mBoundComponent;
++    private final ContentObserver mHostSettingObserver = new ContentObserver(WORKER) {
++        @Override
++        public void onChange(boolean selfChange) {
++            WORKER.post(TrayClient.this::rebind);
++        }
++    };
 +    private boolean mPackageReceiverRegistered;
 +    private final BroadcastReceiver mPackageReceiver = new BroadcastReceiver() {
 +        @Override
 +        public void onReceive(Context context, Intent intent) {
-+            if (!PACKAGE.equals(intent.getData() == null ? null
-+                    : intent.getData().getSchemeSpecificPart())) {
-+                return;
-+            }
-+            String action = intent.getAction();
-+            boolean replacing = intent.getBooleanExtra(Intent.EXTRA_REPLACING, false);
-+            WORKER.post(() -> {
-+                if (Intent.ACTION_PACKAGE_REMOVED.equals(action) && !replacing) {
-+                    unbind();
-+                    dispatch(Collections.emptyList());
-+                } else {
-+                    rebind();
-+                }
-+            });
++            String packageName = intent.getData() == null ? null
++                    : intent.getData().getSchemeSpecificPart();
++            if (!isRelevantPackage(packageName)) return;
++            WORKER.post(TrayClient.this::rebind);
 +        }
 +    };
 +
 +    private TrayClient(Context context) {
 +        mContext = context;
++        try {
++            mContext.getContentResolver().registerContentObserver(
++                    Settings.Secure.getUriFor(SETTING_HOST), false, mHostSettingObserver);
++        } catch (RuntimeException e) {
++            Log.e(TAG, "Unable to observe tray host setting=" + SETTING_HOST, e);
++        }
 +    }
 +
 +    public void addListener(ItemsListener listener) {
@@ -371,18 +409,93 @@ index 0000000000..fe1d71cb3c
 +        if (mBound || (mListeners.isEmpty() && mHostListeners.isEmpty())) {
 +            return;
 +        }
-+        Intent intent = new Intent(ACTION_HOST).setPackage(PACKAGE);
 +        registerPackageReceiver();
++        String configured = readConfiguredHost();
++        ComponentName requested = configured == null || configured.isEmpty()
++                ? null : ComponentName.unflattenFromString(configured);
++        ComponentName configuredHost = requested == null ? null : resolveHost(requested);
++        ComponentName selected = configuredHost == null ? resolveHost(null) : configuredHost;
++        if (configured != null && !configured.isEmpty() && configuredHost == null) {
++            Log.e(TAG, "Configured tray host is missing or invalid component=" + configured
++                    + "; using default host");
++        }
++        if (selected == null) {
++            Log.e(TAG, "Default tray host is unavailable; tray strip remains empty");
++            return;
++        }
++        if (!tryBind(selected)) {
++            ComponentName fallback = resolveHost(null);
++            if (fallback != null && !fallback.equals(selected)) {
++                Log.e(TAG, "Unable to bind selected tray host component=" + selected
++                        + "; trying default host component=" + fallback);
++                if (tryBind(fallback)) return;
++            }
++            Log.e(TAG, "Unable to bind default tray host component=" + selected);
++        }
++    }
++
++    private ComponentName resolveHost(ComponentName requested) {
++        Intent query = new Intent(ITrayHost.ACTION_HOST);
++        if (requested != null) query.setComponent(requested);
++        else query.setPackage(DEFAULT_PACKAGE);
++        try {
++            List<android.content.pm.ResolveInfo> services = mContext.getPackageManager()
++                    .queryIntentServices(query, android.content.pm.PackageManager.MATCH_ALL);
++            for (android.content.pm.ResolveInfo service : services) {
++                if (service.serviceInfo == null || service.serviceInfo.permission == null
++                        || !"org.matonos.permission.BIND_TRAY_HOST".equals(
++                                service.serviceInfo.permission)) continue;
++                ComponentName candidate = new ComponentName(
++                        service.serviceInfo.packageName, service.serviceInfo.name);
++                if (requested == null || requested.equals(candidate)) return candidate;
++            }
++        } catch (RuntimeException e) {
++            Log.e(TAG, "Tray host discovery failed requested=" + requested, e);
++        }
++        return null;
++    }
++
++    private boolean tryBind(ComponentName component) {
++        Intent intent = new Intent(ITrayHost.ACTION_HOST).setComponent(component);
 +        try {
 +            mBound = mContext.bindService(intent, mConnection, Context.BIND_AUTO_CREATE
 +                    | Context.BIND_ALLOW_ACTIVITY_STARTS);
-+            if (!mBound && !mMissingLogged) {
-+                mMissingLogged = true;
-+                Log.i(TAG, "Tray service is not installed; tray strip remains empty");
-+            }
++            if (mBound) mBoundComponent = component;
++            return mBound;
 +        } catch (RuntimeException e) {
-+            Log.e(TAG, "Unable to bind tray service", e);
++            Log.e(TAG, "Unable to bind tray host component=" + component, e);
++            mBound = false;
++            return false;
 +        }
++    }
++
++    private void fallbackAfterBindFailure(ComponentName failed, String reason) {
++        Log.e(TAG, "Tray host " + reason + " component=" + failed);
++        unbind();
++        if (mListeners.isEmpty() && mHostListeners.isEmpty()) return;
++        ComponentName fallback = resolveHost(null);
++        if (fallback != null && !fallback.equals(failed) && tryBind(fallback)) return;
++        Log.e(TAG, "Unable to bind default tray host after " + reason + " component=" + failed);
++    }
++
++    private String readConfiguredHost() {
++        try {
++            return Settings.Secure.getString(mContext.getContentResolver(), SETTING_HOST);
++        } catch (RuntimeException e) {
++            Log.e(TAG, "Unable to read tray host setting=" + SETTING_HOST, e);
++            return null;
++        }
++    }
++
++    private boolean isRelevantPackage(String packageName) {
++        if (packageName == null || DEFAULT_PACKAGE.equals(packageName)) return true;
++        if (mBoundComponent != null && packageName.equals(mBoundComponent.getPackageName())) {
++            return true;
++        }
++        String configured = readConfiguredHost();
++        ComponentName component = configured == null || configured.isEmpty()
++                ? null : ComponentName.unflattenFromString(configured);
++        return component != null && packageName.equals(component.getPackageName());
 +    }
 +
 +    private void registerPackageReceiver() {
@@ -443,6 +556,7 @@ index 0000000000..fe1d71cb3c
 +        clearHost();
 +        if (mBound) {
 +            mBound = false;
++            mBoundComponent = null;
 +            try {
 +                mContext.unbindService(mConnection);
 +            } catch (IllegalArgumentException e) {

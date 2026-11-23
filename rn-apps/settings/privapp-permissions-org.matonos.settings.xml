@@ -2,6 +2,7 @@
     <privapp-permissions package="org.matonos.settings">
         <permission name="org.matonos.permission.SYSTEM_BRIDGE" />
         <permission name="org.matonos.permission.BIND_CAPTION_PROVIDER" />
+        <permission name="android.permission.WRITE_SECURE_SETTINGS" />
         <permission name="android.permission.REBOOT" />
         <permission name="android.permission.AUTHENTICATE_ACCOUNTS" />
         <permission name="android.permission.USE_CREDENTIALS" />

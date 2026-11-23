@@ -40,6 +40,7 @@ type Section =
   | "display"
   | "hardware"
   | "captions"
+  | "system-components"
   | "developer"
   | "about"
   | "account";
@@ -84,6 +85,12 @@ const navItems: Record<Section, NavEntry> = {
     id: "captions",
     title: copy.windowTitleBars,
     symbol: "title",
+    fallback: devicesIcon,
+  },
+  "system-components": {
+    id: "system-components",
+    title: copy.systemComponents,
+    symbol: "settings_applications",
     fallback: devicesIcon,
   },
   developer: {
@@ -492,6 +499,7 @@ export function NavRail({ live }: { live: boolean }) {
         <NavItem section="display" selected={current === "display"} />
         <NavItem section="hardware" selected={current === "hardware"} />
         <NavItem section="captions" selected={current === "captions"} />
+        <NavItem section="system-components" selected={current === "system-components"} />
         <NavItem section="account" selected={current === "account"} />
         <NavItem section="developer" selected={current === "developer"} />
         <NavItem section="about" selected={current === "about"} />

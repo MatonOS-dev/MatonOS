@@ -80,6 +80,14 @@ android_app_import {
 }
 
 prebuilt_etc {
+    name: "privapp-permissions-com.android.launcher3",
+    src: "privapp-permissions/privapp-permissions-com.android.launcher3.xml",
+    filename_from_src: true,
+    sub_dir: "permissions",
+    system_ext_specific: true,
+}
+
+prebuilt_etc {
     name: "privapp-permissions-org.matonos.settings",
     src: "privapp-permissions/privapp-permissions-org.matonos.settings.xml",
     filename_from_src: true,
