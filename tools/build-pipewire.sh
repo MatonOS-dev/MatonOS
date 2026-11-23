@@ -164,14 +164,14 @@ DESTDIR="$DEST" ninja -C "$OUT/glib" install >/dev/null
 
 info "Building host-native GLib generators for WirePlumber"
 if [[ ! -x $OUT/glib-host/gio/glib-compile-resources ]]; then
-  env -u CC -u CXX -u AR -u STRIP -u CFLAGS -u CXXFLAGS -u LDFLAGS \
-      -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR \
+  ( unset CC CXX AR STRIP CFLAGS CXXFLAGS LDFLAGS \
+      PKG_CONFIG_PATH PKG_CONFIG_LIBDIR PKG_CONFIG_SYSROOT_DIR
     meson_configure "$OUT/glib-host" "$SRC/glib" --prefix="$OUT/glib-host-prefix" \
       --buildtype=release -Ddefault_library=shared -Dtests=false \
       -Dintrospection=disabled -Dman-pages=disabled -Dnls=disabled \
       -Dselinux=disabled -Dlibmount=disabled -Dlibelf=disabled \
       -Ddtrace=disabled -Dsystemtap=disabled -Dsysprof=disabled \
-      -Dglib_debug=disabled -Dforce_posix_threads=true
+      -Dglib_debug=disabled -Dforce_posix_threads=true )
 fi
 env -u CC -u CXX -u AR -u STRIP -u CFLAGS -u CXXFLAGS -u LDFLAGS \
     -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR \
