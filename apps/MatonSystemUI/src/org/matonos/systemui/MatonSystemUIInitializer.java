@@ -7,8 +7,11 @@ import com.android.systemui.SystemUIInitializer;
 import com.android.systemui.dagger.GlobalRootComponent;
 
 public final class MatonSystemUIInitializer extends SystemUIInitializer {
+    private final VolumeBoostController mVolumeBoostController;
+
     public MatonSystemUIInitializer(Context context) {
         super(context);
+        mVolumeBoostController = new VolumeBoostController(context);
     }
 
     @Override

@@ -14,7 +14,6 @@ import java.util.concurrent.TimeUnit
 class SettingsBootReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-    VolumeBoostService.startAtBoot(context)
     val pending = goAsync()
     executor.execute {
       try {

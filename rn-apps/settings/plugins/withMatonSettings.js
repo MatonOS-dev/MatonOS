@@ -54,6 +54,7 @@ module.exports = function withMatonSettings(config) {
     put(main['meta-data'], 'com.android.settings.group_key', {'android:value':'top_level_account_category'});
     put(main['meta-data'], 'com.android.settings.order', {'android:value':'-100'});
 
+    // Retained for the install alias; boost ownership is in persistent SystemUI.
     app.receiver = app.receiver ?? [];
     app.receiver = app.receiver.filter((item) => item.$['android:name'] !== 'org.matonos.settings.nativebridge.SettingsBootReceiver');
     app.receiver.push({

@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.hardware.camera2.CameraManager
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
+import org.matonos.settings.nativebridge.VolumeBoostSettings
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.matonos.settings.SystemComponents
@@ -34,10 +35,10 @@ class HardwareModule : Module() {
       SystemComponents.read(requireNotNull(appContext.reactContext))
     }
     AsyncFunction("getVolumeBoostPercent") {
-      VolumeBoostService.getPercentAndEnsureRunning(requireNotNull(appContext.reactContext))
+      VolumeBoostSettings.getPercent(requireNotNull(appContext.reactContext))
     }
     AsyncFunction("setVolumeBoostPercent") { percent: Int ->
-      VolumeBoostService.setPercent(requireNotNull(appContext.reactContext), percent)
+      VolumeBoostSettings.setPercent(requireNotNull(appContext.reactContext), percent)
     }
     AsyncFunction("setSystemComponent") { kind: String, flattened: String ->
       SystemComponents.write(requireNotNull(appContext.reactContext), kind, flattened)
