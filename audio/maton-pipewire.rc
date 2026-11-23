@@ -26,6 +26,8 @@ service vendor.pipewire /odm/bin/pipewire
     setenv ALSA_CONFIG_DIR /odm/etc/alsa
     setenv ALSA_CONFIG_PATH /odm/etc/alsa/alsa.conf
     setenv ALSA_CONFIG_UCM2 /odm/etc/alsa/ucm2
+    setenv ACP_PATHS_DIR /odm/share/alsa-card-profile/mixer/paths
+    setenv ACP_PROFILES_DIR /odm/share/alsa-card-profile/mixer/profile-sets
     setenv LD_LIBRARY_PATH /odm/lib64:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
     capabilities SYS_NICE
     rlimit rtprio 10 10
@@ -53,6 +55,8 @@ service vendor.wireplumber /odm/bin/wireplumber
     setenv ALSA_CONFIG_DIR /odm/etc/alsa
     setenv ALSA_CONFIG_PATH /odm/etc/alsa/alsa.conf
     setenv ALSA_CONFIG_UCM2 /odm/etc/alsa/ucm2
+    setenv ACP_PATHS_DIR /odm/share/alsa-card-profile/mixer/paths
+    setenv ACP_PROFILES_DIR /odm/share/alsa-card-profile/mixer/profile-sets
     setenv LD_LIBRARY_PATH /odm/lib64:/odm/lib64/wireplumber-0.5:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
     capabilities SYS_NICE
     rlimit rtprio 10 10
