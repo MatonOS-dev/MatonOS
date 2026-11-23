@@ -1,6 +1,6 @@
-From 8b42ec4768877c362216e0b4e10c18aed87543ce Mon Sep 17 00:00:00 2001
+From 3e75dd46327746d3f24f7a290811239911817429 Mon Sep 17 00:00:00 2001
 From: Hanro <hlareman2@gmail.com>
-Date: Mon, 23 Nov 2026 03:30:07 +0200
+Date: Mon, 23 Nov 2026 05:22:33 +0200
 Subject: [PATCH] WM Shell: optional desktop caption provider hook
 
 Optional @DynamicOverride DesktopCaptionFactory lets a SystemUI variant host a caption
@@ -11,18 +11,20 @@ Shell's drag strip. Maximize enters desktop immersive (exclusive full screen).
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01HaUq5t3s78G1bwWoNFi22L
 ---
- .../android/view/ISurfaceControlViewHost.aidl |  3 ++
- .../android/view/SurfaceControlViewHost.java  | 27 ++++++++++
- .../res/layout/desktop_mode_app_header.xml    | 21 ++++++--
- .../wm/shell/dagger/WMShellModule.java        | 14 ++++-
- .../windowdecor/DefaultWindowDecoration.kt    |  8 +++
- .../windowdecor/DesktopCaptionFactory.java    | 37 +++++++++++++
- .../DesktopModeWindowDecorViewModel.java      |  8 +++
- .../DesktopModeWindowDecoration.java          | 30 +++++++++++
- .../windowdecor/WindowDecorationWrapper.kt    |  7 +++
- .../caption/AppHeaderController.kt            | 22 +++++++-
- .../viewholder/AppHeaderViewHolder.kt         | 53 ++++++++++++++-----
- 11 files changed, 209 insertions(+), 21 deletions(-)
+ .../android/view/ISurfaceControlViewHost.aidl |   3 +
+ .../android/view/SurfaceControlViewHost.java  |  27 ++++
+ .../res/layout/desktop_mode_app_header.xml    |  21 ++-
+ .../wm/shell/dagger/WMShellModule.java        |  18 ++-
+ .../desktopmode/DesktopImmersiveController.kt | 124 +++++++++++++++++-
+ .../windowdecor/DefaultWindowDecoration.kt    |  11 +-
+ .../windowdecor/DesktopCaptionFactory.java    |  37 ++++++
+ .../DesktopModeWindowDecorViewModel.java      |  52 +++++++-
+ .../DesktopModeWindowDecoration.java          |  30 +++++
+ .../windowdecor/WindowDecorationActions.kt    |   5 +
+ .../windowdecor/WindowDecorationWrapper.kt    |   7 +
+ .../caption/AppHeaderController.kt            |  22 +++-
+ .../viewholder/AppHeaderViewHolder.kt         |  61 +++++++--
+ 13 files changed, 391 insertions(+), 27 deletions(-)
  create mode 100644 libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopCaptionFactory.java
 
 diff --git a/core/java/android/view/ISurfaceControlViewHost.aidl b/core/java/android/view/ISurfaceControlViewHost.aidl
@@ -132,7 +134,7 @@ index 8d06c8de54b6..662db28a4358 100644
      <ImageButton
          android:id="@+id/minimize_window"
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java b/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
-index 237f47124837..30047901fa82 100644
+index 237f47124837..8f5b604aa23a 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/dagger/WMShellModule.java
 @@ -223,6 +223,7 @@ import com.android.wm.shell.unfold.animation.UnfoldTaskAnimator;
@@ -151,7 +153,25 @@ index 237f47124837..30047901fa82 100644
  import dagger.Lazy;
  import dagger.Module;
  import dagger.Provides;
-@@ -1363,6 +1365,7 @@ public abstract class WMShellModule {
+@@ -1081,6 +1083,7 @@ public abstract class WMShellModule {
+             Transitions transitions,
+             @DynamicOverride DesktopUserRepositories desktopUserRepositories,
+             DisplayController displayController,
++            RootDisplayAreaOrganizer rootDisplayAreaOrganizer,
+             ShellTaskOrganizer shellTaskOrganizer,
+             ShellCommandHandler shellCommandHandler,
+             DesktopState desktopState) {
+@@ -1092,7 +1095,8 @@ public abstract class WMShellModule {
+                             desktopUserRepositories,
+                             displayController,
+                             shellTaskOrganizer,
+-                            shellCommandHandler));
++                            shellCommandHandler,
++                            rootDisplayAreaOrganizer));
+         }
+         return Optional.empty();
+     }
+@@ -1363,6 +1367,7 @@ public abstract class WMShellModule {
              WindowDecorTaskResourceLoader taskResourceLoader,
              PerDisplayRecentsTransitionStateListener perDisplayRecentsTransitionStateListener,
              DesktopModeCompatPolicy desktopModeCompatPolicy,
@@ -159,7 +179,7 @@ index 237f47124837..30047901fa82 100644
              DesktopTilingDecorViewModel desktopTilingDecorViewModel,
              MultiDisplayDragMoveIndicatorController multiDisplayDragMoveIndicatorController,
              Optional<CompatUIHandler> compatUI,
-@@ -1382,7 +1385,8 @@ public abstract class WMShellModule {
+@@ -1382,7 +1387,8 @@ public abstract class WMShellModule {
          if (!shelldesktopState.canEnterDesktopModeOrShowAppHandle()) {
              return Optional.empty();
          }
@@ -169,7 +189,7 @@ index 237f47124837..30047901fa82 100644
                  mainChoreographer, mainDispatcher, mainScope, mainImmediateScope, bgScope,
                  bgExecutor, shellInit, shellCommandHandler, windowManager,
                  taskOrganizer, desktopUserRepositories, displayController, shellController,
-@@ -1400,9 +1404,15 @@ public abstract class WMShellModule {
+@@ -1400,9 +1406,15 @@ public abstract class WMShellModule {
                  desksOrganizer, shelldesktopState, desktopConfig, userProfileContexts,
                  lockTaskChangeListener, pinnedLayerController.orElse(null),
                  pinnedLayerUiState.orElse(null), fluidTaskResizer, veiledTaskResizer,
@@ -186,8 +206,229 @@ index 237f47124837..30047901fa82 100644
      @WMSingleton
      @Provides
      static LockTaskChangeListener provideLockTaskChangeListener(ShellInit shellInit,
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/desktopmode/DesktopImmersiveController.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/desktopmode/DesktopImmersiveController.kt
+index 24ccd32d12c4..9facdcb537c8 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/desktopmode/DesktopImmersiveController.kt
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/desktopmode/DesktopImmersiveController.kt
+@@ -19,8 +19,10 @@ import android.animation.RectEvaluator
+ import android.animation.ValueAnimator
+ import android.app.ActivityManager.RunningTaskInfo
+ import android.graphics.Rect
++import android.os.Binder
+ import android.os.IBinder
+ import android.view.SurfaceControl
++import android.view.WindowInsets
+ import android.view.WindowManager.TRANSIT_CHANGE
+ import android.view.animation.DecelerateInterpolator
+ import android.window.TransitionInfo
+@@ -29,6 +31,7 @@ import android.window.WindowContainerTransaction
+ import androidx.core.animation.addListener
+ import com.android.internal.annotations.VisibleForTesting
+ import com.android.internal.protolog.ProtoLog
++import com.android.wm.shell.RootDisplayAreaOrganizer
+ import com.android.wm.shell.ShellTaskOrganizer
+ import com.android.wm.shell.common.DisplayController
+ import com.android.wm.shell.desktopmode.data.DesktopRepository
+@@ -54,6 +57,7 @@ class DesktopImmersiveController(
+     private val shellTaskOrganizer: ShellTaskOrganizer,
+     private val shellCommandHandler: ShellCommandHandler,
+     private val transactionSupplier: () -> SurfaceControl.Transaction,
++    private val rootDisplayAreaOrganizer: RootDisplayAreaOrganizer? = null,
+ ) : TransitionHandler, TransitionObserver {
+ 
+     constructor(
+@@ -71,6 +75,26 @@ class DesktopImmersiveController(
+         shellTaskOrganizer,
+         shellCommandHandler,
+         { SurfaceControl.Transaction() },
++        null,
++    )
++
++    constructor(
++        shellInit: ShellInit,
++        transitions: Transitions,
++        desktopUserRepositories: DesktopUserRepositories,
++        displayController: DisplayController,
++        shellTaskOrganizer: ShellTaskOrganizer,
++        shellCommandHandler: ShellCommandHandler,
++        rootDisplayAreaOrganizer: RootDisplayAreaOrganizer,
++    ) : this(
++        shellInit,
++        transitions,
++        desktopUserRepositories,
++        displayController,
++        shellTaskOrganizer,
++        shellCommandHandler,
++        { SurfaceControl.Transaction() },
++        rootDisplayAreaOrganizer,
+     )
+ 
+     @VisibleForTesting val pendingImmersiveTransitions = mutableListOf<PendingTransition>()
+@@ -81,6 +105,9 @@ class DesktopImmersiveController(
+ 
+     private val rectEvaluator = RectEvaluator()
+ 
++    /** Displays whose status bars this controller hides for provider-backed immersive maximize. */
++    private val statusBarHiddenDisplays = mutableSetOf<Int>()
++
+     /** A listener to invoke on animation changes during entry/exit. */
+     var onTaskResizeAnimationListener: OnTaskResizeAnimationListener? = null
+ 
+@@ -93,7 +120,7 @@ class DesktopImmersiveController(
+     }
+ 
+     /** Starts a transition to enter full immersive state inside the desktop. */
+-    fun moveTaskToImmersive(taskInfo: RunningTaskInfo) {
++    fun moveTaskToImmersive(taskInfo: RunningTaskInfo, forceHideStatusBar: Boolean = false) {
+         check(taskInfo.isFreeform) { "Task must already be in freeform" }
+         if (inProgress) {
+             logV(
+@@ -102,7 +129,15 @@ class DesktopImmersiveController(
+             )
+             return
+         }
+-        val wct = WindowContainerTransaction().apply { setBounds(taskInfo.token, Rect()) }
++        val wct = WindowContainerTransaction().apply {
++            setBounds(taskInfo.token, Rect())
++            if (
++                forceHideStatusBar &&
++                    setStatusBarVisibilityOverride(this, taskInfo.displayId, forciblyHidden = true)
++            ) {
++                statusBarHiddenDisplays.add(taskInfo.displayId)
++            }
++        }
+         logV("Moving task %d into immersive mode", taskInfo.taskId)
+         val transition = transitions.startTransition(TRANSIT_CHANGE, wct, /* handler= */ this)
+         addPendingImmersiveTransition(
+@@ -127,6 +162,13 @@ class DesktopImmersiveController(
+         val wct =
+             WindowContainerTransaction().apply {
+                 setBounds(taskInfo.token, getExitDestinationBounds(taskInfo))
++                if (statusBarHiddenDisplays.remove(taskInfo.displayId)) {
++                    setStatusBarVisibilityOverride(
++                        this,
++                        taskInfo.displayId,
++                        forciblyHidden = false,
++                    )
++                }
+             }
+         logV("Moving task %d out of immersive mode, reason: %s", taskInfo.taskId, reason)
+         val transition = transitions.startTransition(TRANSIT_CHANGE, wct, /* handler= */ this)
+@@ -184,6 +226,9 @@ class DesktopImmersiveController(
+             reason,
+         )
+         wct.setBounds(taskInfo.token, getExitDestinationBounds(taskInfo))
++        if (statusBarHiddenDisplays.remove(displayId)) {
++            setStatusBarVisibilityOverride(wct, displayId, forciblyHidden = false)
++        }
+         return ExitResult.Exit(
+             exitingTask = immersiveTask,
+             runOnTransitionStart = { transition ->
+@@ -214,6 +259,13 @@ class DesktopImmersiveController(
+             // A full immersive task is being minimized, make sure the immersive state is broken
+             // (i.e. resize back to max bounds).
+             wct.setBounds(taskInfo.token, getExitDestinationBounds(taskInfo))
++            if (statusBarHiddenDisplays.remove(taskInfo.displayId)) {
++                setStatusBarVisibilityOverride(
++                    wct,
++                    taskInfo.displayId,
++                    forciblyHidden = false,
++                )
++            }
+             logV("Appending immersive exit for task: %d for reason: %s", taskInfo.taskId, reason)
+             return ExitResult.Exit(
+                 exitingTask = taskInfo.taskId,
+@@ -231,6 +283,61 @@ class DesktopImmersiveController(
+         return ExitResult.NoExit
+     }
+ 
++    /**
++     * Briefly reveal the status bar for a pointer hover at the top edge. Returns false when this
++     * controller did not hide the bar for the display, preserving stock immersive behavior.
++     */
++    fun showStatusBarForPointerHover(displayId: Int): Boolean {
++        if (displayId !in statusBarHiddenDisplays) return false
++        val wct = WindowContainerTransaction()
++        if (!setStatusBarVisibilityOverride(
++                wct,
++                displayId,
++                forciblyHidden = false,
++                forciblyShown = true,
++            )
++        ) {
++            return false
++        }
++        shellTaskOrganizer.applyTransaction(wct)
++        return true
++    }
++
++    /** Reasserts the hidden override after a pointer-hover reveal interval. */
++    fun hideStatusBarAfterPointerHover(displayId: Int) {
++        if (displayId !in statusBarHiddenDisplays) return
++        val wct = WindowContainerTransaction()
++        if (setStatusBarVisibilityOverride(wct, displayId, forciblyHidden = true)) {
++            shellTaskOrganizer.applyTransaction(wct)
++        }
++    }
++
++    private fun setStatusBarVisibilityOverride(
++        wct: WindowContainerTransaction,
++        displayId: Int,
++        forciblyHidden: Boolean,
++        forciblyShown: Boolean = false,
++    ): Boolean {
++        val displayToken = rootDisplayAreaOrganizer?.getDisplayTokenForDisplay(displayId)
++        if (displayToken == null) {
++            ProtoLog.w(
++                WM_SHELL_DESKTOP_MODE,
++                "Unable to update immersive status bar visibility: display %d has no token",
++                displayId,
++            )
++            return false
++        }
++        wct.setSystemBarVisibilityOverride(
++            displayToken,
++            systemBarVisibilityOverrideOwner,
++            if (forciblyShown) WindowInsets.Type.statusBars() else 0,
++            if (forciblyHidden) WindowInsets.Type.statusBars() else 0,
++        )
++        return true
++    }
++
++    private val systemBarVisibilityOverrideOwner = Binder()
++
+     /** Whether the [change] in the [transition] is a known immersive change. */
+     fun isImmersiveChange(transition: IBinder, change: TransitionInfo.Change): Boolean {
+         return pendingImmersiveTransitions.any {
+@@ -403,6 +510,7 @@ class DesktopImmersiveController(
+             when (pendingTransition.direction) {
+                 Direction.EXIT -> {
+                     desktopRepository.removeBoundsBeforeFullImmersive(taskId)
++                    statusBarHiddenDisplays.remove(pendingTransition.displayId)
+                 }
+                 Direction.ENTER -> {
+                     desktopRepository.saveBoundsBeforeFullImmersive(
+@@ -425,6 +533,18 @@ class DesktopImmersiveController(
+                     taskId = c.taskInfo!!.taskId,
+                     immersive = false,
+                 )
++                if (statusBarHiddenDisplays.remove(c.taskInfo!!.displayId)) {
++                    val wct = WindowContainerTransaction()
++                    if (
++                        setStatusBarVisibilityOverride(
++                            wct,
++                            c.taskInfo!!.displayId,
++                            forciblyHidden = false,
++                        )
++                    ) {
++                        shellTaskOrganizer.applyTransaction(wct)
++                    }
++                }
+             }
+     }
+ 
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
-index 2233fc581a63..0170b1a918bc 100644
+index 2233fc581a63..51608a53200e 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DefaultWindowDecoration.kt
 @@ -229,6 +229,13 @@ constructor(
@@ -204,7 +445,17 @@ index 2233fc581a63..0170b1a918bc 100644
      init {
          taskResourceLoader.onWindowDecorCreated(taskInfo)
      }
-@@ -1097,6 +1104,7 @@ constructor(
+@@ -722,7 +729,8 @@ constructor(
+                 true
+             }
+             isStatusBarVisible -> {
+-                // Always show the caption when status bar is visible, regardless of the mode
++                // Show the caption while the status bar is visible, including its transient
++                // reveal in full immersive mode. This also applies to provider-backed captions.
+                 true
+             }
+             inFullImmersive || taskInfo.isFullscreen -> {
+@@ -1097,6 +1105,7 @@ constructor(
                      focusTransitionObserver = focusTransitionObserver,
                      appHeaderViewHolderFactory = appHeaderViewHolderFactory,
                      decorThemeUtilFactory = decorThemeUtilFactory,
@@ -256,10 +507,18 @@ index 000000000000..3e1d77057444
 +    boolean hasProviderCaption(RunningTaskInfo taskInfo);
 +}
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
-index 3633fdebb0b0..2aba77cf8bf4 100644
+index 3633fdebb0b0..14318d79a638 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecorViewModel.java
-@@ -284,6 +284,12 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+@@ -227,6 +227,7 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+     private boolean mTransitionDragActive;
+ 
+     private SparseArray<EventReceiver> mEventReceiversByDisplay = new SparseArray<>();
++    private final SparseArray<Runnable> mStatusBarHoverHideCallbacks = new SparseArray<>();
+ 
+     private final ExclusionRegionListener mExclusionRegionListener =
+             new ExclusionRegionListenerImpl();
+@@ -284,6 +285,12 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
      private final CompatUIHandler mCompatUI;
      private final UserProfileContexts mUserProfileContexts;
      private CaptionTouchStatusListener mCaptionTouchStatusListener;
@@ -272,7 +531,68 @@ index 3633fdebb0b0..2aba77cf8bf4 100644
  
      private final LockTaskChangeListener mLockTaskChangeListener;
  
-@@ -1869,6 +1875,7 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+@@ -861,7 +868,8 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+         );
+     }
+ 
+-    private void onEnterOrExitImmersive(RunningTaskInfo taskInfo) {
++    private void onEnterOrExitImmersive(RunningTaskInfo taskInfo,
++            boolean forceHideStatusBar) {
+         final WindowDecorationWrapper decoration = mWindowDecorByTaskId.get(taskInfo.taskId);
+         if (decoration == null) {
+             return;
+@@ -877,7 +885,8 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+             mDesktopModeUiEventLogger.log(decoration.getTaskInfo(),
+                     DesktopUiEventEnum.DESKTOP_WINDOW_MAXIMIZE_BUTTON_MENU_TAP_TO_IMMERSIVE);
+             removeTaskIfTiled(decoration.getTaskInfo().displayId, decoration.getTaskInfo().taskId);
+-            mDesktopImmersiveController.moveTaskToImmersive(decoration.getTaskInfo());
++            mDesktopImmersiveController.moveTaskToImmersive(
++                    decoration.getTaskInfo(), forceHideStatusBar);
+         }
+     }
+ 
+@@ -1529,6 +1538,9 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+      */
+     private void handleReceivedMotionEvent(MotionEvent ev, IBinder inputChannelToken) {
+         final WindowDecorationWrapper relevantDecor = getRelevantWindowDecor(ev);
++        if (mInImmersiveMode) {
++            revealImmersiveStatusBarOnTopEdgeHover(ev);
++        }
+         if (mShellDesktopState.canEnterDesktopMode()) {
+             if (!mInImmersiveMode && (relevantDecor == null
+                     || relevantDecor.getTaskInfo().getWindowingMode() != WINDOWING_MODE_FREEFORM
+@@ -1547,6 +1559,30 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+         }
+     }
+ 
++    private void revealImmersiveStatusBarOnTopEdgeHover(MotionEvent ev) {
++        final int action = ev.getActionMasked();
++        if (action != MotionEvent.ACTION_HOVER_MOVE
++                && action != MotionEvent.ACTION_HOVER_ENTER) {
++            return;
++        }
++        if (ev.getRawY() > 2f) {
++            return;
++        }
++
++        final int displayId = ev.getDisplayId();
++        if (!mDesktopImmersiveController.showStatusBarForPointerHover(displayId)) {
++            return;
++        }
++        final Runnable previousCallback = mStatusBarHoverHideCallbacks.get(displayId);
++        if (previousCallback != null) {
++            mMainHandler.removeCallbacks(previousCallback);
++        }
++        final Runnable hideCallback = () ->
++                mDesktopImmersiveController.hideStatusBarAfterPointerHover(displayId);
++        mStatusBarHoverHideCallbacks.put(displayId, hideCallback);
++        mMainHandler.postDelayed(hideCallback, 2500);
++    }
++
+     /**
+      * If an UP/CANCEL action is received outside of the caption bounds, close the handle and
+      * maximize the menu.
+@@ -1869,6 +1905,7 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
                      mPinnedLayerController,
                      mDesktopTasksController,
                      mDecorThemeUtilFactory);
@@ -280,7 +600,7 @@ index 3633fdebb0b0..2aba77cf8bf4 100644
              windowDecoration =
                      mWindowDecoratioWrapperFactory.fromDefaultDecoration(defaultWindowDecoration);
          } else {
-@@ -1910,6 +1917,7 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+@@ -1910,6 +1947,7 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
                              mPinnedLayerController,
                              mDesktopTasksController,
                              mDecorThemeUtilFactory);
@@ -288,6 +608,23 @@ index 3633fdebb0b0..2aba77cf8bf4 100644
              windowDecoration = mWindowDecoratioWrapperFactory
                      .fromDesktopDecoration(desktopModeWindowDecoration);
          }
+@@ -2224,7 +2262,15 @@ public class DesktopModeWindowDecorViewModel implements WindowDecorViewModel,
+         public void onImmersiveOrRestore(@NonNull ActivityManager.RunningTaskInfo taskInfo) {
+             WdLog.logD(TAG, "Using DefaultWindowDecorationActions to enter or restore from "
+                     + "immersive for task=%d", taskInfo.taskId);
+-            mViewModel.onEnterOrExitImmersive(taskInfo);
++            mViewModel.onEnterOrExitImmersive(taskInfo, false);
++        }
++
++        @Override
++        public void onImmersiveOrRestoreWithStatusBarHidden(
++                @NonNull ActivityManager.RunningTaskInfo taskInfo) {
++            WdLog.logD(TAG, "Using DefaultWindowDecorationActions to enter immersive with hidden "
++                    + "status bar for task=%d", taskInfo.taskId);
++            mViewModel.onEnterOrExitImmersive(taskInfo, true);
+         }
+ 
+         @Override
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java
 index 5b9a63dcce07..d93231dc6925 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/DesktopModeWindowDecoration.java
@@ -368,6 +705,22 @@ index 5b9a63dcce07..d93231dc6925 100644
                  /* maximizeHoverEnabled= */ canOpenLayoutMenu(animatingTaskResizeOrReposition),
                  isCaptionVisible()));
      }
+diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationActions.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationActions.kt
+index 1fd60cd3402e..ca2214cf002d 100644
+--- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationActions.kt
++++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationActions.kt
+@@ -50,6 +50,11 @@ interface WindowDecorationActions {
+      */
+     fun onImmersiveOrRestore(taskInfo: RunningTaskInfo)
+ 
++    /** Enters immersive maximize with a shell-owned status bar hide for provider captions. */
++    fun onImmersiveOrRestoreWithStatusBarHidden(taskInfo: RunningTaskInfo) {
++        onImmersiveOrRestore(taskInfo)
++    }
++
+     /**
+      * On any caption views received user interactions. This likely brings the relevant task to
+      * front.
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt
 index ed802273ef76..720ec5109d0b 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/WindowDecorationWrapper.kt
@@ -455,7 +808,7 @@ index 036ba0cf5a52..6425db5bd0e5 100644
          closeManageWindowsMenu()
          closeLayoutMenu()
 diff --git a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
-index 747f5f7820df..dd52159f1343 100644
+index 747f5f7820df..6c28d2a7b52e 100644
 --- a/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
 +++ b/libs/WindowManager/Shell/src/com/android/wm/shell/windowdecor/viewholder/AppHeaderViewHolder.kt
 @@ -105,6 +105,9 @@ class AppHeaderViewHolder(
@@ -476,20 +829,20 @@ index 747f5f7820df..dd52159f1343 100644
  
      init {
          if (Flags.interceptTouchEventForAppHeaderDragMove()) {
-@@ -193,11 +197,9 @@ class AppHeaderViewHolder(
-             windowDecorationActions.onClose(currentTaskInfo)
+@@ -194,10 +198,10 @@ class AppHeaderViewHolder(
          }
          maximizeWindowButton.throttleFirstClicks(CLICK_DELAY) { v ->
--            if (isTaskInFullImmersiveState) {
+             if (isTaskInFullImmersiveState) {
 -                // Task is in immersive and should exit.
-+            if (useImmersiveMaximize || isTaskInFullImmersiveState) {
                  windowDecorationActions.onImmersiveOrRestore(currentTaskInfo)
++            } else if (useImmersiveMaximize) {
++                windowDecorationActions.onImmersiveOrRestoreWithStatusBarHidden(currentTaskInfo)
              } else {
 -                // Just toggle between maximize/restore states.
                  windowDecorationActions.onMaximizeOrRestore(
                      currentTaskInfo.taskId,
                      AmbiguousSource.HEADER_BUTTON,
-@@ -298,11 +300,15 @@ class AppHeaderViewHolder(
+@@ -298,11 +302,19 @@ class AppHeaderViewHolder(
                                  currentTaskInfo,
                                  A11Y_ACTION_MAXIMIZE_RESTORE,
                              )
@@ -498,8 +851,12 @@ index 747f5f7820df..dd52159f1343 100644
 -                                AmbiguousSource.HEADER_BUTTON,
 -                                InputMethod.ACCESSIBILITY,
 -                            )
-+                            if (useImmersiveMaximize || isTaskInFullImmersiveState) {
++                            if (isTaskInFullImmersiveState) {
 +                                windowDecorationActions.onImmersiveOrRestore(currentTaskInfo)
++                            } else if (useImmersiveMaximize) {
++                                windowDecorationActions.onImmersiveOrRestoreWithStatusBarHidden(
++                                    currentTaskInfo,
++                                )
 +                            } else {
 +                                windowDecorationActions.onMaximizeOrRestore(
 +                                    currentTaskInfo.taskId,
@@ -510,7 +867,7 @@ index 747f5f7820df..dd52159f1343 100644
                          }
                      }
  
-@@ -360,11 +366,15 @@ class AppHeaderViewHolder(
+@@ -360,11 +372,19 @@ class AppHeaderViewHolder(
                                  currentTaskInfo,
                                  A11Y_ACTION_MAXIMIZE_RESTORE,
                              )
@@ -519,8 +876,12 @@ index 747f5f7820df..dd52159f1343 100644
 -                                AmbiguousSource.HEADER_BUTTON,
 -                                InputMethod.ACCESSIBILITY,
 -                            )
-+                            if (useImmersiveMaximize || isTaskInFullImmersiveState) {
++                            if (isTaskInFullImmersiveState) {
 +                                windowDecorationActions.onImmersiveOrRestore(currentTaskInfo)
++                            } else if (useImmersiveMaximize) {
++                                windowDecorationActions.onImmersiveOrRestoreWithStatusBarHidden(
++                                    currentTaskInfo,
++                                )
 +                            } else {
 +                                windowDecorationActions.onMaximizeOrRestore(
 +                                    currentTaskInfo.taskId,
@@ -531,7 +892,7 @@ index 747f5f7820df..dd52159f1343 100644
                          }
                      }
  
-@@ -440,11 +450,14 @@ class AppHeaderViewHolder(
+@@ -440,11 +460,14 @@ class AppHeaderViewHolder(
      }
  
      override fun bindData(data: HeaderData) {
@@ -546,7 +907,7 @@ index 747f5f7820df..dd52159f1343 100644
              data.enableMaximizeLongClick,
              data.isCaptionVisible,
          )
-@@ -524,6 +537,8 @@ class AppHeaderViewHolder(
+@@ -524,6 +547,8 @@ class AppHeaderViewHolder(
          isTaskMaximized: Boolean,
          inFullImmersiveState: Boolean,
          hasGlobalFocus: Boolean,
@@ -555,7 +916,7 @@ index 747f5f7820df..dd52159f1343 100644
          enableMaximizeLongClick: Boolean,
          isCaptionVisible: Boolean,
      ) {
-@@ -535,6 +550,8 @@ class AppHeaderViewHolder(
+@@ -535,6 +560,8 @@ class AppHeaderViewHolder(
              isTaskMaximized,
              inFullImmersiveState,
              hasGlobalFocus,
@@ -564,7 +925,7 @@ index 747f5f7820df..dd52159f1343 100644
              enableMaximizeLongClick,
              isCaptionVisible,
          )
-@@ -568,6 +585,8 @@ class AppHeaderViewHolder(
+@@ -568,6 +595,8 @@ class AppHeaderViewHolder(
          isTaskMaximized: Boolean,
          inFullImmersiveState: Boolean,
          hasGlobalFocus: Boolean,
@@ -573,7 +934,7 @@ index 747f5f7820df..dd52159f1343 100644
          enableMaximizeLongClick: Boolean,
          isCaptionVisible: Boolean,
      ) {
-@@ -596,6 +615,7 @@ class AppHeaderViewHolder(
+@@ -596,6 +625,7 @@ class AppHeaderViewHolder(
          val colorStateList = ColorStateList.valueOf(foregroundColor).withAlpha(foregroundAlpha)
          // App chip.
          openMenuButton.apply {
@@ -581,7 +942,7 @@ index 747f5f7820df..dd52159f1343 100644
              val isRestartMenuEnabledForDisplayMove =
                  currentTaskInfo.appCompatTaskInfo.isRestartMenuEnabledForDisplayMove
              background =
-@@ -624,6 +644,7 @@ class AppHeaderViewHolder(
+@@ -624,6 +654,7 @@ class AppHeaderViewHolder(
          }
          // Minimize button.
          minimizeWindowButton.apply {
@@ -589,7 +950,7 @@ index 747f5f7820df..dd52159f1343 100644
              imageTintList = colorStateList
              background =
                  createBackgroundDrawable(
-@@ -632,6 +653,12 @@ class AppHeaderViewHolder(
+@@ -632,6 +663,12 @@ class AppHeaderViewHolder(
                      drawableInsets = dimensions.minimizeBackgroundInsets,
                  )
          }
