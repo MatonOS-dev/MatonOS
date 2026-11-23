@@ -4,11 +4,11 @@
 # Graphics are vendor image contents (graphics.mk/build-mesa.sh), not ODM bundle rows.
 
 file buildinfra/native-built/libmatonos-ipc.so lib64/libmatonos-ipc.so
+tree buildinfra/native-built/pipewire .
 file buildinfra/native-built/matonos-sleepd bin/matonos-sleepd
 file buildinfra/native-built/matonos-wifid bin/matonos-wifid
 file buildinfra/native-built/matonos-inputd bin/matonos-inputd
-# PipeWire, custom-HAL, detector, and snd-aloop files remain in the tree only;
-# the shipped implementation is BayLibre's generic AIDL audio APEX.
+# The PipeWire runtime tree is built by tools/build-pipewire.sh.
 
 file buildinfra/init/matonos-sleepd.rc etc/init/matonos-sleepd.rc
 file wifi/matonos-wifid.rc etc/init/matonos-wifid.rc

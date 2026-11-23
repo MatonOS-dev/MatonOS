@@ -77,12 +77,17 @@ implementation has previously been observed to fill capture with
 pseudo-random data; do not claim the no-card mic produces zero samples until
 verified or replaced.
 
-PipeWire is currently unshipped. `tools/build-pipewire.sh` only stages
-experimental prebuilts under `prebuilt/pipewire`; the inert
-`maton-pipewire.rc` documents why no service is started. There is no ODM
-bundle installation row or verified runtime integration. Do not enable the
-Linux-app audio path until binaries, libraries, configuration and proxy are
-installed under ODM and verified on a fresh boot.
+PipeWire is the selected backend for the upcoming MatonOS-owned AIDL HAL
+(2026-11-23 decision). This build task stages the vendor runtime stack under
+`buildinfra/native-built/pipewire`, and `bundle/contents.list` includes that
+tree in ODM. It does not add a service, HAL, SELinux policy, or device policy;
+the audio path remains inactive until those later tasks and fresh-boot
+verification are complete. Run `tools/build-pipewire.sh` with `ANDROID_NDK`
+configured in `matonos.local.env`; build scratch defaults to
+`$MATON_ROOT/out/pipewire-stack` and can be relocated with `MATON_PIPEWIRE_BUILD`.
+The build writes its revisions and ALSA archive hash into the staged
+`SOURCE` file. `audio/pipewire-PROVENANCE.md` records upstream provenance,
+license review, and the small Android compatibility patches.
 
 `audio/native-hal/` is also unshipped reference work. It is not installed or
 registered by the product. Do not treat it as an alternative shipped HAL; the
@@ -200,3 +205,33 @@ boot and actual playback remain unverified for this BayLibre image. Bluetooth
 audio configuration has only received source inspection and XML validation in
 this branch; it has not been built or booted, and no A2DP or LE Audio playback
 has been tested.
+
+## PipeWire vendor build status (2026-11-23)
+
+`tools/build-pipewire.sh` now builds PipeWire 1.6.9, WirePlumber 0.5.17,
+ALSA-lib/UCM, GLib/GIO, libffi and libudev-zero for x86_64/API 35. It stages
+runtime files, configs, UCM profiles and license texts under
+`buildinfra/native-built/pipewire`; the `tree` entry in
+`bundle/contents.list` includes that directory in ODM. It does not add or
+start a HAL or init service. The existing BayLibre HAL remains the current
+image implementation pending the later PipeWire HAL work.
+
+Build evidence: `bash tools/build-pipewire.sh` completed with NDK r30. The
+stage is 21 MiB. `NEEDED.txt` records all staged ELF dependencies; the script
+fails if a dependency is absent from `/odm/lib64` or the NDK's API-35 Android
+system stubs. No disabled BlueZ, D-Bus integration modules, JACK, Pulse,
+systemd, v4l2, docs or examples are shipped. See
+`audio/pipewire-PROVENANCE.md` for revision pins, license review and patch
+rationale. No device runtime or audio playback test is claimed. Preflight
+could not pass in this checkout because several unrelated APK/native
+prebuilts and `bpfmt` are absent; it reported no PipeWire tree-source error.
+
+For later fresh-image verification, boot with HDA present and then without an
+audio device. Confirm `/odm/bin/pipewire` and `/odm/bin/wireplumber` exist, the
+services use the intended config paths, WirePlumber enumerates ALSA/UCM
+devices, the PipeWire graph exposes the selected PCM, and Android playback
+and capture work. Also confirm no Bluetooth, D-Bus, JACK, Pulse, systemd, or
+v4l2 integration is loaded. On real hardware, repeat on the Ryzen/RX 6600
+system, Surface Pro 3 and HP ProDesk 600 G1 listed above; test analog, HDMI
+and USB audio hotplug where available. These checks require the later HAL and
+service integration and a fresh built image.
