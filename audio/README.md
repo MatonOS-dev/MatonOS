@@ -141,25 +141,26 @@ and the PipeWire fallback must remain available.
 
 ## PipeWire device mirroring and output boost (P3)
 
-The primary AIDL module monitors PipeWire registry nodes and connects one
-external AIDL device port per `Audio/Sink` and `Audio/Source` node. The port
-address carries a stable MatonOS identity and the port name uses PipeWire's
-node description. A stream follows the device selected by AudioPolicy through
-its connected-device address; the HAL maps that identity to the current PipeWire
-registry ID and passes it as the stream target. The HAL disconnects and
-reconnects a live stream when AudioPolicy changes the connected device. The P2 static speaker/microphone stand-ins
-are now external ports connected only while their direction has no real
-PipeWire node. Discovery setup is non-fatal: the module connects those
-stand-ins before opening the PipeWire registry and retains them if discovery
-fails.
+The policy keeps `No audio device` and `No audio device input` attached, with
+`No audio device` as the default output. They provide routable endpoints before
+PipeWire discovery and whenever no real nodes exist. The HAL does not call
+`connectExternalDevice` or `disconnectExternalDevice` itself. It keeps a private
+PipeWire global-ID-to-node table and publishes add/remove events through
+`IChannel/audio` topic `devices`; each address is exactly the PipeWire
+`node.name`, and each description is `node.description` (falling back to the
+node name). The `devices` call returns the current output and input list.
 
-Device identity uses the first available of `device.bus-path`,
-`device.serial`, `device.name`, then `node.name`, combined with
-`device.profile.name`, `node.name`, and input/output direction. `node.name`
-distinguishes multiple ports from one physical device. A stable FNV-1a 64-bit key
-is exposed as 16 lowercase hex digits. It intentionally excludes PipeWire
-node IDs and ALSA card numbers; if a device exposes none of the stable
-properties, its node name is the documented last-resort identity.
+The persistent system bridge subscribes through `buildinfra/client`, fetches a
+snapshot, and reports each node through
+`AudioManager.setWiredDeviceConnectionState(AudioDeviceAttributes, state)` with
+`AUDIO_DEVICE_OUT_IP` or `AUDIO_DEVICE_IN_IP`. A media-strategy preferred device
+keeps the selected available PipeWire output ahead of the attached no-device
+stand-in; removing the last PipeWire output clears that preference and returns
+policy to its default. The HAL's framework-driven
+`populateConnectedDevicePort` resolves `node.name` back to the current registry
+node ID for stream targeting. The bridge periodically rebinds and re-snapshots
+after a HAL restart; PipeWire server restarts are handled by the HAL registry
+retry path and node remove/add events.
 
 MatonOS Settings calls the existing `IChannel/audio` service using
 `get_devices` and `set_boost`. The HAL persists the small key/multiplier map in
@@ -196,31 +197,30 @@ tools/run-qemu-live.sh -g none -m 4096 -a 5573 \
 /mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 shell 'XDG_RUNTIME_DIR=/data/vendor/maton-audio PIPEWIRE_RUNTIME_DIR=/data/vendor/maton-audio PIPEWIRE_CONFIG_DIR=/odm/etc/pipewire LD_LIBRARY_PATH=/odm/lib64:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2 /odm/bin/pw-cli ls Node'
 ```
 
-With no real nodes, confirm the connected output and input ports are named
+With no real nodes, confirm the attached output and input ports are named
 `No audio device` and `No audio device input`. Hotplug a QEMU USB audio card:
 
 ```sh
 printf 'device_add usb-audio,id=pw_usb_audio,bus=xhci.0\n' | socat - UNIX-CONNECT:/mnt/data/aosp/out/pc-logs/pw-p3/monitor.sock
 /mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 shell dumpsys media.audio_policy
+/mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 shell dumpsys audio
 ```
 
-Confirm the fallback output port disappears, the USB sink and source appear as
-separate connected ports, and MatonOS Settings → Hardware lists the output
-sink with a 0.50×–1.50× slider. Change its multiplier and check the persisted
-value after leaving and reopening the page. Play audio while changing Android
-media volume and the multiplier; verify zero Android volume remains silent and
-that the selected device changes without restarting AudioFlinger. Then remove
-the card and check that the no-device stand-ins return:
-
-```sh
-printf 'device_del pw_usb_audio\n' | socat - UNIX-CONNECT:/mnt/data/aosp/out/pc-logs/pw-p3/monitor.sock
-/mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 shell dumpsys media.audio_policy
-/mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 logcat -b all -d -s AHAL_ModulePipeWire AHAL_AudioControlChannel AHAL_StreamPipeWire PipeWire WirePlumber
-```
+Confirm the no-device stand-ins stay attached while the USB sink and source
+appear as separate connected ports in `dumpsys audio` and
+`dumpsys media.audio_policy`. Play a local tone with an `am start` VIEW intent
+and verify the selected output is the PipeWire port. Kill PipeWire to verify
+AudioService disconnects those ports and policy falls back to `No audio device`;
+then let PipeWire restart and verify the ports and media route return without
+restarting AudioFlinger. MatonOS Settings → Hardware should list the output
+sink with a 0.50×–1.50× slider; change its multiplier and check the persisted
+value after leaving and reopening the page.
 
 The same checks should be repeated with a fresh boot on the Ryzen/RX 6600,
 Surface Pro 3 and HP ProDesk listed above. In particular, verify source
 selection and capture, analog/HDA and HDMI nodes, USB replacement, a boot with
 no audio hardware, and SELinux denials. The new dynamic generic AIDL device
 ports, live PipeWire stream retarget, external-port disconnect behavior, and
-stream-volume control still require that runtime validation.
+stream-volume control still require that runtime validation. The audiohotplug1
+implementation is not yet built or VM-tested; keep it under fresh-image
+validation before treating device registration and routing as proven.

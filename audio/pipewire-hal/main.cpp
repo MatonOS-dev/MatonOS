@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <Log.h>
+#include <android-base/logging.h>
 #include <android/binder_manager.h>
 #include <android/binder_process.h>
 #include <pipewire/pipewire.h>
@@ -61,6 +62,8 @@ ChildInterface<Module> createModule(const std::string& name,
 }  // namespace
 
 int main(int argc, char** argv) {
+    android::base::InitLogging(argv, android::base::LogdLogger());
+    android::base::SetMinimumLogSeverity(android::base::INFO);
     std::srand(std::time(nullptr));
     pw_init(&argc, &argv);
     ABinderProcess_setThreadPoolMaxThreadCount(16);
