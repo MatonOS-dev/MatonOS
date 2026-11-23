@@ -206,3 +206,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Merged docs-caption-tray + pipewire-build (PipeWire HAL default ON, BayLibre APEX out, AOSP effect APEX in) → e86fecfc, pushed.
 - pw-p3 (device mirroring/hotplug/per-device boost + Settings page) running PID 380923, worktree dt-pwp3.
 - STILL BLOCKED: build server needs python3-pil + meson (user to apt install). Next build = first PipeWire image; VM checks listed in pw-run.report.md.
+
+## 16:23 hourly
+- build-78..81 failed early (preflight vs generated files; env+shell fn; stale vold patch on server; Soong ../ paths) — all fixed, pushed. build-82 running (first PipeWire image).
+- Merged wip/pipewire-p3 (e0e0bef7; fixed JSX .map rule). Goes into the build after 82.
+- Started byo-gapps (PID 516610, dt-gapps) and hotspot scope (PID 516619, dt-hotspot, report-only).
+- Note: apply-patches.sh cannot replace a changed patch already applied (needs manual reset of that project).
