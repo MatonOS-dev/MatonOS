@@ -1,5 +1,5 @@
 # Stock AOSP AIDL External Camera Provider for USB/UVC cameras.
-# The service's own init rc and VINTF fragment are supplied by AOSP.
+# AOSP supplies the init rc; it has no VINTF fragment, so the manifest entry is ours.
 PRODUCT_PACKAGES += android.hardware.camera.provider-V1-external-service
 
 DEVICE_MANIFEST_FILE += $(LOCAL_PATH)/camera/android.hardware.camera.provider-V1-external-service.xml
