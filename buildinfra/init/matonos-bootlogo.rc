@@ -2,8 +2,8 @@
 # runs before init's on boot action starts the core class. exec_start waits for
 # this bounded, oneshot service to finish; missing BGRT is a quiet fallback.
 on early-init
+    # /oem keeps the tmpfs label: AOSP file_contexts already claims /oem (oemfs).
     mount tmpfs tmpfs /oem nodev nosuid noexec mode=0755
-    restorecon /oem
     mkdir /oem/media 0755 root root
     restorecon /oem/media
 
