@@ -10,8 +10,14 @@
             <name>IModule</name>
             <instance>default</instance>
             <instance>r_submix</instance>
-            <!-- served by our HAL as a silent ModuleStub; not in the ODM audio policy for now -->
+            <instance>usb</instance>
+            <instance>stub</instance>
             <instance>bluetooth</instance>
         </interface>
+    </hal>
+    <hal format="aidl">
+        <name>android.hardware.bluetooth.audio</name>
+        <version>6</version>
+        <fqname>IBluetoothAudioProviderFactory/default</fqname>
     </hal>
 </manifest>

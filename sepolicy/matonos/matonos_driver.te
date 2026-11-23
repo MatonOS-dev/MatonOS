@@ -98,10 +98,49 @@ allow matonos_driver_helper matonos_driver:fifo_file { getattr write };
 userdebug_or_eng(`allow matonos_driver_helper self:capability sys_rawio;')
 typeattribute matonos_driver_helper vendor_executes_system_violators;
 
-# (No audio HAL of ours: BayLibre generic AIDL HAL runs as hal_audio_default.)
-# audioserver consumes the generic HAL's shared FMQ memfds.
+# The PipeWire AIDL HAL uses the stock hal_audio_default domain.
+# audioserver consumes the audio HAL's shared FMQ memfds.
 allow audioserver hal_audio_default_tmpfs:file rw_file_perms;
 
+
+# PipeWire and WirePlumber are separate system-wide audio daemons. The HAL is
+# the stock hal_audio_default server domain and connects to PipeWire's socket.
+type matonos_pipewire, domain;
+type matonos_pipewire_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(matonos_pipewire)
+type matonos_pw_cat_exec, exec_type, vendor_file_type, file_type;
+domain_auto_trans(hal_audio_default, matonos_pw_cat_exec, matonos_pipewire)
+type matonos_wireplumber, domain;
+type matonos_wireplumber_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(matonos_wireplumber)
+
+allow { matonos_pipewire matonos_wireplumber } self:capability sys_nice;
+allow { matonos_pipewire matonos_wireplumber } self:process { setsched };
+allow { matonos_pipewire matonos_wireplumber } audio_device:dir r_dir_perms;
+allow { matonos_pipewire matonos_wireplumber } audio_device:chr_file rw_file_perms;
+allow { matonos_pipewire matonos_wireplumber } proc_asound:dir r_dir_perms;
+allow { matonos_pipewire matonos_wireplumber } proc_asound:file r_file_perms;
+allow { matonos_pipewire matonos_wireplumber } sysfs:dir r_dir_perms;
+allow { matonos_pipewire matonos_wireplumber } sysfs:file r_file_perms;
+allow { matonos_pipewire matonos_wireplumber } sysfs:lnk_file r_file_perms;
+allow { matonos_pipewire matonos_wireplumber } self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
+allow { matonos_pipewire matonos_wireplumber } vendor_file:dir r_dir_perms;
+allow { matonos_pipewire matonos_wireplumber } vendor_file:file { getattr map open read };
+allow { matonos_pipewire matonos_wireplumber } vendor_configs_file:dir r_dir_perms;
+allow { matonos_pipewire matonos_wireplumber } vendor_configs_file:file r_file_perms;
+allow { matonos_pipewire matonos_wireplumber } matonos_driver_data_file:dir create_dir_perms;
+allow { matonos_pipewire matonos_wireplumber } matonos_driver_data_file:file create_file_perms;
+allow { matonos_pipewire matonos_wireplumber } matonos_driver_data_file:sock_file create_file_perms;
+allow { matonos_pipewire matonos_wireplumber } self:unix_stream_socket create_stream_socket_perms;
+allow { matonos_pipewire matonos_wireplumber } matonos_driver_data_file:dir rw_dir_perms;
+type_transition matonos_pipewire matonos_driver_data_file:sock_file matonos_driver_data_file;
+allow matonos_wireplumber matonos_pipewire:unix_stream_socket connectto;
+allow matonos_wireplumber matonos_driver_data_file:sock_file write;
+allow hal_audio_default matonos_driver_data_file:dir { search write add_name remove_name };
+allow hal_audio_default matonos_driver_data_file:file create_file_perms;
+allow hal_audio_default matonos_driver_data_file:sock_file { create getattr open read write unlink };
+allow hal_audio_default self:unix_stream_socket create_stream_socket_perms;
+allow hal_audio_default matonos_pipewire:unix_stream_socket connectto;
 
 # PipeWire stack and proxy.
 allow matonos_driver proc_asound:dir r_dir_perms;
@@ -118,7 +157,7 @@ allow matonos_driver self:unix_stream_socket create_stream_socket_perms;
 allow matonos_driver matonos_driver_data_file:dir rw_dir_perms;
 allow matonos_driver matonos_driver_data_file:file rw_file_perms;
 allow matonos_driver self:unix_stream_socket connectto;
-# The stock audio HAL may connect to the PipeWire proxy socket.
+# The stock audio HAL may use the PipeWire proxy socket and runtime dir.
 allow hal_audio_default matonos_driver_data_file:dir search;
 allow hal_audio_default matonos_driver_data_file:file r_file_perms;
 allow hal_audio_default matonos_driver_data_file:sock_file write;

@@ -19,6 +19,11 @@ MKFS_EROFS=$HOSTBIN/mkfs.erofs
 [[ -x $MKFS_EROFS ]] || die "AOSP host mkfs.erofs missing: $MKFS_EROFS"
 LIST=$DEVICE_DIR/bundle/contents.list
 [[ -s $LIST ]] || die "bundle registry missing: $LIST"
+AUDIO_PIPEWIRE_HAL=${MATON_AUDIO_PIPEWIRE_HAL:-true}
+case $AUDIO_PIPEWIRE_HAL in
+  true|false) ;;
+  *) die "MATON_AUDIO_PIPEWIRE_HAL must be true or false" ;;
+esac
 
 mkdir -p "$(dirname "$OUT")"
 work=$(mktemp -d --tmpdir="$(dirname "$OUT")" .odm-bundle.XXXXXX)
@@ -34,6 +39,11 @@ while IFS=$' \t' read -r kind source destination extra; do
   [[ -n ${kind:-} && $kind != \#* ]] || continue
   case $kind in
     file)
+      # The PipeWire HAL init definition overrides the stock APEX service, so
+      # keep it out of an explicit BayLibre fallback bundle.
+      if [[ $source == audio/native-hal/matonos-audio-hal.rc && $AUDIO_PIPEWIRE_HAL != true ]]; then
+        continue
+      fi
       [[ -n ${source:-} && -n ${destination:-} && -z ${extra:-} ]] ||
         die "bad file row in $LIST: $kind $source $destination $extra"
       [[ -f $DEVICE_DIR/$source ]] || die "bundle input missing: $source"
@@ -59,6 +69,23 @@ while IFS=$' \t' read -r kind source destination extra; do
     *) die "unknown registry row in $LIST: $kind" ;;
   esac
 done < "$LIST"
+
+# ODM audio policy has priority over /vendor/etc. Select the exact policy pair
+# used by audio/audio.mk so the image never loads a stale backend's primary.
+if [[ $AUDIO_PIPEWIRE_HAL == true ]]; then
+  audio_policy_dir=$DEVICE_DIR/audio/pipewire-hal
+else
+  audio_policy_dir=$DEVICE_DIR/audio/config-odm
+fi
+for policy_file in audio_policy_configuration.xml primary_audio_policy_configuration.xml; do
+  policy_source=$audio_policy_dir/$policy_file
+  if [[ $AUDIO_PIPEWIRE_HAL == false && $policy_file == primary_audio_policy_configuration.xml ]]; then
+    policy_source=$DEVICE_DIR/audio/config-odm/primary_audio_policy_configuration.xml
+  fi
+  [[ -f $policy_source ]] || die "audio policy input missing: $policy_source"
+  install -m 0644 "$policy_source" "$root/etc/$policy_file"
+done
+printf 'ro.vendor.matonos.audio.pipewire=%s\n' "$AUDIO_PIPEWIRE_HAL" >> "$root/etc/build.prop"
 
 # A separate inode for the stock module-loader applet. Labeling the shared
 # vendor toolbox would also transition cat/setprop/readlink in the detector.
