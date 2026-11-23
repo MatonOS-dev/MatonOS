@@ -33,12 +33,14 @@ public final class EmbeddedSettingsSlotView extends ExpoView {
     private boolean opened;
     private boolean attached;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable openTimeout = () -> {
+    private final Runnable openTimeout = this::onOpenTimeout;
+
+    private void onOpenTimeout() {
         if (opened && status.getVisibility() != View.VISIBLE) {
             showFailure("App did not create its settings surface");
             Log.e(TAG, "settings surface open timed out component=" + component);
         }
-    };
+    }
 
     private final IEmbeddedSettingsHost.Stub callback = new IEmbeddedSettingsHost.Stub() {
         @Override public void setSurface(SurfaceControlViewHost.SurfacePackage p) {
