@@ -35,6 +35,17 @@ android_app_import {
     required: ["privapp-permissions-com.android.vending.xml"],
 }
 
+android_app_import {
+    name: "MatonMicroGGsfProxy",
+    apk: "apks/MatonMicroGGsfProxy.apk",
+    product_specific: true,
+    privileged: true,
+    presigned: true,
+    preprocessed: true,
+    skip_preprocessed_apk_checks: true,
+    required: ["privapp-permissions-com.google.android.gsf.xml"],
+}
+
 prebuilt_etc {
     name: "privapp-permissions-org.microg.gmscore.xml",
     src: "privapp-permissions-org.microg.gmscore.xml",
@@ -45,6 +56,13 @@ prebuilt_etc {
 prebuilt_etc {
     name: "privapp-permissions-com.android.vending.xml",
     src: "privapp-permissions-com.android.vending.xml",
+    sub_dir: "permissions",
+    product_specific: true,
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-com.google.android.gsf.xml",
+    src: "privapp-permissions-com.google.android.gsf.xml",
     sub_dir: "permissions",
     product_specific: true,
 }

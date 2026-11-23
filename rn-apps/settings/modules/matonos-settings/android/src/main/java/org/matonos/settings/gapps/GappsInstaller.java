@@ -41,12 +41,7 @@ import org.tukaani.xz.XZInputStream;
 public final class GappsInstaller {
     private static final int PICK_REQUEST = 7412;
     private static final String GOOGLE_ROOT = "F0FD6C5B410F25CB25C3B53346C8972FAE30F8EE7411DF910480AD6B2D60DB83";
-    private static final Map<String, Long> STAND_IN_VERSIONS = new HashMap<>();
     private static final ExecutorService WORKER = Executors.newSingleThreadExecutor();
-    static {
-        STAND_IN_VERSIONS.put("com.google.android.gms", 252432036L);
-        STAND_IN_VERSIONS.put("com.android.vending", 84022636L);
-    }
 
     private GappsInstaller() {}
 
@@ -245,14 +240,12 @@ public final class GappsInstaller {
             PackageInfo info = pm.getPackageArchiveInfo(file.getAbsolutePath(), PackageManager.GET_SIGNING_CERTIFICATES);
             if (info == null || info.packageName == null || !isSupportedPackage(info.packageName)) continue;
             if (!isX86_64OrNoNativeCode(file)) throw new IllegalArgumentException("ABI check failed for " + info.packageName + ": native code must include x86_64.");
-            Long baseline = STAND_IN_VERSIONS.get(info.packageName);
-            if (baseline == null) {
-                try {
-                    PackageInfo installed = pm.getPackageInfo(info.packageName, 0);
-                    baseline = installed.getLongVersionCode();
-                } catch (PackageManager.NameNotFoundException absent) {
-                    throw new IllegalArgumentException("Version check failed for " + info.packageName + ": no preinstalled stand-in exists to update.");
-                }
+            final long baseline;
+            try {
+                PackageInfo installed = pm.getPackageInfo(info.packageName, 0);
+                baseline = installed.getLongVersionCode();
+            } catch (PackageManager.NameNotFoundException absent) {
+                throw new IllegalArgumentException("Version check failed for " + info.packageName + ": no preinstalled stand-in exists to update.");
             }
             if (info.getLongVersionCode() <= baseline) throw new IllegalArgumentException("Version check failed for " + info.packageName + ": the APK is not newer than the preinstalled stand-in.");
             if (!hasGoogleSigningLineage(info)) throw new IllegalArgumentException("Google signing lineage check failed for " + info.packageName + ": the certificate history does not reach Google's pinned root.");
