@@ -1,1 +1,2 @@
 genfscon efivarfs / u:object_r:matonos_efivarfs:s0
+genfscon sysfs /bus/iio/devices u:object_r:sysfs_iio_devices:s0

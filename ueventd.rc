@@ -22,3 +22,5 @@ firmware_directories /mnt/vendor/addons/firmware/
 
 # Wine/Proton NT sync objects; open to all apps as on desktop distributions.
 /dev/ntsync               0666   root       root
+# sensors: Linux IIO character-device interface consumed by the AIDL HAL.
+/dev/iio:device* 0660 system system
