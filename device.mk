@@ -149,6 +149,7 @@ $(call inherit-product-if-exists, $(LOCAL_PATH)/settings/settings.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/buildinfra/buildinfra.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/systembridge/systembridge.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/camera/camera.mk)
+$(call inherit-product-if-exists, $(LOCAL_PATH)/sensors/sensors.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/input/input.mk)
 $(call inherit-product-if-exists, $(LOCAL_PATH)/bootanim/bootanim.mk)
 
