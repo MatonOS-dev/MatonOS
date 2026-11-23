@@ -8,3 +8,5 @@ get_prop(matonos_system_bridge, vendor_maton_prop)
 
 # PipeWire audio HAL owns the audio settings channel instance.
 binder_call(matonos_system_bridge, hal_audio_default)
+# audiohotplug1: PipeWire HAL sends subscribed node events back to the bridge.
+binder_call(hal_audio_default, matonos_system_bridge)

@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Primary policy ports for the MatonOS PipeWire AIDL HAL. -->
 <module name="default" halVersion="2.0">
-    <!-- The HAL connects one external device port per PipeWire node. It connects
-         the two stand-ins only while no sink/source of that direction exists. -->
+    <!-- The stand-ins are attached so policy always has endpoints. The bridge
+         connects live PipeWire ports through AudioService. -->
+    <attachedDevices>
+        <item>No audio device</item>
+        <item>No audio device input</item>
+    </attachedDevices>
     <defaultOutputDevice>No audio device</defaultOutputDevice>
     <mixPorts>
         <mixPort name="primary output" role="source" flags="AUDIO_OUTPUT_FLAG_PRIMARY">

@@ -6,14 +6,15 @@
 #include <algorithm>
 #include <cerrno>
 #include <cmath>
-#include <cstdio>
 #include <fstream>
 #include <map>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <regex>
 #include <sstream>
 #include <string_view>
+#include <vector>
 
 #include <Log.h>
 #include <android-base/file.h>
@@ -25,12 +26,14 @@ struct Device {
     uint32_t nodeId;
     std::string identity;
     std::string name;
-    bool connected;
     bool input;
 };
 std::mutex gMutex;
 std::map<std::string, Device> gDevices;
 std::map<std::string, float> gBoosts;
+std::vector<std::shared_ptr<::aidl::vendor::matonos::channel::IChannelListener>> gListeners;
+
+const char* deviceType(bool input) { return input ? "in" : "out"; }
 
 void loadBoostsLocked() {
     std::ifstream input(kBoostFile);
@@ -68,7 +71,8 @@ std::string escapeJson(std::string_view value) {
 }
 
 bool jsonString(const std::string& json, const char* key, std::string* value) {
-    const std::regex expression(std::string("\\\"") + key + "\\\"\\s*:\\s*\\\"([a-fA-F0-9]+)\\\"");
+    const std::regex expression(std::string("\\\"") + key +
+            "\\\"\\s*:\\s*\\\"([A-Za-z0-9_.:/-]+)\\\"");
     std::smatch match;
     if (!std::regex_search(json, match, expression)) return false;
     *value = match[1].str();
@@ -87,12 +91,48 @@ bool jsonNumber(const std::string& json, const char* key, float* value) {
 
 void setPipeWireDevice(uint32_t nodeId, const std::string& identity, const std::string& name,
                        bool connected, bool input) {
-    std::lock_guard lock(gMutex);
-    if (connected) {
-        gDevices[identity] = Device{nodeId, identity, name, true, input};
-    } else if (auto it = gDevices.find(identity); it != gDevices.end()) {
-        it->second.connected = false;
+    std::vector<std::shared_ptr<::aidl::vendor::matonos::channel::IChannelListener>> listeners;
+    std::string description = name;
+    std::string event;
+    {
+        std::lock_guard lock(gMutex);
+        if (connected) {
+            gDevices[identity] = Device{nodeId, identity, name, input};
+        } else {
+            const auto it = gDevices.find(identity);
+            if (it == gDevices.end()) return;
+            description = it->second.name;
+            gDevices.erase(it);
+        }
+        event = std::string("{\"event\":\"") + (connected ? "add" : "remove") +
+                "\",\"device\":{\"type\":\"" + deviceType(input) +
+                "\",\"address\":\"" + escapeJson(identity) + "\",\"description\":\"" +
+                escapeJson(description) + "\"}}";
+        listeners = gListeners;
     }
+    std::vector<std::shared_ptr<::aidl::vendor::matonos::channel::IChannelListener>> failed;
+    for (const auto& listener : listeners) {
+        const auto status = listener->onEvent("devices", event);
+        if (!status.isOk()) {
+            LOG(ERROR) << __func__ << ": event delivery failed address=" << identity
+                       << " type=" << deviceType(input)
+                       << " status=" << status.getDescription();
+            failed.push_back(listener);
+        }
+    }
+    if (!failed.empty()) {
+        std::lock_guard lock(gMutex);
+        gListeners.erase(std::remove_if(gListeners.begin(), gListeners.end(),
+                [&](const auto& listener) {
+                    return std::find(failed.begin(), failed.end(), listener) != failed.end();
+                }), gListeners.end());
+    }
+}
+
+std::string getPipeWireDeviceName(const std::string& identity, bool input) {
+    std::lock_guard lock(gMutex);
+    const auto it = gDevices.find(identity);
+    return it == gDevices.end() || it->second.input != input ? "" : it->second.name;
 }
 
 float getPipeWireDeviceBoost(const std::string& identity) {
@@ -105,29 +145,7 @@ float getPipeWireDeviceBoost(const std::string& identity) {
 uint32_t getPipeWireTargetNode(const std::string& identity) {
     std::lock_guard lock(gMutex);
     const auto it = gDevices.find(identity);
-    return it == gDevices.end() || !it->second.connected ? std::numeric_limits<uint32_t>::max() : it->second.nodeId;
-}
-
-std::string makePipeWireIdentity(const char* busPath, const char* serial, const char* deviceName,
-                                 const char* profileName, const char* nodeName, bool input) {
-    // Device identity deliberately excludes PipeWire's transient global node ID and ALSA card.
-    std::string stable = busPath != nullptr && *busPath != '\0' ? busPath
-            : serial != nullptr && *serial != '\0' ? serial
-            : deviceName != nullptr && *deviceName != '\0' ? deviceName
-            : nodeName != nullptr ? nodeName : "unknown";
-    stable += "|";
-    stable += profileName != nullptr ? profileName : "";
-    stable += "|";
-    stable += nodeName != nullptr ? nodeName : "";
-    stable += input ? "|input" : "|output";
-    uint64_t hash = 14695981039346656037ULL;
-    for (unsigned char c : stable) {
-        hash ^= c;
-        hash *= 1099511628211ULL;
-    }
-    char key[17];
-    std::snprintf(key, sizeof(key), "%016llx", static_cast<unsigned long long>(hash));
-    return key;
+    return it == gDevices.end() ? std::numeric_limits<uint32_t>::max() : it->second.nodeId;
 }
 
 ndk::ScopedAStatus AudioControlChannel::call(const std::string& command,
@@ -135,18 +153,24 @@ ndk::ScopedAStatus AudioControlChannel::call(const std::string& command,
                                              std::string* result) {
     std::lock_guard lock(gMutex);
     if (gBoosts.empty()) loadBoostsLocked();
-    if (command == "get_devices") {
+    if (command == "devices" || command == "get_devices") {
         std::ostringstream json;
         json << "{\"devices\":[";
         bool first = true;
         for (const auto& [id, device] : gDevices) {
-            if (!device.connected || device.input) continue;
+            if (command == "get_devices" && device.input) continue;
             if (!first) json << ',';
             first = false;
-            const auto boost = gBoosts.find(id);
-            json << "{\"id\":\"" << escapeJson(id) << "\",\"name\":\""
-                 << escapeJson(device.name) << "\",\"multiplier\":"
-                 << (boost == gBoosts.end() ? 1.0f : boost->second) << '}';
+            json << "{\"type\":\"" << deviceType(device.input) << "\",\"address\":\""
+                 << escapeJson(id) << "\",\"description\":\""
+                 << escapeJson(device.name) << '\"';
+            if (command == "get_devices") {
+                const auto boost = gBoosts.find(id);
+                json << ",\"id\":\"" << escapeJson(id) << "\",\"name\":\""
+                     << escapeJson(device.name) << "\",\"multiplier\":"
+                     << (boost == gBoosts.end() ? 1.0f : boost->second);
+            }
+            json << '}';
         }
         json << "]}";
         *result = json.str();
@@ -170,12 +194,28 @@ ndk::ScopedAStatus AudioControlChannel::call(const std::string& command,
 }
 
 ndk::ScopedAStatus AudioControlChannel::subscribe(
-        const std::string&, const std::shared_ptr<::aidl::vendor::matonos::channel::IChannelListener>&) {
+        const std::string& topic,
+        const std::shared_ptr<::aidl::vendor::matonos::channel::IChannelListener>& listener) {
+    if (topic != "devices" || listener == nullptr) {
+        LOG(ERROR) << __func__ << ": invalid audio subscription topic=" << topic;
+        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+    }
+    std::lock_guard lock(gMutex);
+    if (std::find(gListeners.begin(), gListeners.end(), listener) == gListeners.end()) {
+        gListeners.push_back(listener);
+    }
     return ndk::ScopedAStatus::ok();
 }
 
 ndk::ScopedAStatus AudioControlChannel::unsubscribe(
-        const std::string&, const std::shared_ptr<::aidl::vendor::matonos::channel::IChannelListener>&) {
+        const std::string& topic,
+        const std::shared_ptr<::aidl::vendor::matonos::channel::IChannelListener>& listener) {
+    if (topic != "devices") {
+        LOG(ERROR) << __func__ << ": unknown audio topic=" << topic;
+        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+    }
+    std::lock_guard lock(gMutex);
+    gListeners.erase(std::remove(gListeners.begin(), gListeners.end(), listener), gListeners.end());
     return ndk::ScopedAStatus::ok();
 }
 

@@ -40,7 +40,6 @@ class ModulePipeWire final : public Module {
         std::string name;
         std::string portName;
         bool input;
-        bool fallback;
     };
     static void onRegistryGlobal(void* userData, uint32_t id, uint32_t permissions,
                                  const char* type, uint32_t version, const spa_dict* props);
@@ -49,7 +48,6 @@ class ModulePipeWire final : public Module {
                             const char* message);
     static void onRetryTimer(void* userData, uint64_t expirations);
     void handleNode(uint32_t id, const spa_dict* props);
-    void syncNoDevicePorts(bool input);
     void scheduleRetry();
     bool connectDiscovery();
     void dropDiscoveryNodes();
@@ -67,9 +65,6 @@ class ModulePipeWire final : public Module {
     bool mDiscoveryConnected = false;
     std::mutex mDeviceMutex;
     std::map<uint32_t, DeviceNode> mNodes;
-    std::map<uint32_t, int32_t> mConnectedPorts;
-    std::map<bool, int32_t> mFallbackPorts;
-    DeviceNode mPendingPort{};
 };
 
 }  // namespace aidl::android::hardware::audio::core
