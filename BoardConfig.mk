@@ -107,6 +107,7 @@ BOARD_FLASH_BLOCK_SIZE := 4096
 
 # ---------------------------------------------------------------- vintf
 DEVICE_MANIFEST_FILE += $(DEVICE_PATH)/manifest.xml
+DEVICE_MANIFEST_FILE += $(DEVICE_PATH)/camera/android.hardware.camera.provider-V1-external-service.xml
 
 # ---------------------------------------------------------------- sepolicy
 # Enforcement is controlled by androidboot.selinux on the kernel cmdline
