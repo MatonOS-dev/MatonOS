@@ -207,6 +207,9 @@ def check_bundle_registry() -> None:
 # User-approved exceptions to the zero-patches rule (CLAUDE.md), by path
 # relative to patches/. Each needs an explicit user decision.
 APPROVED_PATCHES = {
+    # 2026-11-16: user-approved vold patch series: external drives with Linux
+    # filesystems (ext*/btrfs/xfs/f2fs/ntfs3/hfsplus/udf/iso9660, idmapped).
+    "system/vold/0001-Add-Linux-filesystems-to-public-volumes.patch",
     # 2026-11-16: user-approved layout work (ESP|SYSTEM image files|USER):
     # first-stage maps image files from maton_system via libfiemap.
     "system/core/0001-map-file-backed-system-images.patch",

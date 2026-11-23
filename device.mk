@@ -78,9 +78,19 @@ PRODUCT_PACKAGES += \
 # - The plain-named policy modules live in a separate soong namespace and are
 #   silently skipped, hence the aosp_* packages plus straight copies.
 # Effects config is ours (audio/effects/): AOSP's names libraries the generic
-# APEX doesn't ship; ours uses the real AIDL effects added by
-# patches/hardware/baylibre/audio + patches/frameworks/av and the APEX's
-# *sw_generic placeholders for the rest. Volume boost needs DynamicsProcessing.
+# APEX doesn't ship. Ours uses the real AOSP AIDL effects below (installed to
+# /vendor/lib64/soundfx, the effects service's fallback path when a library
+# is not in its APEX) and the APEX's *sw_generic placeholders (copy input to
+# output) for the rest. Volume boost needs the real DynamicsProcessing.
+PRODUCT_PACKAGES += \
+    libbundleaidl \
+    libdownmixaidl \
+    libdynamicsprocessingaidl \
+    libhapticgeneratoraidl \
+    libloudnessenhanceraidl \
+    libpreprocessingaidl \
+    libreverbaidl \
+    libvisualizeraidl
 PRODUCT_COPY_FILES += \
     device/maton/pc_x86_64/audio/effects/audio_effects_config.xml:$(TARGET_COPY_OUT_VENDOR)/etc/audio_effects_config.xml
 $(call inherit-product, frameworks/av/services/audiopolicy/audio_policy_config_vendor_1.mk)
