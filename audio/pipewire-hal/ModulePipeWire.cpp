@@ -311,8 +311,16 @@ void ModulePipeWire::syncNoDevicePorts(bool input) {
 
 ndk::ScopedAStatus ModulePipeWire::populateConnectedDevicePort(
         ::aidl::android::media::audio::common::AudioPort* audioPort, int32_t nextPortId) {
-    auto status = Module::populateConnectedDevicePort(audioPort, nextPortId);
-    if (!status.isOk()) return status;
+    // The base implementation rejects every external device (it expects the
+    // module to probe hardware). PipeWire device ports carry the template's
+    // static profiles and PipeWire converts formats, so only the port name
+    // needs filling in.
+    (void)nextPortId;
+    if (audioPort->ext.getTag() !=
+        ::aidl::android::media::audio::common::AudioPortExt::Tag::device) {
+        LOG(ERROR) << __func__ << ": not a device port: " << audioPort->toString();
+        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+    }
     audioPort->name = mPendingPort.name;
     return ndk::ScopedAStatus::ok();
 }
