@@ -253,3 +253,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Server API /api/update/apex merged (matonos-ota 309870c), not deployed.
 - audioapex2 running: merge fixes into wip/audio-apex + compat file from imports.
 - repo tool on server at ~/bin/repo. apexd patch approved by user.
+
+## 2026-11-24 01:30 — hourly
+- Main tree unchanged (check: `(git status --porcelain; git rev-parse HEAD) | md5sum` = e6c7e37d...).
+- build-97 (audio hotplug 2f0091f0) at ~10% of 5357 edges. Next on server: Digitalis (wip/digitalis 9dc35694), then audio APEX.
+- audioapex2 done: wip/audio-apex f7e7962e merges tonight's audio fixes; paths moved to /apex/com.matonos.hardware.audio; `<name>.compat.json` sidecar (DT_NEEDED outside APEX, VINTF HALs, sdk, build date). Server ranges: publish only intervals proven per base image. Not built yet.
+- libcamera2 (report only) started: libcamera Android HAL feasibility on this tree.
