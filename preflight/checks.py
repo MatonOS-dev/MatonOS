@@ -103,7 +103,7 @@ def check_product_makefiles() -> None:
                 # their system variant. Exempt modules owned by this device tree.
                 values = re.sub(r".*?\+=", "", clean).strip()
                 for module in re.findall(r"\b(?:lib[a-zA-Z0-9_.+-]+|lib32_[A-Za-z0-9_.+-]+)\b", values):
-                    if module not in LOCAL_MODULES:
+                    if module not in LOCAL_MODULES and module not in VENDOR_ONLY_AOSP_LIBS:
                         error(path, f"line {lineno}: PRODUCT_PACKAGES names library {module!r}; device packages must not pull AOSP /system libraries")
 
             if "PRODUCT_COPY_FILES" in clean and "+=" in clean:
@@ -206,6 +206,15 @@ def check_bundle_registry() -> None:
 
 # User-approved exceptions to the zero-patches rule (CLAUDE.md), by path
 # relative to patches/. Each needs an explicit user decision.
+# AOSP libraries that are vendor: true only (no /system variant), so naming
+# them in PRODUCT_PACKAGES installs nothing on /system. AIDL audio effects
+# (aidlaudioeffectservice_defaults), installed to /vendor/lib64/soundfx.
+VENDOR_ONLY_AOSP_LIBS = {
+    "libbundleaidl", "libdownmixaidl", "libdynamicsprocessingaidl",
+    "libhapticgeneratoraidl", "libloudnessenhanceraidl", "libpreprocessingaidl",
+    "libreverbaidl", "libvisualizeraidl",
+}
+
 APPROVED_PATCHES = {
     # 2026-11-16: user-approved vold patch series: external drives with Linux
     # filesystems (ext*/btrfs/xfs/f2fs/ntfs3/hfsplus/udf/iso9660, idmapped).
