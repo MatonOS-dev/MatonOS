@@ -9,7 +9,10 @@
 
 #include <spa/utils/dict.h>
 #include <algorithm>
+#include <cerrno>
 #include <cstring>
+#include <ctime>
+#include <vector>
 
 namespace aidl::android::hardware::audio::core {
 namespace {
@@ -40,42 +43,33 @@ ModulePipeWire::ModulePipeWire(std::unique_ptr<Configuration>&& config)
     }
     mDiscoveryStarted = true;
     pw_thread_loop_lock(mDiscoveryLoop);
-    mDiscoveryContext = pw_context_new(pw_thread_loop_get_loop(mDiscoveryLoop), nullptr, 0);
-    if (mDiscoveryContext == nullptr) {
-        LOG(ERROR) << __func__ << ": pw_context_new failed; device hotplug disabled";
-        pw_thread_loop_unlock(mDiscoveryLoop);
-        return;
+    mRetryTimer = pw_loop_add_timer(pw_thread_loop_get_loop(mDiscoveryLoop),
+                                    &ModulePipeWire::onRetryTimer, this);
+    if (mRetryTimer == nullptr) {
+        LOG(ERROR) << __func__ << ": pw_loop_add_timer failed; PipeWire retry disabled";
     }
-    mDiscoveryCore = pw_context_connect(mDiscoveryContext, nullptr, 0);
-    if (mDiscoveryCore == nullptr) {
-        PLOG(ERROR) << __func__ << ": PipeWire discovery connection unavailable";
-        pw_thread_loop_unlock(mDiscoveryLoop);
-        return;
-    }
-    mRegistry = pw_core_get_registry(mDiscoveryCore, PW_VERSION_REGISTRY, 0);
-    if (mRegistry == nullptr) {
-        LOG(ERROR) << __func__ << ": pw_core_get_registry failed; device hotplug disabled";
-        pw_thread_loop_unlock(mDiscoveryLoop);
-        return;
-    }
-    static const pw_registry_events events = [] {
-        pw_registry_events value{};
-        value.version = PW_VERSION_REGISTRY_EVENTS;
-        value.global = &ModulePipeWire::onRegistryGlobal;
-        value.global_remove = &ModulePipeWire::onRegistryGlobalRemove;
-        return value;
-    }();
-    pw_registry_add_listener(mRegistry, &mRegistryListener, &events, this);
+    if (!connectDiscovery()) scheduleRetry();
     pw_thread_loop_unlock(mDiscoveryLoop);
 }
 
 ModulePipeWire::~ModulePipeWire() {
     if (mDiscoveryLoop == nullptr) return;
     if (mDiscoveryStarted) pw_thread_loop_lock(mDiscoveryLoop);
-    if (mRegistry != nullptr) {
+    if (mRetryTimer != nullptr) {
+        pw_loop_destroy_source(pw_thread_loop_get_loop(mDiscoveryLoop), mRetryTimer);
+        mRetryTimer = nullptr;
+    }
+    if (mRegistryListenerInstalled) {
         spa_hook_remove(&mRegistryListener);
+        mRegistryListenerInstalled = false;
+    }
+    if (mRegistry != nullptr) {
         pw_proxy_destroy(reinterpret_cast<pw_proxy*>(mRegistry));
         mRegistry = nullptr;
+    }
+    if (mCoreListenerInstalled) {
+        spa_hook_remove(&mCoreListener);
+        mCoreListenerInstalled = false;
     }
     if (mDiscoveryCore != nullptr) {
         pw_core_disconnect(mDiscoveryCore);
@@ -91,6 +85,109 @@ ModulePipeWire::~ModulePipeWire() {
     }
     pw_thread_loop_destroy(mDiscoveryLoop);
     mDiscoveryLoop = nullptr;
+}
+
+bool ModulePipeWire::connectDiscovery() {
+    if (mDiscoveryContext == nullptr) {
+        mDiscoveryContext = pw_context_new(pw_thread_loop_get_loop(mDiscoveryLoop), nullptr, 0);
+        if (mDiscoveryContext == nullptr) {
+            LOG(ERROR) << __func__ << ": pw_context_new failed";
+            return false;
+        }
+    }
+    mDiscoveryCore = pw_context_connect(mDiscoveryContext, nullptr, 0);
+    if (mDiscoveryCore == nullptr) {
+        PLOG(ERROR) << __func__ << ": PipeWire discovery connection unavailable";
+        return false;
+    }
+    static const pw_core_events coreEvents = [] {
+        pw_core_events value{};
+        value.version = PW_VERSION_CORE_EVENTS;
+        value.error = &ModulePipeWire::onCoreError;
+        return value;
+    }();
+    pw_core_add_listener(mDiscoveryCore, &mCoreListener, &coreEvents, this);
+    mCoreListenerInstalled = true;
+
+    mRegistry = pw_core_get_registry(mDiscoveryCore, PW_VERSION_REGISTRY, 0);
+    if (mRegistry == nullptr) {
+        LOG(ERROR) << __func__ << ": pw_core_get_registry failed";
+        return false;
+    }
+    static const pw_registry_events registryEvents = [] {
+        pw_registry_events value{};
+        value.version = PW_VERSION_REGISTRY_EVENTS;
+        value.global = &ModulePipeWire::onRegistryGlobal;
+        value.global_remove = &ModulePipeWire::onRegistryGlobalRemove;
+        return value;
+    }();
+    pw_registry_add_listener(mRegistry, &mRegistryListener, &registryEvents, this);
+    mRegistryListenerInstalled = true;
+    mDiscoveryConnected = true;
+    LOG(INFO) << __func__ << ": connected to PipeWire discovery";
+    return true;
+}
+
+void ModulePipeWire::scheduleRetry() {
+    if (mRetryTimer == nullptr) return;
+    const timespec retryIn{1, 0};
+    const int result = pw_loop_update_timer(pw_thread_loop_get_loop(mDiscoveryLoop), mRetryTimer,
+                                            &retryIn, nullptr, false);
+    if (result < 0) {
+        LOG(ERROR) << __func__ << ": pw_loop_update_timer failed result=" << result;
+    }
+}
+
+void ModulePipeWire::onRetryTimer(void* userData, uint64_t) {
+    auto* self = static_cast<ModulePipeWire*>(userData);
+    if (self->mDiscoveryConnected) return;
+    if (self->mRegistryListenerInstalled) {
+        spa_hook_remove(&self->mRegistryListener);
+        self->mRegistryListenerInstalled = false;
+    }
+    if (self->mRegistry != nullptr) {
+        pw_proxy_destroy(reinterpret_cast<pw_proxy*>(self->mRegistry));
+        self->mRegistry = nullptr;
+    }
+    if (self->mCoreListenerInstalled) {
+        spa_hook_remove(&self->mCoreListener);
+        self->mCoreListenerInstalled = false;
+    }
+    if (self->mDiscoveryCore != nullptr) {
+        pw_core_disconnect(self->mDiscoveryCore);
+        self->mDiscoveryCore = nullptr;
+    }
+    if (self->mDiscoveryContext != nullptr) {
+        pw_context_destroy(self->mDiscoveryContext);
+        self->mDiscoveryContext = nullptr;
+    }
+    if (!self->connectDiscovery()) self->scheduleRetry();
+}
+
+void ModulePipeWire::onCoreError(void* userData, uint32_t id, int, int result,
+                                  const char* message) {
+    auto* self = static_cast<ModulePipeWire*>(userData);
+    if (id != PW_ID_CORE || result != -EPIPE) {
+        LOG(ERROR) << __func__ << ": PipeWire core error id=" << id << " result=" << result
+                   << " detail=" << (message == nullptr ? "unknown" : message);
+        return;
+    }
+    if (!self->mDiscoveryConnected) return;
+    LOG(ERROR) << __func__ << ": PipeWire discovery disconnected result=" << result
+               << " detail=" << (message == nullptr ? "unknown" : message);
+    self->mDiscoveryConnected = false;
+    self->dropDiscoveryNodes();
+    self->scheduleRetry();
+}
+
+void ModulePipeWire::dropDiscoveryNodes() {
+    std::vector<uint32_t> ids;
+    {
+        std::lock_guard lock(mDeviceMutex);
+        ids.reserve(mNodes.size());
+        for (const auto& [id, node] : mNodes) ids.push_back(id);
+    }
+    for (uint32_t id : ids) onRegistryGlobalRemove(this, id);
 }
 
 void ModulePipeWire::onRegistryGlobal(void* userData, uint32_t id, uint32_t,

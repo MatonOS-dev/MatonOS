@@ -35,10 +35,15 @@ class StreamPipeWire : public StreamCommonImpl {
   private:
     static void onStateChanged(void* userData, pw_stream_state oldState,
                                pw_stream_state state, const char* error);
+    static void onCoreError(void* userData, uint32_t id, int seq, int result,
+                            const char* message);
     static void onProcess(void* userData);
     static void onDrained(void* userData);
     ::android::status_t startPipeWire();
     ::android::status_t connectPipeWireNode(uint32_t targetNode);
+    bool reconnectPipeWireIfDue();
+    ::android::status_t transferWithoutPipeWire(void* buffer, size_t frameCount,
+                                                size_t* actualFrameCount, int32_t* latencyMs);
     void stopPipeWire();
     void processBuffer();
 
@@ -56,6 +61,8 @@ class StreamPipeWire : public StreamCommonImpl {
     pw_core* mCore = nullptr;
     pw_stream* mStream = nullptr;
     std::atomic<pw_stream_state> mState{PW_STREAM_STATE_UNCONNECTED};
+    spa_hook mCoreListener{};
+    bool mCoreListenerInstalled = false;
     spa_hook mStreamListener{};
     std::mutex mBufferMutex;
     std::condition_variable mBufferChanged;
@@ -66,6 +73,8 @@ class StreamPipeWire : public StreamCommonImpl {
     bool mShutdown = false;
     bool mDrained = false;
     bool mLoopStarted = false;
+    std::atomic<bool> mPipeWireDown{false};
+    std::atomic<int64_t> mNextRetryNs{0};
     std::string mActiveIdentity;
     float mAppliedBoost = 1.0f;
     bool mUsePcmBoost = true;

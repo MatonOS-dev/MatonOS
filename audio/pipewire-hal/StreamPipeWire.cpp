@@ -10,6 +10,7 @@
 #include <cmath>
 #include <limits>
 #include <string>
+#include <thread>
 
 #include <Log.h>
 #include <spa/param/audio/format-utils.h>
@@ -74,7 +75,15 @@ StreamPipeWire::~StreamPipeWire() {
                    << " shutdown=" << mShutdown;
         return ::android::INVALID_OPERATION;
     }
-    if (mState == PW_STREAM_STATE_ERROR) stopPipeWire();
+    if (mState == PW_STREAM_STATE_ERROR) {
+        mPipeWireDown = true;
+    }
+    if (mPipeWireDown) {
+        if (mLoop != nullptr || mStream != nullptr || mPwContext != nullptr || mCore != nullptr) {
+            stopPipeWire();
+        }
+        return ::android::OK;
+    }
     if (mStream != nullptr) {
         if (pw_stream_set_active(mStream, true) < 0) {
             LOG(ERROR) << __func__ << ": failed to reactivate PipeWire stream";
@@ -82,7 +91,16 @@ StreamPipeWire::~StreamPipeWire() {
         }
         return ::android::OK;
     }
-    return startPipeWire();
+    const auto status = startPipeWire();
+    if (status != ::android::OK) {
+        mPipeWireDown = true;
+        mNextRetryNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now().time_since_epoch()).count() +
+                       1000000000LL;
+        // Keep the AIDL stream alive; transfer() supplies paced silence/discard until recovery.
+        return ::android::OK;
+    }
+    return status;
 }
 
 ::android::status_t StreamPipeWire::startPipeWire() {
@@ -116,6 +134,14 @@ StreamPipeWire::~StreamPipeWire() {
         stopPipeWire();
         return ::android::NO_INIT;
     }
+    static const pw_core_events coreEvents = [] {
+        pw_core_events value{};
+        value.version = PW_VERSION_CORE_EVENTS;
+        value.error = &StreamPipeWire::onCoreError;
+        return value;
+    }();
+    pw_core_add_listener(mCore, &mCoreListener, &coreEvents, this);
+    mCoreListenerInstalled = true;
 
     const auto& devices = getConnectedDevices();
     if (!mInput && !devices.empty() &&
@@ -217,9 +243,38 @@ void StreamPipeWire::onStateChanged(void* userData, pw_stream_state /*oldState*/
     auto* self = static_cast<StreamPipeWire*>(userData);
     self->mState = state;
     if (state == PW_STREAM_STATE_ERROR) {
-        LOG(ERROR) << __func__ << ": PipeWire stream error node="
+        const int64_t retryAt = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now().time_since_epoch()).count() +
+                                1000000000LL;
+        self->mNextRetryNs = retryAt;
+        if (!self->mPipeWireDown.exchange(true)) {
+            LOG(ERROR) << __func__ << ": PipeWire stream disconnected node="
+                       << (self->mInput ? kCaptureNodeName : kPlaybackNodeName)
+                       << " detail=" << (error == nullptr ? "unknown" : error);
+        }
+    }
+    if (self->mLoop != nullptr) pw_thread_loop_signal(self->mLoop, false);
+    self->mBufferChanged.notify_all();
+}
+
+void StreamPipeWire::onCoreError(void* userData, uint32_t id, int, int result,
+                                  const char* message) {
+    auto* self = static_cast<StreamPipeWire*>(userData);
+    if (id != PW_ID_CORE || result != -EPIPE) {
+        LOG(ERROR) << __func__ << ": PipeWire core error id=" << id << " result=" << result
+                   << " node=" << (self->mInput ? kCaptureNodeName : kPlaybackNodeName)
+                   << " detail=" << (message == nullptr ? "unknown" : message);
+        return;
+    }
+    self->mState = PW_STREAM_STATE_ERROR;
+    self->mNextRetryNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::steady_clock::now().time_since_epoch()).count() +
+                         1000000000LL;
+    if (!self->mPipeWireDown.exchange(true)) {
+        LOG(ERROR) << __func__ << ": PipeWire core disconnected node="
                    << (self->mInput ? kCaptureNodeName : kPlaybackNodeName)
-                   << " detail=" << (error == nullptr ? "unknown" : error);
+                   << " result=" << result
+                   << " detail=" << (message == nullptr ? "unknown" : message);
     }
     if (self->mLoop != nullptr) pw_thread_loop_signal(self->mLoop, false);
     self->mBufferChanged.notify_all();
@@ -334,11 +389,10 @@ void StreamPipeWire::processBuffer() {
                                               size_t* actualFrameCount, int32_t* latencyMs) {
     *actualFrameCount = 0;
     *latencyMs = getContext().getNominalLatencyMs();
-    if (mStream == nullptr || mState == PW_STREAM_STATE_ERROR || mFrameBytes == 0) {
-        LOG(ERROR) << __func__ << ": stream is unavailable node="
-                   << (mInput ? kCaptureNodeName : kPlaybackNodeName)
-                   << " state=" << pw_stream_state_as_string(mState);
-        return ::android::INVALID_OPERATION;
+    if (mFrameBytes == 0) return ::android::BAD_VALUE;
+    if (mStream == nullptr || mState == PW_STREAM_STATE_ERROR || mPipeWireDown) {
+        mPipeWireDown = true;
+        return transferWithoutPipeWire(buffer, frameCount, actualFrameCount, latencyMs);
     }
     const size_t byteCount = frameCount * mFrameBytes;
     std::unique_lock lock(mBufferMutex);
@@ -347,9 +401,15 @@ void StreamPipeWire::processBuffer() {
                 lock, std::chrono::milliseconds(kOperationTimeoutMs),
                 [&] { return mCaptureQueue.size() >= byteCount || mState == PW_STREAM_STATE_ERROR; });
         if (!ready || mState == PW_STREAM_STATE_ERROR) {
-            LOG(ERROR) << __func__ << ": timed out waiting for capture frames=" << frameCount
-                       << " node=" << kCaptureNodeName;
-            return ::android::INVALID_OPERATION;
+            lock.unlock();
+            if (!mPipeWireDown.exchange(true)) {
+                LOG(ERROR) << __func__ << ": capture transfer timed out frames=" << frameCount
+                           << " node=" << kCaptureNodeName;
+            }
+            mNextRetryNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                   std::chrono::steady_clock::now().time_since_epoch()).count() +
+                           1000000000LL;
+            return transferWithoutPipeWire(buffer, frameCount, actualFrameCount, latencyMs);
         }
         auto* dst = static_cast<uint8_t*>(buffer);
         for (size_t i = 0; i < byteCount; ++i) {
@@ -369,9 +429,15 @@ void StreamPipeWire::processBuffer() {
                 lock, std::chrono::milliseconds(kOperationTimeoutMs),
                 [&] { return mFramesTransferred >= expectedFrames || mState == PW_STREAM_STATE_ERROR; });
         if (!complete || mState == PW_STREAM_STATE_ERROR) {
-            LOG(ERROR) << __func__ << ": timed out waiting for playback frames=" << frameCount
-                       << " node=" << kPlaybackNodeName;
-            return ::android::INVALID_OPERATION;
+            lock.unlock();
+            if (!mPipeWireDown.exchange(true)) {
+                LOG(ERROR) << __func__ << ": playback transfer timed out frames=" << frameCount
+                           << " node=" << kPlaybackNodeName;
+            }
+            mNextRetryNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                   std::chrono::steady_clock::now().time_since_epoch()).count() +
+                           1000000000LL;
+            return transferWithoutPipeWire(buffer, frameCount, actualFrameCount, latencyMs);
         }
     }
     *actualFrameCount = frameCount;
@@ -379,8 +445,43 @@ void StreamPipeWire::processBuffer() {
     return ::android::OK;
 }
 
+::android::status_t StreamPipeWire::transferWithoutPipeWire(
+        void* buffer, size_t frameCount, size_t* actualFrameCount, int32_t* latencyMs) {
+    if (mInput && frameCount != 0) memset(buffer, 0, frameCount * mFrameBytes);
+    const auto duration = std::chrono::duration<double>(
+            static_cast<double>(frameCount) / static_cast<double>(mSampleRate));
+    std::this_thread::sleep_for(duration);
+    *actualFrameCount = frameCount;
+    *latencyMs = getContext().getNominalLatencyMs();
+    reconnectPipeWireIfDue();
+    return ::android::OK;
+}
+
+bool StreamPipeWire::reconnectPipeWireIfDue() {
+    if (!mPipeWireDown || mShutdown) return false;
+    const int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (now < mNextRetryNs) return false;
+    if (mLoop != nullptr || mStream != nullptr || mPwContext != nullptr || mCore != nullptr) {
+        stopPipeWire();
+    }
+    const auto status = startPipeWire();
+    if (status != ::android::OK || mState == PW_STREAM_STATE_ERROR) {
+        if (status == ::android::OK) stopPipeWire();
+        mNextRetryNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now().time_since_epoch()).count() +
+                       1000000000LL;
+        return false;
+    }
+    mPipeWireDown = false;
+    LOG(INFO) << __func__ << ": PipeWire stream reconnected node="
+              << (mInput ? kCaptureNodeName : kPlaybackNodeName);
+    return true;
+}
+
 ::android::status_t StreamPipeWire::drain(StreamDescriptor::DrainMode) {
-    if (mInput || mStream == nullptr || mLoop == nullptr) return ::android::OK;
+    if (mInput || mPipeWireDown || mState == PW_STREAM_STATE_ERROR ||
+        mStream == nullptr || mLoop == nullptr) return ::android::OK;
     pw_thread_loop_lock(mLoop);
     mDrained = false;
     const int result = pw_stream_flush(mStream, true);
@@ -404,7 +505,8 @@ void StreamPipeWire::processBuffer() {
 }
 
 ::android::status_t StreamPipeWire::flush() {
-    if (mStream != nullptr && mLoop != nullptr) {
+    if (!mPipeWireDown && mState != PW_STREAM_STATE_ERROR &&
+        mStream != nullptr && mLoop != nullptr) {
         pw_thread_loop_lock(mLoop);
         const int pauseResult = pw_stream_set_active(mStream, false);
         const int flushResult = pw_stream_flush(mStream, false);
@@ -426,7 +528,9 @@ void StreamPipeWire::processBuffer() {
 }
 
 ::android::status_t StreamPipeWire::pause() {
-    if (mStream == nullptr) return ::android::OK;
+    if (mPipeWireDown || mState == PW_STREAM_STATE_ERROR || mStream == nullptr) {
+        return ::android::OK;
+    }
     pw_thread_loop_lock(mLoop);
     const int result = pw_stream_set_active(mStream, false);
     pw_thread_loop_unlock(mLoop);
@@ -451,7 +555,8 @@ ndk::ScopedAStatus StreamPipeWire::setConnectedDevices(
     mActiveIdentity = devices.front().address.get<
             ::aidl::android::media::audio::common::AudioDeviceAddress::id>();
     const uint32_t targetNode = getPipeWireTargetNode(mActiveIdentity);
-    if (mStream != nullptr && mLoop != nullptr) {
+    if (!mPipeWireDown && mState != PW_STREAM_STATE_ERROR &&
+        mStream != nullptr && mLoop != nullptr) {
         pw_thread_loop_lock(mLoop);
         const int disconnectResult = pw_stream_disconnect(mStream);
         if (disconnectResult < 0) {
@@ -484,7 +589,8 @@ ndk::ScopedAStatus StreamPipeWire::setConnectedDevices(
 }
 
 ::android::status_t StreamPipeWire::refinePosition(StreamDescriptor::Position* position) {
-    if (mStream == nullptr || mLoop == nullptr) return ::android::OK;
+    if (mPipeWireDown || mState == PW_STREAM_STATE_ERROR ||
+        mStream == nullptr || mLoop == nullptr) return ::android::OK;
     pw_time time{};
     pw_thread_loop_lock(mLoop);
     const int result = pw_stream_get_time_n(mStream, &time, sizeof(time));
@@ -514,6 +620,10 @@ void StreamPipeWire::stopPipeWire() {
             pw_stream_destroy(mStream);
             mStream = nullptr;
         }
+        if (mCoreListenerInstalled) {
+            spa_hook_remove(&mCoreListener);
+            mCoreListenerInstalled = false;
+        }
         if (mCore != nullptr) {
             pw_core_disconnect(mCore);
             mCore = nullptr;
@@ -528,6 +638,10 @@ void StreamPipeWire::stopPipeWire() {
             spa_hook_remove(&mStreamListener);
             pw_stream_destroy(mStream);
             mStream = nullptr;
+        }
+        if (mCoreListenerInstalled) {
+            spa_hook_remove(&mCoreListener);
+            mCoreListenerInstalled = false;
         }
         if (mCore != nullptr) {
             pw_core_disconnect(mCore);
