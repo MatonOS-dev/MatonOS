@@ -15,9 +15,6 @@
             <instance>bluetooth</instance>
         </interface>
     </hal>
-    <hal format="aidl">
-        <name>android.hardware.bluetooth.audio</name>
-        <version>6</version>
-        <fqname>IBluetoothAudioProviderFactory/default</fqname>
-    </hal>
+    <!-- IBluetoothAudioProviderFactory/default: declared by the vendor vintf fragment
+         of android.hardware.bluetooth.audio-impl, which the HAL links and registers. -->
 </manifest>

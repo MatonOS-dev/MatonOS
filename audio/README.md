@@ -97,13 +97,16 @@ and the primary module's `No audio device` ports, so discovery failure does
 not gate boot. libudev-zero enumerates `/sys`, reads `/proc/asound`, and uses
 kernel uevent netlink for hotplug; no system udev daemon is required.
 
-The stock audio effect service and effect libraries come from AOSP's
-`com.android.hardware.audio` APEX. The BayLibre APEX is not installed in this
-mode. `audio/effects/audio_effects_config.xml` uses AOSP's un-suffixed library
-filenames that match the stock effect libraries supplied by the APEX. The APEX also contains the stock core service and its init
-rc/VINTF fragment. The ODM `vendor.audio-hal-aidl` service uses `override` to
-replace that core service; the ODM VINTF override advertises only the
-configured PipeWire core modules.
+The effect service comes from the BayLibre `com.android.hardware.audio.generic`
+APEX; `audio/effects/audio_effects_config.xml` names its `*_generic` placeholder
+libraries plus the real AOSP AIDL effects installed to `/vendor/lib64/soundfx`
+(device.mk). The APEX also contains a core service; the ODM
+`vendor.audio-hal-aidl` service uses `override` to replace it, and the ODM VINTF
+override advertises only the configured PipeWire core modules. AOSP's stock
+`com.android.hardware.audio` APEX is not used: it declares
+`IBluetoothAudioProviderFactory/default`, which the vendor vintf fragment of
+`android.hardware.bluetooth.audio-impl` (linked by the PipeWire HAL) already
+declares, and the duplicate fails `check_vintf`.
 
 The ODM bundle installs the two audio init rc files, the audio-core VINTF
 fragment (`audio/native-hal/vintf/manifest.xml`), all PipeWire runtime

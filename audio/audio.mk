@@ -1,11 +1,12 @@
 # PipeWire is the supported audio HAL; the legacy BayLibre APEX is not in the default image.
 MATON_AUDIO_PIPEWIRE_HAL ?= true
 PRODUCT_PACKAGES := $(filter-out com.android.hardware.audio audio_effects_config.xml,$(PRODUCT_PACKAGES))
+# The generic APEX supplies the effect service (its core service is replaced by
+# the ODM vendor.audio-hal-aidl override). Not the stock com.android.hardware.audio
+# APEX: it declares IBluetoothAudioProviderFactory, which conflicts with the vintf
+# fragment android.hardware.bluetooth.audio-impl installs for the PipeWire HAL.
 ifeq ($(MATON_AUDIO_PIPEWIRE_HAL),true)
-PRODUCT_PACKAGES := $(filter-out com.android.hardware.audio.generic,$(PRODUCT_PACKAGES))
-PRODUCT_PACKAGES += android.hardware.audio.service-aidl.matonos com.android.hardware.audio
-else
-PRODUCT_PACKAGES += com.android.hardware.audio.generic
+PRODUCT_PACKAGES += android.hardware.audio.service-aidl.matonos
 endif
 
 # Keep ODM and vendor policy copies aligned with the PipeWire HAL modules.
