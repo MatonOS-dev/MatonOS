@@ -57,16 +57,19 @@ through v4 only. A v5 VINTF declaration cannot be built/verified against this
 tree; the product override therefore advertises v4. Move to v5 when the AOSP
 interface and BayLibre implementation both provide it.
 
-## Round 2 audit follow-up
+## Round 2 audit follow-up — superseded by P4
 
-- PipeWire is deliberately **unshipped** for now. No `bundle/contents.list`
-  rows should be added for `prebuilt/pipewire`; `audio/maton-pipewire.rc` is
-  inert and `tools/build-pipewire.sh` only stages experimental artifacts. To
-  ship later, add explicit ODM bundle rows for the binaries, libraries,
-  configs/data and `maton-pipewire-proxy`, then validate startup and Linux-app
-  audio on a fresh image before enabling an init rc.
-- `bundle/contents.list` currently installs
-  `audio/config-odm/mixer_controls.xml` to `/odm/etc/mixer_controls.xml`, but
-  BayLibre reads this file only from `/vendor/etc`. Remove that `file` row;
-  `audio/audio.mk` already installs the same source at
-  `/vendor/etc/mixer_controls.xml`.
+The old note marked PipeWire unshipped. P4 now enables its HAL and ODM init
+services by default. `audio.mk` installs the mixer controls at `/vendor/etc`
+for the BayLibre fallback; the redundant `/odm/etc/mixer_controls.xml` bundle
+copy has been removed.
+
+## PipeWire HAL policy selection (P2/P4) — implemented
+
+`tools/build-bundle.sh` now selects the ODM policy root and primary include
+from `MATON_AUDIO_PIPEWIRE_HAL` (default `true`) and writes the matching
+`ro.vendor.matonos.audio.pipewire` property into the bundle. `audio/audio.mk`
+selects the same vendor policy and matching effect config. The PipeWire HAL
+init override is omitted in explicit `false` builds, preserving the BayLibre
+service. The bundle registry no longer hardcodes either backend's policy pair.
+No AOSP project changes are required.

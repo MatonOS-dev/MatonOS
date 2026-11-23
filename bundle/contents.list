@@ -4,14 +4,14 @@
 # Graphics are vendor image contents (graphics.mk/build-mesa.sh), not ODM bundle rows.
 
 file buildinfra/native-built/libmatonos-ipc.so lib64/libmatonos-ipc.so
+tree buildinfra/native-built/pipewire .
 file buildinfra/native-built/matonos-sleepd bin/matonos-sleepd
 file buildinfra/native-built/matonos-wifid bin/matonos-wifid
 file buildinfra/native-built/matonos-inputd bin/matonos-inputd
 file buildinfra/native-built/matonos-bootlogo bin/matonos-bootlogo
 file bootanim/out/wordmark.rgba etc/bootanim/wordmark.rgba
 file bootanim/out/fallback.zip etc/bootanim/fallback.zip
-# PipeWire, custom-HAL, detector, and snd-aloop files remain in the tree only;
-# the shipped implementation is BayLibre's generic AIDL audio APEX.
+# The PipeWire runtime tree is built by tools/build-pipewire.sh.
 
 file buildinfra/init/matonos-sleepd.rc etc/init/matonos-sleepd.rc
 file buildinfra/init/matonos-bootlogo.rc etc/init/matonos-bootlogo.rc
@@ -23,6 +23,8 @@ file audio/maton-audio-select.rc etc/init/maton-audio-select.rc
 file audio/maton-audio-select.sh bin/maton-audio-select.sh
 file audio/maton-audio-codecs.rc etc/init/maton-audio-codecs.rc
 file audio/maton-audio-codecs.sh bin/maton-audio-codecs.sh
+file audio/maton-pipewire.rc etc/init/maton-pipewire.rc
+file audio/native-hal/matonos-audio-hal.rc etc/init/matonos-audio-hal.rc
 
 # Live-only raw-disk installer. The channel service stays in matonos_driver.
 file buildinfra/native-built/matonos-installer-service bin/matonos-installer-service
@@ -56,16 +58,13 @@ prop ro.soc.model=pc_x86_64
 # MatonOS release identity (Ubuntu-style YY.MM, see NOTES.md "Versioning").
 # Read by the add-ons/updater tooling (addons/README.md) and Settings.
 prop ro.vendor.matonos.version=26.9
-# Audio policy (ODM copy, read before /vendor/etc). Bluetooth audio policy is
-# intentionally omitted; the bundle config enables primary, r_submix, USB,
-# and stub modules only.
-file audio/config-odm/audio_policy_configuration.xml etc/audio_policy_configuration.xml
-file audio/config-odm/primary_audio_policy_configuration.xml etc/primary_audio_policy_configuration.xml
+# Audio policy root and primary include are selected by tools/build-bundle.sh
+# from MATON_AUDIO_PIPEWIRE_HAL. The fixed includes below are shared by both.
+
 file audio/config-odm/r_submix_audio_policy_configuration.xml etc/r_submix_audio_policy_configuration.xml
 file audio/config-odm/usb_audio_policy_configuration.xml etc/usb_audio_policy_configuration.xml
 file audio/config-odm/stub_audio_policy_configuration.xml etc/stub_audio_policy_configuration.xml
-file audio/config-odm/mixer_controls.xml etc/mixer_controls.xml
-file audio/config-odm/audio_core_manifest.xml etc/vintf/manifest/matonos-audio-core.xml
+file audio/native-hal/vintf/manifest.xml etc/vintf/manifest/matonos-pipewire-audio.xml
 file audio/config-odm/audio_policy_volumes.xml etc/audio_policy_volumes.xml
 file audio/config-odm/default_volume_tables.xml etc/default_volume_tables.xml
 file audio/config-odm/surround_sound_configuration_5_0.xml etc/surround_sound_configuration_5_0.xml

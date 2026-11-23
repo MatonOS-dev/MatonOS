@@ -1,20 +1,18 @@
 #!/usr/bin/env bash
-# Build PipeWire, WirePlumber, ALSA-lib and their small GLib dependency stack
-# for Android x86_64, then stage experimental vendor-relative files in
-# prebuilt/pipewire. This output is intentionally NOT installed/shipped yet.
+# Build the MatonOS vendor PipeWire stack with the Android NDK and stage it in
+# buildinfra/native-built for inclusion in the ODM bundle.
 set -Eeuo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
 . "$(dirname -- "$(readlink -f -- "$0")")/local-env.sh"
-NDK=${ANDROID_NDK:-$HOME/Documents/android-ndk-r30}
+NDK=${ANDROID_NDK:-}
 API=35
-JOBS=${PIPEWIRE_JOBS:-4}
-OUT=$AOSP/out/pc-pipewire
-STAGE=$DEVICE_DIR/prebuilt/pipewire
+JOBS=${MATON_BUILD_JOBS:-$(nproc)}
+OUT=${MATON_PIPEWIRE_BUILD:-$MATON_ROOT/out/pipewire-stack}
+STAGE=$DEVICE_DIR/buildinfra/native-built/pipewire
 TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 CC=$TOOLCHAIN/bin/x86_64-linux-android$API-clang
 CXX=$TOOLCHAIN/bin/x86_64-linux-android$API-clang++
@@ -24,24 +22,28 @@ SRC=$OUT/src
 PREFIX=/vendor
 DEST=$OUT/dest
 
-while getopts "n:a:o:j:h" opt; do
+while getopts "n:o:j:h" opt; do
   case $opt in
     n) NDK=$OPTARG; TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
        CC=$TOOLCHAIN/bin/x86_64-linux-android$API-clang
        CXX=$TOOLCHAIN/bin/x86_64-linux-android$API-clang++
        AR=$TOOLCHAIN/bin/llvm-ar; STRIP=$TOOLCHAIN/bin/llvm-strip ;;
-    a) AOSP=$(readlink -f "$OPTARG") ;;
     o) OUT=$(readlink -m "$OPTARG"); SRC=$OUT/src; DEST=$OUT/dest ;;
     j) JOBS=$OPTARG ;;
-    *) echo "Usage: $0 [-n NDK] [-a AOSP] [-o build-dir] [-j jobs]"; exit 0 ;;
+    *) echo "Usage: $0 [-n NDK] [-o build-dir] [-j jobs]"; exit 0 ;;
   esac
 done
+
+[[ $JOBS =~ ^[1-9][0-9]*$ ]] || die "MATON_BUILD_JOBS must be a positive integer"
+[[ -n $NDK ]] || die "set ANDROID_NDK in matonos.local.env or pass -n NDK"
 
 for tool in git meson ninja pkg-config python3 curl sha256sum tar make; do
   command -v "$tool" >/dev/null || die "missing host tool: $tool"
 done
 [[ -x $CC && -x $CXX ]] || die "Android NDK API $API toolchain not found at $NDK"
 mkdir -p "$SRC" "$DEST"
+rm -rf "$DEST"
+mkdir -p "$DEST"
 
 fetch() {
   local name=$1 url=$2 commit=$3 dir=$SRC/$1
@@ -54,8 +56,19 @@ fetch() {
   [[ $(git -C "$dir" rev-parse HEAD) == "$commit" ]] || die "$name source revision mismatch"
 }
 
+meson_configure() {
+  local build_dir=$1 source_dir=$2
+  shift 2
+  if [[ -f $build_dir/build.ninja ]]; then
+    meson setup --reconfigure "$build_dir" "$source_dir" "$@"
+  else
+    meson setup "$build_dir" "$source_dir" "$@"
+  fi
+}
+
 # Immutable upstream revisions. The tags and source provenance are also
-# recorded in audio/README.md; no build-host paths are embedded in images.
+# recorded in audio/pipewire-PROVENANCE.md; generated SOURCE records the
+# exact revisions and input hashes used for this build.
 fetch alsa-ucm-conf https://github.com/alsa-project/alsa-ucm-conf.git 28776e1e22a952e4ab01037033380aa111985101
 fetch glib https://gitlab.gnome.org/GNOME/glib.git 41eca60845d3fc309af361f5e7f801ba339099aa
 fetch libffi https://gitlab.freedesktop.org/gstreamer/meson-ports/libffi.git 83d0cfd00d7d37af4b4349511d29f1f0512621b3
@@ -91,24 +104,6 @@ echo '83770841585e766a60c99fd23f8c574c22643ae0cb1f2d20b793c3d84eb95a8d  '"$ALSA_
   | sha256sum -c -
 rm -rf "$SRC/alsa-lib"
 tar -xf "$ALSA_TARBALL" -C "$SRC"
-PCRE2_TARBALL=$SRC/pcre2-10.46.tar.bz2
-if [[ ! -f $PCRE2_TARBALL ]]; then
-  curl -fL --retry 3 -o "$PCRE2_TARBALL" \
-    https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.46/pcre2-10.46.tar.bz2
-fi
-echo '15fbc5aba6beee0b17aecb04602ae39432393aba1ebd8e39b7cabf7db883299f  '"$PCRE2_TARBALL" \
-  | sha256sum -c -
-rm -rf "$SRC/pcre2-10.46"
-tar -xf "$PCRE2_TARBALL" -C "$SRC"
-SNDFILE_TARBALL=$SRC/libsndfile-1.2.2.tar.xz
-if [[ ! -f $SNDFILE_TARBALL ]]; then
-  curl -fL --retry 3 -o "$SNDFILE_TARBALL" \
-    https://github.com/libsndfile/libsndfile/releases/download/1.2.2/libsndfile-1.2.2.tar.xz
-fi
-echo '3799ca9924d3125038880367bf1468e53a1b7e3686a934f098b7e1d286cdb80e  '"$SNDFILE_TARBALL" \
-  | sha256sum -c -
-rm -rf "$SRC/libsndfile-1.2.2"
-tar -xf "$SNDFILE_TARBALL" -C "$SRC"
 
 cat > "$OUT/android-x86_64.ini" <<EOF
 [binaries]
@@ -140,27 +135,10 @@ export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
 export PKG_CONFIG_SYSROOT_DIR="$DEST"
 
 info "Building libffi"
-meson setup "$OUT/libffi" "$SRC/libffi" --cross-file "$OUT/android-x86_64.ini" \
+meson_configure "$OUT/libffi" "$SRC/libffi" --cross-file "$OUT/android-x86_64.ini" \
   --prefix="$PREFIX" --libdir=lib64 --buildtype=release -Ddefault_library=shared
 ninja -C "$OUT/libffi" -j"$JOBS"
 DESTDIR="$DEST" ninja -C "$OUT/libffi" install
-
-info "Building PCRE2"
-mkdir -p "$OUT/pcre2"
-  (cd "$OUT/pcre2" && "$SRC/pcre2-10.46/configure" --host=x86_64-linux-android \
-    --prefix=/vendor --libdir=/vendor/lib64 --enable-shared --disable-static \
-    --disable-pcre2-16 --disable-pcre2-32 --disable-jit)
-make -C "$OUT/pcre2" -j"$JOBS"
-make -C "$OUT/pcre2" DESTDIR="$DEST" install
-
-info "Building libsndfile (raw PCM support only; codecs disabled)"
-mkdir -p "$OUT/libsndfile"
-(cd "$OUT/libsndfile" && "$SRC/libsndfile-1.2.2/configure" \
-  --host=x86_64-linux-android --prefix=/vendor --libdir=/vendor/lib64 \
-  --enable-shared --disable-static --disable-external-libs --disable-mpeg \
-  --disable-experimental --disable-sqlite --disable-full-suite)
-make -C "$OUT/libsndfile" -j"$JOBS"
-make -C "$OUT/libsndfile" DESTDIR="$DEST" install
 
 info "Building daemonless libudev compatibility for PipeWire hotplug"
 make -C "$SRC/libudev-zero" clean
@@ -171,7 +149,7 @@ make -C "$SRC/libudev-zero" -j"$JOBS" CC="$CC" AR="$AR" \
 
 info "Building GLib/GIO (WirePlumber runtime dependency)"
 if [[ ! -f $DEST/vendor/lib64/libgio-2.0.so ]]; then
-  meson setup "$OUT/glib" "$SRC/glib" --cross-file "$OUT/android-x86_64.ini" \
+  meson_configure "$OUT/glib" "$SRC/glib" --cross-file "$OUT/android-x86_64.ini" \
     --prefix="$PREFIX" --libdir=lib64 --buildtype=release -Ddefault_library=shared \
     -Dtests=false -Dintrospection=disabled -Dman-pages=disabled -Dnls=disabled \
     -Dselinux=disabled -Dlibmount=disabled -Dlibelf=disabled -Ddtrace=disabled \
@@ -188,7 +166,7 @@ info "Building host-native GLib generators for WirePlumber"
 if [[ ! -x $OUT/glib-host/gio/glib-compile-resources ]]; then
   env -u CC -u CXX -u AR -u STRIP -u CFLAGS -u CXXFLAGS -u LDFLAGS \
       -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u PKG_CONFIG_SYSROOT_DIR \
-    meson setup "$OUT/glib-host" "$SRC/glib" --prefix="$OUT/glib-host-prefix" \
+    meson_configure "$OUT/glib-host" "$SRC/glib" --prefix="$OUT/glib-host-prefix" \
       --buildtype=release -Ddefault_library=shared -Dtests=false \
       -Dintrospection=disabled -Dman-pages=disabled -Dnls=disabled \
       -Dselinux=disabled -Dlibmount=disabled -Dlibelf=disabled \
@@ -217,17 +195,20 @@ fi
 info "Building PipeWire (ALSA SPA backend; systemd, D-Bus and BlueZ disabled)"
 export PKG_CONFIG_PATH="$DEST/vendor/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
-meson setup "$OUT/pipewire" "$SRC/pipewire" --cross-file "$OUT/android-x86_64.ini" \
+meson_configure "$OUT/pipewire" "$SRC/pipewire" --cross-file "$OUT/android-x86_64.ini" \
+  -Dc_args="-march=x86-64-v2 -I$DEVICE_DIR/audio/compat/include" \
   --prefix=/vendor --libdir=lib64 --buildtype=release -Ddefault_library=shared \
-  -Dalsa=enabled -Dlibsystemd=disabled \
+  -Dalsa=enabled -Dspa-plugins=enabled -Dsupport=enabled \
+  -Djack=disabled -Dv4l2=disabled \
+  -Daudioconvert=enabled -Daudiomixer=enabled -Dlibsystemd=disabled \
   -Dsystemd-system-service=disabled -Dsystemd-user-service=disabled \
-  -Ddbus=disabled -Dbluez5=disabled -Dpipewire-alsa=enabled \
+  -Ddbus=disabled -Dbluez5=disabled -Dpipewire-alsa=disabled \
   -Dpipewire-jack=disabled -Dpipewire-v4l2=disabled -Dlibcamera=disabled \
   -Dvulkan=disabled -Dffmpeg=disabled -Dgstreamer=disabled \
   -Dgstreamer-device-provider=disabled -Dman=disabled -Ddocs=disabled \
   -Dtests=disabled -Dexamples=disabled -Dsession-managers=[] -Dudev=enabled \
   -Dflatpak=disabled -Droc=disabled \
-  -Dlibpulse=disabled -Dpw-cat=enabled -Dgsettings=disabled
+  -Dlibpulse=disabled -Dpw-cat=disabled -Dgsettings=disabled
 ninja -C "$OUT/pipewire" -j"$JOBS"
 DESTDIR="$DEST" ninja -C "$OUT/pipewire" install
 
@@ -249,12 +230,14 @@ sed -i \
 sed -i \
   -e 's|^glib_mkenums=.*|glib_mkenums=${bindir}/glib-mkenums|' \
   "$DEST/vendor/lib64/pkgconfig/glib-2.0.pc"
-meson setup "$OUT/wireplumber" "$SRC/wireplumber" --cross-file "$OUT/android-x86_64.ini" \
+meson_configure "$OUT/wireplumber" "$SRC/wireplumber" --cross-file "$OUT/android-x86_64.ini" \
+  -Dc_args="-march=x86-64-v2 -I$DEVICE_DIR/audio/compat/include" \
   --prefix=/vendor --libdir=lib64 --buildtype=release -Ddefault_library=shared \
   -Dsystem-lua=false -Dsystemd=disabled -Dsystemd-system-service=false \
   -Dsystemd-user-service=false -Dintrospection=disabled \
   -Ddoc=disabled -Dtests=false -Dtools=true
-ninja -C "$OUT/wireplumber" -j"$JOBS"
+LD_LIBRARY_PATH="$OUT/glib-host/gio:$OUT/glib-host/glib:$OUT/glib-host/gobject:$OUT/glib-host/gmodule${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+  ninja -C "$OUT/wireplumber" -j"$JOBS"
 DESTDIR="$DEST" ninja -C "$OUT/wireplumber" install
 
 info "Staging ALSA UCM profiles and vendor files"
@@ -277,8 +260,30 @@ cp "$DEVICE_DIR/audio/config/pipewire/pipewire.conf.d/10-maton-fallback.conf" \
 # Keep only runtime assets in the image; cross-build headers, pkg-config files
 # and GLib development utilities are build-time dependencies.
 for bin in "$DEST/vendor/bin"/*; do
-  case $(basename "$bin") in pipewire|pipewire-pulse|wireplumber|pw-cat|pw-play|pw-cli|wpctl) ;; *) rm -f "$bin" ;; esac
+  case $(basename "$bin") in pipewire|wireplumber|pw-cli|wpctl) ;; *) rm -f "$bin" ;; esac
 done
+# PipeWire 1.6.9 always builds its Pulse protocol module. No Meson switch
+# exists for that module, so omit it (and the daemon alias) from the runtime.
+rm -f "$DEST/vendor/lib64/pipewire-0.3/libpipewire-module-protocol-pulse.so"
+# These optional protocol/configuration assets are not part of this runtime.
+rm -f "$DEST/vendor/etc/pipewire/jack.conf" \
+  "$DEST/vendor/etc/pipewire/pipewire-pulse.conf" \
+  "$DEST/vendor/share/pipewire/jack.conf" \
+  "$DEST/vendor/share/pipewire/pipewire-pulse.conf"
+rm -rf "$DEST/vendor/share/pipewire/pipewire-pulse.conf.avail"
+rm -rf "$DEST/vendor/share/doc"
+rm -f "$DEST/vendor/lib64/pipewire-0.3/libpipewire-module-netjack2-driver.so" \
+  "$DEST/vendor/lib64/pipewire-0.3/libpipewire-module-netjack2-manager.so"
+# WirePlumber has no Meson switch for its optional D-Bus integrations. Keep
+# the ALSA/Lua default policy modules and omit the unrequested integrations.
+for module in dbus-connection portal-permissionstore reserve-device \
+              modem-manager mpris notifications-api; do
+  rm -f "$DEST/vendor/lib64/wireplumber-0.5/libwireplumber-module-$module.so"
+done
+rm -rf "$DEST/vendor/share/wireplumber/scripts/monitors/bluez" \
+  "$DEST/vendor/share/wireplumber/scripts/monitors/v4l2" \
+  "$DEST/vendor/share/wireplumber/scripts/monitors/libcamera"
+rm -f "$DEST/vendor/share/wireplumber/scripts/monitors/bluez-midi.lua"
 # PRODUCT_COPY_FILES installs regular files only. Dereference the versioned
 # upstream library symlinks into regular vendor files so DT_NEEDED names resolve.
 while IFS= read -r -d '' link; do
@@ -287,34 +292,92 @@ while IFS= read -r -d '' link; do
   cp -L "$link" "$tmp"
   mv "$tmp" "$link"
 done < <(find "$DEST/vendor" -type l -print0)
+rm -rf "$STAGE"
 mkdir -p "$STAGE"
-rm -rf "$STAGE/vendor"
-cp -a "$DEST/vendor" "$STAGE/vendor"
-# The PipeWire stack is bundled under /odm, not installed into /vendor by
-# PRODUCT_COPY_FILES. Keep its pinned libffi beside GLib so the ODM runtime
-# works even on products which do not install AOSP's optional vendor libffi.
-rm -rf "$STAGE/vendor/include" "$STAGE/vendor/lib64/pkgconfig" \
-  "$STAGE/vendor/lib64/glib-2.0/include" \
-  "$STAGE/vendor/share/bash-completion" "$STAGE/vendor/share/gettext" \
-  "$STAGE/vendor/share/aclocal" "$STAGE/vendor/share/glib-2.0"
-find "$STAGE/vendor/lib64" -type f \( -name '*.a' -o -name '*.la' \) -delete
-rm -f "$STAGE/vendor/lib64/libgirepository-2.0.so"
-# Keep headers in a separate development tree for the future HAL adapter.
-# Runtime image consumers need only vendor/{bin,etc,lib64,share}; the prebuilt
-# source bundle also carries include/ and unstripped link metadata separately.
-mkdir -p "$STAGE/devel"
-rm -rf "$STAGE/devel/include" "$STAGE/devel/lib64"
-cp -a "$DEST/vendor/include" "$STAGE/devel/include"
-mkdir -p "$STAGE/devel/lib64"
-cp -a "$DEST/vendor/lib64"/. "$STAGE/devel/lib64/"
-find "$STAGE/devel/lib64" -type f \( -name '*.a' -o -name '*.la' \) -delete
-# Staged shared libraries and executables are compact, self-contained runtime
-# files. Headers and shared objects remain suitable for a HAL adapter link.
+for component in bin etc include lib64 share; do
+  [[ ! -d $DEST/vendor/$component ]] || cp -a "$DEST/vendor/$component" "$STAGE/$component"
+done
+# Keep only the public PipeWire/SPA headers needed by the Soong HAL; the other
+# upstream development headers, pkg-config metadata, and build tools stay out.
+rm -rf "$STAGE/include"
+mkdir -p "$STAGE/include"
+for include_root in "$DEST/vendor/include/pipewire-0.3" "$DEST/vendor/include/spa-0.2"; do
+  [[ ! -d $include_root ]] || cp -a "$include_root" "$STAGE/include/"
+done
+rm -rf "$STAGE/lib64/pkgconfig" "$STAGE/lib64/glib-2.0/include" \
+  "$STAGE/share/bash-completion" "$STAGE/share/gettext" \
+  "$STAGE/share/aclocal" "$STAGE/share/glib-2.0"
+find "$STAGE/lib64" -type f \( -name '*.a' -o -name '*.la' \) -delete
+rm -f "$STAGE/lib64/libgirepository-2.0.so"
+# Include license texts for the runtime and statically linked GLib fallbacks.
+LICENSES=$STAGE/share/licenses/pipewire-stack
+mkdir -p "$LICENSES"
+install -m 0644 "$SRC/pipewire/COPYING" "$LICENSES/pipewire-MIT.txt"
+install -m 0644 "$SRC/wireplumber/LICENSE" "$LICENSES/wireplumber-MIT.txt"
+install -m 0644 "$SRC/alsa-lib-1.2.15/COPYING" "$LICENSES/alsa-lib-LGPL-2.1.txt"
+install -m 0644 "$SRC/alsa-ucm-conf/LICENSE" "$LICENSES/alsa-ucm-conf-BSD-3-Clause.txt"
+install -m 0644 "$SRC/glib/COPYING" "$LICENSES/glib-LGPL-2.1.txt"
+install -m 0644 "$SRC/libffi/LICENSE" "$LICENSES/libffi-MIT.txt"
+install -m 0644 "$SRC/libudev-zero/LICENSE" "$LICENSES/libudev-zero-ISC.txt"
+install -m 0644 "$SRC/glib/subprojects/pcre2-10.44/LICENCE" "$LICENSES/pcre2-LICENCE.txt"
+install -m 0644 "$SRC/glib/subprojects/proxy-libintl/COPYING" "$LICENSES/proxy-libintl-LGPL-2.1.txt"
+install -m 0644 "$SRC/wireplumber/subprojects/lua-5.5.0/doc/readme.html" "$LICENSES/lua-MIT.html"
+# Staged shared libraries and executables are compact runtime files.
 while IFS= read -r -d '' file; do
-  case "$file" in *.so|*.so.*) "$STRIP" --strip-unneeded "$file" 2>/dev/null || true ;; esac
-done < <(find "$STAGE/vendor/lib64" "$STAGE/vendor/bin" -type f -print0)
-for bin in "$STAGE/vendor/bin"/*; do
+  case "$file" in *.so|*.so.*) "$STRIP" --strip-unneeded "$file" ;; esac
+done < <(find "$STAGE/lib64" "$STAGE/bin" -type f -print0)
+for bin in "$STAGE/bin"/*; do
   case $(basename "$bin") in *.so) continue ;; *) "$STRIP" --strip-unneeded "$bin" 2>/dev/null || true ;; esac
 done
-du -sh "$STAGE/vendor" "$STAGE/devel" >&2
-echo "PipeWire vendor prebuilts staged in $STAGE/vendor"
+{
+  printf 'PipeWire 1.6.9\ncommit %s\n' 8fa27cabdc6c0c1350c69c026af5850ef0af1e26
+  printf 'WirePlumber commit %s\n' 11e501181fb87dc8e72e55156d672109fbad2434
+  printf 'alsa-ucm-conf commit %s\n' 28776e1e22a952e4ab01037033380aa111985101
+  printf 'glib commit %s\n' 41eca60845d3fc309af361f5e7f801ba339099aa
+  printf 'libffi commit %s\n' 83d0cfd00d7d37af4b4349511d29f1f0512621b3
+  printf 'libudev-zero commit %s\n' 7a6eee2db11f2eb0f7fd065ae9597fcd270e6734
+  printf 'ALSA-lib archive sha256 %s\n' "$(sha256sum "$ALSA_TARBALL" | cut -d' ' -f1)"
+  printf 'Lua 5.5.0 source sha256 %s\n' \
+    "$(awk -F ' = ' '$1 == "source_hash" {print $2}' "$SRC/wireplumber/subprojects/lua.wrap")"
+  printf 'Lua 5.5.0 patch sha256 %s\n' \
+    "$(awk -F ' = ' '$1 == "patch_hash" {print $2}' "$SRC/wireplumber/subprojects/lua.wrap")"
+} > "$STAGE/SOURCE"
+
+for required in bin/pipewire bin/wireplumber \
+                include/pipewire-0.3/pipewire/pipewire.h \
+                include/spa-0.2/spa/param/audio/format-utils.h \
+                lib64/libpipewire-0.3.so lib64/libwireplumber-0.5.so \
+                lib64/libasound.so \
+                lib64/spa-0.2/support/libspa-support.so \
+                lib64/spa-0.2/audioconvert/libspa-audioconvert.so \
+                lib64/spa-0.2/audiomixer/libspa-audiomixer.so \
+                lib64/spa-0.2/alsa/libspa-alsa.so \
+                etc/pipewire/pipewire.conf etc/wireplumber/wireplumber.conf \
+                etc/alsa/ucm2; do
+  [[ -e $STAGE/$required ]] || die "required staged PipeWire file missing: $required"
+done
+for unwanted in '*bluez*' '*v4l2*' '*jack*' '*pulse*' '*systemd*' '*dbus-connection*'; do
+  if find "$STAGE/bin" "$STAGE/lib64" "$STAGE/share/pipewire" \
+      "$STAGE/share/wireplumber" -iname "$unwanted" -print -quit | grep -q .; then
+    die "disabled feature artifact remains in staged PipeWire tree: $unwanted"
+  fi
+done
+
+READELF=$TOOLCHAIN/bin/llvm-readelf
+SYSTEM_LIBS=$TOOLCHAIN/sysroot/usr/lib/x86_64-linux-android/$API
+[[ -x $READELF && -d $SYSTEM_LIBS ]] || die "NDK readelf/system stubs missing"
+NEEDED_REPORT=$STAGE/NEEDED.txt
+: > "$NEEDED_REPORT"
+while IFS= read -r -d '' elf; do
+  [[ $(head -c4 "$elf") == $'\x7fELF' ]] || continue
+  printf '%s\n' "${elf#"$STAGE"/}" >> "$NEEDED_REPORT"
+  while IFS= read -r needed; do
+    [[ -n $needed ]] || continue
+    if [[ ! -f $STAGE/lib64/$needed && ! -f $SYSTEM_LIBS/$needed ]]; then
+      die "unresolved DT_NEEDED '$needed' from ${elf#"$STAGE"/}"
+    fi
+    printf '  %s\n' "$needed" >> "$NEEDED_REPORT"
+  done < <("$READELF" -d "$elf" | sed -n 's/.*Shared library: \[\(.*\)\].*/\1/p')
+done < <(find "$STAGE/bin" "$STAGE/lib64" -type f -print0)
+du -sh "$STAGE" >&2
+echo "PipeWire ODM bundle contents staged in $STAGE (DT_NEEDED: $NEEDED_REPORT)"

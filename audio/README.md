@@ -2,91 +2,43 @@
 
 ## Design
 
-The HAL is BayLibre's generic AIDL audio implementation at
-`hardware/baylibre/audio`, pinned in `manifest/maton.xml` to
-`a3abeb7aefc1ac665705f96f3cdd3672a98ec3d5` (branch `main`, synced 2026-09-25).
-It builds in Soong. AudioFlinger performs the mixing; BayLibre's primary
-module opens ALSA through TinyALSA.
+The default HAL is MatonOS's PipeWire-backed AIDL implementation in
+`audio/native-hal/`, installed by the Soong module in `audio/pipewire-hal/`.
+AudioFlinger performs mixing; the HAL forwards PCM to a system-wide PipeWire
+server, and WirePlumber manages ALSA devices. Set `MATON_AUDIO_PIPEWIRE_HAL`
+in the environment for both image and bundle builds. It defaults to `true`;
+setting it to `false` selects the existing BayLibre backend and its policy and
+effect config. The AOSP `com.android.hardware.audio` APEX supplies the stock
+AIDL effect factory and effects libraries. Its core init service is overridden
+by the MatonOS HAL
+service, while the ODM VINTF fragment advertises only the modules in the
+active schema-7.0 policy: `default`, `r_submix`, `usb`, `stub`, and
+`bluetooth`. The core interface version is v4, the latest frozen version in
+this checkout.
 
-The supplied source calls its APEX `com.android.hardware.audio.generic`,
-despite its README documenting the name `com.android.hardware.audio.baylibre`.
-Product configuration installs the actual upstream module name and filters
-the stock `com.android.hardware.audio` APEX out. Renaming the APEX and its
-service paths requires a BayLibre fork; we do not edit the imported project.
-The APEX includes the effect service, so the stock APEX is not needed for its
-effect factory. `audio_effects_config.xml` remains installed.
+The Bluetooth audio module is static and controller-independent. The HAL
+registers the AOSP Bluetooth audio provider when that module is created; the
+ODM manifest advertises `IBluetoothAudioProviderFactory/default`. With no
+controller or paired endpoint, no Bluetooth route is active.
 
-The imported service fragment advertises audio core v3 and includes
-Bluetooth. Our ODM VINTF override replaces its core declaration with the
-modules configured here. This AOSP checkout has frozen
-`android.hardware.audio.core` through v4; v5 does not exist in the source
-tree, so the override advertises v4. The APEX's audio effect factory
-declaration remains intact.
+The ODM audio selector and codec preload remain in the bundle, but they do
+not choose PipeWire's endpoint: WirePlumber uses libudev-zero to enumerate
+`/sys`, monitor kernel uevents and discover ALSA devices through
+`/proc/asound` and `/dev/snd`.
 
-The static schema-7.0 policy config includes five modules:
+## Legacy selector and codec preload
 
-- `default` — the primary ALSA endpoint, registered as `IModule/default`.
-- `r_submix` — system remote submix.
-- `usb` — USB audio hotplug ports.
-- `stub` — an available fallback module.
-- `bluetooth` — A2DP, hearing-aid, and LE Audio ports and routes.
+The boot-time ALSA selector and HDA codec preload remain in the bundle for
+explicit BayLibre fallback builds. PipeWire does not consume the selector's
+card properties; WirePlumber discovers ALSA cards and follows hotplug events
+through libudev-zero. These services are asynchronous and do not gate audio
+startup.
 
-ODM and vendor fallback policy use the same module set. The core-v4 VINTF
-override declares `IModule/bluetooth` with the other configured modules. This
-module is static and controller-independent: its constructor creates audio
-profile interfaces and the provider factory but does not probe or wait for an
-HCI controller. The Bluetooth stack supplies connected device ports when a
-controller and peer are active. With Bluetooth off or no controller there are
-no connected Bluetooth device routes. The default Bluetooth setting remains
-off, avoiding the known controller-less stack initialization failure during
-boot.
-
-BayLibre's audio service links AOSP's stock
-`android.hardware.bluetooth.audio-impl` shared library. That library
-implements `IBluetoothAudioProviderFactory/default` for software A2DP and LE
-sessions. The factory is registered in the audio HAL process when the
-Bluetooth module is created; there is no separate init service or daemon to
-start. The ODM manifest declares the same provider instance as AOSP's stock
-VINTF fragment because the BayLibre APEX does not bundle that fragment.
-AOSP's existing `hal_audio_service` service-manager label and `hal_audio`
-policy cover registration, so this feature adds no SELinux policy.
-
-`mixer_controls.xml` uses BayLibre's generic Master,
-headphone/PCM/speaker, and capture control names; absent controls are
-gracefully unavailable.
-
-## Boot card selection
-
-After the asynchronous HDA codec preload/reprobe completes, an ODM oneshot
-selector scans `/proc/asound/cards` in order and picks the first card with a
-playback-capable PCM in `/proc/asound/pcm`, skipping Loopback and Dummy. It
-publishes the persistent BayLibre card/device properties and its result before
-touching mixer controls, so the three-second init timeout cannot turn slow
-mixer IO into a false `no_card` result. Integer playback volumes start at
-two-thirds of hardware range and playback switches are unmuted with `1`;
-unsupported controls are ignored. The input uses the same card/device because
-this HAL version has no separate primary capture selector property.
-
-No generated policy, bind mount, detector readiness gate, or `snd-aloop`
-loader is shipped. If there is no card, the selector fails/times out, or it
-cannot read ALSA state, init enables the HAL's paced output and simulated
-input stub properties. The service is asynchronous and does not gate HAL
-startup or boot. The HAL's static policy still has the full module list, so
-module registration does not depend on detection. The stock-derived stub
-implementation has previously been observed to fill capture with
-pseudo-random data; do not claim the no-card mic produces zero samples until
-verified or replaced.
-
-PipeWire is currently unshipped. `tools/build-pipewire.sh` only stages
-experimental prebuilts under `prebuilt/pipewire`; the inert
-`maton-pipewire.rc` documents why no service is started. There is no ODM
-bundle installation row or verified runtime integration. Do not enable the
-Linux-app audio path until binaries, libraries, configuration and proxy are
-installed under ODM and verified on a fresh boot.
-
-`audio/native-hal/` is also unshipped reference work. It is not installed or
-registered by the product. Do not treat it as an alternative shipped HAL; the
-product uses BayLibre's generic service and the fixed policy files above.
+PipeWire 1.6.9 and WirePlumber 0.5.17 are staged under
+`buildinfra/native-built/pipewire`; `bundle/contents.list` installs that tree
+in ODM. `tools/build-pipewire.sh` builds the stack with NDK r30. See
+`audio/pipewire-PROVENANCE.md` for revision pins, license review and patch
+rationale.
 
 ## HDA controller options and codec driver preload
 
@@ -115,88 +67,71 @@ registered, but it cannot fix a controller that cannot communicate with any
 codec. Failures remain non-fatal and never gate HAL startup or boot. Without
 an HDA controller, the selector and HAL retain their no-card fallback.
 
-## Upstream differences and limitations
-
-We make no changes to `hardware/baylibre/audio`. The upstream APEX name and
-its embedded core VINTF fragment do not match this request exactly: the APEX
-is named `com.android.hardware.audio.generic` rather than
-`com.android.hardware.audio.baylibre`, and the embedded manifest advertises
-v3 plus Bluetooth. The ODM override addresses the module declarations and
-uses v4, which is the newest frozen core AIDL version in this AOSP checkout.
-A maintained MatonOS fork may rename the APEX, remove the unused Bluetooth
-instance from the embedded fragment, and update it to the target interface
-version when AIDL v5 is available.
-
-The selector chooses the first playback card exactly as requested; it does
-not prioritize analog over HDMI. If a GPU HDMI card appears first, it may be
-selected. A later selector enhancement can prefer analog after this basic
-path is proven.
-
-The requested software +20% gain is not implemented. BayLibre's primary
-stream clamps hardware volume to `[0, 1]`, and its mixer backend maps that
-range to at most 100%; the AOSP policy volume curve sends a level to that
-clamped interface and has no limiter. Raising the curve's endpoint would
-therefore not safely provide the boost. The normal media curve remains at
-0 dB at its top rather than claiming an unsafe or ineffective boost. A future
-maintained BayLibre fork needs a software gain stage with a limiter before
-+1.6 dB can be enabled. No WAV peak has been measured for this build.
-
-## Verification
-
-After the requested fresh image is available, use one private headless QEMU
-slot (5556 or higher; never modify the user's VM). For each boot, set
-`persist.vendor.maton.sleep_idle_s 0` and confirm `sys.boot_completed=1`,
-that only the BayLibre audio APEX is installed, and that
-`dumpsys media.audio_policy`/`dumpsys media.audio_flinger` show registered
-modules and a primary output thread.
-
-With no controller attached, check that `sys.boot_completed=1`, the audio
-policy and flinger dumps show `bluetooth` registered, and the primary output
-still plays audio. There should be no Bluetooth device route until a peer is
-connected. Check crash and all log buffers for audioserver failures. With a
-USB Bluetooth controller and paired A2DP headphones, select the headset, play
-`out/pc-logs/agents/test-media/ovmuz.mp3`, and confirm playback advances and is
-audible. A LE Audio headset needs a LE-capable controller and peer; verify its
-BLE route and software encoded session separately.
-
-With HDA attached, inspect `/proc/asound/cards` and `cat /proc/asound/pcm`,
-confirm the selector chose the first playback-capable non-loopback card, play
-`out/pc-logs/agents/test-media/ovmuz.mp3` through Fossify Music or an ACTION_VIEW
-intent, and capture the QEMU WAV using:
-
-```sh
-bash tools/run-qemu-live.sh -g none -m 4096 -a 5556 \
-  -s "$HOME/Documents/aosp/out/pc-logs/audio/hda-serial.log" \
-  -x "-audiodev wav,id=snd0,path=$HOME/Documents/aosp/out/pc-logs/audio/ovmuz.wav -device ich9-intel-hda -device hda-output,audiodev=snd0"
-```
-
-Check nonzero WAV samples and confirm playback position reaches the end.
-Repeat with no audio hardware using `-x "-device virtio-rng-pci"`; boot must
-complete and the HAL must register its configured modules and use paced stub
-streams. Also test a deliberately failing selector (for example, invoke the
-service with an unreadable ALSA proc path in a test build) and verify
-`sys.boot_completed=1`. Check audioserver/system_server logs for watchdogs.
-
-## Real hardware checks
-
-1. Build PC (Ryzen 5800X/RX 6600, Intel 7265 Wi-Fi/BT, Realtek): record card
-   order, selected PCM, HDA/HDMI output, mic capture, and USB headset attach.
-2. Surface Pro 3 (Marvell 88W8897, Intel HDA): confirm card selection and
-   document any SOF firmware/topology needs separately.
-3. HP ProDesk 600 G1 Haswell: confirm selected card and HDA/HDMI playback.
-4. Disable all audio devices and confirm the system still boots and the HAL
-   remains registered.
-
 ## Current test state
 
-The 2026-09-26 09:15 image boots based on AOSP with QEMU HDA attached, but HDA
-detection failed: `snd_hda_intel` logged `Cannot probe codecs, giving up`,
-`/proc/asound/cards` was empty, and the selector reported `no_card`. The first
-preload attempt used `/system/bin/modprobe`; the revised service now uses
-`/vendor/bin/modprobe` with an explicit transition to `vendor_modprobe`. The
-revision needs a fresh image and runtime verification. The 09:15 QEMU run did
-not produce playback evidence: its WAV was empty/header-only. No-card fresh
-boot and actual playback remain unverified for this BayLibre image. Bluetooth
-audio configuration has only received source inspection and XML validation in
-this branch; it has not been built or booted, and no A2DP or LE Audio playback
-has been tested.
+The default PipeWire path has not yet been built into a fresh image or verified
+at runtime. Previous HDA/QEMU results apply to the legacy BayLibre backend.
+
+## PipeWire vendor build status (2026-11-23)
+
+`tools/build-pipewire.sh` builds PipeWire 1.6.9, WirePlumber 0.5.17,
+ALSA-lib/UCM, GLib/GIO, libffi and libudev-zero for x86_64/API 35. It stages
+runtime files, configs, UCM profiles and licenses under
+`buildinfra/native-built/pipewire`; the bundle installs that tree in ODM. The
+NDK build completed previously. `NEEDED.txt` records the staged ELF
+dependencies. `audio/pipewire-PROVENANCE.md` documents upstream pins, license
+review and compatibility patches.
+
+## PipeWire runtime (P4)
+
+`MATON_AUDIO_PIPEWIRE_HAL` defaults to `true`. `audio/maton-pipewire.rc` starts
+PipeWire as the `audio` user after `/data` is ready, with XDG and PipeWire
+runtime sockets under `/data/vendor/maton-audio`, with writable state under
+`/data/vendor/maton-audio/state`. WirePlumber starts after
+PipeWire's init service reaches running; the audio HAL starts in that same
+property action. PipeWire and WirePlumber have separate SELinux domains
+defined in the existing fixed `sepolicy/matonos/` policy files. The HAL runs
+in `hal_audio_default`, reads the same runtime directory and connects to the
+PipeWire server. Device-less systems retain the PipeWire fallback null sink
+and the primary module's `No audio device` ports, so discovery failure does
+not gate boot. libudev-zero enumerates `/sys`, reads `/proc/asound`, and uses
+kernel uevent netlink for hotplug; no system udev daemon is required.
+
+The stock audio effect service and effect libraries come from AOSP's
+`com.android.hardware.audio` APEX. The BayLibre APEX is not installed in this
+mode. `audio/effects/audio_effects_config.xml` uses AOSP's un-suffixed library
+filenames that match the stock effect libraries supplied by the APEX. The APEX also contains the stock core service and its init
+rc/VINTF fragment. The ODM `vendor.audio-hal-aidl` service uses `override` to
+replace that core service; the ODM VINTF override advertises only the
+configured PipeWire core modules.
+
+The ODM bundle installs the two audio init rc files, the audio-core VINTF
+fragment (`audio/native-hal/vintf/manifest.xml`), all PipeWire runtime
+files/configs, and the policy pair selected by `tools/build-bundle.sh`.
+The Soong-built HAL installs as `/vendor/bin/hw/matonos-audio-hal`; the HAL rc
+starts it only after the PipeWire service is running.
+
+Source checks for this step: shell syntax checks, XML parsing, Android.bp
+formatting when `bpfmt` is available, effect-library/config reconciliation,
+and review of init/bundle paths. A full image build and fresh-boot check are
+coordinator-owned and have not been run from this worktree. On a fresh image,
+verify `dumpsys media.audio_flinger`, `pw-cli ls Node`, and logcat tags
+`AHAL_MainPipeWire`, `PipeWire`, `WirePlumber`, `EffectFactory`, and
+`AudioFlinger`; the coordinator report gives exact commands.
+
+## Fresh image and hardware verification
+
+On the next coordinator-built image, verify `sys.boot_completed=1`, registered
+modules in `dumpsys media.audio_policy` and an output thread in
+`dumpsys media.audio_flinger`. Run `pw-cli ls Node`; confirm an ALSA sink when
+a card exists and `maton-fallback` when none exists. Play a short PCM track and
+verify it advances and produces nonzero QEMU WAV samples. Check logcat for
+`AHAL_MainPipeWire`, `PipeWire`, `WirePlumber`, `EffectFactory`,
+`AudioFlinger`, linker errors and SELinux denials. Confirm the stock effect
+factory registers and that configured effects are visible to AudioFlinger.
+
+Repeat on the Ryzen 5800X/RX 6600/Realtek PC, Surface Pro 3 (Marvell 88W8897
+and Intel HDA), and HP ProDesk 600 G1 (Haswell). On each, test analog/HDA,
+HDMI and USB output where available, microphone capture where present, and
+USB audio hotplug. Also boot with all audio devices disabled; boot must finish
+and the PipeWire fallback must remain available.

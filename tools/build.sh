@@ -183,6 +183,9 @@ fi
 if [[ $DO_AOSP == 1 ]]; then
   "$TOOLS/build-subsystem.sh"
 
+  info "MatonOS PipeWire runtime and headers"
+  "$TOOLS/build-pipewire.sh"
+
   info "MatonOS Gradle apps"
   "$TOOLS/build-apps.sh"
 

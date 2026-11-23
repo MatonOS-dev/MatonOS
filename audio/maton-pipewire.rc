@@ -1,3 +1,52 @@
-# Intentionally inert: the PipeWire stack is experimental and unshipped.
-# Do not add this rc to init imports until its binaries, libraries and configs
-# are installed through the ODM bundle and the service is verified on boot.
+# PipeWire is a system-wide ODM service. Audio owns the runtime socket directory.
+on post-fs-data
+    mkdir /data/vendor/maton-audio 0770 audio audio
+    mkdir /data/vendor/maton-audio/state 0770 audio audio
+    chown audio audio /data/vendor/maton-audio
+    chown audio audio /data/vendor/maton-audio/state
+    chmod 0770 /data/vendor/maton-audio
+    chmod 0770 /data/vendor/maton-audio/state
+
+on post-fs-data && property:ro.vendor.matonos.audio.pipewire=true
+    start vendor.pipewire
+
+service vendor.pipewire /odm/bin/pipewire
+    class late_start
+    disabled
+    user audio
+    group audio system input
+    env HOME /data/vendor/maton-audio
+    env XDG_STATE_HOME /data/vendor/maton-audio/state
+    env XDG_RUNTIME_DIR /data/vendor/maton-audio
+    env PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
+    env PIPEWIRE_CONFIG_DIR /odm/etc/pipewire
+    env PIPEWIRE_MODULE_DIR /odm/lib64/pipewire-0.3
+    env SPA_PLUGIN_DIR /odm/lib64/spa-0.2
+    env LD_LIBRARY_PATH /odm/lib64:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
+    capabilities SYS_NICE
+    rlimit rtprio 10 10
+    task_profiles ProcessCapacityHigh HighPerformance
+    onrestart restart vendor.wireplumber
+
+on property:init.svc.vendor.pipewire=running
+    start vendor.wireplumber
+    start vendor.audio-hal-aidl
+
+service vendor.wireplumber /odm/bin/wireplumber
+    class late_start
+    disabled
+    user audio
+    group audio system input
+    env HOME /data/vendor/maton-audio
+    env XDG_STATE_HOME /data/vendor/maton-audio/state
+    env XDG_RUNTIME_DIR /data/vendor/maton-audio
+    env PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
+    env PIPEWIRE_CONFIG_DIR /odm/etc/pipewire
+    env WIREPLUMBER_CONFIG_DIR /odm/etc/wireplumber
+    env WIREPLUMBER_DATA_DIR /odm/share/wireplumber
+    env PIPEWIRE_MODULE_DIR /odm/lib64/pipewire-0.3
+    env SPA_PLUGIN_DIR /odm/lib64/spa-0.2
+    env LD_LIBRARY_PATH /odm/lib64:/odm/lib64/wireplumber-0.5:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
+    capabilities SYS_NICE
+    rlimit rtprio 10 10
+    task_profiles ProcessCapacityHigh HighPerformance

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<!-- MatonOS policy config for BayLibre AIDL audio. -->
+<!-- MatonOS schema-7.0 policy for the AIDL audio HAL. -->
 <audioPolicyConfiguration version="7.0" xmlns:xi="http://www.w3.org/2001/XInclude">
     <globalConfiguration speaker_drc_enabled="false"/>
 
     <modules>
-        <!-- BayLibre maps policy module "default" to IModule/default. -->
+        <!-- The primary policy module is registered as IModule/default. -->
         <xi:include href="primary_audio_policy_configuration.xml"/>
         <xi:include href="r_submix_audio_policy_configuration.xml"/>
         <xi:include href="usb_audio_policy_configuration.xml"/>

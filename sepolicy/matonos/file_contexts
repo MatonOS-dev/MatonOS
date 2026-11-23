@@ -11,8 +11,10 @@
 /mnt/matonos-install(/.*)? u:object_r:matonos_install_mount_file:s0
 /maton_system/ota-staging(/.*)? u:object_r:matonos_install_mount_file:s0
 /odm/bin/maton-audio-select\.sh u:object_r:matonos_audio_select_exec:s0
-/odm/bin/(pipewire|wireplumber) u:object_r:matonos_driver_exec:s0
-/odm/bin/pw-cat u:object_r:matonos_driver_helper_exec:s0
+/odm/bin/pipewire u:object_r:matonos_pipewire_exec:s0
+/odm/bin/wireplumber u:object_r:matonos_wireplumber_exec:s0
+/vendor/bin/hw/matonos-audio-hal u:object_r:hal_audio_default_exec:s0
+/odm/bin/pw-cat u:object_r:matonos_pw_cat_exec:s0
 /data/vendor/maton-audio(/.*)? u:object_r:matonos_driver_data_file:s0
 # Add-on ZIP/image intake is mutable only in this private staging directory.
 /data/vendor/matonos-addons(/.*)? u:object_r:matonos_addon_data_file:s0

@@ -1,7 +1,15 @@
-service vendor.audio-hal-aidl /odm/bin/hw/matonos-audio-hal
+service vendor.audio-hal-aidl /vendor/bin/hw/matonos-audio-hal
     class hal
+    disabled
     user audio
-    group audio camera media
+    group audio camera media system input
+    env HOME /data/vendor/maton-audio
+    env XDG_RUNTIME_DIR /data/vendor/maton-audio
+    env PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
+    env PIPEWIRE_CONFIG_DIR /odm/etc/pipewire
+    env PIPEWIRE_MODULE_DIR /odm/lib64/pipewire-0.3
+    env SPA_PLUGIN_DIR /odm/lib64/spa-0.2
+    env LD_LIBRARY_PATH /odm/lib64:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
     capabilities BLOCK_SUSPEND SYS_NICE
     rlimit rtprio 10 10
     ioprio rt 4

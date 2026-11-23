@@ -1,0 +1,46 @@
+cc_prebuilt_library_shared {
+    name: "libpipewire_matonos",
+    vendor: true,
+    srcs: ["../../buildinfra/native-built/pipewire/lib64/libpipewire-0.3.so"],
+    stem: "libpipewire-0.3",
+    strip: {
+        none: true,
+    },
+    export_include_dirs: [
+        "../../buildinfra/native-built/pipewire/include/pipewire-0.3",
+        "../../buildinfra/native-built/pipewire/include/spa-0.2",
+    ],
+}
+
+cc_binary {
+    name: "android.hardware.audio.service-aidl.matonos",
+    vendor: true,
+    relative_install_path: "hw",
+    stem: "matonos-audio-hal",
+    defaults: [
+        "aidlaudioservice_defaults",
+        "latest_android_hardware_audio_core_sounddose_ndk_shared",
+        "latest_android_hardware_audio_core_ndk_shared",
+        "latest_android_hardware_bluetooth_audio_ndk_shared",
+        "latest_android_media_audio_common_types_ndk_shared",
+    ],
+    srcs: [
+        "main.cpp",
+        "ModulePipeWire.cpp",
+        "StreamPipeWire.cpp",
+    ],
+    static_libs: ["libaudioserviceexampleimpl"],
+    shared_libs: [
+        "android.hardware.bluetooth.audio-impl",
+        "libaudio_aidl_conversion_common_ndk",
+        "libbluetooth_audio_session_aidl",
+        "liblog",
+        "libpipewire_matonos",
+        "libmedia_helper",
+        "libstagefright_foundation",
+    ],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
+}
