@@ -184,3 +184,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Headless VM tip: QEMU usb-tablet shows as ROTARY_ENCODER in Android, HMP mouse_move is relative → use sendevent on "MatonOS Pointer".
 - audio-boost round 1 (04028a08) NOT merged: Settings background service dies when the app idles. Round 2 (audio-boost2) moves the effect owner into MatonSystemUI.
 - vold-fs (luna high) started in ~/matonos/build/vold-fs (system/vold branch maton/linux-fs); patches will go to patches/system/vold/.
+- 12:40 Host crashed ~11:52 (desktop froze, reboot). Build-75 on the server survived and is still running; codex agents had finished before the crash.
+  - image-trim: nothing to merge. EROFS already uses lz4hc,9 by default; Android's libmodprobe cannot load .ko.zst/.ko.xz (it would need a loader patch); Mesa was already stripped. Branch dropped.
+  - vold-fs: patch reviewed. I fixed the idmap (child only unshares the user namespace; vold writes the maps and does open_tree/mount_setattr/move_mount; the last map range no longer overflows u32). Added patches/system/vold, storage/matonos-linux-fs.rc (modprobe exfat xfs ntfs3 hfsplus udf isofs) and the vold_idmap.te user_namespace rule (69a3a749). Needs build-76 and a VM test with attached ext4/ntfs/iso disks. Note: only UID/GID 1000 maps to media_rw, so Android writes need group-writable files (umask 002 distros).
+  - privapp allowlist now has one source, buildinfra/privapp-permissions (ca5309b7).
+  - .flatpak bundles were already done (software-centre 5fd4b99 pinned).
+  - efi-logo agent started (~/matonos/build/dt-efilogo, luna high).
