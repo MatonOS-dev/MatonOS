@@ -9,6 +9,7 @@ on post-fs-data
 
 on post-fs-data && property:ro.vendor.matonos.audio.pipewire=true
     start vendor.pipewire
+    start vendor.audio-hal-aidl
 
 service vendor.pipewire /odm/bin/pipewire
     class late_start
@@ -30,7 +31,6 @@ service vendor.pipewire /odm/bin/pipewire
 
 on property:init.svc.vendor.pipewire=running
     start vendor.wireplumber
-    start vendor.audio-hal-aidl
 
 service vendor.wireplumber /odm/bin/wireplumber
     class late_start
