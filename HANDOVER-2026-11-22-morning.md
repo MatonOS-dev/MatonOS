@@ -232,3 +232,4 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - 20:40 queued: AirPlay outputs (raop-sink on BoringSSL, discovery via Android NSD, no Avahi) after PipeWire baseline works.
 - 20:50 queued (user): speaker tuning + clear device names = MUST-HAVE; echo cancellation as MatonOS settings toggle (default on); back Android Spatializer / bit-perfect USB / AAudio low-latency with PipeWire. All after PipeWire baseline.
 - 20:55 queued (user): equaliser in MatonOS Settings Sound menu (per device, PipeWire filter-chain, via IChannel/audio like boost).
+- 21:00 queued (user): Sound menu Bluetooth warning (settings don't apply to BT) + default audio output picker.
