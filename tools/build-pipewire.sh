@@ -85,6 +85,13 @@ for PIPEWIRE_ANDROID_PATCH in "$DEVICE_DIR"/audio/patches/*.patch; do
     die "PipeWire Android patch does not apply cleanly: $PIPEWIRE_ANDROID_PATCH"
   fi
 done
+for UDEV_ANDROID_PATCH in "$DEVICE_DIR"/audio/patches/libudev-zero/*.patch; do
+  if git -C "$SRC/libudev-zero" apply --check "$UDEV_ANDROID_PATCH" 2>/dev/null; then
+    git -C "$SRC/libudev-zero" apply "$UDEV_ANDROID_PATCH"
+  elif ! git -C "$SRC/libudev-zero" apply --reverse --check "$UDEV_ANDROID_PATCH" 2>/dev/null; then
+    die "libudev-zero patch does not apply cleanly: $UDEV_ANDROID_PATCH"
+  fi
+done
 for WIREPLUMBER_ANDROID_PATCH in "$DEVICE_DIR"/audio/patches/wireplumber/*.patch; do
   if git -C "$SRC/wireplumber" apply --check "$WIREPLUMBER_ANDROID_PATCH" 2>/dev/null; then
     git -C "$SRC/wireplumber" apply "$WIREPLUMBER_ANDROID_PATCH"

@@ -1,0 +1,63 @@
+From: MatonOS
+Subject: [PATCH] enumerate: list node-less sound cards
+
+Sound cards (/sys/class/sound/cardN) have no device node, so the /sys/dev
+scan never lists them and PipeWire's ALSA monitor finds no card.
+
+diff --git a/udev_enumerate.c b/udev_enumerate.c
+index 6fd49c0..64dab70 100644
+--- a/udev_enumerate.c
++++ b/udev_enumerate.c
+@@ -18,6 +18,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <dirent.h>
++#include <unistd.h>
+ #include <string.h>
+ #include <limits.h>
+ #include <fnmatch.h>
+@@ -276,6 +277,36 @@ static int scan_devices(struct udev_enumerate *udev_enumerate, const char *path)
+     return 1;
+ }
+ 
++/* Sound cards (/sys/class/sound/cardN) have no device node, so the
++ * /sys/dev scan never lists them, yet PipeWire's ALSA monitor acts only on
++ * them. Add class entries without a "dev" attribute; entries that have one
++ * are already listed through /sys/dev/char. */
++static void scan_nodeless_class(struct udev_enumerate *udev_enumerate, const char *path)
++{
++    int i, cnt;
++    struct dirent **de;
++
++    cnt = scandir(path, &de, filter_dot, NULL);
++
++    if (cnt == -1) {
++        return;
++    }
++
++    for (i = 0; i < cnt; i++) {
++        char device_path[PATH_MAX], dev_attr[PATH_MAX];
++        snprintf(device_path, sizeof(device_path), "%s/%s", path, de[i]->d_name);
++        snprintf(dev_attr, sizeof(dev_attr), "%s/dev", device_path);
++
++        if (access(dev_attr, F_OK) != 0) {
++            add_device(udev_enumerate, device_path);
++        }
++
++        free(de[i]);
++    }
++
++    free(de);
++}
++
+ int udev_enumerate_scan_devices(struct udev_enumerate *udev_enumerate)
+ {
+     const char *path[] = { "/sys/dev/block", "/sys/dev/char", NULL };
+@@ -291,6 +322,7 @@ int udev_enumerate_scan_devices(struct udev_enumerate *udev_enumerate)
+         }
+     }
+ 
++    scan_nodeless_class(udev_enumerate, "/sys/class/sound");
+     return 0;
+ }
+ 
