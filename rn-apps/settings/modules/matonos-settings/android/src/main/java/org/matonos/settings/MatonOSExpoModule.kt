@@ -11,6 +11,7 @@ import org.matonos.client.MatonOS
 import org.matonos.client.MatonosClient
 import org.matonos.settings.OtaInstallerBridge
 import org.matonos.settings.AccountFlowActivity
+import org.matonos.settings.gapps.GappsInstaller
 import java.util.concurrent.ConcurrentHashMap
 
 /** Expo adapter over buildinfra/client. All bridge semantics remain in that shared Java client. */
@@ -82,6 +83,18 @@ class MatonOSExpoModule : Module() {
           process.destroyForcibly(); false
         } else process.exitValue() == 0 && process.inputStream.bufferedReader().use { it.readText().trim() } == "1"
       } catch (_: Exception) { false }
+    }
+    AsyncFunction("pickAndInstallGapps") { promise: Promise ->
+      val activity = appContext.currentActivity
+      if (activity == null) promise.resolve(mapOf("ok" to false, "message" to "Settings activity is unavailable."))
+      else GappsInstaller.pick(activity, promise)
+    }
+    AsyncFunction("uninstallGappsUpdates") { promise: Promise ->
+      val context = requireNotNull(appContext.reactContext)
+      GappsInstaller.uninstallUpdates(context, promise)
+    }
+    AsyncFunction("getGappsDeviceId") {
+      GappsInstaller.deviceId(requireNotNull(appContext.reactContext))
     }
     AsyncFunction("getSystemInfo") {
       mapOf("version" to Build.VERSION.RELEASE, "build" to Build.DISPLAY,

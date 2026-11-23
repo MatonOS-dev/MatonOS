@@ -16,4 +16,5 @@ android {
 dependencies {
   implementation 'com.facebook.react:react-android'
   implementation project(':matonos-client')
+  implementation 'org.tukaani:xz:1.12'
 }

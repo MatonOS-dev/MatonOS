@@ -7,5 +7,7 @@
         <permission name="android.permission.REBOOT" />
         <permission name="android.permission.AUTHENTICATE_ACCOUNTS" />
         <permission name="android.permission.USE_CREDENTIALS" />
+        <permission name="android.permission.INSTALL_PACKAGES" />
+        <permission name="android.permission.DELETE_PACKAGES" />
     </privapp-permissions>
 </permissions>

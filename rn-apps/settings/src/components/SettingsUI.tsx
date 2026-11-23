@@ -34,6 +34,7 @@ import infoIcon from "../../assets/icons/info.xml";
 import installIcon from "../../assets/icons/install.xml";
 
 type Section =
+  | "gapps"
   | "install"
   | "system-update"
   | "sleep"
@@ -51,6 +52,12 @@ type NavEntry = {
   fallback: number;
 };
 const navItems: Record<Section, NavEntry> = {
+  gapps: {
+    id: "gapps",
+    title: copy.gapps,
+    symbol: "deployed_code",
+    fallback: installIcon,
+  },
   install: {
     id: "install",
     title: copy.install,
@@ -191,6 +198,7 @@ const rowSymbols: Record<string, AndroidSymbol> = {
   [copy.osVersion]: "info",
   [copy.build]: "terminal",
   [copy.sdkLevel]: "developer_board",
+  [copy.gappsDeviceId]: "fingerprint",
 };
 export function StatusRow({
   label,
@@ -486,6 +494,7 @@ export function NavRail({ live }: { live: boolean }) {
         modifiers={[fillMaxWidth(), paddingAll(4)]}
         verticalArrangement={{ spacedBy: 8 }}
       >
+        <NavItem section="gapps" selected={current === "gapps"} />
         <LiveOnly live={live}>
           <NavItem section="install" selected={current === "install"} />
         </LiveOnly>

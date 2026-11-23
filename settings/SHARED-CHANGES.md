@@ -58,3 +58,8 @@ request a coordinated image build. On the fresh image, verify the dynamic
 Settings homepage tile appears, Settings has no LAUNCHER component, the live
 alias is enabled only with the live marker, and Android Settings/boot complete
 normally when optional channels are absent.
+
+## BYO GApps integration
+
+- `buildinfra/privapp-permissions/privapp-permissions-org.matonos.settings.xml` now grants Settings `INSTALL_PACKAGES` and `DELETE_PACKAGES` for PackageInstaller session updates and removal of updated system apps. The Settings app manifest requests both.
+- The existing GMS and Play Store stand-ins support these replacements. The current `gms/` configuration does not ship a `com.google.android.gsf` GsfProxy stand-in, so the Google Services Framework update path cannot succeed until the GMS owner adds a privileged stand-in under `gms/gms.mk` (with the existing pinned transition in patch 0003). Please coordinate that package/source/signing metadata before claiming all three package paths are available.
