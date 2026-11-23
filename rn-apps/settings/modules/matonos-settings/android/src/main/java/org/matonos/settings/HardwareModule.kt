@@ -33,6 +33,12 @@ class HardwareModule : Module() {
     AsyncFunction("getSystemComponents") {
       SystemComponents.read(requireNotNull(appContext.reactContext))
     }
+    AsyncFunction("getVolumeBoostPercent") {
+      VolumeBoostService.getPercentAndEnsureRunning(requireNotNull(appContext.reactContext))
+    }
+    AsyncFunction("setVolumeBoostPercent") { percent: Int ->
+      VolumeBoostService.setPercent(requireNotNull(appContext.reactContext), percent)
+    }
     AsyncFunction("setSystemComponent") { kind: String, flattened: String ->
       SystemComponents.write(requireNotNull(appContext.reactContext), kind, flattened)
     }

@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.util.Log
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -13,6 +14,7 @@ import java.util.concurrent.TimeUnit
 class SettingsBootReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
     if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+    VolumeBoostService.startAtBoot(context)
     val pending = goAsync()
     executor.execute {
       try {
@@ -27,8 +29,9 @@ class SettingsBootReceiver : BroadcastReceiver() {
           if (isLive) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
           PackageManager.DONT_KILL_APP,
         )
-      } catch (_: Exception) {
+      } catch (error: Exception) {
         // Fail closed: the install shortcut never appears if live mode is unknown.
+        Log.e("MatonSettingsBoot", "failed updating install alias after boot", error)
       } finally {
         pending.finish()
       }

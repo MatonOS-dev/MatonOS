@@ -14,6 +14,7 @@
         "org.matonos.permission.BIND_EMBEDDED_SETTINGS",
         "org.matonos.permission.BIND_CAPTION_PROVIDER",
         "android.permission.WRITE_SECURE_SETTINGS",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.RECEIVE_BOOT_COMPLETED"
       ]
     },

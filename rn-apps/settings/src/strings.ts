@@ -104,6 +104,8 @@ const en = {
   virtualController: "Virtual controller",
   audioGraphics: "Audio and graphics",
   audioOutput: "Audio output",
+  volumeBoost: "Volume boost",
+  volumeBoostHint: "Boost output above 100%. A limiter reduces clipping.",
   graphicsRenderer: "Graphics renderer",
   software: "Software",
   hardwareRenderer: "Hardware",
