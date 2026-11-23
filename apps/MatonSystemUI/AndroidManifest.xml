@@ -7,6 +7,10 @@
         android:name="org.matonos.permission.BIND_CAPTION_PROVIDER"
         android:protectionLevel="signature|privileged" />
     <uses-permission android:name="org.matonos.permission.BIND_CAPTION_PROVIDER" />
+    <permission
+        android:name="org.matonos.permission.BIND_TRAY_HOST"
+        android:protectionLevel="signature|privileged" />
+    <uses-permission android:name="org.matonos.permission.BIND_TRAY_HOST" />
     <application
         tools:replace="android:appComponentFactory"
         android:appComponentFactory="org.matonos.systemui.MatonSystemUIAppComponentFactory" />

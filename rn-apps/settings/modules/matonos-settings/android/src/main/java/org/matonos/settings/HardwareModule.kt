@@ -10,6 +10,7 @@ import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import org.matonos.settings.SystemComponents
 
 /**
  * What hardware is REALLY present, so UIs can hide icons for missing hardware
@@ -25,6 +26,12 @@ class HardwareModule : Module() {
     Events("hardwareChanged")
 
     AsyncFunction("getHardwareState") { state(requireNotNull(appContext.reactContext)) }
+    AsyncFunction("getSystemComponents") {
+      SystemComponents.read(requireNotNull(appContext.reactContext))
+    }
+    AsyncFunction("setSystemComponent") { kind: String, flattened: String ->
+      SystemComponents.write(requireNotNull(appContext.reactContext), kind, flattened)
+    }
 
     OnStartObserving {
       val context = requireNotNull(appContext.reactContext)
