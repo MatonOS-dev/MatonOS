@@ -1025,13 +1025,13 @@ Feature work continues, but in this shape from now on.
     Wayland client loses its connection and exits too.
     EXCEPTION (user, 2026-09-28): apps with a registered tray item (Steam,
     Discord, ...) hide to the tray on window close, so they are NOT killed
-    when the last window closes; their stub keeps a foreground service tied
-    to the tray notification. Tray "Quit" or swiping away in Recents ends them.
-    Tray: Android has none -> StatusNotifierItem (our D-Bus glue implements
-    StatusNotifierWatcher) becomes an ONGOING notification posted by the
-    app's stub (tray icon/title; tap = Activate; first dbusmenu entries as
-    notification actions; "More" opens a small popup with the full menu).
-    Legacy XEmbed tray icons go through an xembedsniproxy-style converter.
+    when the last window closes; their stub stays active while the tray item
+    is registered. Tray "Quit" or swiping away in Recents ends them.
+    Tray: Linux StatusNotifierItems are handed by the subsystem's D-Bus
+    watcher to the selected tray host, rendered in Launcher3's taskbar pill.
+    The host handles item activation, menus and pill input; the pill is empty
+    when no host is connected. Legacy XEmbed tray icons go through an
+    xembedsniproxy-style converter.
   - **Per-app compositors (user, 2026-09-28; replaces one shared
     compositor):** every Linux app's stub APK runs its OWN compositor
     instance (the Xtr126 fork, instantiated per stub), so each Linux app is

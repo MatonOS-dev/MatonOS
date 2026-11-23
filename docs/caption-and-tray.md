@@ -33,4 +33,3 @@ MatonOS Settings' System components page discovers caption and tray services tha
 
 - The StatusNotifierItem watcher and tray-host source are not in this repository, so this document can cite their design and integration milestone but not their implementation lines.
 - The recorded VM milestone confirms the caption and provider selection page. It does not record a live tray icon/menu interaction test.
-- [`docs/TITLE-BARS.md`](TITLE-BARS.md) is an earlier investigation. Its statements that no framework patch was planned and that custom caption behavior remained future work are superseded by patch 0004 and the current provider implementation. [`NOTES.md`](../NOTES.md#L1030) still describes tray entries as Android notifications with a popup; that description predates the taskbar pill and should be updated.
