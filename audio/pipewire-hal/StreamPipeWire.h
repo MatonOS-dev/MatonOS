@@ -28,6 +28,8 @@ class StreamPipeWire : public StreamCommonImpl {
     ::android::status_t transfer(void* buffer, size_t frameCount, size_t* actualFrameCount,
                                  int32_t* latencyMs) override;
     ::android::status_t refinePosition(StreamDescriptor::Position* position) override;
+    ndk::ScopedAStatus setConnectedDevices(
+            const std::vector<::aidl::android::media::audio::common::AudioDevice>& devices) override;
     void shutdown() override;
 
   private:
@@ -36,6 +38,7 @@ class StreamPipeWire : public StreamCommonImpl {
     static void onProcess(void* userData);
     static void onDrained(void* userData);
     ::android::status_t startPipeWire();
+    ::android::status_t connectPipeWireNode(uint32_t targetNode);
     void stopPipeWire();
     void processBuffer();
 
@@ -63,6 +66,9 @@ class StreamPipeWire : public StreamCommonImpl {
     bool mShutdown = false;
     bool mDrained = false;
     bool mLoopStarted = false;
+    std::string mActiveIdentity;
+    float mAppliedBoost = 1.0f;
+    bool mUsePcmBoost = true;
 };
 
 class StreamInPipeWire final : public StreamIn, public StreamPipeWire {

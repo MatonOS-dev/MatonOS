@@ -5,3 +5,6 @@ get_prop(matonos_system_bridge, vendor_maton_prop)
 # Input proxy dimensions are computed from Android's active display mode.
 # Treble neverallow: coredomain may not set vendor props. Display dimensions
 # are sent to matonos-inputd over the existing IChannel.
+
+# PipeWire audio HAL owns the audio settings channel instance.
+binder_call(matonos_system_bridge, hal_audio_default)

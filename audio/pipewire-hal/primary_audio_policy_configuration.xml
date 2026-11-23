@@ -1,13 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Primary policy ports for the MatonOS PipeWire AIDL HAL. -->
 <module name="default" halVersion="2.0">
-    <attachedDevices>
-        <item>Speaker</item>
-        <item>Built-In Mic</item>
-        <item>No audio device</item>
-        <item>No audio device input</item>
-    </attachedDevices>
-    <defaultOutputDevice>Speaker</defaultOutputDevice>
+    <!-- The HAL connects one external device port per PipeWire node. It connects
+         the two stand-ins only while no sink/source of that direction exists. -->
+    <defaultOutputDevice>No audio device</defaultOutputDevice>
     <mixPorts>
         <mixPort name="primary output" role="source" flags="AUDIO_OUTPUT_FLAG_PRIMARY">
             <profile format="AUDIO_FORMAT_PCM_16_BIT" samplingRates="8000 16000 32000 44100 48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
@@ -19,14 +15,20 @@
         </mixPort>
     </mixPorts>
     <devicePorts>
-        <devicePort tagName="Speaker" type="AUDIO_DEVICE_OUT_SPEAKER" role="sink"/>
-        <devicePort tagName="Built-In Mic" type="AUDIO_DEVICE_IN_BUILTIN_MIC" role="source"/>
-        <devicePort tagName="No audio device" type="AUDIO_DEVICE_OUT_DEFAULT" role="sink"/>
-        <devicePort tagName="No audio device input" type="AUDIO_DEVICE_IN_DEFAULT" role="source"/>
+        <devicePort tagName="PipeWire Output" type="AUDIO_DEVICE_OUT_DEVICE" role="sink" connection="other">
+            <profile format="AUDIO_FORMAT_PCM_16_BIT" samplingRates="8000 16000 32000 44100 48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
+            <profile format="AUDIO_FORMAT_PCM_FLOAT" samplingRates="8000 16000 32000 44100 48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
+        </devicePort>
+        <devicePort tagName="PipeWire Input" type="AUDIO_DEVICE_IN_DEVICE" role="source" connection="other">
+            <profile format="AUDIO_FORMAT_PCM_16_BIT" samplingRates="8000 16000 32000 44100 48000" channelMasks="AUDIO_CHANNEL_IN_MONO AUDIO_CHANNEL_IN_STEREO"/>
+            <profile format="AUDIO_FORMAT_PCM_FLOAT" samplingRates="8000 16000 32000 44100 48000" channelMasks="AUDIO_CHANNEL_IN_MONO AUDIO_CHANNEL_IN_STEREO"/>
+        </devicePort>
+        <devicePort tagName="No audio device" type="AUDIO_DEVICE_OUT_DEFAULT" role="sink" connection="other"/>
+        <devicePort tagName="No audio device input" type="AUDIO_DEVICE_IN_DEFAULT" role="source" connection="other"/>
     </devicePorts>
     <routes>
-        <route type="mix" sink="Speaker" sources="primary output"/>
+        <route type="mix" sink="PipeWire Output" sources="primary output"/>
         <route type="mix" sink="No audio device" sources="primary output"/>
-        <route type="mix" sink="primary input" sources="Built-In Mic,No audio device input"/>
+        <route type="mix" sink="primary input" sources="PipeWire Input,No audio device input"/>
     </routes>
 </module>

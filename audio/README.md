@@ -135,3 +135,89 @@ and Intel HDA), and HP ProDesk 600 G1 (Haswell). On each, test analog/HDA,
 HDMI and USB output where available, microphone capture where present, and
 USB audio hotplug. Also boot with all audio devices disabled; boot must finish
 and the PipeWire fallback must remain available.
+
+## PipeWire device mirroring and output boost (P3)
+
+The primary AIDL module monitors PipeWire registry nodes and connects one
+external AIDL device port per `Audio/Sink` and `Audio/Source` node. The port
+address carries a stable MatonOS identity and the port name uses PipeWire's
+node description. A stream follows the device selected by AudioPolicy through
+its connected-device address; the HAL maps that identity to the current PipeWire
+registry ID and passes it as the stream target. The HAL disconnects and
+reconnects a live stream when AudioPolicy changes the connected device. The P2 static speaker/microphone stand-ins
+are now external ports connected only while their direction has no real
+PipeWire node. Discovery setup is non-fatal: the module connects those
+stand-ins before opening the PipeWire registry and retains them if discovery
+fails.
+
+Device identity uses the first available of `device.bus-path`,
+`device.serial`, `device.name`, then `node.name`, combined with
+`device.profile.name`, `node.name`, and input/output direction. `node.name`
+distinguishes multiple ports from one physical device. A stable FNV-1a 64-bit key
+is exposed as 16 lowercase hex digits. It intentionally excludes PipeWire
+node IDs and ALSA card numbers; if a device exposes none of the stable
+properties, its node name is the documented last-resort identity.
+
+MatonOS Settings calls the existing `IChannel/audio` service using
+`get_devices` and `set_boost`. The HAL persists the small key/multiplier map in
+`/data/vendor/maton-audio/device-boosts.conf`; the Settings app never writes a
+vendor data file or audio property directly. A new identity defaults to 1.0×.
+The 0.5×–1.5× multiplier is applied to the active PipeWire stream's
+`SPA_PROP_volume` when the stream exposes that control, leaving AudioFlinger's
+PCM mixing and volume path in place. If PipeWire rejects that control, the HAL
+applies the same multiplier to PCM samples. No limiter is applied. The stopgap session-0 DynamicsProcessing controller and
+its Settings Secure preference have been removed.
+
+### P3 source checks
+
+- `bpfmt -d audio/pipewire-hal/Android.bp` passed.
+- Python `ElementTree` parsing passed for both PipeWire audio policy XML files.
+- `bash -n audio/maton-audio-select.sh audio/maton-audio-codecs.sh` passed.
+- NDK r30 `clang++ -fsyntax-only -Wall -Wextra -Werror` passed for
+  `AudioControlChannel.cpp` using the generated channel/audio AIDL headers.
+- The full HAL source syntax check and runtime/image verification remain
+  pending: this worktree has no staged PipeWire public headers. No AOSP build,
+  VM, or adb commands were run by this agent.
+
+### Coordinator fresh-image verification
+
+Run the following on the next coordinator-built image with no USB audio device
+attached. Keep `persist.vendor.maton.sleep_idle_s=0` for the test session.
+
+```sh
+tools/run-qemu-live.sh -g none -m 4096 -a 5573 \
+  -s /mnt/data/aosp/out/pc-logs/pw-p3/serial.log \
+  -x "-device qemu-xhci,id=xhci -monitor unix:/mnt/data/aosp/out/pc-logs/pw-p3/monitor.sock,server,nowait"
+/mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 shell getprop sys.boot_completed
+/mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 shell dumpsys media.audio_policy
+/mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 shell 'XDG_RUNTIME_DIR=/data/vendor/maton-audio PIPEWIRE_RUNTIME_DIR=/data/vendor/maton-audio PIPEWIRE_CONFIG_DIR=/odm/etc/pipewire LD_LIBRARY_PATH=/odm/lib64:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2 /odm/bin/pw-cli ls Node'
+```
+
+With no real nodes, confirm the connected output and input ports are named
+`No audio device` and `No audio device input`. Hotplug a QEMU USB audio card:
+
+```sh
+printf 'device_add usb-audio,id=pw_usb_audio,bus=xhci.0\n' | socat - UNIX-CONNECT:/mnt/data/aosp/out/pc-logs/pw-p3/monitor.sock
+/mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 shell dumpsys media.audio_policy
+```
+
+Confirm the fallback output port disappears, the USB sink and source appear as
+separate connected ports, and MatonOS Settings → Hardware lists the output
+sink with a 0.50×–1.50× slider. Change its multiplier and check the persisted
+value after leaving and reopening the page. Play audio while changing Android
+media volume and the multiplier; verify zero Android volume remains silent and
+that the selected device changes without restarting AudioFlinger. Then remove
+the card and check that the no-device stand-ins return:
+
+```sh
+printf 'device_del pw_usb_audio\n' | socat - UNIX-CONNECT:/mnt/data/aosp/out/pc-logs/pw-p3/monitor.sock
+/mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 shell dumpsys media.audio_policy
+/mnt/data/aosp/out/host/linux-x86/bin/adb -s 127.0.0.1:5573 logcat -b all -d -s AHAL_ModulePipeWire AHAL_AudioControlChannel AHAL_StreamPipeWire PipeWire WirePlumber
+```
+
+The same checks should be repeated with a fresh boot on the Ryzen/RX 6600,
+Surface Pro 3 and HP ProDesk listed above. In particular, verify source
+selection and capture, analog/HDA and HDMI nodes, USB replacement, a boot with
+no audio hardware, and SELinux denials. The new dynamic generic AIDL device
+ports, live PipeWire stream retarget, external-port disconnect behavior, and
+stream-volume control still require that runtime validation.

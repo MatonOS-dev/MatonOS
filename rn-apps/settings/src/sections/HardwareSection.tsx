@@ -3,6 +3,7 @@ import { useFocusEffect } from "expo-router";
 import { Column, Slider, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth } from "@expo/ui/jetpack-compose/modifiers";
 import { Hardware, type HardwareState } from "../hardware/Hardware";
+import { MatonOS } from "../bridge/MatonOS";
 import {
   ActionButton,
   SectionHeader,
@@ -14,7 +15,7 @@ import { copy, numberFormat } from "../strings";
 export function HardwareSection() {
   const colors = useMaterialColors();
   const [hardware, setHardware] = useState<HardwareState | null>(null);
-  const [volumeBoost, setVolumeBoost] = useState(100);
+  const [audioDevices, setAudioDevices] = useState<Array<{ id: string; name: string; multiplier: number }>>([]);
   const refreshHardware = useCallback(async () => {
     try {
       setHardware(await Hardware.getState());
@@ -22,17 +23,24 @@ export function HardwareSection() {
       setHardware(null);
     }
     try {
-      setVolumeBoost(await Hardware.getVolumeBoostPercent());
+      const result = await MatonOS.call("audio", "get_devices");
+      if (result.available) {
+        const state = JSON.parse(result.value) as { devices?: typeof audioDevices };
+        setAudioDevices(state.devices ?? []);
+      } else {
+        setAudioDevices([]);
+      }
     } catch (error) {
-      console.error("volume boost read failed", error);
+      console.error("audio device list read failed", error);
+      setAudioDevices([]);
     }
   }, []);
-  const updateVolumeBoost = useCallback((value: number) => {
-    const percent = Math.max(100, Math.min(200, Math.round(value)));
-    setVolumeBoost(percent);
-    void Hardware.setVolumeBoostPercent(percent).catch((error) => {
-      console.error(`volume boost update failed percent=${percent}`, error);
-    });
+  const updateDeviceBoost = useCallback((id: string, value: number) => {
+    const multiplier = Math.max(0.5, Math.min(1.5, Math.round(value * 100) / 100));
+    setAudioDevices((devices) => devices.map((device) => device.id === id ? { ...device, multiplier } : device));
+    void MatonOS.call("audio", "set_boost", { id, multiplier }).then((result) => {
+      if (!result.available) console.error(`audio boost update unavailable: ${result.reason}`);
+    }).catch((error) => console.error(`audio boost update failed id=${id}`, error));
   }, []);
   useFocusEffect(
     useCallback(() => {
@@ -98,19 +106,24 @@ export function HardwareSection() {
         </SettingsCard>
         <SettingsCard title={copy.audioGraphics}>
           <StatusRow label={copy.audioOutput} value={audioStatus} />
-          <Text style={{ typography: "titleMedium" }} color={colors.onSurface}>
-            {copy.volumeBoost}: {volumeBoost}%
-          </Text>
-          <Text style={{ typography: "bodySmall" }} color={colors.onSurfaceVariant}>
-            {copy.volumeBoostHint}
-          </Text>
-          <Slider
-            value={volumeBoost}
-            min={100}
-            max={200}
-            steps={99}
-            onValueChange={updateVolumeBoost}
-          />
+          {audioDevices.length === 0 ? (
+            <Text style={{ typography: "bodySmall" }} color={colors.onSurfaceVariant}>
+              {copy.noAudioDevices}
+            </Text>
+          ) : audioDevices.map((device) => (
+            <Column key={device.id} modifiers={[fillMaxWidth()]} verticalArrangement={{ spacedBy: 6 }}>
+              <Text style={{ typography: "titleMedium" }} color={colors.onSurface}>
+                {device.name}: {device.multiplier.toFixed(2)}×
+              </Text>
+              <Slider
+                value={Math.round(device.multiplier * 100)}
+                min={50}
+                max={150}
+                steps={99}
+                onValueChange={(value) => updateDeviceBoost(device.id, value / 100)}
+              />
+            </Column>
+          ))}
           <StatusRow label={copy.graphicsRenderer} value={graphicsStatus} />
         </SettingsCard>
         <SettingsCard title={copy.camera}>
