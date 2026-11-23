@@ -15,6 +15,15 @@ DEVICE = Path(__file__).resolve().parents[1]
 AOSP = DEVICE.parents[2]
 ERRORS: list[str] = []
 GENERATED_DIRS = ("build", "out", "prebuilt", "node_modules", ".gradle", ".cxx")
+# Written by tools/build.sh steps that run after preflight (build-pipewire,
+# build-native, build-bundle's bootanim generator); build-bundle.sh still
+# fails on a missing input at use time.
+BUILD_STEP_OUTPUTS = ("buildinfra/native-built/", "bootanim/out/")
+
+
+def build_step_output(path: Path) -> bool:
+    rel = path.resolve().relative_to(DEVICE.resolve()).as_posix() if path.resolve().is_relative_to(DEVICE.resolve()) else ""
+    return rel.startswith(BUILD_STEP_OUTPUTS)
 
 
 def error(path: Path | str, message: str) -> None:
@@ -165,7 +174,7 @@ def check_android_bp() -> None:
                 srcs = re.search(r"(?m)^\s*srcs\s*:\s*\[([^\]]*)\]", block, re.S)
                 if srcs:
                     for value in re.findall(r'"([^\"]+)"', srcs.group(1)):
-                        if not any(c in value for c in "*?") and not (path.parent / value).is_file():
+                        if not any(c in value for c in "*?") and not (path.parent / value).is_file() and not build_step_output(path.parent / value):
                             error(path, f"{module_type} {name} srcs file is missing: {value}")
 
 
@@ -196,7 +205,7 @@ def check_bundle_registry() -> None:
         if kind in ("file", "tree") and len(fields) == 3:
             source = DEVICE / fields[1]
             expected = source.is_file() if kind == "file" else source.is_dir()
-            if not expected:
+            if not expected and not build_step_output(source):
                 error(registry, f"line {lineno}: {kind} source is missing: {fields[1]}")
         elif kind == "prop" and len(fields) == 2 and "=" in fields[1]:
             continue
