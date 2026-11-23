@@ -212,3 +212,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Merged wip/pipewire-p3 (e0e0bef7; fixed JSX .map rule). Goes into the build after 82.
 - Started byo-gapps (PID 516610, dt-gapps) and hotspot scope (PID 516619, dt-hotspot, report-only).
 - Note: apply-patches.sh cannot replace a changed patch already applied (needs manual reset of that project).
+
+## 17:23 hourly
+- build-82 sepolicy neverallow (vold context= relabelto vfat) → reverted context mounts; build-83 HAL `try` with -fno-exceptions → strtof. build-84 running.
+- Merged wip/byo-gapps (5aaebae9; fixed device ID → GSF gservices android_id). Open: no GSF stand-in → gsf-standin round PID see log.
+- hotspot scope done (no AOSP patch needed); hotspot1 round (stock hostapd/P2P wiring + hwsim VM plan) running.
+- Worktrees 4/4: main, dt-fdroid, dt-hotspot, dt-gsf.
