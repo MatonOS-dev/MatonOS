@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect } from "expo-router";
-import { Column } from "@expo/ui/jetpack-compose";
+import { Column, Slider, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth } from "@expo/ui/jetpack-compose/modifiers";
 import { Hardware, type HardwareState } from "../hardware/Hardware";
 import {
@@ -12,13 +12,27 @@ import {
 import { copy, numberFormat } from "../strings";
 
 export function HardwareSection() {
+  const colors = useMaterialColors();
   const [hardware, setHardware] = useState<HardwareState | null>(null);
+  const [volumeBoost, setVolumeBoost] = useState(100);
   const refreshHardware = useCallback(async () => {
     try {
       setHardware(await Hardware.getState());
     } catch {
       setHardware(null);
     }
+    try {
+      setVolumeBoost(await Hardware.getVolumeBoostPercent());
+    } catch (error) {
+      console.error("volume boost read failed", error);
+    }
+  }, []);
+  const updateVolumeBoost = useCallback((value: number) => {
+    const percent = Math.max(100, Math.min(200, Math.round(value)));
+    setVolumeBoost(percent);
+    void Hardware.setVolumeBoostPercent(percent).catch((error) => {
+      console.error(`volume boost update failed percent=${percent}`, error);
+    });
   }, []);
   useFocusEffect(
     useCallback(() => {
@@ -84,6 +98,19 @@ export function HardwareSection() {
         </SettingsCard>
         <SettingsCard title={copy.audioGraphics}>
           <StatusRow label={copy.audioOutput} value={audioStatus} />
+          <Text style={{ typography: "titleMedium" }} color={colors.onSurface}>
+            {copy.volumeBoost}: {volumeBoost}%
+          </Text>
+          <Text style={{ typography: "bodySmall" }} color={colors.onSurfaceVariant}>
+            {copy.volumeBoostHint}
+          </Text>
+          <Slider
+            value={volumeBoost}
+            min={100}
+            max={200}
+            steps={99}
+            onValueChange={updateVolumeBoost}
+          />
           <StatusRow label={copy.graphicsRenderer} value={graphicsStatus} />
         </SettingsCard>
         <SettingsCard title={copy.camera}>
