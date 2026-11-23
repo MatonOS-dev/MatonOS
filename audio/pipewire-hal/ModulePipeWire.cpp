@@ -130,7 +130,7 @@ bool ModulePipeWire::connectDiscovery() {
 
 void ModulePipeWire::scheduleRetry() {
     if (mRetryTimer == nullptr) return;
-    const timespec retryIn{1, 0};
+    timespec retryIn{1, 0};  // pw_loop_update_timer takes a non-const pointer
     const int result = pw_loop_update_timer(pw_thread_loop_get_loop(mDiscoveryLoop), mRetryTimer,
                                             &retryIn, nullptr, false);
     if (result < 0) {
