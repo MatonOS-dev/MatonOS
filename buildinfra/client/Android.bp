@@ -1,6 +1,10 @@
-java_library_static {
+// Client library for platform apps built by Soong (systembridge). MatonOS.java
+// uses the library's resources, so this is an android_library, not plain Java.
+android_library {
     name: "matonos-client-java",
+    manifest: "AndroidManifest.soong.xml",
     srcs: ["src/main/java/**/*.java"],
+    resource_dirs: ["src/main/res"],
     static_libs: [
         "matonos-systembridge-aidl-java",
         "vendor.matonos.channel-V2-java",
