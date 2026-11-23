@@ -88,9 +88,6 @@ module.exports = function withMatonSettings(config) {
   config = withDangerousMod(config, ['android', async (mod) => {
     const project = mod.modRequest.projectRoot;
     const android = mod.modRequest.platformProjectRoot;
-    const permissionSource = path.join(project, 'privapp-permissions-org.matonos.settings.xml');
-    const permissionDestination = path.join(android, 'app/src/main/assets/privapp-permissions-org.matonos.settings.xml');
-    fs.mkdirSync(path.dirname(permissionDestination), {recursive:true}); fs.copyFileSync(permissionSource, permissionDestination);
     const values = path.join(android, 'app/src/main/res/values'); fs.mkdirSync(values, {recursive:true});
     fs.copyFileSync(path.join(project, 'modules/matonos-settings/android/src/main/res/values/settings_strings.xml'), path.join(values, 'matonos_settings.xml'));
     const resources = path.join(project, 'modules/matonos-settings/android/src/main/res');

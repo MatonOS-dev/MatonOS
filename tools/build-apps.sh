@@ -189,11 +189,6 @@ while IFS=$'\t' read -r key_id project_rel task apk_name; do
   [[ -n $apk && -s $apk ]] || die "Gradle did not produce a release APK for $key_id"
   if [[ $expo == 1 ]]; then
     (cd "$project" && npm run check:release-linkage) || die "release linkage check failed for $key_id"
-    app_id=${key_id#matonos-}
-    permission_xml=$project/android/app/src/main/assets/privapp-permissions-org.matonos.$app_id.xml
-    [[ -s $permission_xml ]] || permission_xml=$project/privapp-permissions-org.matonos.$app_id.xml
-    [[ -s $permission_xml ]] || die "Expo project did not generate its privileged permission XML: $key_id"
-    install -D -m 0644 "$permission_xml" "$DEVICE_DIR/buildinfra/privapp-permissions/privapp-permissions-org.matonos.$app_id.xml"
   fi
   apk_cert=$("$SDK"/build-tools/36.0.0/apksigner verify --print-certs "$apk" \
     | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr '[:upper:]' '[:lower:]' | head -n1)

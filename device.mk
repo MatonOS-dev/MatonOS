@@ -186,5 +186,6 @@ PRODUCT_SYSTEM_EXT_PROPERTIES += ro.charger.enable_suspend=false
 
 # Privileged permissions must be allowlisted (privapp-permissions-*.xml): a priv-app
 # requesting one that is neither allowlisted nor denied stops boot instead of only
-# being logged. Allowlist or <deny-permission> every new request.
+# being logged. Allowlist or <deny-permission> every new request. MatonOS app
+# allowlists live only in buildinfra/privapp-permissions/ (edit them there).
 PRODUCT_VENDOR_PROPERTIES += ro.control_privapp_permissions=enforce
