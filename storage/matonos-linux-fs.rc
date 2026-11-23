@@ -1,0 +1,6 @@
+# External drives: vold mounts ext2/3/4, btrfs, xfs, f2fs, ntfs3, hfsplus, udf,
+# iso9660 and exfat on public volumes (patches/system/vold). ext4/btrfs/f2fs
+# are built in; the rest are modules with no device modalias, so nothing would
+# load them before vold reads /proc/filesystems.
+on early-boot
+    exec u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -a -d /vendor/lib/modules exfat xfs ntfs3 hfsplus udf isofs

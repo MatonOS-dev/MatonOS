@@ -1,0 +1,4 @@
+# External drives (patches/system/vold): vold idmaps Linux-permission public
+# volumes. A forked vold child creates an empty user namespace; vold writes its
+# uid/gid maps and passes /proc/<child>/ns/user to mount_setattr.
+allow vold self:user_namespace create;

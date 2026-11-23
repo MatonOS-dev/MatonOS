@@ -1,0 +1,406 @@
+From 3d60db5ad766fd86a965114704b77fae2624c71b Mon Sep 17 00:00:00 2001
+From: Hanro <hlareman2@gmail.com>
+Date: Mon, 23 Nov 2026 11:33:19 +0200
+Subject: [PATCH] Add Linux filesystems to public volumes
+
+Task: vold-fs
+Agent: Codex
+Change-Id: Iecb4366e1f5605e0279387e46512188cf533a07b
+---
+ model/PublicVolume.cpp | 273 ++++++++++++++++++++++++++++++++++++++---
+ model/PublicVolume.h   |   2 +
+ 2 files changed, 255 insertions(+), 20 deletions(-)
+
+diff --git a/model/PublicVolume.cpp b/model/PublicVolume.cpp
+index 5a30fca..ff477e9 100644
+--- a/model/PublicVolume.cpp
++++ b/model/PublicVolume.cpp
+@@ -20,6 +20,8 @@
+ #include "Utils.h"
+ #include "VolumeManager.h"
+ #include "fs/Exfat.h"
++#include "fs/Ext4.h"
++#include "fs/F2fs.h"
+ #include "fs/Vfat.h"
+ 
+ #include <android-base/logging.h>
+@@ -29,13 +31,22 @@
+ #include <private/android_filesystem_config.h>
+ #include <utils/Timers.h>
+ 
++#include <algorithm>
+ #include <fcntl.h>
++#include <linux/mount.h>
++#include <sched.h>
++#include <stdint.h>
++#include <string.h>
++#include <sys/socket.h>
+ #include <stdlib.h>
+ #include <sys/mount.h>
+ #include <sys/stat.h>
++#include <sys/syscall.h>
+ #include <sys/sysmacros.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
++#include <unistd.h>
++#include <vector>
+ #include <android_vold_flags.h>
+ 
+ using android::base::GetBoolProperty;
+@@ -45,6 +56,160 @@ namespace flags = android::vold::flags;
+ namespace android {
+ namespace vold {
+ 
++static void CloseFdLogged(int fd, const char* file, int line) {
++    if (close(fd) != 0)
++        PLOG(ERROR) << "close fd=" << fd << " at " << file << ":" << line << " failed";
++}
++#define CLOSE_FD(fd) CloseFdLogged((fd), __FILE__, __LINE__)
++
++// Swap the Linux desktop identity with AID_MEDIA_RW. uid_map/gid_map require
++// one-to-one ranges, so a many-to-one mapping of every filesystem owner cannot
++// be represented; all other owners remain unchanged. (uid_t)-1 stays unmapped.
++static constexpr uint32_t kDesktopId = 1000;
++
++static bool WriteIdMap(const std::string& path) {
++    const uint64_t low = std::min<uint32_t>(kDesktopId, AID_MEDIA_RW);
++    const uint64_t high = std::max<uint32_t>(kDesktopId, AID_MEDIA_RW);
++    const uint64_t end = UINT32_MAX;  // exclusive: ids 0 .. UINT32_MAX-1
++    std::string map;
++    auto append = [&map](uint64_t inside, uint64_t outside, uint64_t count) {
++        if (count != 0)
++            map += StringPrintf("%llu %llu %llu\n", static_cast<unsigned long long>(inside),
++                                static_cast<unsigned long long>(outside),
++                                static_cast<unsigned long long>(count));
++    };
++    append(0, 0, low);
++    append(low, high, 1);
++    append(low + 1, low + 1, high - low - 1);
++    append(high, low, 1);
++    append(high + 1, high + 1, end - high - 1);
++
++    int fd = open(path.c_str(), O_WRONLY | O_CLOEXEC);
++    if (fd < 0) {
++        PLOG(ERROR) << "open " << path << " for idmap failed";
++        return false;
++    }
++    ssize_t rc = TEMP_FAILURE_RETRY(write(fd, map.data(), map.size()));
++    bool ok = rc == static_cast<ssize_t>(map.size());
++    if (!ok) {
++        if (rc >= 0) errno = EIO;
++        PLOG(ERROR) << "write " << path << " idmap failed map=" << map;
++    }
++    CLOSE_FD(fd);
++    return ok;
++}
++
++// The child only creates the user namespace and waits. Maps are written and
++// the mount is cloned/idmapped/attached by vold itself: multi-extent maps must
++// be written from the parent namespace, and mount_setattr/move_mount need
++// CAP_SYS_ADMIN in the initial user namespace.
++static status_t MountIdmapped(const std::string& source, const std::string& target) {
++    int sockets[2];
++    if (socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sockets) != 0) {
++        PLOG(ERROR) << "socketpair for idmapped mount failed source=" << source;
++        return -errno;
++    }
++    pid_t child = fork();
++    if (child < 0) {
++        PLOG(ERROR) << "fork for idmapped mount failed source=" << source;
++        CLOSE_FD(sockets[0]);
++        CLOSE_FD(sockets[1]);
++        return -errno;
++    }
++    if (child == 0) {
++        close(sockets[0]);
++        char byte = unshare(CLONE_NEWUSER) == 0 ? 'U' : 'E';
++        if (byte == 'E') PLOG(ERROR) << "unshare user namespace failed source=" << source;
++        if (TEMP_FAILURE_RETRY(write(sockets[1], &byte, 1)) != 1) _exit(1);
++        // Hold the namespace until vold closes its end.
++        TEMP_FAILURE_RETRY(read(sockets[1], &byte, 1));
++        _exit(0);
++    }
++    CLOSE_FD(sockets[1]);
++
++    status_t result = -EOPNOTSUPP;
++    int usernsFd = -1;
++    int mountFd = -1;
++    char byte = 0;
++    std::string proc = StringPrintf("/proc/%d", child);
++    if (TEMP_FAILURE_RETRY(read(sockets[0], &byte, 1)) != 1 || byte != 'U') {
++        LOG(ERROR) << "idmap child " << child << " failed to create user namespace source="
++                   << source;
++    } else if (!WriteIdMap(proc + "/uid_map") || !WriteIdMap(proc + "/gid_map")) {
++        LOG(ERROR) << "write idmap uid/gid maps failed child=" << child << " source=" << source;
++    } else if ((usernsFd = open((proc + "/ns/user").c_str(), O_RDONLY | O_CLOEXEC)) < 0) {
++        PLOG(ERROR) << "open idmap user namespace failed child=" << child << " source=" << source;
++    } else if ((mountFd = syscall(SYS_open_tree, AT_FDCWD, source.c_str(),
++                                  OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC)) < 0) {
++        PLOG(ERROR) << "open_tree failed source=" << source;
++    } else {
++        struct mount_attr attr = {};
++        attr.attr_set = MOUNT_ATTR_IDMAP;
++        attr.userns_fd = static_cast<uint64_t>(usernsFd);
++        if (syscall(SYS_mount_setattr, mountFd, "", AT_EMPTY_PATH, &attr, sizeof(attr)) != 0) {
++            PLOG(ERROR) << "mount_setattr MOUNT_ATTR_IDMAP failed source=" << source;
++        } else if (syscall(SYS_move_mount, mountFd, "", AT_FDCWD, target.c_str(),
++                           MOVE_MOUNT_F_EMPTY_PATH) != 0) {
++            PLOG(ERROR) << "move_mount failed source=" << source << " target=" << target;
++            result = -errno;
++        } else {
++            result = OK;
++        }
++    }
++    if (mountFd >= 0) CLOSE_FD(mountFd);
++    if (usernsFd >= 0) CLOSE_FD(usernsFd);
++    CLOSE_FD(sockets[0]);
++    int status = 0;
++    if (TEMP_FAILURE_RETRY(waitpid(child, &status, 0)) < 0)
++        PLOG(ERROR) << "waitpid idmap child=" << child << " failed source=" << source;
++    else if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
++        LOG(ERROR) << "idmap child=" << child << " exited status=" << status
++                   << " source=" << source;
++    return result;
++}
++
++static bool IsUnixPermissionFs(const std::string& fsType) {
++    return fsType == "ext2" || fsType == "ext3" || fsType == "ext4" || fsType == "btrfs" ||
++           fsType == "xfs" || fsType == "f2fs";
++}
++
++static status_t CheckPublicFilesystem(const std::string& fsType, const std::string& source) {
++    if (fsType == "vfat" || fsType == "exfat") return OK;
++    const char* checker = nullptr;
++    std::vector<std::string> args;
++    if (fsType == "ext2" || fsType == "ext3" || fsType == "ext4") {
++        checker = "/system/bin/e2fsck";
++        args = {checker, "-p", source};
++    } else if (fsType == "f2fs") {
++        checker = "/system/bin/fsck.f2fs";
++        args = {checker, "-a", source};
++    } else {
++        LOG(INFO) << "Skipping filesystem check for " << fsType << " on " << source
++                  << ": no permitted checker is shipped";
++        return OK;
++    }
++    if (access(checker, X_OK) != 0) {
++        LOG(INFO) << "Skipping filesystem check for " << fsType << " on " << source << ": "
++                  << checker << " is not executable in the image";
++        return OK;
++    }
++    int rc = ForkExecvpTimeout(args, kUntrustedFsckSleepTime, sFsckUntrustedContext);
++    if (rc == 0 || (fsType != "f2fs" && rc == 1)) return OK;
++    LOG(ERROR) << "filesystem check failed fs=" << fsType << " source=" << source << " exit=" << rc;
++    return -EIO;
++}
++
++static status_t MountUnixFilesystem(const std::string& fsType, const std::string& source,
++                                    const std::string& target) {
++    if (fsType == "ext4") return ext4::Mount(source, target, false, false, false);
++    if (fsType == "f2fs") return f2fs::Mount(source, target);
++    unsigned long flags = MS_NOATIME | MS_NODEV | MS_NOSUID | MS_DIRSYNC | MS_NOEXEC;
++    int rc = mount(source.c_str(), target.c_str(), fsType.c_str(), flags, nullptr);
++    if (rc != 0)
++        PLOG(ERROR) << "mount failed fs=" << fsType << " source=" << source << " target=" << target;
++    return rc;
++}
++
+ static const char* kSdcardFsPath = "/system/bin/sdcard";
+ 
+ static const char* kAsecPath = "/mnt/secure/asec";
+@@ -111,31 +276,40 @@ status_t PublicVolume::doMount() {
+     bool isVisible = isVisibleForWrite();
+     readMetadata();
+ 
+-    if (mFsType == "vfat" && vfat::IsSupported()) {
+-        if (vfat::Check(mDevPath)) {
+-            LOG(ERROR) << getId() << " failed filesystem check";
+-            return -EIO;
+-        }
+-    } else if (mFsType == "exfat" && exfat::IsSupported()) {
+-        if (exfat::Check(mDevPath)) {
+-            LOG(ERROR) << getId() << " failed filesystem check";
+-            return -EIO;
+-        }
+-    } else {
++    const bool unixPermissionFs = IsUnixPermissionFs(mFsType);
++    const bool supported = mFsType == "vfat" || mFsType == "exfat" || unixPermissionFs ||
++                           mFsType == "ntfs" || mFsType == "hfsplus" || mFsType == "udf" ||
++                           mFsType == "iso9660";
++    if (!supported) {
+         LOG(ERROR) << getId() << " unsupported filesystem " << mFsType;
+         return -EIO;
+     }
++    if ((mFsType == "vfat" && !vfat::IsSupported()) ||
++        (mFsType == "exfat" && !exfat::IsSupported())) {
++        LOG(ERROR) << getId() << " filesystem tools or kernel support unavailable fs=" << mFsType;
++        return -EOPNOTSUPP;
++    }
++
++    status_t checkResult = CheckPublicFilesystem(mFsType, mDevPath);
++    if (checkResult != OK) return checkResult;
+ 
+     std::string stableName = getStableName();
+ 
+     mRawPath = StringPrintf("/mnt/media_rw/%s", stableName.c_str());
++    mIdmappedPath = unixPermissionFs && isVisible
++                            ? StringPrintf("/mnt/media_rw/%s-idmap", stableName.c_str())
++                            : "";
+ 
+     mSdcardFsDefault = StringPrintf("/mnt/runtime/default/%s", stableName.c_str());
+     mSdcardFsRead = StringPrintf("/mnt/runtime/read/%s", stableName.c_str());
+     mSdcardFsWrite = StringPrintf("/mnt/runtime/write/%s", stableName.c_str());
+     mSdcardFsFull = StringPrintf("/mnt/runtime/full/%s", stableName.c_str());
+ 
+-    setInternalPath(mRawPath);
++    if (unixPermissionFs && isVisible) {
++        setInternalPath(mIdmappedPath);
++    } else {
++        setInternalPath(mRawPath);
++    }
+     if (isVisible) {
+         setPath(StringPrintf("/storage/%s", stableName.c_str()));
+     } else {
+@@ -143,10 +317,27 @@ status_t PublicVolume::doMount() {
+     }
+ 
+     if (fs_prepare_dir(mRawPath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
+-        PLOG(ERROR) << getId() << " failed to create mount points";
++        PLOG(ERROR) << getId() << " failed to create raw mount point " << mRawPath;
++        return -errno;
++    }
++    if (unixPermissionFs && isVisible &&
++        fs_prepare_dir(mIdmappedPath.c_str(), 0700, AID_ROOT, AID_ROOT)) {
++        PLOG(ERROR) << getId() << " failed to create idmapped mount point " << mIdmappedPath;
+         return -errno;
+     }
+ 
++    if (mFsType == "vfat") {
++        if (vfat::Check(mDevPath)) {
++            LOG(ERROR) << getId() << " failed filesystem check";
++            return -EIO;
++        }
++    } else if (mFsType == "exfat") {
++        if (exfat::Check(mDevPath)) {
++            LOG(ERROR) << getId() << " failed filesystem check";
++            return -EIO;
++        }
++    }
++
+     if (mFsType == "vfat") {
+         if (vfat::Mount(mDevPath, mRawPath, false, false, false, AID_ROOT,
+                         (isVisible ? AID_MEDIA_RW : AID_EXTERNAL_STORAGE), 0007, true)) {
+@@ -159,6 +350,33 @@ status_t PublicVolume::doMount() {
+             PLOG(ERROR) << getId() << " failed to mount " << mDevPath;
+             return -EIO;
+         }
++    } else if (unixPermissionFs) {
++        if (MountUnixFilesystem(mFsType, mDevPath, mRawPath) != 0) return -EIO;
++        if (isVisible && MountIdmapped(mRawPath, mIdmappedPath) != OK) {
++            LOG(ERROR) << getId() << " idmapped mount unavailable fs=" << mFsType
++                       << " source=" << mRawPath << "; refusing chmod/chown fallback";
++            if (ForceUnmount(mRawPath) != 0) {
++                PLOG(ERROR) << getId() << " failed to unmount raw path after idmap failure "
++                            << mRawPath;
++            }
++            if (rmdir(mIdmappedPath.c_str()) != 0 && errno != ENOENT) {
++                PLOG(ERROR) << getId() << " failed to remove idmap target " << mIdmappedPath;
++            }
++            return -EOPNOTSUPP;
++        }
++    } else {
++        const bool readOnly = mFsType == "iso9660" || mFsType == "udf" || mFsType == "hfsplus";
++        const char* mountType = mFsType == "ntfs" ? "ntfs3" : mFsType.c_str();
++        unsigned long mountFlags = MS_NODEV | MS_NOSUID | MS_NOATIME | MS_NOEXEC;
++        if (readOnly) mountFlags |= MS_RDONLY;
++        std::string mountData = StringPrintf("uid=%u,gid=%u,umask=0007", AID_ROOT,
++                                             isVisible ? AID_MEDIA_RW : AID_EXTERNAL_STORAGE);
++        if (::mount(mDevPath.c_str(), mRawPath.c_str(), mountType, mountFlags, mountData.c_str()) !=
++            0) {
++            PLOG(ERROR) << getId() << " mount failed fs=" << mFsType << " kernel_type=" << mountType
++                        << " source=" << mDevPath;
++            return -EIO;
++        }
+     }
+ 
+     if (getMountFlags() & MountFlags::kPrimary) {
+@@ -190,7 +408,7 @@ status_t PublicVolume::doMount() {
+                         "-g", "1023", // AID_MEDIA_RW
+                         "-U", std::to_string(getMountUserId()).c_str(),
+                         "-w",
+-                        mRawPath.c_str(),
++                        getInternalPath().c_str(),
+                         stableName.c_str(),
+                         NULL)) {
+                     // clang-format on
+@@ -202,7 +420,7 @@ status_t PublicVolume::doMount() {
+                         "-u", "1023", // AID_MEDIA_RW
+                         "-g", "1023", // AID_MEDIA_RW
+                         "-U", std::to_string(getMountUserId()).c_str(),
+-                        mRawPath.c_str(),
++                        getInternalPath().c_str(),
+                         stableName.c_str(),
+                         NULL)) {
+                     // clang-format on
+@@ -230,7 +448,8 @@ status_t PublicVolume::doMount() {
+                 return -ETIMEDOUT;
+             }
+         }
+-        /* sdcardfs will have exited already. The filesystem will still be running */
++        /* sdcardfs will have exited already. The filesystem will still be running
++         */
+         TEMP_FAILURE_RETRY(waitpid(sdcardFsPid, nullptr, 0));
+     }
+ 
+@@ -276,8 +495,9 @@ status_t PublicVolume::doMount() {
+             // No need to bind if the user does not share storage with the mount owner
+             continue;
+         }
+-        // Create mount directory for the user as there is a chance that no other Volume is mounted
+-        // for the user (ex: if the user is just started), so /mnt/user/user_id  does not exist yet.
++        // Create mount directory for the user as there is a chance that no other
++        // Volume is mounted for the user (ex: if the user is just started), so
++        // /mnt/user/user_id  does not exist yet.
+         auto mountDirStatus = PrepareMountDirForUser(started_user);
+         if (mountDirStatus != OK) {
+             LOG(ERROR) << "Failed to create Mount Directory for user " << started_user;
+@@ -384,8 +604,21 @@ status_t PublicVolume::doUnmount() {
+         mSdcardFsFull.clear();
+     }
+ 
+-    if (ForceUnmount(mRawPath) != 0){
+-        umount2(mRawPath.c_str(),MNT_DETACH);
++    if (!mIdmappedPath.empty()) {
++        if (ForceUnmount(mIdmappedPath) != 0) {
++            PLOG(ERROR) << "failed to unmount idmapped view " << mIdmappedPath;
++            if (umount2(mIdmappedPath.c_str(), MNT_DETACH) != 0) {
++                PLOG(ERROR) << "lazy unmount idmapped view failed " << mIdmappedPath;
++            }
++        }
++        if (rmdir(mIdmappedPath.c_str()) != 0 && errno != ENOENT) {
++            PLOG(ERROR) << "failed to remove idmapped mountpoint " << mIdmappedPath;
++        }
++        mIdmappedPath.clear();
++    }
++
++    if (ForceUnmount(mRawPath) != 0) {
++        umount2(mRawPath.c_str(), MNT_DETACH);
+         PLOG(INFO) << "use umount lazy if force unmount fail";
+     }
+     if(rmdir(mRawPath.c_str()) != 0) {
+diff --git a/model/PublicVolume.h b/model/PublicVolume.h
+index 5eff35e..57f1b7c 100644
+--- a/model/PublicVolume.h
++++ b/model/PublicVolume.h
+@@ -62,6 +62,8 @@ class PublicVolume : public VolumeBase {
+     std::string mDevPath;
+     /* Mount point of raw partition */
+     std::string mRawPath;
++    /* Idmapped mount used by sdcardfs/FUSE for Unix-permission filesystems */
++    std::string mIdmappedPath;
+ 
+     std::string mSdcardFsDefault;
+     std::string mSdcardFsRead;
+-- 
+2.43.0
+
