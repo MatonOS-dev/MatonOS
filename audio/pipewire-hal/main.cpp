@@ -12,6 +12,7 @@
 #include <pipewire/pipewire.h>
 
 #include "ModulePipeWire.h"
+#include "AudioControlChannel.h"
 #include "core-impl/AudioPolicyConfigXmlConverter.h"
 #include "core-impl/ChildInterface.h"
 #include "core-impl/Config.h"
@@ -21,6 +22,7 @@ using aidl::android::hardware::audio::core::ChildInterface;
 using aidl::android::hardware::audio::core::Config;
 using aidl::android::hardware::audio::core::Module;
 using aidl::android::hardware::audio::core::ModulePipeWire;
+using aidl::android::hardware::audio::core::AudioControlChannel;
 using aidl::android::hardware::audio::core::internal::AudioPolicyConfigXmlConverter;
 
 namespace {
@@ -69,6 +71,11 @@ int main(int argc, char** argv) {
     auto config = ndk::SharedRefBase::make<Config>(converter);
     if (!addService(config->asBinder(), std::string(Config::descriptor) + "/default")) {
         return EXIT_FAILURE;
+    }
+
+    auto audioChannel = ndk::SharedRefBase::make<AudioControlChannel>();
+    if (!addService(audioChannel->asBinder(), "vendor.matonos.channel.IChannel/audio")) {
+        LOG(ERROR) << "Audio settings channel unavailable; audio HAL continues without settings IPC";
     }
 
     std::vector<ChildInterface<Module>> modules;

@@ -27,12 +27,15 @@ cc_binary {
     srcs: [
         "main.cpp",
         "ModulePipeWire.cpp",
+        "AudioControlChannel.cpp",
         "StreamPipeWire.cpp",
     ],
     static_libs: ["libaudioserviceexampleimpl"],
     shared_libs: [
         "android.hardware.bluetooth.audio-impl",
         "libaudio_aidl_conversion_common_ndk",
+        "libbase",
+        "vendor.matonos.channel-V2-ndk",
         "libbluetooth_audio_session_aidl",
         "liblog",
         "libpipewire_matonos",

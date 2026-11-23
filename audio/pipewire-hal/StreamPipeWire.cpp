@@ -1,17 +1,20 @@
 #define LOG_TAG "AHAL_StreamPipeWire"
 
 #include "StreamPipeWire.h"
+#include "AudioControlChannel.h"
 
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
+#include <cmath>
 #include <limits>
 #include <string>
 
 #include <Log.h>
 #include <spa/param/audio/format-utils.h>
 #include <spa/param/format.h>
+#include <spa/param/props.h>
 #include <spa/pod/builder.h>
 
 namespace aidl::android::hardware::audio::core {
@@ -114,6 +117,14 @@ StreamPipeWire::~StreamPipeWire() {
         return ::android::NO_INIT;
     }
 
+    const auto& devices = getConnectedDevices();
+    if (!mInput && !devices.empty() &&
+        devices.front().address.getTag() ==
+                ::aidl::android::media::audio::common::AudioDeviceAddress::id) {
+        mActiveIdentity = devices.front().address.get<
+                ::aidl::android::media::audio::common::AudioDeviceAddress::id>();
+    }
+    const uint32_t targetNode = getPipeWireTargetNode(mActiveIdentity);
     pw_properties* properties = pw_properties_new(
             PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, mInput ? "Capture" : "Playback",
             PW_KEY_MEDIA_ROLE, "Music", PW_KEY_NODE_NAME, nodeName, PW_KEY_NODE_DESCRIPTION,
@@ -142,6 +153,31 @@ StreamPipeWire::~StreamPipeWire() {
     }();
     pw_stream_add_listener(mStream, &mStreamListener, &events, this);
 
+    const ::android::status_t connectStatus = connectPipeWireNode(targetNode);
+    if (connectStatus != ::android::OK) {
+        pw_thread_loop_unlock(mLoop);
+        stopPipeWire();
+        return connectStatus;
+    }
+    if (!mInput) {
+        const float boost = getPipeWireDeviceBoost(mActiveIdentity);
+        float volume = boost;
+        const int volumeResult = pw_stream_set_control(mStream, SPA_PROP_volume, 1, &volume);
+        if (volumeResult < 0) {
+            LOG(ERROR) << __func__ << ": pw_stream_set_control(volume) failed identity="
+                       << mActiveIdentity << " multiplier=" << boost << " result=" << volumeResult
+                       << "; using PCM gain fallback";
+            mUsePcmBoost = true;
+        } else {
+            mAppliedBoost = boost;
+            mUsePcmBoost = false;
+        }
+    }
+    pw_thread_loop_unlock(mLoop);
+    return ::android::OK;
+}
+
+::android::status_t StreamPipeWire::connectPipeWireNode(uint32_t targetNode) {
     uint8_t podBuffer[1024];
     spa_pod_builder builder = SPA_POD_BUILDER_INIT(podBuffer, sizeof(podBuffer));
     const spa_pod* params[] = {static_cast<const spa_pod*>(spa_pod_builder_add_object(
@@ -152,33 +188,26 @@ StreamPipeWire::~StreamPipeWire() {
             SPA_FORMAT_AUDIO_rate, SPA_POD_Int(mSampleRate),
             SPA_FORMAT_AUDIO_channels, SPA_POD_Int(mChannels)))};
     mState = PW_STREAM_STATE_UNCONNECTED;
-    const int connectResult = pw_stream_connect(
-            mStream, mInput ? PW_DIRECTION_INPUT : PW_DIRECTION_OUTPUT, PW_ID_ANY,
+    const int result = pw_stream_connect(
+            mStream, mInput ? PW_DIRECTION_INPUT : PW_DIRECTION_OUTPUT, targetNode,
             static_cast<pw_stream_flags>(PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS),
             params, 1);
-    if (connectResult < 0) {
-        LOG(ERROR) << __func__ << ": pw_stream_connect failed node=" << nodeName
-                   << " result=" << connectResult;
-        pw_thread_loop_unlock(mLoop);
-        stopPipeWire();
+    if (result < 0) {
+        LOG(ERROR) << __func__ << ": pw_stream_connect failed input=" << mInput
+                   << " target=" << targetNode << " result=" << result;
         return ::android::NO_INIT;
     }
-
     int waitResult = 0;
     while (mState == PW_STREAM_STATE_UNCONNECTED || mState == PW_STREAM_STATE_CONNECTING) {
         waitResult = pw_thread_loop_timed_wait(mLoop, kOperationTimeoutMs / 1000);
         if (waitResult < 0 || isTerminalState(mState)) break;
     }
-    const bool ready = mState == PW_STREAM_STATE_PAUSED || mState == PW_STREAM_STATE_STREAMING;
-    if (!ready) {
-        LOG(ERROR) << __func__ << ": PipeWire stream did not become ready node=" << nodeName
-                   << " state=" << pw_stream_state_as_string(mState)
+    if (mState != PW_STREAM_STATE_PAUSED && mState != PW_STREAM_STATE_STREAMING) {
+        LOG(ERROR) << __func__ << ": PipeWire stream did not become ready input=" << mInput
+                   << " target=" << targetNode << " state=" << pw_stream_state_as_string(mState)
                    << " wait_result=" << waitResult;
-        pw_thread_loop_unlock(mLoop);
-        stopPipeWire();
         return ::android::NO_INIT;
     }
-    pw_thread_loop_unlock(mLoop);
     return ::android::OK;
 }
 
@@ -254,6 +283,39 @@ void StreamPipeWire::processBuffer() {
                 mPlaybackQueue.pop_front();
             }
             if (transferred < capacity) memset(dst + transferred, 0, capacity - transferred);
+            const float boost = getPipeWireDeviceBoost(mActiveIdentity);
+            if (!mUsePcmBoost && boost != mAppliedBoost) {
+                float volume = boost;
+                const int result = pw_stream_set_control(mStream, SPA_PROP_volume, 1, &volume);
+                if (result < 0) {
+                    LOG(ERROR) << __func__ << ": pw_stream_set_control(volume) failed identity="
+                               << mActiveIdentity << " multiplier=" << boost << " result=" << result
+                               << "; using PCM gain fallback";
+                    mUsePcmBoost = true;
+                } else {
+                    mAppliedBoost = boost;
+                }
+            }
+            if (mUsePcmBoost && boost != 1.0f) {
+                if (mSpaFormat == SPA_AUDIO_FORMAT_F32_LE) {
+                    for (size_t i = 0; i < transferred; i += sizeof(float)) {
+                        float sample;
+                        memcpy(&sample, dst + i, sizeof(sample));
+                        sample *= boost;
+                        memcpy(dst + i, &sample, sizeof(sample));
+                    }
+                } else {
+                    for (size_t i = 0; i < transferred; i += sizeof(int16_t)) {
+                        int16_t sample;
+                        memcpy(&sample, dst + i, sizeof(sample));
+                        const int32_t scaled = static_cast<int32_t>(std::lround(sample * boost));
+                        const int16_t output = static_cast<int16_t>(std::clamp(
+                                scaled, static_cast<int32_t>(std::numeric_limits<int16_t>::min()),
+                                static_cast<int32_t>(std::numeric_limits<int16_t>::max())));
+                        memcpy(dst + i, &output, sizeof(output));
+                    }
+                }
+            }
             chunk.offset = 0;
             chunk.size = capacity;
             chunk.stride = mFrameBytes;
@@ -378,6 +440,47 @@ void StreamPipeWire::processBuffer() {
 ::android::status_t StreamPipeWire::standby() {
     stopPipeWire();
     return ::android::OK;
+}
+
+ndk::ScopedAStatus StreamPipeWire::setConnectedDevices(
+        const std::vector<::aidl::android::media::audio::common::AudioDevice>& devices) {
+    auto status = StreamCommonImpl::setConnectedDevices(devices);
+    if (!status.isOk()) return status;
+    if (mInput || devices.empty() || devices.front().address.getTag() !=
+            ::aidl::android::media::audio::common::AudioDeviceAddress::id) return status;
+    mActiveIdentity = devices.front().address.get<
+            ::aidl::android::media::audio::common::AudioDeviceAddress::id>();
+    const uint32_t targetNode = getPipeWireTargetNode(mActiveIdentity);
+    if (mStream != nullptr && mLoop != nullptr) {
+        pw_thread_loop_lock(mLoop);
+        const int disconnectResult = pw_stream_disconnect(mStream);
+        if (disconnectResult < 0) {
+            LOG(ERROR) << __func__ << ": pw_stream_disconnect failed identity=" << mActiveIdentity
+                       << " result=" << disconnectResult;
+            pw_thread_loop_unlock(mLoop);
+            return ndk::ScopedAStatus::fromExceptionCode(EX_TRANSACTION_FAILED);
+        }
+        const auto connectStatus = connectPipeWireNode(targetNode);
+        if (connectStatus != ::android::OK) {
+            LOG(ERROR) << __func__ << ": failed to connect selected PipeWire target identity="
+                       << mActiveIdentity << " target=" << targetNode << " status=" << connectStatus;
+            pw_thread_loop_unlock(mLoop);
+            return ndk::ScopedAStatus::fromExceptionCode(EX_TRANSACTION_FAILED);
+        }
+        float volume = getPipeWireDeviceBoost(mActiveIdentity);
+        const int volumeResult = pw_stream_set_control(mStream, SPA_PROP_volume, 1, &volume);
+        if (volumeResult < 0) {
+            LOG(ERROR) << __func__ << ": pw_stream_set_control(volume) failed identity="
+                       << mActiveIdentity << " multiplier=" << volume << " result=" << volumeResult
+                       << "; using PCM gain fallback";
+            mUsePcmBoost = true;
+        } else {
+            mAppliedBoost = volume;
+            mUsePcmBoost = false;
+        }
+        pw_thread_loop_unlock(mLoop);
+    }
+    return status;
 }
 
 ::android::status_t StreamPipeWire::refinePosition(StreamDescriptor::Position* position) {
