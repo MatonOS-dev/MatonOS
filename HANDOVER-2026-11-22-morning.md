@@ -223,3 +223,8 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - build-84 failed: file_contexts clash /oem(/.*)? vs AOSP oemfs → bootlogo labels only /oem/media (842c2ad9). build-85 running.
 - Merged gsf-standin (872412f0: pinned microG GsfProxy v8, GappsInstaller reads real versions) and hotspot (b46312a2: stock hostapd + wpa_cli + wifi.direct; wifi.present = physical only). Hotspot VM plan in out/pc-logs/agents/hotspot1.report.md (hwsim radios=2; DHCP needs a test helper). Limit: stock framework can still start AP on hwsim (zero-patch rule).
 - Started cleanup1 (privapp allowlist single source + stale TITLE-BARS/NOTES tray docs, dt-cleanup) and libcamera-scope (report only).
+
+## 19:22 hourly
+- build-85 failed check_vintf: IBluetoothAudioProviderFactory declared by stock com.android.hardware.audio APEX AND android.hardware.bluetooth.audio-impl vendor fragment. Stock effect modules are visibility-restricted (no own APEX), vendor APEX namespaces cannot dlopen /odm PipeWire modules → back to BayLibre generic APEX for effects + its config; ODM BT entry dropped (903a4469). build-86 running.
+- Merged cleanup (TITLE-BARS.md retired, NOTES tray text; allowlist was already single-source).
+- libcamera-scope: UVC via stock External Camera HAL first; libcamera later for IPU3/IPU6 (IPU6 = software ISP only). camera-uvc1 + apex-keys rounds running.
