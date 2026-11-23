@@ -8,6 +8,15 @@ service vendor.pipewire /apex/com.matonos.hardware.audio/bin/pipewire
     setenv XDG_STATE_HOME /data/vendor/maton-audio/state
     setenv XDG_RUNTIME_DIR /data/vendor/maton-audio
     setenv PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
+    setenv PIPEWIRE_CONFIG_DIR /apex/com.matonos.hardware.audio/etc/pipewire
+    setenv PIPEWIRE_MODULE_DIR /apex/com.matonos.hardware.audio/lib64/pipewire-0.3
+    setenv SPA_PLUGIN_DIR /apex/com.matonos.hardware.audio/lib64/spa-0.2
+    setenv ALSA_CONFIG_DIR /apex/com.matonos.hardware.audio/etc/alsa
+    setenv ALSA_CONFIG_PATH /apex/com.matonos.hardware.audio/etc/alsa/alsa.conf
+    setenv ALSA_CONFIG_UCM2 /apex/com.matonos.hardware.audio/etc/alsa/ucm2
+    setenv ACP_PATHS_DIR /apex/com.matonos.hardware.audio/share/alsa-card-profile/mixer/paths
+    setenv ACP_PROFILES_DIR /apex/com.matonos.hardware.audio/share/alsa-card-profile/mixer/profile-sets
+    setenv LD_LIBRARY_PATH /apex/com.matonos.hardware.audio/lib64:/apex/com.matonos.hardware.audio/lib64/pipewire-0.3:/apex/com.matonos.hardware.audio/lib64/spa-0.2
     capabilities SYS_NICE
     rlimit rtprio 10 10
     task_profiles ProcessCapacityHigh HighPerformance
@@ -23,6 +32,18 @@ service vendor.wireplumber /apex/com.matonos.hardware.audio/bin/wireplumber
     setenv XDG_STATE_HOME /data/vendor/maton-audio/state
     setenv XDG_RUNTIME_DIR /data/vendor/maton-audio
     setenv PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
+    setenv PIPEWIRE_CONFIG_DIR /apex/com.matonos.hardware.audio/etc/pipewire
+    setenv WIREPLUMBER_CONFIG_DIR /apex/com.matonos.hardware.audio/etc/wireplumber
+    setenv WIREPLUMBER_DATA_DIR /apex/com.matonos.hardware.audio/share/wireplumber
+    setenv WIREPLUMBER_MODULE_DIR /apex/com.matonos.hardware.audio/lib64/wireplumber-0.5
+    setenv PIPEWIRE_MODULE_DIR /apex/com.matonos.hardware.audio/lib64/pipewire-0.3
+    setenv SPA_PLUGIN_DIR /apex/com.matonos.hardware.audio/lib64/spa-0.2
+    setenv ALSA_CONFIG_DIR /apex/com.matonos.hardware.audio/etc/alsa
+    setenv ALSA_CONFIG_PATH /apex/com.matonos.hardware.audio/etc/alsa/alsa.conf
+    setenv ALSA_CONFIG_UCM2 /apex/com.matonos.hardware.audio/etc/alsa/ucm2
+    setenv ACP_PATHS_DIR /apex/com.matonos.hardware.audio/share/alsa-card-profile/mixer/paths
+    setenv ACP_PROFILES_DIR /apex/com.matonos.hardware.audio/share/alsa-card-profile/mixer/profile-sets
+    setenv LD_LIBRARY_PATH /apex/com.matonos.hardware.audio/lib64:/apex/com.matonos.hardware.audio/lib64/wireplumber-0.5:/apex/com.matonos.hardware.audio/lib64/pipewire-0.3:/apex/com.matonos.hardware.audio/lib64/spa-0.2
     capabilities SYS_NICE
     rlimit rtprio 10 10
     task_profiles ProcessCapacityHigh HighPerformance

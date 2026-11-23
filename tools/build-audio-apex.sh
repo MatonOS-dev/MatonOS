@@ -138,4 +138,81 @@ PY
 java -Djava.library.path="$HOSTLIB" -jar "$AOSP/out/host/linux-x86/framework/signapk.jar" \
   -a 4096 --align-file-size --disable-v1 "$CONTAINER_CERT" "$CONTAINER_KEY" \
   "$TMP/$NAME.apex.unsigned" "$OUT_DIR/$NAME.apex"
+
+# Record the exact external ELF ABI and HAL declaration range this payload
+# was assembled against, so OTA publication can choose a justified range.
+READELF=${READELF:-$HOSTBIN/llvm-readelf}
+[[ -x $READELF ]] || READELF=$(command -v readelf || true)
+[[ -n $READELF && -x $READELF ]] || die "readelf is required to write the APEX compatibility record"
+python3 - "$INPUT" "$PRODUCT_OUT" "$OUT_DIR/$NAME.compat.json" "$NAME" "$VERSION" "$READELF" <<'PYCOMPAT'
+import json, pathlib, re, subprocess, sys, xml.etree.ElementTree as ET
+payload = pathlib.Path(sys.argv[1])
+product_out = pathlib.Path(sys.argv[2])
+output = pathlib.Path(sys.argv[3])
+name = sys.argv[4]
+version = int(sys.argv[5])
+readelf = sys.argv[6]
+
+elfs = []
+for path in payload.rglob('*'):
+    if not path.is_file():
+        continue
+    with path.open('rb') as stream:
+        is_elf = stream.read(4) == b'\x7fELF'
+    if is_elf:
+        dynamic = subprocess.run([readelf, '-d', str(path)], check=True, text=True,
+                                 capture_output=True).stdout
+        needed = sorted(set(re.findall(r'Shared library: \[(.*?)\]', dynamic)))
+        soname = re.search(r'SONAME.*\[(.*?)\]', dynamic)
+        elfs.append((path, needed, soname.group(1) if soname else None))
+internal = {path.name for path, _, _ in elfs if path.relative_to(payload).parts[0] == 'lib64'}
+internal.update(soname for path, _, soname in elfs
+                 if soname and path.relative_to(payload).parts[0] == 'lib64')
+external = sorted({lib for _, needed, _ in elfs for lib in needed if lib not in internal})
+
+manifest_path = payload / 'etc/vintf/manifest/audio.xml'
+root = ET.parse(manifest_path).getroot()
+hals = []
+for hal in root.findall('hal'):
+    interfaces = []
+    for interface in hal.findall('interface'):
+        interfaces.append({
+            'name': interface.findtext('name'),
+            'instances': sorted(node.text for node in interface.findall('instance') if node.text),
+        })
+    hals.append({
+        'format': hal.get('format'),
+        'name': hal.findtext('name'),
+        'versions': sorted(node.text for node in hal.findall('version') if node.text),
+        'interfaces': interfaces,
+        'updatable_via_apex': hal.get('updatable-via-apex'),
+    })
+
+props = {}
+for rel in ('system/build.prop', 'vendor/build.prop', 'product/build.prop', 'odm/etc/build.prop'):
+    path = product_out / rel
+    if path.is_file():
+        for line in path.read_text(errors='replace').splitlines():
+            if '=' in line and not line.lstrip().startswith('#'):
+                key, value = line.split('=', 1)
+                props.setdefault(key, value)
+try:
+    base_android = int(props['ro.build.version.sdk'])
+    update_id = int(props['ro.build.date.utc'])
+except (KeyError, ValueError) as exc:
+    raise SystemExit(f'cannot read positive ro.build.version.sdk and ro.build.date.utc from {product_out}: {exc}')
+if base_android <= 0 or update_id <= 0:
+    raise SystemExit('ro.build.version.sdk and ro.build.date.utc must be positive')
+record = {
+    'schema_version': 1,
+    'name': name,
+    'apex_version': version,
+    'needed_shared_libraries': external,
+    'vintf': {'hals': hals},
+    'base_android': base_android,
+    'update_id': str(update_id),
+}
+output.write_text(json.dumps(record, indent=2) + '\n')
+PYCOMPAT
 echo "Built $OUT_DIR/$NAME.apex (version $VERSION, payload key $PAYLOAD_KEY)"
+echo "Wrote compatibility record $OUT_DIR/$NAME.compat.json"

@@ -234,3 +234,22 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - 20:55 queued (user): equaliser in MatonOS Settings Sound menu (per device, PipeWire filter-chain, via IChannel/audio like boost).
 - 21:00 queued (user): Sound menu Bluetooth warning (settings don't apply to BT) + default audio output picker.
 - 21:25 build-87 VM: HAL + audioserver up, boot completes. WirePlumber exited 78 (module dir = compiled /vendor path), alsa-lib config path /vendor, and the PipeWire udev monitor skipped every card (no SOUND_INITIALIZED on Android) → only the fallback sink. Fixed in 0975754a (rc setenv WIREPLUMBER_MODULE_DIR + ALSA_CONFIG_*; PipeWire patch 0006). pwres1 reviewed + merged (8971d07f: HAL starts independently of PipeWire, discovery reconnects every 1 s, streams give paced silence while PipeWire is down). build-88 running. Next on VM: card node visible, kill -9 pipewire during playback.
+- 22:00 build-88 failed (camera VINTF line in product mk, LOCAL_PATH empty) → moved to BoardConfig.mk; build-89 running. User decisions: audio stack moves from ODM into ONE updatable vendor APEX `com.matonos.hardware.audio`, packed with apexer outside Soong (agent audioapex1, worktree dt-audioapex). APEX updates ship from the OTA server with their own version and a compatibility range (one HAL version may span several Android/MatonOS releases; looser than add-ons). Other ODM daemons are later APEX candidates. Queued after audioapex1: OTA server APEX channel (compat-range matching) + device-side apex install.
+
+## 23:35 — build-91 VM results, three audio fixes, build-94 running
+- build-91 (ac5af47c) boots; HAL, PipeWire, WirePlumber, audioserver, camera provider (external/0, 0 devices, no crash loop) all running.
+- **PipeWire crash test passes**: kill -9 pipewire → HAL pid unchanged, audioserver unchanged, PipeWire+WirePlumber restarted, HAL reconnected after 1 s.
+- **No ALSA card in PipeWire** had two causes, both verified by hand on build-91:
+  1. libudev-zero only scans /sys/dev/{block,char}; cardN has no device node, so PipeWire never saw it → `audio/patches/libudev-zero/0001` also lists node-less /sys/class/sound entries (d838b33f).
+  2. ACP profile sets not found (`pa_alsa_profile_set_new: (null)`) → ACP_PATHS_DIR/ACP_PROFILES_DIR in maton-pipewire.rc (8557f3fa).
+  With both: "VirtIO SoundCard Stereo" sink + source appear.
+- **HAL rejected the ALSA nodes**: populateConnectedDevicePort called the AOSP base, which refuses every external device → EX_ILLEGAL_STATE. Override now only names the port (ab027212).
+- build-92/93 stopped early (inner build PIDs only, wrapper cleanup ran); build-94 = ab027212.
+- Next: boot build-94 → ALSA ports in `dumpsys media.audio_policy`, playback reaches the card; then the audio-apex branch (build-time version kept per user).
+
+## 2026-11-24 00:50 — night mode
+- build-94 VM: libudev-zero + ACP fixes work (PipeWire sees virtio card sink+source). New bug: no Android output (createTrack -19) — HAL self-called connectExternalDevice, which never reaches APM. Fixed by audiohotplug1 (merged 2f0091f0): stand-ins attached, HAL publishes `devices` on the MatonOS channel, systembridge calls setWiredDeviceConnectionState + preferred media device. build-97 running.
+- Digitalis: wip/digitalis 9dc35694; server binary_translation checked out at Digitalis 5d66dd11 (maton.xml updated; backup logs/maton.xml.pre-digitalis). build-95/96 failed on artifact path requirement (allowlists added in device.mk). Rebuild after build-97.
+- Server API /api/update/apex merged (matonos-ota 309870c), not deployed.
+- audioapex2 running: merge fixes into wip/audio-apex + compat file from imports.
+- repo tool on server at ~/bin/repo. apexd patch approved by user.

@@ -8,7 +8,6 @@
 #include "core-impl/Configuration.h"
 
 #include <spa/utils/dict.h>
-#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <ctime>
@@ -18,9 +17,6 @@ namespace aidl::android::hardware::audio::core {
 namespace {
 constexpr char kOutputTemplate[] = "PipeWire Output";
 constexpr char kInputTemplate[] = "PipeWire Input";
-constexpr char kFallbackOutputTemplate[] = "No audio device";
-constexpr char kFallbackInputTemplate[] = "No audio device input";
-
 const char* property(const spa_dict* props, const char* key) {
     return props == nullptr ? nullptr : spa_dict_lookup(props, key);
 }
@@ -28,10 +24,6 @@ const char* property(const spa_dict* props, const char* key) {
 
 ModulePipeWire::ModulePipeWire(std::unique_ptr<Configuration>&& config)
     : Module(Type::DEFAULT, std::move(config)) {
-    // Stand-ins are connected first so missing PipeWire discovery never leaves
-    // AudioPolicy without a routable primary endpoint.
-    syncNoDevicePorts(false);
-    syncNoDevicePorts(true);
     mDiscoveryLoop = pw_thread_loop_new("matonos-audio-devices", nullptr);
     if (mDiscoveryLoop == nullptr) {
         LOG(ERROR) << __func__ << ": pw_thread_loop_new failed; device hotplug disabled";
@@ -130,7 +122,7 @@ bool ModulePipeWire::connectDiscovery() {
 
 void ModulePipeWire::scheduleRetry() {
     if (mRetryTimer == nullptr) return;
-    const timespec retryIn{1, 0};
+    timespec retryIn{1, 0};  // pw_loop_update_timer takes a non-const pointer
     const int result = pw_loop_update_timer(pw_thread_loop_get_loop(mDiscoveryLoop), mRetryTimer,
                                             &retryIn, nullptr, false);
     if (result < 0) {
@@ -198,24 +190,17 @@ void ModulePipeWire::onRegistryGlobal(void* userData, uint32_t id, uint32_t,
 
 void ModulePipeWire::onRegistryGlobalRemove(void* userData, uint32_t id) {
     auto* self = static_cast<ModulePipeWire*>(userData);
-    std::lock_guard lock(self->mDeviceMutex);
-    auto it = self->mNodes.find(id);
-    if (it == self->mNodes.end()) return;
-    const bool input = it->second.input;
-    const std::string identity = it->second.identity;
-    if (auto port = self->mConnectedPorts.find(id); port != self->mConnectedPorts.end()) {
-        const int32_t portId = port->second;
-        self->mConnectedPorts.erase(port);
-        const auto prepareStatus = self->prepareToDisconnectExternalDevice(portId);
-        if (!prepareStatus.isOk()) LOG(ERROR) << __func__ << ": prepare disconnect failed node=" << id
-                                              << " port=" << portId << " status=" << prepareStatus.getDescription();
-        const auto status = self->disconnectExternalDevice(portId);
-        if (!status.isOk()) LOG(ERROR) << __func__ << ": disconnect failed node=" << id
-                                       << " port=" << portId << " status=" << status.getDescription();
+    bool input = false;
+    std::string identity;
+    {
+        std::lock_guard lock(self->mDeviceMutex);
+        auto it = self->mNodes.find(id);
+        if (it == self->mNodes.end()) return;
+        input = it->second.input;
+        identity = it->second.identity;
+        self->mNodes.erase(it);
     }
-    self->mNodes.erase(it);
     setPipeWireDevice(id, identity, "", false, input);
-    self->syncNoDevicePorts(input);
 }
 
 void ModulePipeWire::handleNode(uint32_t id, const spa_dict* props) {
@@ -223,97 +208,57 @@ void ModulePipeWire::handleNode(uint32_t id, const spa_dict* props) {
     const bool input = mediaClass != nullptr && std::strcmp(mediaClass, "Audio/Source") == 0;
     if (mediaClass == nullptr || (!input && std::strcmp(mediaClass, "Audio/Sink") != 0)) return;
     const char* nodeName = property(props, PW_KEY_NODE_NAME);
-    if (nodeName != nullptr && std::strcmp(nodeName, "maton-fallback") == 0) return;
+    if (nodeName == nullptr || *nodeName == '\0') {
+        LOG(ERROR) << __func__ << ": PipeWire node has no stable node.name id=" << id;
+        return;
+    }
+    if (std::strcmp(nodeName, "maton-fallback") == 0) return;
     const char* desc = property(props, PW_KEY_NODE_DESCRIPTION);
     const char* shownName = desc != nullptr && *desc != '\0' ? desc : nodeName;
-    const std::string name = shownName != nullptr ? shownName : "PipeWire audio device";
-    const std::string identity = makePipeWireIdentity(property(props, PW_KEY_DEVICE_BUS_PATH),
-            property(props, PW_KEY_DEVICE_SERIAL), property(props, PW_KEY_DEVICE_NAME),
-            property(props, "device.profile.name"), nodeName, input);
-    DeviceNode node{id, identity, name, "", input, false};
+    const std::string name = shownName;
+    // node.name is the framework-visible stable address. PipeWire global IDs
+    // remain private to the node table and are never published as identity.
+    const std::string identity(nodeName);
+    DeviceNode node{id, identity, name, "", input};
     node.portName = input ? kInputTemplate : kOutputTemplate;
     {
         std::lock_guard lock(mDeviceMutex);
         if (mNodes.find(id) != mNodes.end()) return;
         mNodes[id] = node;
     }
-    auto templateIt = std::find_if(getConfig().ports.begin(), getConfig().ports.end(),
-            [&](const auto& port) { return port.name == node.portName; });
-    if (templateIt == getConfig().ports.end()) {
-        LOG(ERROR) << __func__ << ": missing device template=" << node.portName;
-        return;
-    }
-    ::aidl::android::media::audio::common::AudioPort request = *templateIt;
-    auto& device = request.ext.get<::aidl::android::media::audio::common::AudioPortExt::Tag::device>().device;
-    device.address.set<::aidl::android::media::audio::common::AudioDeviceAddress::id>(identity);
-    mPendingPort = node;
-    ::aidl::android::media::audio::common::AudioPort connected;
-    const auto status = connectExternalDevice(request, &connected);
-    if (!status.isOk()) {
-        LOG(ERROR) << __func__ << ": connectExternalDevice failed node=" << id
-                   << " identity=" << identity << " status=" << status.getDescription();
-        {
-            std::lock_guard lock(mDeviceMutex);
-            mNodes.erase(id);
-        }
-        return;
-    }
-    {
-        std::lock_guard lock(mDeviceMutex);
-        mConnectedPorts[id] = connected.id;
-    }
+    // AudioService is the sole owner of external-device connect/disconnect.
+    // The event lets the system bridge report this port through AudioManager.
     setPipeWireDevice(id, identity, name, true, input);
-    syncNoDevicePorts(input);
-}
-
-void ModulePipeWire::syncNoDevicePorts(bool input) {
-    const bool anyDevice = std::any_of(mNodes.begin(), mNodes.end(),
-            [input](const auto& entry) { return entry.second.input == input; });
-    const auto templateName = input ? kFallbackInputTemplate : kFallbackOutputTemplate;
-    if (anyDevice && mFallbackPorts.find(input) != mFallbackPorts.end()) {
-        const int32_t portId = mFallbackPorts[input];
-        const auto prepareStatus = prepareToDisconnectExternalDevice(portId);
-        if (!prepareStatus.isOk()) {
-            LOG(ERROR) << __func__ << ": fallback prepare disconnect failed input=" << input
-                       << " port=" << portId << " status=" << prepareStatus.getDescription();
-            return;
-        }
-        const auto status = disconnectExternalDevice(portId);
-        if (!status.isOk()) {
-            LOG(ERROR) << __func__ << ": fallback disconnect failed input=" << input
-                       << " port=" << portId << " status=" << status.getDescription();
-            return;
-        }
-        mFallbackPorts.erase(input);
-    } else if (!anyDevice && mFallbackPorts.find(input) == mFallbackPorts.end()) {
-        auto templateIt = std::find_if(getConfig().ports.begin(), getConfig().ports.end(),
-                [&](const auto& port) { return port.name == templateName; });
-        if (templateIt == getConfig().ports.end()) {
-            LOG(ERROR) << __func__ << ": missing fallback template=" << templateName;
-            return;
-        }
-        auto request = *templateIt;
-        auto& device = request.ext.get<::aidl::android::media::audio::common::AudioPortExt::Tag::device>().device;
-        const std::string identity = input ? "fallback-input" : "fallback-output";
-        device.address.set<::aidl::android::media::audio::common::AudioDeviceAddress::id>(identity);
-        mPendingPort = DeviceNode{PW_ID_ANY, identity, "No audio device", templateName, input, true};
-        ::aidl::android::media::audio::common::AudioPort connected;
-        const auto status = connectExternalDevice(request, &connected);
-        if (!status.isOk()) {
-            LOG(ERROR) << __func__ << ": fallback connect failed input=" << input
-                       << " status=" << status.getDescription();
-            return;
-        }
-        mFallbackPorts[input] = connected.id;
-    }
 }
 
 
 ndk::ScopedAStatus ModulePipeWire::populateConnectedDevicePort(
         ::aidl::android::media::audio::common::AudioPort* audioPort, int32_t nextPortId) {
-    auto status = Module::populateConnectedDevicePort(audioPort, nextPortId);
-    if (!status.isOk()) return status;
-    audioPort->name = mPendingPort.name;
+    // The base implementation rejects every external device (it expects the
+    // module to probe hardware). PipeWire device ports carry the template's
+    // static profiles and PipeWire converts formats, so only the port name
+    // needs filling in.
+    (void)nextPortId;
+    if (audioPort->ext.getTag() !=
+        ::aidl::android::media::audio::common::AudioPortExt::Tag::device) {
+        LOG(ERROR) << __func__ << ": not a device port: " << audioPort->toString();
+        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+    }
+    auto& device = audioPort->ext.get<
+            ::aidl::android::media::audio::common::AudioPortExt::Tag::device>().device;
+    if (device.address.getTag() !=
+        ::aidl::android::media::audio::common::AudioDeviceAddress::Tag::id) {
+        LOG(ERROR) << __func__ << ": connected PipeWire port has non-id address";
+        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+    }
+    const std::string& identity = device.address.get<
+            ::aidl::android::media::audio::common::AudioDeviceAddress::Tag::id>();
+    const bool input = audioPort->name == kInputTemplate;
+    audioPort->name = getPipeWireDeviceName(identity, input);
+    if (audioPort->name.empty()) {
+        LOG(ERROR) << __func__ << ": no current PipeWire node for address=" << identity;
+        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+    }
     return ndk::ScopedAStatus::ok();
 }
 

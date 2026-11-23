@@ -5,7 +5,6 @@ android_app {
     manifest: "AndroidManifest.xml",
     srcs: [
         "src/**/*.java",
-        "aidl/**/*.aidl",
     ],
     resource_dirs: ["res"],
     aidl: {
@@ -15,7 +14,7 @@ android_app {
     },
     platform_apis: true,
     static_libs: [
-        "vendor.matonos.channel-V2-java",
+        "matonos-client-java",
     ],
     certificate: "platform",
     privileged: true,
@@ -31,6 +30,15 @@ android_app {
         "Music",
     ],
     required: ["privapp-permissions-org.matonos.systembridge"],
+}
+
+java_library_static {
+    name: "matonos-systembridge-aidl-java",
+    srcs: ["aidl/**/*.aidl"],
+    aidl: {
+        local_include_dirs: ["aidl"],
+    },
+    platform_apis: true,
 }
 
 java_test_host {

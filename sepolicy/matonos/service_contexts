@@ -13,3 +13,6 @@ android.hardware.boot.IBootControl/default u:object_r:hal_bootctl_service:s0
 android.hardware.security.sharedsecret.ISharedSecret/gatekeeper u:object_r:hal_gatekeeper_service:s0
 # install: drm_hwcomposer discovers the AIDL minigbm mapper by this instance.
 mapper/minigbm u:object_r:hal_graphics_mapper_service:s0
+# camera: AOSP labels only internal/0 and virtual/0; without this the stock
+# external provider cannot register and init restarts it forever.
+android.hardware.camera.provider.ICameraProvider/external/0 u:object_r:hal_camera_service:s0

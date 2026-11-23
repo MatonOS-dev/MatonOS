@@ -1,0 +1,9 @@
+java_library_static {
+    name: "matonos-client-java",
+    srcs: ["src/main/java/**/*.java"],
+    static_libs: [
+        "matonos-systembridge-aidl-java",
+        "vendor.matonos.channel-V2-java",
+    ],
+    platform_apis: true,
+}
