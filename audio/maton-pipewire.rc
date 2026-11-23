@@ -15,14 +15,14 @@ service vendor.pipewire /odm/bin/pipewire
     disabled
     user audio
     group audio system input
-    env HOME /data/vendor/maton-audio
-    env XDG_STATE_HOME /data/vendor/maton-audio/state
-    env XDG_RUNTIME_DIR /data/vendor/maton-audio
-    env PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
-    env PIPEWIRE_CONFIG_DIR /odm/etc/pipewire
-    env PIPEWIRE_MODULE_DIR /odm/lib64/pipewire-0.3
-    env SPA_PLUGIN_DIR /odm/lib64/spa-0.2
-    env LD_LIBRARY_PATH /odm/lib64:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
+    setenv HOME /data/vendor/maton-audio
+    setenv XDG_STATE_HOME /data/vendor/maton-audio/state
+    setenv XDG_RUNTIME_DIR /data/vendor/maton-audio
+    setenv PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
+    setenv PIPEWIRE_CONFIG_DIR /odm/etc/pipewire
+    setenv PIPEWIRE_MODULE_DIR /odm/lib64/pipewire-0.3
+    setenv SPA_PLUGIN_DIR /odm/lib64/spa-0.2
+    setenv LD_LIBRARY_PATH /odm/lib64:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
     capabilities SYS_NICE
     rlimit rtprio 10 10
     task_profiles ProcessCapacityHigh HighPerformance
@@ -37,16 +37,16 @@ service vendor.wireplumber /odm/bin/wireplumber
     disabled
     user audio
     group audio system input
-    env HOME /data/vendor/maton-audio
-    env XDG_STATE_HOME /data/vendor/maton-audio/state
-    env XDG_RUNTIME_DIR /data/vendor/maton-audio
-    env PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
-    env PIPEWIRE_CONFIG_DIR /odm/etc/pipewire
-    env WIREPLUMBER_CONFIG_DIR /odm/etc/wireplumber
-    env WIREPLUMBER_DATA_DIR /odm/share/wireplumber
-    env PIPEWIRE_MODULE_DIR /odm/lib64/pipewire-0.3
-    env SPA_PLUGIN_DIR /odm/lib64/spa-0.2
-    env LD_LIBRARY_PATH /odm/lib64:/odm/lib64/wireplumber-0.5:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
+    setenv HOME /data/vendor/maton-audio
+    setenv XDG_STATE_HOME /data/vendor/maton-audio/state
+    setenv XDG_RUNTIME_DIR /data/vendor/maton-audio
+    setenv PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
+    setenv PIPEWIRE_CONFIG_DIR /odm/etc/pipewire
+    setenv WIREPLUMBER_CONFIG_DIR /odm/etc/wireplumber
+    setenv WIREPLUMBER_DATA_DIR /odm/share/wireplumber
+    setenv PIPEWIRE_MODULE_DIR /odm/lib64/pipewire-0.3
+    setenv SPA_PLUGIN_DIR /odm/lib64/spa-0.2
+    setenv LD_LIBRARY_PATH /odm/lib64:/odm/lib64/wireplumber-0.5:/odm/lib64/pipewire-0.3:/odm/lib64/spa-0.2
     capabilities SYS_NICE
     rlimit rtprio 10 10
     task_profiles ProcessCapacityHigh HighPerformance
