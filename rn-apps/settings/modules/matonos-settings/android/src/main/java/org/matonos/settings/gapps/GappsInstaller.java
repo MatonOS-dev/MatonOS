@@ -351,9 +351,21 @@ public final class GappsInstaller {
         }
     }
 
+    /**
+     * GSF Android ID (decimal), the ID Google's uncertified-device registration asks for.
+     * It exists only once a user-supplied GSF is installed and has checked in; empty before.
+     */
     public static String deviceId(Context context) {
-        String value = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
-        return value == null ? "" : value.toLowerCase(Locale.ROOT);
+        Uri gservices = Uri.parse("content://com.google.android.gsf.gservices");
+        try (android.database.Cursor cursor = context.getContentResolver().query(
+                gservices, null, null, new String[] {"android_id"}, null)) {
+            if (cursor == null || !cursor.moveToFirst() || cursor.getColumnCount() < 2) return "";
+            String value = cursor.getString(1);
+            return value == null ? "" : value;
+        } catch (SecurityException | IllegalArgumentException e) {
+            android.util.Log.i("MatonGapps", "GSF ID unavailable: " + e.getMessage());
+            return "";
+        }
     }
     public static void uninstallUpdates(Context context, Promise promise) {
         try {

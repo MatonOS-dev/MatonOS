@@ -12,7 +12,7 @@ const en = {
   gappsSelect: "Choose APKs or a GApps zip",
   gappsUninstall: "Uninstall GApps updates",
   gappsDeviceId: "Device ID for uncertified-device registration",
-  gappsDeviceIdHelp: "Google may require this ID for its uncertified-device registration. MatonOS does not certify this device or affect Play Integrity.",
+  gappsDeviceIdHelp: "GSF ID for Google's uncertified-device registration. It appears after Google Services Framework is installed and has started once. MatonOS does not certify this device or affect Play Integrity.",
   gappsBusy: "Checking and installing user-supplied APKs…",
   gappsIdle: "No GApps operation is running.",
   gappsCancelled: "Selection cancelled.",
