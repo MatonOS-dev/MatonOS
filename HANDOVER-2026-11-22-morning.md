@@ -190,3 +190,6 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   - privapp allowlist now has one source, buildinfra/privapp-permissions (ca5309b7).
   - .flatpak bundles were already done (software-centre 5fd4b99 pinned).
   - efi-logo agent started (~/matonos/build/dt-efilogo, luna high).
+- 12:30 build-75 OK and booted on VM 5560 (~/matonos/vm/live75). Volume boost code runs, but there was NO audio effect at all: the BayLibre APEX ships only *sw_generic placeholders (copy input to output) and the AOSP effects config names libraries that aren't installed. Fix with no patch: real AOSP AIDL effect libraries go to /vendor/lib64/soundfx (the effects service's fallback path) via PRODUCT_PACKAGES, config in audio/effects/, and a preflight exemption for those vendor-only libs (86d958da). The vold patch is now in APPROVED_PATCHES (user approval 11-16). build-76 is running (drives + effects + allowlist).
+  - User 12:25 asked: keep the current HAL or put a desktop audio stack under a HAL interface? My recommendation: keep the current HAL for the ISO; reconsider PipeWire only if real-PC hardware coverage (jack/HDMI switching, codecs) proves weak.
+  - efi-logo part 1 merged (8e9ca8be): normal boots keep kernel output on serial only. Part 2 (BGRT composer) agent efi-logo2 is running.
