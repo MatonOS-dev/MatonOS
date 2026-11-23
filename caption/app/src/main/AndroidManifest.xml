@@ -6,7 +6,14 @@
             android:permission="org.matonos.permission.BIND_CAPTION_PROVIDER">
             <intent-filter>
                 <action android:name="org.matonos.caption.PROVIDER" />
-                <action android:name="org.matonos.caption.SETTINGS" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".EmbeddedSettingsService"
+            android:exported="true"
+            android:permission="org.matonos.permission.BIND_EMBEDDED_SETTINGS">
+            <intent-filter>
+                <action android:name="org.matonos.appsettings.EMBEDDED_SETTINGS" />
             </intent-filter>
         </service>
     </application>

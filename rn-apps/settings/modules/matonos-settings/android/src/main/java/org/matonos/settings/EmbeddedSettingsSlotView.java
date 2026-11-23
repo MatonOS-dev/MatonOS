@@ -9,7 +9,6 @@ import android.os.IBinder;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.RemoteException;
-import android.provider.Settings;
 import android.util.Log;
 import android.view.SurfaceControlViewHost;
 import android.view.SurfaceHolder;
@@ -20,29 +19,28 @@ import android.view.SurfaceView;
 import android.widget.TextView;
 import expo.modules.kotlin.AppContext;
 import expo.modules.kotlin.views.ExpoView;
-import org.matonos.caption.ICaptionSettings;
-import org.matonos.caption.ICaptionSettingsHost;
+import org.matonos.appsettings.IEmbeddedSettings;
+import org.matonos.appsettings.IEmbeddedSettingsHost;
 
-public final class CaptionSettingsSlotView extends ExpoView {
-    private static final String TAG = "MatonCaptionSettings";
-    private static final String ACTION = "org.matonos.caption.SETTINGS";
-    private static final String DEFAULT_PACKAGE = "org.matonos.caption";
-    private static final String PROVIDER_SETTING = "matonos_caption_provider";
+public final class EmbeddedSettingsSlotView extends ExpoView {
+    private static final String TAG = "MatonEmbeddedSettings";
+    private static final String ACTION = "org.matonos.appsettings.EMBEDDED_SETTINGS";
     private final SurfaceView surface;
-    private TextView status;
-    private ICaptionSettings service;
+    private final TextView status;
+    private IEmbeddedSettings service;
+    private ComponentName component;
     private boolean bound;
     private boolean opened;
     private boolean attached;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable openTimeout = () -> {
         if (opened && status.getVisibility() != View.VISIBLE) {
-            showFailure("Caption provider did not create its settings surface");
-            Log.e(TAG, "caption settings open timed out");
+            showFailure("App did not create its settings surface");
+            Log.e(TAG, "settings surface open timed out component=" + component);
         }
     };
 
-    private final ICaptionSettingsHost.Stub callback = new ICaptionSettingsHost.Stub() {
+    private final IEmbeddedSettingsHost.Stub callback = new IEmbeddedSettingsHost.Stub() {
         @Override public void setSurface(SurfaceControlViewHost.SurfacePackage p) {
             post(() -> {
                 try {
@@ -51,8 +49,8 @@ public final class CaptionSettingsSlotView extends ExpoView {
                     opened = true;
                     handler.removeCallbacks(openTimeout);
                 } catch (RuntimeException e) {
-                    showFailure("Caption provider surface could not be attached");
-                    Log.e(TAG, "setChildSurfacePackage failed", e);
+                    showFailure("App settings surface could not be attached");
+                    Log.e(TAG, "setChildSurfacePackage failed component=" + component, e);
                 }
             });
         }
@@ -69,23 +67,24 @@ public final class CaptionSettingsSlotView extends ExpoView {
 
     private final ServiceConnection connection = new ServiceConnection() {
         @Override public void onServiceConnected(ComponentName name, IBinder binder) {
-            service = ICaptionSettings.Stub.asInterface(binder);
+            service = IEmbeddedSettings.Stub.asInterface(binder);
             opened = false;
             openWhenReady();
         }
         @Override public void onServiceDisconnected(ComponentName name) {
             service = null;
             opened = false;
-            showFailure("Caption provider disconnected");
+            showFailure("App settings service disconnected");
+            Log.e(TAG, "service disconnected component=" + name);
         }
         @Override public void onBindingDied(ComponentName name) {
             service = null;
             opened = false;
-            showFailure("Caption provider is unavailable");
+            showFailure("App settings service is unavailable");
             Log.e(TAG, "binding died component=" + name);
         }
         @Override public void onNullBinding(ComponentName name) {
-            showFailure("Caption provider is unavailable");
+            showFailure("App settings service is unavailable");
             Log.e(TAG, "null service binding component=" + name);
         }
     };
@@ -96,18 +95,20 @@ public final class CaptionSettingsSlotView extends ExpoView {
             openWhenReady();
             if (service != null && opened) {
                 try { service.resize(w, h); }
-                catch (RemoteException e) { Log.e(TAG, "caption settings resize failed", e); showFailure("Caption provider could not resize"); }
+                catch (RemoteException e) {
+                    Log.e(TAG, "settings resize failed component=" + component, e);
+                    showFailure("App settings could not resize");
+                }
             }
         }
         @Override public void surfaceDestroyed(SurfaceHolder holder) { closeRemote(); }
     };
 
-    public CaptionSettingsSlotView(Context context, AppContext appContext) {
+    public EmbeddedSettingsSlotView(Context context, AppContext appContext) {
         super(context, appContext);
         setBackgroundColor(Color.TRANSPARENT);
         FrameLayout box = new FrameLayout(context);
         surface = new SurfaceView(context);
-        // Above this window, or the window takes the touches meant for the provider's controls.
         surface.setZOrderOnTop(true);
         surface.getHolder().setFormat(android.graphics.PixelFormat.TRANSLUCENT);
         box.addView(surface, new FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -123,6 +124,20 @@ public final class CaptionSettingsSlotView extends ExpoView {
 
     @Override public boolean getShouldUseAndroidLayout() { return true; }
 
+    public void setComponentName(String flattened) {
+        ComponentName next = ComponentName.unflattenFromString(flattened);
+        if (next == null) {
+            Log.e(TAG, "invalid embedded settings component=" + flattened);
+            showFailure("App settings provider is invalid");
+            return;
+        }
+        if (next.equals(component)) return;
+        closeRemote();
+        unbindProvider();
+        component = next;
+        if (attached) bindProvider();
+    }
+
     @Override protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         attached = true;
@@ -132,33 +147,32 @@ public final class CaptionSettingsSlotView extends ExpoView {
     @Override protected void onDetachedFromWindow() {
         attached = false;
         closeRemote();
-        if (bound) {
-            try { getContext().unbindService(connection); }
-            catch (IllegalArgumentException e) { Log.e(TAG, "unbind caption provider failed", e); }
-            bound = false;
-        }
+        unbindProvider();
         service = null;
         super.onDetachedFromWindow();
     }
 
     private void bindProvider() {
-        String setting = Settings.Secure.getString(getContext().getContentResolver(), PROVIDER_SETTING);
-        ComponentName configured = setting == null || setting.isEmpty()
-                ? null : ComponentName.unflattenFromString(setting);
-        String packageName = configured == null ? DEFAULT_PACKAGE : configured.getPackageName();
-        Intent intent = new Intent(ACTION).setPackage(packageName);
-        if (configured != null && !configured.getClassName().isEmpty()) intent.setComponent(configured);
+        if (component == null || bound) return;
+        Intent intent = new Intent(ACTION).setComponent(component);
         try {
             bound = getContext().bindService(intent, connection, Context.BIND_AUTO_CREATE);
-            if (!bound) showFailure("Caption provider is not installed");
+            if (!bound) showFailure("App settings provider is unavailable");
         } catch (RuntimeException e) {
-            showFailure("Caption provider could not be opened");
-            Log.e(TAG, "bind provider failed package=" + packageName, e);
+            showFailure("App settings could not be opened");
+            Log.e(TAG, "bind failed component=" + component, e);
         }
     }
 
+    private void unbindProvider() {
+        if (!bound) return;
+        try { getContext().unbindService(connection); }
+        catch (IllegalArgumentException e) { Log.e(TAG, "unbind failed component=" + component, e); }
+        bound = false;
+    }
+
     private void openWhenReady() {
-        if (!attached || service == null || opened || !surface.isAttachedToWindow()) return;
+        if (!attached || component == null || service == null || opened || !surface.isAttachedToWindow()) return;
         IBinder token = surface.getHostToken();
         if (token == null || surface.getWidth() <= 0 || surface.getHeight() <= 0) return;
         try {
@@ -168,15 +182,15 @@ public final class CaptionSettingsSlotView extends ExpoView {
             handler.removeCallbacks(openTimeout);
             handler.postDelayed(openTimeout, 2500);
         } catch (RemoteException | RuntimeException e) {
-            showFailure("Caption provider could not be opened");
-            Log.e(TAG, "caption settings open failed", e);
+            showFailure("App settings could not be opened");
+            Log.e(TAG, "open failed component=" + component, e);
         }
     }
 
     private void closeRemote() {
         if (service != null && opened) {
             try { service.close(); }
-            catch (RemoteException e) { Log.e(TAG, "caption settings close failed", e); }
+            catch (RemoteException e) { Log.e(TAG, "close failed component=" + component, e); }
         }
         opened = false;
         handler.removeCallbacks(openTimeout);
