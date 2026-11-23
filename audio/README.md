@@ -226,6 +226,19 @@ rationale. No device runtime or audio playback test is claimed. Preflight
 could not pass in this checkout because several unrelated APK/native
 prebuilts and `bpfmt` are absent; it reported no PipeWire tree-source error.
 
+P2 adds the opt-in Soong primary module and PipeWire stream driver in
+`audio/pipewire-hal/`. `MATON_AUDIO_PIPEWIRE_HAL=true` in the product make
+environment selects that service and its schema-7.0 policy; it defaults to
+false, keeping BayLibre selected until P4 supplies service init and SELinux
+integration. The service reuses AOSP's example configuration parser and
+secondary module implementations. Its policy statically includes speaker,
+built-in microphone, and named no-device stand-ins; P3 will make endpoint
+availability dynamic. PipeWire failures are logged and returned as stream
+errors, with a fresh connection attempted at the next stream start.
+The opt-in's ODM policy source still needs the coordinator's shared bundle
+selection change recorded in `audio/SHARED-CHANGES.md`; P4 must also add the
+service init, VINTF, and SELinux registration before runtime testing.
+
 For later fresh-image verification, boot with HDA present and then without an
 audio device. Confirm `/odm/bin/pipewire` and `/odm/bin/wireplumber` exist, the
 services use the intended config paths, WirePlumber enumerates ALSA/UCM

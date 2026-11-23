@@ -70,3 +70,17 @@ interface and BayLibre implementation both provide it.
   BayLibre reads this file only from `/vendor/etc`. Remove that `file` row;
   `audio/audio.mk` already installs the same source at
   `/vendor/etc/mixer_controls.xml`.
+
+## PipeWire HAL policy selection (P2/P4)
+
+`audio/pipewire-hal/` adds a separate policy file and `audio/audio.mk` selects
+it for `/vendor/etc` when `MATON_AUDIO_PIPEWIRE_HAL=true`. The actual active
+policy is also bundled at `/odm/etc/audio_policy_configuration.xml` by
+`bundle/contents.list`, which currently points to the BayLibre policy and takes
+precedence over the vendor copy. Before using the opt-in on a VM, the
+coordinator must make the ODM bundle input follow the same product variable:
+select `audio/pipewire-hal/audio_policy_configuration.xml` and
+`audio/pipewire-hal/primary_audio_policy_configuration.xml` when true, while
+preserving the existing `audio/config-odm/` files when false. This needs a
+small shared build/bundle change; no AOSP change is needed. P4 still owns the
+PipeWire service init, VINTF, and SELinux registration required to start it.

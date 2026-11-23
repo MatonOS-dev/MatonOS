@@ -294,10 +294,16 @@ while IFS= read -r -d '' link; do
 done < <(find "$DEST/vendor" -type l -print0)
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
-for component in bin etc lib64 share; do
+for component in bin etc include lib64 share; do
   [[ ! -d $DEST/vendor/$component ]] || cp -a "$DEST/vendor/$component" "$STAGE/$component"
 done
-# Runtime staging excludes cross headers, pkg-config metadata, and build tools.
+# Keep only the public PipeWire/SPA headers needed by the Soong HAL; the other
+# upstream development headers, pkg-config metadata, and build tools stay out.
+rm -rf "$STAGE/include"
+mkdir -p "$STAGE/include"
+for include_root in "$DEST/vendor/include/pipewire-0.3" "$DEST/vendor/include/spa-0.2"; do
+  [[ ! -d $include_root ]] || cp -a "$include_root" "$STAGE/include/"
+done
 rm -rf "$STAGE/lib64/pkgconfig" "$STAGE/lib64/glib-2.0/include" \
   "$STAGE/share/bash-completion" "$STAGE/share/gettext" \
   "$STAGE/share/aclocal" "$STAGE/share/glib-2.0"
@@ -338,6 +344,8 @@ done
 } > "$STAGE/SOURCE"
 
 for required in bin/pipewire bin/wireplumber \
+                include/pipewire-0.3/pipewire/pipewire.h \
+                include/spa-0.2/spa/param/audio/format-utils.h \
                 lib64/libpipewire-0.3.so lib64/libwireplumber-0.5.so \
                 lib64/libasound.so \
                 lib64/spa-0.2/support/libspa-support.so \
