@@ -1,0 +1,20 @@
+# Compose a BGRT-specific animation before class core starts bootanim. post-fs
+# runs before init's on boot action starts the core class. exec_start waits for
+# this bounded, oneshot service to finish; missing BGRT is a quiet fallback.
+on early-init
+    mkdir /oem/media 0755 root root
+
+on post-fs
+    mount tmpfs tmpfs /oem/media nodev nosuid noexec mode=0755
+    restorecon /oem/media
+    copy /odm/etc/bootanim/fallback.zip /oem/media/bootanimation.zip
+    restorecon /oem/media/bootanimation.zip
+    chmod 0644 /oem/media/bootanimation.zip
+    exec_start matonos-efi-logo2
+
+service matonos-efi-logo2 /odm/bin/matonos-efi-logo2
+    class core
+    user root
+    group root
+    disabled
+    oneshot

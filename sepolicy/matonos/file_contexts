@@ -41,3 +41,5 @@
 
 # Dedicated copy of stock vendor toolbox, invoked as modprobe only.
 /odm/bin/modprobe -- u:object_r:matonos_modprobe_exec:s0
+/odm/bin/matonos-efi-logo2 u:object_r:matonos_bootanim_composer_exec:s0
+/oem(/.*)? u:object_r:matonos_bootanim_file:s0

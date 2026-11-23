@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import struct
 import zipfile
 from pathlib import Path
 
@@ -98,6 +99,16 @@ def render_frames(size: tuple[int, int], fps: int) -> list[Image.Image]:
     return frames
 
 
+def write_wordmark(out: Path) -> None:
+    """Write the C composer asset: magic + LE dimensions + white RGBA pixels."""
+    mask = make_wordmark()
+    rgba = Image.new("RGBA", mask.size, (255, 255, 255, 0))
+    rgba.putalpha(mask)
+    (out / "wordmark.rgba").write_bytes(
+        b"MRGBA1\0\0" + struct.pack("<II", *mask.size) + rgba.tobytes()
+    )
+
+
 def write_animation(out: Path, frames: list[Image.Image], fps: int) -> None:
     part = out / "part0"
     part.mkdir(parents=True, exist_ok=True)
@@ -145,12 +156,17 @@ def main() -> None:
     parser.add_argument("--width", type=int, default=DEFAULT_SIZE[0])
     parser.add_argument("--height", type=int, default=DEFAULT_SIZE[1])
     parser.add_argument("--fps", type=int, default=DEFAULT_FPS)
+    parser.add_argument("--wordmark-only", action="store_true", help="write only the boot-time composer RGBA asset")
     args = parser.parse_args()
     if args.width < LOGO_SIZE[0] or args.height < LOGO_SIZE[1] or args.fps < 1:
         parser.error("resolution must fit the stock-size logo and fps must be positive")
 
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
+    write_wordmark(out)
+    if args.wordmark_only:
+        print(f"Wrote boot-time composer wordmark to {out / 'wordmark.rgba'}")
+        return
     frames = render_frames((args.width, args.height), args.fps)
     write_animation(out, frames, args.fps)
     write_preview(out, frames, args.fps)

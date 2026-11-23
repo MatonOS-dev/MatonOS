@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22)
+project(matonos-efi-logo2 C)
+add_executable(matonos-efi-logo2 matonos-efi-logo2.c)
+target_compile_options(matonos-efi-logo2 PRIVATE -Wall -Wextra -Werror -O2)
+install(TARGETS matonos-efi-logo2 RUNTIME DESTINATION bin)

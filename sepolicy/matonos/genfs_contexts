@@ -1,0 +1,2 @@
+# UEFI ACPI BGRT firmware logo and metadata consumed by the boot compositor.
+genfscon sysfs /firmware/acpi/bgrt u:object_r:sysfs_bgrt:s0
