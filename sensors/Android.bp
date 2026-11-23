@@ -7,12 +7,18 @@ cc_binary {
     name: "matonos-sensors-service",
     vendor: true,
     relative_install_path: "hw",
+    init_rc: ["matonos-sensors.rc"],
+    vintf_fragments: ["android.hardware.sensors.xml"],
     srcs: [
         "main.cpp",
         "Sensors.cpp",
         "IioAccelerometer.cpp",
     ],
-    cflags: ["-Wall", "-Werror", "-std=c++17"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-std=c++17",
+    ],
     shared_libs: [
         "libbase",
         "libbinder_ndk",
