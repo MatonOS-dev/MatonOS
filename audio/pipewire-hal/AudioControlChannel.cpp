@@ -1,5 +1,6 @@
 #define LOG_TAG "AHAL_AudioControlChannel"
 
+#include <cstdlib>
 #include "AudioControlChannel.h"
 
 #include <algorithm>
@@ -78,12 +79,9 @@ bool jsonNumber(const std::string& json, const char* key, float* value) {
     const std::regex expression(std::string("\\\"") + key + "\\\"\\s*:\\s*(-?[0-9]+(?:\\.[0-9]+)?)");
     std::smatch match;
     if (!std::regex_search(json, match, expression)) return false;
-    try {
-        *value = std::stof(match[1].str());
-        return std::isfinite(*value);
-    } catch (const std::exception&) {
-        return false;
-    }
+    // The regex admits only a plain decimal, so strtof cannot fail to parse.
+    *value = std::strtof(match[1].str().c_str(), nullptr);
+    return std::isfinite(*value);
 }
 }  // namespace
 
