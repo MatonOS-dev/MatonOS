@@ -16,6 +16,10 @@ PRODUCT_OTA_ENFORCE_VINTF_KERNEL_REQUIREMENTS := false
 $(call inherit-product, $(SRC_TARGET_DIR)/product/handheld_vendor.mk)
 $(call inherit-product, frameworks/native/build/tablet-10in-xhdpi-2048-dalvik-heap.mk)
 
+# ARM64 apps use Digitalis' in-image native bridge when its source project is
+# present (frameworks/libs/binary_translation is supplied by the manifest).
+$(call inherit-product-if-exists, frameworks/libs/binary_translation/enable_arm64_to_x86_64.mk)
+
 # ---------------------------------------------------------------- boot / init
 # fstab goes into the vendor ramdisk (first-stage mount of system, vendor,
 # metadata, ...) and into /vendor/etc for second-stage mount_all.

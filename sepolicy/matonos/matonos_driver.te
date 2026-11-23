@@ -3,6 +3,14 @@
 # analysis; Android and the system bridge remain outside this domain.
 type matonos_driver, domain;
 type matonos_driver_exec, exec_type, vendor_file_type, file_type;
+
+# Digitalis' early-init rules mount binfmt_misc and register ARM64 ELF
+# handlers. AOSP defines binfmt_miscfs and exempts init from the relevant
+# neverallows, but does not grant init these operations on generic products.
+allow init proc_type:dir mounton;
+allow init binfmt_miscfs:filesystem mount;
+allow init binfmt_miscfs:file rw_file_perms;
+
 type matonos_driver_helper, domain;
 type matonos_driver_helper_exec, exec_type, vendor_file_type, file_type;
 type matonos_driver_data_file, file_type, data_file_type;

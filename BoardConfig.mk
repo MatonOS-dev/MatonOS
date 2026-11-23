@@ -26,6 +26,14 @@ TARGET_2ND_ARCH_VARIANT := sandybridge
 TARGET_2ND_CPU_ABI := x86
 TARGET_2ND_CPU_VARIANT := generic
 
+# Digitalis arm64-to-x86_64 native bridge. Match AOSP's
+# build/make/target/board/generic_x86_64_arm64/BoardConfig.mk; no 32-bit ARM
+# native bridge is enabled.
+TARGET_NATIVE_BRIDGE_ARCH := arm64
+TARGET_NATIVE_BRIDGE_ARCH_VARIANT := armv8-a
+TARGET_NATIVE_BRIDGE_CPU_VARIANT := generic
+TARGET_NATIVE_BRIDGE_ABI := arm64-v8a
+
 TARGET_BOARD_PLATFORM := pc_x86_64
 TARGET_BOOTLOADER_BOARD_NAME := pc_x86_64
 
