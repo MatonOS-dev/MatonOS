@@ -20,6 +20,8 @@ PRODUCT_PACKAGES += \
     libreverbaidl \
     libvisualizeraidl
 endif
+else
+PRODUCT_PACKAGES += com.android.hardware.audio.generic
 endif
 
 # Keep ODM and vendor policy copies aligned with the PipeWire HAL modules.

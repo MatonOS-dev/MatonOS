@@ -82,9 +82,9 @@ for rel, source in [
     ("bin/hw/matonos-audio-hal", product_out / "vendor/bin/hw/matonos-audio-hal"),
     ("bin/hw/audio-effect-service", pathlib.Path(sys.argv[6]) / "generic-audio/bin/hw/android.hardware.audio.effect.service-aidl.generic"),
     ("etc/audio_effects_config.xml", device / "audio/effects/audio_effects_config.xml"),
-    ("etc/init/maton-pipewire.rc", device / "audio/maton-pipewire.rc"),
-    ("etc/init/matonos-audio-hal.rc", device / "audio/native-hal/matonos-audio-hal.rc"),
-    ("etc/init/audio-effect-service.rc", device / "audio/apex/audio-effect-service.rc"),
+    ("etc/maton-pipewire.rc", device / "audio/maton-pipewire.rc"),
+    ("etc/matonos-audio-hal.rc", device / "audio/native-hal/matonos-audio-hal.rc"),
+    ("etc/audio-effect-service.rc", device / "audio/apex/audio-effect-service.rc"),
     ("etc/vintf/manifest/audio.xml", device / "audio/native-hal/vintf/manifest.xml"),
 ]:
     target = input_dir / rel
