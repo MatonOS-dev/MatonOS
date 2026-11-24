@@ -246,3 +246,21 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - **HAL rejected the ALSA nodes**: populateConnectedDevicePort called the AOSP base, which refuses every external device → EX_ILLEGAL_STATE. Override now only names the port (ab027212).
 - build-92/93 stopped early (inner build PIDs only, wrapper cleanup ran); build-94 = ab027212.
 - Next: boot build-94 → ALSA ports in `dumpsys media.audio_policy`, playback reaches the card; then the audio-apex branch (build-time version kept per user).
+
+## 2026-11-24 00:50 — night mode
+- build-94 VM: libudev-zero + ACP fixes work (PipeWire sees virtio card sink+source). New bug: no Android output (createTrack -19) — HAL self-called connectExternalDevice, which never reaches APM. Fixed by audiohotplug1 (merged 2f0091f0): stand-ins attached, HAL publishes `devices` on the MatonOS channel, systembridge calls setWiredDeviceConnectionState + preferred media device. build-97 running.
+- Digitalis: wip/digitalis 9dc35694; server binary_translation checked out at Digitalis 5d66dd11 (maton.xml updated; backup logs/maton.xml.pre-digitalis). build-95/96 failed on artifact path requirement (allowlists added in device.mk). Rebuild after build-97.
+- Server API /api/update/apex merged (matonos-ota 309870c), not deployed.
+- audioapex2 running: merge fixes into wip/audio-apex + compat file from imports.
+- repo tool on server at ~/bin/repo. apexd patch approved by user.
+
+## 2026-11-24 01:30 — hourly
+- Main tree unchanged (check: `(git status --porcelain; git rev-parse HEAD) | md5sum` = e6c7e37d...).
+- build-97 (audio hotplug 2f0091f0) at ~10% of 5357 edges. Next on server: Digitalis (wip/digitalis 9dc35694), then audio APEX.
+- audioapex2 done: wip/audio-apex f7e7962e merges tonight's audio fixes; paths moved to /apex/com.matonos.hardware.audio; `<name>.compat.json` sidecar (DT_NEEDED outside APEX, VINTF HALs, sdk, build date). Server ranges: publish only intervals proven per base image. Not built yet.
+- libcamera2 (report only) started: libcamera Android HAL feasibility on this tree.
+
+## 2026-11-24 02:20 — hourly
+- Main tree unchanged (e6c7e37d).
+- build-97 failed: matonos-client-java was java_library_static but MatonOS.java needs the library R → 845d617c makes it android_library + AndroidManifest.soong.xml (Gradle manifest untouched). build-98 running (docs/metalava stage at 02:17).
+- libcamera2 report: conditional GO for phase 2 = IPU3-only libcamera via the stock HIDL camera.provider@2.4 `legacy/0` wrapper (no framework patch); stock AIDL external HAL keeps UVC (never both on UVC). **USER DECISION (morning):** HIDL provider on an Android 17 product — check FCM/target-level compatibility + certification before any work; alternative is our own AIDL provider (large). libexif package metadata lists LGPL-3.0 files → per-file audit before shipping. No work started.

@@ -30,9 +30,7 @@ class AudioControlChannel final : public ::aidl::vendor::matonos::channel::BnCha
 
 void setPipeWireDevice(uint32_t nodeId, const std::string& identity, const std::string& name,
                        bool connected, bool input);
+std::string getPipeWireDeviceName(const std::string& identity, bool input);
 float getPipeWireDeviceBoost(const std::string& identity);
 uint32_t getPipeWireTargetNode(const std::string& identity);
-std::string makePipeWireIdentity(const char* busPath, const char* serial, const char* deviceName,
-                                 const char* profileName, const char* nodeName, bool input);
-
 }  // namespace aidl::android::hardware::audio::core

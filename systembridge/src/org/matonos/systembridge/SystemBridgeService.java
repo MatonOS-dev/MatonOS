@@ -1,6 +1,11 @@
 package org.matonos.systembridge;
 
 import android.app.Service;
+import android.media.AudioDeviceAttributes;
+import android.media.AudioManager;
+import android.media.AudioSystem;
+import android.media.AudioAttributes;
+import android.media.audiopolicy.AudioProductStrategy;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
@@ -10,8 +15,11 @@ import android.os.ServiceManager;
 import android.os.Binder;
 import android.os.IBinder;
 import android.os.Build;
+import android.os.Handler;
 import android.os.ParcelFileDescriptor;
+import android.os.Process;
 import android.os.UserHandle;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 
@@ -24,7 +32,9 @@ import java.io.FileInputStream;
 import java.io.InputStreamReader;
 import java.security.MessageDigest;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Locale;
 import java.nio.charset.StandardCharsets;
@@ -32,9 +42,13 @@ import java.util.Set;
 import java.util.Base64;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import vendor.matonos.channel.IChannel;
 import vendor.matonos.channel.IChannelListener;
+import org.matonos.client.AudioClient;
+import org.matonos.client.BridgeMode;
+import org.matonos.client.MatonosClient;
 
 public final class SystemBridgeService extends Service {
     private static final String TAG = "MatonSystemBridge";
@@ -49,6 +63,29 @@ public final class SystemBridgeService extends Service {
     private volatile DisplayChannel displayChannel;
     private volatile TrustChannel trustChannel;
     private final HardwareChannel hardwareChannel = new HardwareChannel();
+    private MatonosClient internalAudioBridge;
+    private AudioClient internalAudioClient;
+    private volatile boolean audioSubscriptionReady;
+    private boolean audioSubscriptionCheckPending;
+    private final AudioClient.DeviceListener internalAudioDeviceListener =
+            this::handleAudioDeviceEvent;
+    private final LinkedHashMap<String, AudioDeviceAttributes> connectedAudioOutputs =
+            new LinkedHashMap<>();
+    private final LinkedHashMap<String, AudioDeviceAttributes> connectedAudioInputs =
+            new LinkedHashMap<>();
+    private final Handler audioChannelHandler = new Handler(Looper.getMainLooper());
+    private final AtomicBoolean audioRebindActive = new AtomicBoolean();
+    private final Runnable audioChannelRebinder = new Runnable() {
+        @Override public void run() {
+            if (audioRebindActive.compareAndSet(false, true)) {
+                new Thread(() -> {
+                    try { rebindAudioSubscriptions(); }
+                    finally { audioRebindActive.set(false); }
+                }, "matonos-audio-channel-rebind").start();
+            }
+            audioChannelHandler.postDelayed(this, 3000);
+        }
+    };
     private final ISystemBridge.Stub binder = new ISystemBridge.Stub() {
         @Override public int getBridgeApiVersion() {
             enforceNotBanned(Binder.getCallingUid(), "getBridgeApiVersion");
@@ -181,6 +218,192 @@ public final class SystemBridgeService extends Service {
         return binder;
     }
 
+    private void startAudioDeviceForwarding() {
+        internalAudioBridge = new MatonosClient(this, BridgeMode.OPTIONAL);
+        internalAudioClient = new AudioClient(internalAudioBridge);
+        tryStartAudioSubscription();
+    }
+
+    private void tryStartAudioSubscription() {
+        synchronized (this) {
+            if (audioSubscriptionReady || audioSubscriptionCheckPending || internalAudioBridge == null)
+                return;
+            audioSubscriptionCheckPending = true;
+        }
+        internalAudioBridge.checkStartup(new String[] {"audio"}, new String[] {"audio"}, result -> {
+            synchronized (SystemBridgeService.this) {
+                audioSubscriptionCheckPending = false;
+            }
+            if (!result.available) {
+                Log.e(TAG, "Audio channel unavailable during startup: " + result.reason);
+                return;
+            }
+            MatonosClient.Result<Void> subscription =
+                    internalAudioClient.subscribe(internalAudioDeviceListener);
+            if (!subscription.available) {
+                Log.e(TAG, "Cannot subscribe to audio/devices: " + subscription.reason);
+                return;
+            }
+            audioSubscriptionReady = true;
+            reconcileAudioSnapshot();
+        });
+    }
+
+    private void reconcileAudioSnapshot() {
+        AudioClient client = internalAudioClient;
+        if (client == null) return;
+        MatonosClient.Result<String> result = client.devices();
+        if (!result.available) {
+            Log.e(TAG, "Audio device snapshot failed: " + result.reason);
+            return;
+        }
+        try {
+            JSONObject snapshot = new JSONObject(result.value);
+            snapshot.put("event", "snapshot");
+            handleAudioDeviceEvent(snapshot.toString());
+        } catch (JSONException e) {
+            Log.e(TAG, "Invalid audio device snapshot", e);
+        }
+    }
+
+    private synchronized void handleAudioDeviceEvent(String json) {
+        try {
+            JSONObject event = new JSONObject(json);
+            String eventType = event.optString("event", "");
+            if ("snapshot".equals(eventType)) {
+                JSONArray devices = event.optJSONArray("devices");
+                if (devices == null) throw new JSONException("snapshot is missing devices");
+                reconcileAudioDevices(devices);
+                return;
+            }
+            JSONObject device = event.optJSONObject("device");
+            if (device == null) throw new JSONException("audio event is missing device");
+            AudioDeviceAttributes attributes = audioDeviceAttributes(device);
+            if (attributes == null) return;
+            boolean connected = "add".equals(eventType);
+            if (!connected && !"remove".equals(eventType)) {
+                Log.e(TAG, "Unknown audio device event=" + eventType);
+                return;
+            }
+            changeAudioConnection(attributes, connected);
+        } catch (JSONException | IllegalArgumentException e) {
+            Log.e(TAG, "Invalid audio device event: " + json, e);
+        }
+    }
+
+    private void reconcileAudioDevices(JSONArray devices) throws JSONException {
+        LinkedHashMap<String, AudioDeviceAttributes> wantedOutputs = new LinkedHashMap<>();
+        LinkedHashMap<String, AudioDeviceAttributes> wantedInputs = new LinkedHashMap<>();
+        for (int i = 0; i < devices.length(); i++) {
+            JSONObject device = devices.optJSONObject(i);
+            if (device == null) throw new JSONException("audio device entry is not an object");
+            AudioDeviceAttributes attributes = audioDeviceAttributes(device);
+            if (attributes == null) continue;
+            String key = audioDeviceKey(attributes);
+            if ("out".equals(device.optString("type"))) wantedOutputs.put(key, attributes);
+            else wantedInputs.put(key, attributes);
+        }
+        reconcileAudioDirection(connectedAudioOutputs, wantedOutputs);
+        reconcileAudioDirection(connectedAudioInputs, wantedInputs);
+        updatePreferredMediaOutput();
+    }
+
+    private void reconcileAudioDirection(LinkedHashMap<String, AudioDeviceAttributes> current,
+            LinkedHashMap<String, AudioDeviceAttributes> wanted) {
+        for (Map.Entry<String, AudioDeviceAttributes> entry : new ArrayList<>(current.entrySet())) {
+            AudioDeviceAttributes replacement = wanted.get(entry.getKey());
+            if (replacement == null || !replacement.getName().equals(entry.getValue().getName())) {
+                changeAudioConnection(entry.getValue(), false);
+            }
+        }
+        for (AudioDeviceAttributes attributes : wanted.values()) changeAudioConnection(attributes, true);
+    }
+
+    private AudioDeviceAttributes audioDeviceAttributes(JSONObject device) throws JSONException {
+        String type = device.optString("type", "");
+        String address = device.optString("address", "");
+        String description = device.optString("description", "");
+        if (address.isEmpty() || description.isEmpty()) {
+            throw new JSONException("audio device has an empty address or description");
+        }
+        if ("out".equals(type)) {
+            return new AudioDeviceAttributes(AudioSystem.DEVICE_OUT_IP, address, description);
+        }
+        if ("in".equals(type)) {
+            return new AudioDeviceAttributes(AudioSystem.DEVICE_IN_IP, address, description);
+        }
+        Log.e(TAG, "Unknown audio device direction=" + type + " address=" + address);
+        return null;
+    }
+
+    private synchronized void changeAudioConnection(AudioDeviceAttributes attributes, boolean connected) {
+        LinkedHashMap<String, AudioDeviceAttributes> devices =
+                attributes.getRole() == AudioDeviceAttributes.ROLE_INPUT
+                        ? connectedAudioInputs : connectedAudioOutputs;
+        String key = audioDeviceKey(attributes);
+        AudioDeviceAttributes current = devices.get(key);
+        if (connected && current != null && current.getName().equals(attributes.getName())) return;
+        if (!connected && current == null) return;
+        AudioManager audioManager = getSystemService(AudioManager.class);
+        if (audioManager == null) {
+            Log.e(TAG, "Cannot change audio device connection: AudioManager unavailable");
+            return;
+        }
+        try {
+            if (connected) {
+                audioManager.setWiredDeviceConnectionState(attributes, AudioSystem.DEVICE_STATE_AVAILABLE);
+                devices.put(key, attributes);
+                Log.i(TAG, "Connected PipeWire audio port=" + attributes);
+            } else {
+                AudioDeviceAttributes disconnect = current == null ? attributes : current;
+                audioManager.setWiredDeviceConnectionState(disconnect,
+                        AudioSystem.DEVICE_STATE_UNAVAILABLE);
+                devices.remove(key);
+                Log.i(TAG, "Disconnected PipeWire audio port=" + disconnect);
+            }
+            if (devices == connectedAudioOutputs) updatePreferredMediaOutput();
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Audio device connection update failed: connected=" + connected
+                    + " device=" + attributes, e);
+        }
+    }
+
+    private synchronized void updatePreferredMediaOutput() {
+        AudioManager audioManager = getSystemService(AudioManager.class);
+        if (audioManager == null) return;
+        AudioProductStrategy mediaStrategy = AudioProductStrategy.getAudioProductStrategyForAudioAttributes(
+                new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).build(), true);
+        if (mediaStrategy == null) {
+            Log.e(TAG, "Cannot find AudioPolicy media strategy for PipeWire routing");
+            return;
+        }
+        AudioDeviceAttributes selected = null;
+        for (AudioDeviceAttributes output : connectedAudioOutputs.values()) selected = output;
+        try {
+            if (selected == null) {
+                audioManager.removePreferredDeviceForStrategy(mediaStrategy);
+            } else if (!audioManager.setPreferredDeviceForStrategy(mediaStrategy, selected)) {
+                Log.e(TAG, "AudioPolicy rejected preferred media device=" + selected);
+            }
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Cannot update AudioPolicy preferred media device=" + selected, e);
+        }
+    }
+
+    private static String audioDeviceKey(AudioDeviceAttributes attributes) {
+        return attributes.getRole() + ":" + attributes.getAddress();
+    }
+
+    private void rebindAudioSubscriptions() {
+        if (!audioSubscriptionReady && internalAudioBridge != null) {
+            internalAudioBridge.refresh();
+            tryStartAudioSubscription();
+        }
+        for (Subscription subscription : new ArrayList<>(subscriptions.values())) {
+            if ("audio".equals(subscription.target)) subscription.rebindIfNeeded();
+        }
+    }
+
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         return START_STICKY;
     }
@@ -193,6 +416,8 @@ public final class SystemBridgeService extends Service {
         sleepWakeForwarder.start();
         displayChannel = new DisplayChannel(this);
         trustChannel = new TrustChannel(this);
+        startAudioDeviceForwarding();
+        audioChannelHandler.postDelayed(audioChannelRebinder, 3000);
         // The bridge is bound explicitly by apps. Root/adb administration is exposed
         // through the UID-gated ContentProvider below, never ServiceManager.
     }
@@ -200,6 +425,10 @@ public final class SystemBridgeService extends Service {
     @Override public void onDestroy() {
         // sleep: stop the poller with the persistent bridge service.
         if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
+        audioChannelHandler.removeCallbacks(audioChannelRebinder);
+        if (internalAudioClient != null && internalAudioDeviceListener != null)
+            internalAudioClient.unsubscribe(internalAudioDeviceListener);
+        if (internalAudioBridge != null) internalAudioBridge.close();
         if (activeService == this) activeService = null;
         super.onDestroy();
     }
@@ -248,6 +477,10 @@ public final class SystemBridgeService extends Service {
         String[] packages = getPackageManager().getPackagesForUid(uid);
         String packageName = BridgeCallerIdentity.solePackage(packages);
         if (packageName == null) return null;
+        // The persistent bridge's private audio forwarder uses the same client
+        // library as MatonOS apps; this self-call cannot grant access to another UID.
+        if (uid == Process.myUid() && getPackageName().equals(packageName)
+                && "audio".equals(target)) return packageName;
         try {
             PackageInfo info = getPackageManager().getPackageInfoAsUser(packageName,
                     PackageManager.GET_SIGNING_CERTIFICATES, UserHandle.getUserId(uid));
@@ -661,7 +894,7 @@ public final class SystemBridgeService extends Service {
         final String target;
         final String topic;
         final IMatonosListener appListener;
-        final IChannel channel;
+        volatile IChannel channel;
         final IChannelListener channelListener;
         Subscription(String key, String target, String topic, IMatonosListener listener, IChannel channel) {
             this.key = key; this.target = target; this.topic = topic;
@@ -682,8 +915,49 @@ public final class SystemBridgeService extends Service {
         }
         void close() {
             subscriptions.remove(key, this);
-            try { channel.unsubscribe(topic, channelListener); }
+            IChannel current = channel;
+            if (current == null) return;
+            try { current.unsubscribe(topic, channelListener); }
             catch (RemoteException e) { Log.w(TAG, "Channel unsubscribe failed", e); }
+        }
+        void rebindIfNeeded() {
+            IChannel latest = channelFor(target);
+            IChannel previous = channel;
+            if (latest == null) {
+                if (previous == null) return;
+                channel = null;
+                try { previous.unsubscribe(topic, channelListener); }
+                catch (RemoteException e) { Log.w(TAG, "Audio channel stop unsubscribe failed", e); }
+                dispatchAudioSnapshot("{\"devices\":[]}");
+                return;
+            }
+            if (previous != null && previous.asBinder().equals(latest.asBinder())) return;
+            if (previous != null) {
+                try { previous.unsubscribe(topic, channelListener); }
+                catch (RemoteException e) { Log.w(TAG, "Audio channel restart unsubscribe failed", e); }
+            }
+            channel = latest;
+            try {
+                latest.subscribe(topic, channelListener);
+                dispatchAudioSnapshot(latest.call("devices", "{}"));
+                Log.i(TAG, "Rebound audio device subscription after HAL restart");
+            } catch (Exception e) {
+                channel = null;
+                Log.e(TAG, "Audio channel rebind failed", e);
+            }
+        }
+        private void dispatchAudioSnapshot(String json) {
+            try {
+                JSONObject snapshot = new JSONObject(json == null ? "{}" : json);
+                JSONArray devices = snapshot.optJSONArray("devices");
+                if (devices == null) devices = new JSONArray();
+                JSONObject event = new JSONObject();
+                event.put("event", "snapshot");
+                event.put("devices", devices);
+                appListener.onEvent(target, topic, event.toString());
+            } catch (Exception e) {
+                Log.e(TAG, "Cannot dispatch audio device resync snapshot", e);
+            }
         }
     }
 
