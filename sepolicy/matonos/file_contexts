@@ -46,10 +46,3 @@
 /odm/bin/matonos-bootlogo u:object_r:matonos_bootlogo_exec:s0
 /oem/media(/.*)? u:object_r:matonos_bootlogo_file:s0
 
-# audioapex1: stable labels baked into the updateable vendor audio APEX.
-/apex/com\.matonos\.hardware\.audio/bin/pipewire u:object_r:matonos_pipewire_exec:s0
-/apex/com\.matonos\.hardware\.audio/bin/wireplumber u:object_r:matonos_wireplumber_exec:s0
-/apex/com\.matonos\.hardware\.audio/bin/hw/matonos-audio-hal u:object_r:hal_audio_default_exec:s0
-/apex/com\.matonos\.hardware\.audio/bin/hw/audio-effect-service u:object_r:hal_audio_default_exec:s0
-/apex/com\.matonos\.hardware\.audio/etc(/.*)? u:object_r:vendor_configs_file:s0
-/apex/com\.matonos\.hardware\.audio(/.*)? u:object_r:vendor_file:s0
