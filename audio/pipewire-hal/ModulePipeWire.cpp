@@ -9,6 +9,9 @@
 
 #include <spa/utils/dict.h>
 #include <cerrno>
+#include <cstdint>
+#include <cstdio>
+#include <string>
 #include <cstring>
 #include <ctime>
 #include <vector>
@@ -17,6 +20,21 @@ namespace aidl::android::hardware::audio::core {
 namespace {
 constexpr char kOutputTemplate[] = "PipeWire Output";
 constexpr char kInputTemplate[] = "PipeWire Input";
+
+// Framework device addresses are limited to AUDIO_DEVICE_MAX_ADDRESS_LEN (32
+// incl. NUL); longer ones fail aidl2legacy conversion and abort audioserver's
+// policy manager. PipeWire node.name is often longer, so publish a stable
+// 64-bit FNV-1a digest of it: "pw-" + 16 hex = 19 chars.
+std::string shortIdentity(const char* nodeName) {
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    for (const char* c = nodeName; *c != '\0'; ++c) {
+        hash ^= static_cast<unsigned char>(*c);
+        hash *= 0x100000001b3ULL;
+    }
+    char out[20];
+    snprintf(out, sizeof(out), "pw-%016llx", static_cast<unsigned long long>(hash));
+    return out;
+}
 const char* property(const spa_dict* props, const char* key) {
     return props == nullptr ? nullptr : spa_dict_lookup(props, key);
 }
@@ -216,9 +234,11 @@ void ModulePipeWire::handleNode(uint32_t id, const spa_dict* props) {
     const char* desc = property(props, PW_KEY_NODE_DESCRIPTION);
     const char* shownName = desc != nullptr && *desc != '\0' ? desc : nodeName;
     const std::string name = shownName;
-    // node.name is the framework-visible stable address. PipeWire global IDs
-    // remain private to the node table and are never published as identity.
-    const std::string identity(nodeName);
+    // A digest of node.name is the framework-visible stable address. PipeWire
+    // global IDs remain private to the node table and are never published.
+    const std::string identity = shortIdentity(nodeName);
+    LOG(INFO) << __func__ << ": node id=" << id << " node.name=" << nodeName
+              << " address=" << identity;
     DeviceNode node{id, identity, name, "", input};
     node.portName = input ? kInputTemplate : kOutputTemplate;
     {
