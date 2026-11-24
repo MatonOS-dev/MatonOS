@@ -392,7 +392,13 @@ import sys
 Path(sys.argv[1]).unlink(missing_ok=True)
 PY_IGNORE
         info "Clean bootstrap audio binaries before final product install"
-        m installclean || build_status=$?
+        # installclean deletes $PRODUCT_OUT/*.img, including the ODM bundle
+        # built before pass 1 (odm.img's BOARD_PREBUILT_ODMIMAGE); keep it.
+        bundle_keep=$(mktemp "$AOSP/out/odm-bundle.keep.XXXXXX")
+        mv -f -- "$PRODUCT_OUT/odm-bundle.img" "$bundle_keep" || build_status=$?
+        (( build_status == 0 )) && { m installclean || build_status=$?; }
+        mkdir -p "$PRODUCT_OUT"
+        mv -f -- "$bundle_keep" "$PRODUCT_OUT/odm-bundle.img" || build_status=$?
       fi
       if (( build_status == 0 )); then
         info "Build final product with prebuilt audio APEX (pass 2)"
