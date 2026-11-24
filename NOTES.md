@@ -618,6 +618,11 @@ Feature work continues, but in this shape from now on.
   LE audio, network/Wi-Fi speakers (RAOP/AirPlay, Snapcast, ROC, ...) and
   similar home-audio targets. The three MatonOS APEXes are platform
   (sleepd, inputd), media and radio.
+  Acceptance for Bluetooth audio: the media APEX's Bluetooth audio provider
+  covers LE Audio (unicast, then broadcast/Auracast) in software, the LE Audio
+  profile properties are enabled, and `BluetoothAdapter.isLeAudioSupported()`
+  returns FEATURE_SUPPORTED, so Settings no longer shows LE Audio as
+  unsupported.
 - **v4 decision (user, 2026-09-25): sockets, not shipped binaries.** MatonOS
   ships NO ARM translation and NO Google software; the system bridge offers
   validated hooks the user fills:
