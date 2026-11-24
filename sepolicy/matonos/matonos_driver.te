@@ -209,7 +209,7 @@ allow matonos_driver sysfs_power:file rw_file_perms;
 allow matonos_driver matonos_channel_service:service_manager add;
 # addons has a separate narrowly scoped settings channel.
 allow matonos_addon_manager matonos_channel_service:service_manager add;
-neverallow { domain -matonos_driver -matonos_addon_manager -hal_audio_default } matonos_channel_service:service_manager add;
+neverallow { domain -matonos_driver -matonos_addon_manager -hal_audio_default -matonos_wifid } matonos_channel_service:service_manager add;
 allow hal_audio_default matonos_channel_service:service_manager add;
 binder_call(matonos_driver, matonos_system_bridge)
 
@@ -452,3 +452,7 @@ allow hal_audio_default vendor_file:dir r_dir_perms;
 allow hal_audio_default vendor_file:file { getattr map open read };
 allow hal_audio_default vendor_configs_file:dir r_dir_perms;
 allow hal_audio_default vendor_configs_file:file r_file_perms;
+
+# vm.swappiness, written once by vendor_init after boot (see genfs_contexts).
+type proc_maton_swappiness, fs_type, proc_type;
+allow vendor_init proc_maton_swappiness:file w_file_perms;

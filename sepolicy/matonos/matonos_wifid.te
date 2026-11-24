@@ -1,0 +1,26 @@
+# matonos-wifid: picks which Wi-Fi card is wlan0 (radio APEX). Own domain, not
+# matonos_driver: renaming interfaces needs net_admin and an ioctl socket, which
+# hal_neverallows.te forbids for HAL servers such as matonos_driver.
+type matonos_wifid, domain;
+type matonos_wifid_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(matonos_wifid)
+
+# Channel service "wifi"; the system bridge calls it and receives topics.
+binder_use(matonos_wifid)
+allow matonos_wifid matonos_channel_service:service_manager add;
+binder_call(matonos_wifid, matonos_system_bridge)
+binder_call(matonos_system_bridge, matonos_wifid)
+
+# Persisted card choice, hwsim fallback request, presence flag.
+set_prop(matonos_wifid, vendor_maton_prop)
+get_prop(matonos_wifid, vendor_maton_prop)
+
+# Card list: /sys/class/net, phy80211 permanent MAC, hwsim module presence.
+r_dir_file(matonos_wifid, sysfs_net)
+r_dir_file(matonos_wifid, sysfs)
+
+# Rename (down, SIOCSIFNAME, up) and hotplug (RTMGRP_LINK).
+allow matonos_wifid self:capability net_admin;
+allow matonos_wifid self:udp_socket create_socket_perms;
+allowxperm matonos_wifid self:udp_socket ioctl { SIOCGIFFLAGS SIOCSIFFLAGS SIOCSIFNAME };
+allow matonos_wifid self:netlink_route_socket { create_socket_perms_no_ioctl nlmsg_read };
