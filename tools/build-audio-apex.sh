@@ -8,7 +8,7 @@ AOSP=$(readlink -f "$DEVICE_DIR/../../..")
 PRODUCT_OUT=$AOSP/out/target/product/pc_x86_64
 HOSTBIN=$AOSP/out/host/linux-x86/bin
 HOSTLIB=$AOSP/out/host/linux-x86/lib64
-NAME=com.matonos.hardware.pipewire
+NAME=com.matonos.hardware.media
 VERSION=
 KEY_DIR=${MATON_RELEASE_KEY_DIR:-}
 [[ $KEY_DIR == /* ]] || die "MATON_RELEASE_KEY_DIR must be an absolute path outside the repository"
@@ -130,7 +130,7 @@ for path in (device / "audio/effects/audio_effects_config.xml",):
     import xml.etree.ElementTree as ET
     for element in ET.parse(path).iter("library"):
         needed.add(element.attrib["path"])
-manifest = {"name": "com.matonos.hardware.pipewire", "version": int(version), "requireNativeLibs": sorted(needed)}
+manifest = {"name": "com.matonos.hardware.media", "version": int(version), "requireNativeLibs": sorted(needed)}
 (temp / "apex_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 # canned_fs_config is space-separated with no escaping, so a path containing
 # a space cannot be packaged. Upstream alsa-ucm-conf has a few (ARM board
@@ -150,7 +150,7 @@ with (temp / "canned_fs_config").open("w") as f:
         rel = "/" + path.relative_to(input_dir).as_posix()
         mode = 0o755 if path.is_dir() or (path.stat().st_mode & 0o111) else 0o644
         f.write(f"{rel} 0 0 {mode:04o}\n")
-android_manifest = f'''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.matonos.hardware.pipewire" android:versionCode="{version}" android:versionName="{version}"><application android:hasCode="false" /></manifest>\n'''
+android_manifest = f'''<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.matonos.hardware.media" android:versionCode="{version}" android:versionName="{version}"><application android:hasCode="false" /></manifest>\n'''
 (temp / "AndroidManifest.xml").write_text(android_manifest)
 PY
 "$HOSTBIN/conv_apex_manifest" proto "$TMP/apex_manifest.json" -o "$TMP/apex_manifest.pb"

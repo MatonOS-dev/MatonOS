@@ -21,7 +21,7 @@ CXX=$TOOLCHAIN/bin/x86_64-linux-android$API-clang++
 AR=$TOOLCHAIN/bin/llvm-ar
 STRIP=$TOOLCHAIN/bin/llvm-strip
 SRC=$OUT/src
-APEX_NAME=com.matonos.hardware.pipewire
+APEX_NAME=com.matonos.hardware.media
 PREFIX=/apex/$APEX_NAME
 DEST=$OUT/dest
 

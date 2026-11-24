@@ -1,4 +1,4 @@
-service vendor.audio-hal-aidl /apex/com.matonos.hardware.pipewire/bin/hw/matonos-audio-hal
+service vendor.audio-hal-aidl /apex/com.matonos.hardware.media/bin/hw/matonos-audio-hal
     class hal
     disabled
     user audio
