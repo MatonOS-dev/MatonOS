@@ -264,3 +264,8 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Main tree unchanged (e6c7e37d).
 - build-97 failed: matonos-client-java was java_library_static but MatonOS.java needs the library R → 845d617c makes it android_library + AndroidManifest.soong.xml (Gradle manifest untouched). build-98 running (docs/metalava stage at 02:17).
 - libcamera2 report: conditional GO for phase 2 = IPU3-only libcamera via the stock HIDL camera.provider@2.4 `legacy/0` wrapper (no framework patch); stock AIDL external HAL keeps UVC (never both on UVC). **USER DECISION (morning):** HIDL provider on an Android 17 product — check FCM/target-level compatibility + certification before any work; alternative is our own AIDL provider (large). libexif package metadata lists LGPL-3.0 files → per-file audit before shipping. No work started.
+
+## 2026-11-24 02:40
+- build-98 OK, but on the VM the audio HAL abort-looped (`convertModuleConfigToAidl Line 534 BAD_VALUE`): AIDL XsdcConversion requires `<attachedDevices>` ports to have NO connection type, and the stand-ins were OUT_IP/IN_IP. system_server hung (adb offline, watchdog sysrq dumps). Fix 124630fb: stand-ins = AUDIO_DEVICE_OUT_SPEAKER / IN_BUILTIN_MIC (empty address → stream goes to the PipeWire default node). Lesson: the audiohotplug1 agent only checked XML well-formedness; HAL XML needs the converter's rules.
+- Stopped build-99 (Digitalis without the fix; it would hang the same way). build-100 = wip/digitalis c3472003 (Digitalis + hotplug + client fix + stand-in fix), running. One image tests both audio and Digitalis.
+- wip/audio-apex merged with systemui-variant (321e9348) and pushed for the first time.
