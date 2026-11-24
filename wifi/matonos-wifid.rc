@@ -18,5 +18,5 @@ on post-fs-data
 # modprobe is the shared vendor toolbox; it needs an explicit domain (as in
 # bluetooth/matonos-bluetooth.rc), a plain service has none and init refuses it.
 on property:vendor.maton.wifi.hwsim.load=1
-    exec_background u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -d /vendor/lib/modules mac80211_hwsim radios=1
+    exec_background u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -d /vendor/lib/modules mac80211_hwsim radios=${persist.vendor.maton.wifi.hwsim_radios:-1}
     setprop vendor.maton.wifi.hwsim.load 0

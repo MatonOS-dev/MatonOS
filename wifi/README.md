@@ -13,7 +13,8 @@ the Wi-Fi feature declaration, and the signed `regulatory.db` files.
 and for a single early hardware snapshot. It does not rename interfaces,
 block radios, subscribe to hotplug, or poll sysfs. At its one-shot startup it
 looks for physical `phy80211` devices. If none exist, it asks init once to
-load `mac80211_hwsim` with its default one-radio parameter. This gives generic
+load `mac80211_hwsim` with one radio (`persist.vendor.maton.wifi.hwsim_radios`
+raises it for the two-card switch test). This gives generic
 PCs a normal empty nl80211 `wlan0`; the fallback is never requested when a
 physical phy was present in the snapshot. The simulated radio keeps the stock
 Wi-Fi stack available for empty scans, but is not reported as physical
