@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <set>
 #include <string>
 #include <sys/system_properties.h>
@@ -27,6 +28,8 @@ namespace {
 constexpr char kChoice[] = "persist.vendor.maton.wifi.device";
 constexpr char kPresent[] = "vendor.maton.wifi.present";
 constexpr char kHwsimLoad[] = "vendor.maton.wifi.hwsim.load";
+// Debug only: lets hwsim radios stand in for real cards in switch tests.
+constexpr char kHwsimSelectable[] = "persist.vendor.maton.wifi.hwsim_selectable";
 
 struct Device {
     std::string interface;
@@ -39,6 +42,8 @@ std::vector<Device> gDevices;
 std::string gSelected;
 bool gPresent = false;
 MatonosIpcServer* gServer = nullptr;
+// Binder runs handlers on several threads; one switch at a time.
+std::mutex gLock;
 
 std::string Read(const fs::path& path) {
     std::ifstream input(path);
@@ -74,8 +79,9 @@ std::vector<Device> Enumerate(bool* physical) {
         error.clear();
         const std::string path = fs::canonical(it->path() / "phy80211/device", error).string();
         error.clear();
-        const bool simulated = phy.find("mac80211_hwsim") != std::string::npos ||
-                               path.find("mac80211_hwsim") != std::string::npos;
+        const bool simulated = GetProperty(kHwsimSelectable) != "1" &&
+                               (phy.find("mac80211_hwsim") != std::string::npos ||
+                                path.find("mac80211_hwsim") != std::string::npos);
         if (!seen_phys.insert(phy).second) continue;
         if (!simulated) *physical = true;
         devices.push_back({it->path().filename().string(), Read(it->path() / "address"),
@@ -84,11 +90,13 @@ std::vector<Device> Enumerate(bool* physical) {
     return devices;
 }
 int GetState(const char*, char* out, size_t size, void*) {
+    std::lock_guard<std::mutex> lock(gLock);
     const bool present = GetProperty(kPresent) == "1";
     return CopyJson("{\"present\":" + std::string(present ? "true" : "false") +
                     ",\"selected\":" + Quote(gSelected) + "}", out, size) ? 0 : -1;
 }
 int ListDevices(const char*, char* out, size_t size, void*) {
+    std::lock_guard<std::mutex> lock(gLock);
     bool physical = false;
     gDevices = Enumerate(&physical);
     std::string json = "{\"devices\":[";
@@ -106,6 +114,7 @@ int ListDevices(const char*, char* out, size_t size, void*) {
     return CopyJson(json + "]}", out, size) ? 0 : -1;
 }
 int SelectDevice(const char* args, char* out, size_t size, void*) {
+    std::lock_guard<std::mutex> lock(gLock);
     bool physical = false;
     gDevices = Enumerate(&physical);
     const std::string input(args ? args : "");

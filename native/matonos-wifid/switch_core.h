@@ -104,11 +104,23 @@ inline int SwitchTo(const std::vector<SwitchInterface>& interfaces, const std::s
         if (item.up && SetUp(fd, item.current, true) != 0) { set_failure("restore up state", item.current); ok = false; break; }
     }
     if (!ok) {
-        for (auto it = saved.rbegin(); it != saved.rend(); ++it) {
-            if (it->current != it->original && Rename(fd, it->current, it->original) != 0 && failure)
-                *failure += "; rollback rename " + it->current + " to " + it->original + ": " + strerror(errno);
-            if (SetUp(fd, it->original, it->up) != 0 && failure)
-                *failure += "; rollback flags " + it->original + ": " + strerror(errno);
+        // Two passes: park every renamed interface on a free temporary name
+        // first, so an original name still held by another card is released
+        // before anything is renamed back onto it.
+        for (auto& item : saved) {
+            if (item.current == item.original) continue;
+            const std::string park = unique_name("wtmp", &temp_id);
+            if (Rename(fd, item.current, park) != 0) {
+                if (failure) *failure += "; rollback park " + item.current + ": " + strerror(errno);
+                continue;
+            }
+            item.current = park;
+        }
+        for (auto& item : saved) {
+            if (item.current != item.original && Rename(fd, item.current, item.original) != 0 && failure)
+                *failure += "; rollback rename " + item.current + " to " + item.original + ": " + strerror(errno);
+            if (SetUp(fd, item.original, item.up) != 0 && failure)
+                *failure += "; rollback flags " + item.original + ": " + strerror(errno);
         }
     }
     close(fd);
