@@ -1,6 +1,7 @@
 (/.*)? u:object_r:vendor_file:s0
 /etc(/.*)? u:object_r:vendor_configs_file:s0
 /bin/hw/android\.hardware\.bluetooth-service\.matonos u:object_r:hal_bluetooth_default_exec:s0
+/bin/hw/android\.hardware\.wifi-service\.matonos u:object_r:hal_wifi_default_exec:s0
 /bin/hw/wpa_supplicant u:object_r:hal_wifi_supplicant_default_exec:s0
 /bin/hw/hostapd u:object_r:hal_wifi_hostapd_default_exec:s0
 /bin/matonos-wifid u:object_r:matonos_wifid_exec:s0

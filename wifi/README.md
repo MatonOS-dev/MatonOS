@@ -3,9 +3,11 @@
 ## Design
 
 MatonOS uses the AOSP Wi-Fi framework and Settings UI with Linux `nl80211`:
-`wpa_supplicant` AIDL, `wificond`, and Android's network stack. There is no
-vendor `IWifi` HAL. The stock stack owns the kernel interfaces; this keeps the
-normal PC driver and firmware path intact. `wifi.interface=wlan0` remains the
+the radio APEX provides a fork of the stock AIDL `IWifi` HAL, with
+`wpa_supplicant` AIDL, `wificond`, and the network stack. The HAL uses AOSP's
+generic nl80211 legacy backend and reports interface combinations from the
+selected `wlan0` phy at runtime. The stock stack owns scanning, authentication,
+and networking. `wifi.interface=wlan0` remains the
 framework's interface setting. `wifi/wifi.mk` stages the supplicant template,
 the Wi-Fi feature declaration, and the signed `regulatory.db` files.
 

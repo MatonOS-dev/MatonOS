@@ -4,6 +4,7 @@
 vendor APEX. Its payload is enumerated in `apex/payload.list` and contains:
 
 - the MatonOS fork of `android.hardware.bluetooth-service.matonos`;
+- the MatonOS fork of the AIDL `android.hardware.wifi-service.matonos`;
 - stock `wpa_supplicant` and `hostapd`;
 - `matonos-wifid` and `libmatonos-ipc.so`;
 - the service rc and VINTF fragment.
@@ -21,7 +22,7 @@ uses the same helpers.
 ## Init and missing-hardware behavior
 
 The radio rc is imported from the activated vendor APEX. Its
-`apex.all.ready=true` action uses `start` for the Bluetooth HAL and wifid; it
+`apex.all.ready=true` action uses `start` for the Wi-Fi and Bluetooth HALs and wifid; it
 contains no blocking `exec`, `exec_start`, or `wait_for_prop`. The AOSP
 `system/core/rootdir/init.rc` runs `apexd-bootstrap` early, starts apexd after
 `/data` is mounted, and waits for `apexd.status=activated` before continuing.
@@ -39,7 +40,7 @@ and continues with the interface names supplied by the kernel. Its long-lived
 control channel and netlink monitor do not gate init or system_server.
 
 If the APEX is absent or fails activation, its rc and VINTF fragment are
-absent too. The bootstrap-only Soong HAL/supplicant/hostapd modules are not
+absent too. The bootstrap-only Soong Wi-Fi/Bluetooth HAL, supplicant and hostapd modules are not
 selected in the final product, so there is no stale vendor VINTF declaration
 or init service pointing at a missing executable. Based on AOSP therefore
 finishes boot with Bluetooth and Wi-Fi unavailable.
@@ -53,7 +54,7 @@ These are device data or platform services and remain outside the APEX:
 - `/vendor/firmware/regulatory.db` and `regulatory.db.p7s`, consumed by the
   kernel regulatory loader;
 - Wi-Fi and Wi-Fi Direct feature permission XML, used by PackageManager for
-  capability discovery;
+  capability discovery (P2P availability still follows the runtime matrix);
 - `wpa_cli`, `wificond`, the framework/network stack, and the kernel modules;
 - the existing Wi-Fi post-fs-data setup and hwsim modprobe service in ODM.
 

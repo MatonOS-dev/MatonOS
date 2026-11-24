@@ -4,8 +4,11 @@ LOCAL_PATH := device/maton/pc_x86_64
 
 PRODUCT_PACKAGES += wificond wpa_cli
 ifneq ($(MATON_RADIO_APEX_READY),true)
-PRODUCT_PACKAGES += hostapd wpa_supplicant
+PRODUCT_PACKAGES += android.hardware.wifi-service.matonos hostapd wpa_supplicant
 endif
+
+# Use AOSP's nl80211 emulator legacy backend. Its interfaces are discovered
+# through rtnetlink and it works with generic mac80211/cfg80211 radios.
 
 # Build the supplicant with upstream's generic nl80211 backend. AOSP's default
 # CONFIG_DRIVER_NL80211_QCA backend is for Qualcomm-specific nl80211 commands.
