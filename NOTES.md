@@ -597,6 +597,18 @@ Feature work continues, but in this shape from now on.
   (`com.matonos.hardware.radio`, repo `apex_radio`, beside wifid and btd),
   USB modems included; data + SIM first. Needs a USB LTE modem
   (MBIM/QMI) as test hardware before work starts.
+- **Radio APEX scope (user, 2026-11-24)**: `com.matonos.hardware.radio`
+  carries wifid, btd, wpa_supplicant and hostapd, plus:
+  1. GNSS: stock GNSS HAL on the kernel `/dev/gnss0` (USB receivers, modem
+     GNSS); VM test with a fake NMEA stream on a QEMU serial port.
+  2. Cross-radio glue: airplane mode via rfkill for all radios, regulatory
+     domain (Wi-Fi country code).
+  3. Thread (Matter border router): stock Thread HAL; USB RCP dongles
+     (nRF52840); VM test with the simulated OpenThread `ot-rcp`.
+  4. NFC: USB readers need an NCI adapter layer; VM test with AOSP's
+     virtual `casimir` controller.
+  1 and 2 ship with the first radio APEX; 3 and 4 are roadmap. No real test
+  hardware for 3 and 4, so their hardware quirks stay unverified.
 - **v4 decision (user, 2026-09-25): sockets, not shipped binaries.** MatonOS
   ships NO ARM translation and NO Google software; the system bridge offers
   validated hooks the user fills:
