@@ -10,7 +10,18 @@ newest entries at the bottom of each section.
 | 127 | f106f7ac | FAILED Soong 22:53: BT fork linked `libbluetooth_offload_hal`, not visible to device trees |
 | 128 | 3fa4ed6a | FAILED 23:19 compile: `try` in BluetoothHci.cpp (vendor = -fno-exceptions; my syntax check lacked the flag) |
 | 129 | 2a6bd333 | FAILED 23:56 radio APEX packaging: "bootstrap hostapd missing". Soong compile passed (BT + Wi-Fi HAL forks built, media APEX built) |
-| 130 | fb37d44d | OK 01:14 (`BOARD_HOSTAPD_DRIVER := NL80211`); live130 booting at 01:20 for the test list |
+| 130 | fb37d44d | OK 01:14 (`BOARD_HOSTAPD_DRIVER := NL80211`); live130 tested (below) |
+| 131 | 25035145 | running since ~01:30: radio rc moved to `etc/`, BT HAL `interface` line |
+
+**live130 results** (enforcing, booted in under a minute):
+- PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
+- PASS: swappiness 180 (vendor label fix works).
+- PASS: audio. pipewire, wireplumber, matonos-audio-hal, effect HAL and
+  audioserver all run from the media APEX; the output thread wrote frames;
+  no denials at all.
+- FAIL → fixed for 131: no radio service existed. The rc sat in
+  `etc/init/`, but init only reads `/apex/<name>/etc/*.rc`. Boot still
+  completed without any of them, which is the no-block rule working.
 
 Media + radio APEX payload keys backed up to host `~/.config/matonos/release-keys`
 (hashes match the server copies, contents never printed).
