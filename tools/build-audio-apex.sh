@@ -85,14 +85,33 @@ for rel, source in [
     ("etc/maton-pipewire.rc", device / "audio/maton-pipewire.rc"),
     ("etc/matonos-audio-hal.rc", device / "audio/native-hal/matonos-audio-hal.rc"),
     ("etc/audio-effect-service.rc", device / "audio/apex/audio-effect-service.rc"),
-    ("etc/vintf/manifest/audio.xml", device / "audio/native-hal/vintf/manifest.xml"),
+    ("etc/vintf/audio.xml", device / "audio/native-hal/vintf/manifest.xml"),
 ]:
     target = input_dir / rel
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(source, target)
-# Linkerconfig must expose vendor/LLNDK dependencies to this vendor APEX namespace.
-needed = set()
 import re, subprocess
+def dt_needed(path):
+    out = subprocess.run(["readelf", "-d", str(path)], check=True, text=True, capture_output=True).stdout
+    return re.findall(r"Shared library: \[(.*?)\]", out)
+# Vendor-only libraries (own AIDL interfaces, libeffects, ...) are installed
+# by the bootstrap pass only; the final image no longer carries them in
+# /vendor/lib64. Bundle them, transitively. LLNDK libraries live in /system
+# and stay external.
+vendor_lib64 = product_out / "vendor/lib64"
+changed = True
+while changed:
+    changed = False
+    for elf in [p for p in input_dir.rglob("*") if p.is_file() and p.read_bytes()[:4] == b"\x7fELF"]:
+        for lib in dt_needed(elf):
+            if (input_dir / "lib64" / lib).exists() or (input_dir / "lib64/soundfx" / lib).exists():
+                continue
+            if (vendor_lib64 / lib).is_file():
+                shutil.copy2(vendor_lib64 / lib, input_dir / "lib64" / lib)
+                print(f"audio-apex: bundling vendor library {lib}", file=sys.stderr)
+                changed = True
+# Linkerconfig must expose LLNDK dependencies to this vendor APEX namespace.
+needed = set()
 elfs = [p for p in input_dir.rglob("*") if p.is_file() and os.access(p, os.X_OK)]
 elfs += [p for p in (input_dir / "lib64").rglob("*.so*") if p.is_file()]
 for elf in elfs:
@@ -179,7 +198,7 @@ internal.update(soname for path, _, soname in elfs
                  if soname and path.relative_to(payload).parts[0] == 'lib64')
 external = sorted({lib for _, needed, _ in elfs for lib in needed if lib not in internal})
 
-manifest_path = payload / 'etc/vintf/manifest/audio.xml'
+manifest_path = payload / 'etc/vintf/audio.xml'
 root = ET.parse(manifest_path).getroot()
 hals = []
 for hal in root.findall('hal'):
