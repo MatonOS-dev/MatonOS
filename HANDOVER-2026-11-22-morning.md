@@ -285,3 +285,11 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 ## 2026-11-24 05:10
 - build-102 hung like build-98: BUS has no AIDL connection type, so XsdcConversion counts it as attached-only and the HAL aborted. Device-type choice, settled from AOSP source: IP is the only type that is external, app-visible (TYPE_IP) and side-effect free (LINE broadcasts HEADSET_PLUG/"headphones"; PROXY is TYPE_UNKNOWN to apps; HDMI/SPDIF are wrong). Its one constraint is an IPv4 address, so the identity is now FNV-1a-32(node.name) as a.b.c.d; the HAL maps ipv4 (or id) addresses back for naming + stream targeting and logs+skips on a digest collision. Commit "audio: IP ports with IPv4-form PipeWire identities". build-103 (wip/digitalis a23219ea) running since 05:06.
 - Lesson for briefs: every audio XML/type change must be checked against XsdcConversion.cpp (attached ⇔ no connection) and AidlConversionCppNdk suggestDeviceAddressTag (ipv4/mac/alsa address formats), not just XML parsing.
+
+## 2026-11-24 06:00
+- build-103 (IPv4-form identities) boots clean: no HAL abort; bridge connects "VirtIO SoundCard Stereo" as AUDIO_DEVICE_OUT_IP 12.62.231.39 + IN_IP 204.83.105.106; APM lists PipeWire Output/Input; media strategy prefers the IP sink. **Device registration works.**
+- Playback test (new no-Gradle tool: out/pc-logs/agents/digitalis-test/play/play.dex, `CLASSPATH=/data/local/tmp/play.dex app_process /system/bin Play <s>`, 440 Hz AudioTrack) found two bugs:
+  1. Enforcing: hal_audio_default denied `fd use` + `memfd_file {getattr map read write}` on matonos_pipewire → HAL stream EPROTO (-71) → write stalls → audioserver TimeCheck abort in createTrack. Fixed in policy (commit "sepolicy: let the audio HAL use PipeWire buffer fds"); build-104 (wip/digitalis 621abce9) running since 05:54.
+  2. Permissive: track routes to the IP port, but each 20 ms write takes ~1 s and out.wav stays silent → HAL stream not linked to the virtio sink / driven by a ~1 Hz cycle. codex pwlink1 (luna high, report-only, using the live103 VM) investigating.
+- Harmless denials left: HAL reads DMI product_name/sys_vendor/bios_vendor (label is system_ext-private, vendor policy cannot name it; reads come from libpipewire client side). Not fixed.
+- VM live103 is in permissive (setenforce 0) for pwlink1.
