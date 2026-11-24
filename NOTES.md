@@ -593,6 +593,10 @@ Feature work continues, but in this shape from now on.
   managed by Android's EuiccManager + an open-source LPA (OpenEUICC /
   EasyEUICC) via APDU passthrough in our Radio HAL. A software "virtual
   eSIM" is impossible (GSMA-certified eUICC keys required).
+  Update (user, 2026-11-24): the Radio HAL ships in the radio APEX
+  (`com.matonos.hardware.radio`, repo `apex_radio`, beside wifid and btd),
+  USB modems included; data + SIM first. Needs a USB LTE modem
+  (MBIM/QMI) as test hardware before work starts.
 - **v4 decision (user, 2026-09-25): sockets, not shipped binaries.** MatonOS
   ships NO ARM translation and NO Google software; the system bridge offers
   validated hooks the user fills:
