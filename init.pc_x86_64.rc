@@ -15,7 +15,7 @@ on late-fs
 on post-fs-data
     mkdir /data/vendor/var 0755 root root
 
-# zram swap (zramsize in the fstab, 50% of RAM; zstd for its ratio, PC CPUs
+# zram swap (zramsize in the fstab, 100% of RAM; zstd for its ratio, PC CPUs
 # absorb the cost; user, 2026-09-26). Enabled after boot completes so it
 # never delays boot.
 on property:sys.boot_completed=1
