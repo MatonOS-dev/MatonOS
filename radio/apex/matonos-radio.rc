@@ -3,6 +3,7 @@
 on property:apex.all.ready=true
     mkdir /data/vendor/wifi/hostapd 0770 wifi wifi
     mkdir /data/vendor/wifi/hostapd/sockets 0770 wifi wifi
+    start vendor.wifi_hal_matonos
     start vendor.bluetooth-matonos
     start vendor.matonos-wifid
 
@@ -13,6 +14,14 @@ service vendor.bluetooth-matonos /apex/com.matonos.hardware.radio/bin/hw/android
     user bluetooth
     group bluetooth
     task_profiles HighPerformance
+
+service vendor.wifi_hal_matonos /apex/com.matonos.hardware.radio/bin/hw/android.hardware.wifi-service.matonos
+    interface aidl android.hardware.wifi.IWifi/default
+    class hal
+    capabilities NET_ADMIN NET_RAW
+    user wifi
+    group wifi gps
+    disabled
 
 service vendor.matonos-wifid /apex/com.matonos.hardware.radio/bin/matonos-wifid
     class core

@@ -1,5 +1,6 @@
 # Source-prefix-relative-file destination-inside-apex
 product:vendor/bin/hw/android.hardware.bluetooth-service.matonos bin/hw/android.hardware.bluetooth-service.matonos
+product:vendor/bin/hw/android.hardware.wifi-service.matonos bin/hw/android.hardware.wifi-service.matonos
 product:vendor/bin/hw/wpa_supplicant bin/hw/wpa_supplicant
 product:vendor/bin/hw/hostapd bin/hw/hostapd
 native:matonos-wifid bin/matonos-wifid
