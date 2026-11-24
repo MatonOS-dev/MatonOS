@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+// Vendor RRO for the Wi-Fi module's resources (com.android.wifi.resources).
+runtime_resource_overlay {
+    name: "matonos_overlay_wifi_resources",
+    soc_specific: true,
+    sdk_version: "current",
+}

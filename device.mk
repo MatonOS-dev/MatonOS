@@ -101,6 +101,7 @@ PRODUCT_COPY_FILES += \
 # Framework config overrides (vendor RRO), see overlays/.
 PRODUCT_PACKAGES += \
     matonos_overlay_frameworks_base_core \
+    matonos_overlay_wifi_resources \
     matonos_overlay_settings_provider \
     matonos_overlay_systemui
 # Build-time aconfig values (desktop taskbar in fullscreen, multi-desks,

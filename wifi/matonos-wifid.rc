@@ -8,6 +8,9 @@ on post-fs-data
     mkdir /data/vendor/wifi 0770 wifi wifi
     mkdir /data/vendor/wifi/wpa 0770 wifi wifi
     mkdir /data/vendor/wifi/wpa/sockets 0770 wifi wifi
+    # wificond (class main) resolves the nl80211 family once at start and never
+    # retries; load cfg80211 before it, or Wi-Fi stays dead until a restart.
+    exec u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -d /vendor/lib/modules cfg80211
     start vendor.matonos-wifid
 
 # The stock AIDL supplicant expects these vendor-data paths for its config and

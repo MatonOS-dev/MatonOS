@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<resources>
+    <!-- PC Wi-Fi cards are hot-pluggable: when wlan0 comes back (card replugged,
+         or hwsim fallback reloaded) the stock stack restarts Wi-Fi by itself. -->
+    <bool name="config_wifiInterfaceAddedSelfRecoveryEnabled">true</bool>
+</resources>
