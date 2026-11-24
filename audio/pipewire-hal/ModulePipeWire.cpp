@@ -11,6 +11,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <string>
 #include <cstring>
 #include <ctime>
@@ -21,19 +22,28 @@ namespace {
 constexpr char kOutputTemplate[] = "PipeWire Output";
 constexpr char kInputTemplate[] = "PipeWire Input";
 
-// Framework device addresses are limited to AUDIO_DEVICE_MAX_ADDRESS_LEN (32
-// incl. NUL); longer ones fail aidl2legacy conversion and abort audioserver's
-// policy manager. PipeWire node.name is often longer, so publish a stable
-// 64-bit FNV-1a digest of it: "pw-" + 16 hex = 19 chars.
+// Ports are AUDIO_DEVICE_OUT_IP/IN_IP (apps see TYPE_IP; no plug intents or
+// routing side effects). AIDL conversion requires an IP-connection address to
+// be IPv4, and legacy addresses are capped at 32 bytes, so the stable identity
+// is the 32-bit FNV-1a digest of node.name written as a.b.c.d. BUS has no
+// connection type (attached-only) and LINE broadcasts HEADSET_PLUG.
 std::string shortIdentity(const char* nodeName) {
-    uint64_t hash = 0xcbf29ce484222325ULL;
+    uint32_t hash = 0x811c9dc5u;
     for (const char* c = nodeName; *c != '\0'; ++c) {
         hash ^= static_cast<unsigned char>(*c);
-        hash *= 0x100000001b3ULL;
+        hash *= 0x01000193u;
     }
-    char out[20];
-    snprintf(out, sizeof(out), "pw-%016llx", static_cast<unsigned long long>(hash));
+    char out[16];
+    snprintf(out, sizeof(out), "%u.%u.%u.%u", hash >> 24, (hash >> 16) & 0xffu,
+             (hash >> 8) & 0xffu, hash & 0xffu);
     return out;
+}
+
+// identity -> node.name of every node seen this process, to make digest
+// collisions loud instead of silently merging two devices.
+std::map<std::string, std::string>& seenIdentities() {
+    static std::map<std::string, std::string> seen;
+    return seen;
 }
 const char* property(const spa_dict* props, const char* key) {
     return props == nullptr ? nullptr : spa_dict_lookup(props, key);
@@ -244,6 +254,12 @@ void ModulePipeWire::handleNode(uint32_t id, const spa_dict* props) {
     {
         std::lock_guard lock(mDeviceMutex);
         if (mNodes.find(id) != mNodes.end()) return;
+        auto [seen, inserted] = seenIdentities().emplace(identity, nodeName);
+        if (!inserted && seen->second != nodeName) {
+            LOG(ERROR) << __func__ << ": address collision " << identity << " between node.name="
+                       << seen->second << " and node.name=" << nodeName << "; skipping id=" << id;
+            return;
+        }
         mNodes[id] = node;
     }
     // AudioService is the sole owner of external-device connect/disconnect.
@@ -266,13 +282,12 @@ ndk::ScopedAStatus ModulePipeWire::populateConnectedDevicePort(
     }
     auto& device = audioPort->ext.get<
             ::aidl::android::media::audio::common::AudioPortExt::Tag::device>().device;
-    if (device.address.getTag() !=
-        ::aidl::android::media::audio::common::AudioDeviceAddress::Tag::id) {
-        LOG(ERROR) << __func__ << ": connected PipeWire port has non-id address";
+    const std::string identity = pipeWireIdentity(device.address);
+    if (identity.empty()) {
+        LOG(ERROR) << __func__ << ": connected PipeWire port has unusable address "
+                   << device.address.toString();
         return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
     }
-    const std::string& identity = device.address.get<
-            ::aidl::android::media::audio::common::AudioDeviceAddress::Tag::id>();
     const bool input = audioPort->name == kInputTemplate;
     audioPort->name = getPipeWireDeviceName(identity, input);
     if (audioPort->name.empty()) {
