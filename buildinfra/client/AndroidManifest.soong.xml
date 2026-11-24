@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Soong build of the client library (Gradle sets the package via namespace). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.matonos.client">
+    <queries>
+        <package android:name="org.matonos.systembridge" />
+    </queries>
+</manifest>
