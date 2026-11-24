@@ -113,6 +113,15 @@ for path in (device / "audio/effects/audio_effects_config.xml",):
         needed.add(element.attrib["path"])
 manifest = {"name": "com.matonos.hardware.audio", "version": int(version), "requireNativeLibs": sorted(needed)}
 (temp / "apex_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+# canned_fs_config is space-separated with no escaping, so a path containing
+# a space cannot be packaged. Upstream alsa-ucm-conf has a few (ARM board
+# profiles such as "Librem 5.conf"); drop them loudly. Anything else fails.
+for path in sorted(input_dir.rglob("* *"), key=lambda p: len(p.parts), reverse=True):
+    rel = path.relative_to(input_dir).as_posix()
+    if not rel.startswith("etc/alsa/ucm2/"):
+        raise SystemExit(f"payload path contains a space, apexer cannot package it: {rel}")
+    print(f"audio-apex: dropping UCM profile with a space in its path: {rel}", file=sys.stderr)
+    path.unlink()
 # apexer requires an explicit uid/gid/mode for every payload path.
 with (temp / "canned_fs_config").open("w") as f:
     f.write("/ 0 0 0755\n")
