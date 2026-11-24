@@ -328,3 +328,7 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - build-104 boots **enforcing**: tone plays to the virtio sink, no crash, no audio denials (except the known DMI sysfs reads). Audio hotplug confirmed under enforcing.
 - metadata-enc fast-forwarded to wip/systemui-variant (9e595d5e), pushed.
 - build-105 (wip/digitalis 846e17d8 = + unity sink volume) running since 06:40; expected tone peak ≈7999 at media 15/15.
+
+## 2026-11-24 07:20
+- wip/audio-apex ← wip/systemui-variant merged (a869ceba, clean; audio fixes now on the APEX branch), pushed.
+- build-105 (digitalis + unity volume) finishing; build-106 = first wip/audio-apex image build, queued to start right after 105 (script build-106.sh = build-95.sh with the branch swapped). Then: inspect the APEX + .compat.json, boot, rerun tone test, back up the payload key.
