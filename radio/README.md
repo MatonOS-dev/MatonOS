@@ -53,8 +53,8 @@ These are device data or platform services and remain outside the APEX:
   from its standard device-data location;
 - `/vendor/firmware/regulatory.db` and `regulatory.db.p7s`, consumed by the
   kernel regulatory loader;
-- Wi-Fi feature permission XML, used by PackageManager for capability
-  discovery;
+- Wi-Fi and Wi-Fi Direct feature permission XML, used by PackageManager for
+  capability discovery (P2P availability still follows the runtime matrix);
 - `wpa_cli`, `wificond`, the framework/network stack, and the kernel modules;
 - the existing Wi-Fi post-fs-data setup and hwsim modprobe service in ODM.
 
