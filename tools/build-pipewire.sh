@@ -61,7 +61,7 @@ fetch() {
 
 # Meson caches dependency include paths (with $PREFIX baked in) across
 # --reconfigure; a prefix change (APEX rename) needs fresh build dirs.
-if [[ -f $OUT/.prefix && $(<"$OUT/.prefix") != "$PREFIX" ]]; then
+if [[ ! -f $OUT/.prefix || $(<"$OUT/.prefix") != "$PREFIX" ]]; then
   echo "prefix changed to $PREFIX; wiping stale build dirs" >&2
   rm -rf "$OUT/libffi" "$OUT/glib" "$OUT/alsa-lib" "$OUT/pipewire" "$OUT/wireplumber"
 fi
