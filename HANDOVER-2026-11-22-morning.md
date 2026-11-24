@@ -293,3 +293,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
   2. Permissive: track routes to the IP port, but each 20 ms write takes ~1 s and out.wav stays silent → HAL stream not linked to the virtio sink / driven by a ~1 Hz cycle. codex pwlink1 (luna high, report-only, using the live103 VM) investigating.
 - Harmless denials left: HAL reads DMI product_name/sys_vendor/bios_vendor (label is system_ext-private, vendor policy cannot name it; reads come from libpipewire client side). Not fixed.
 - VM live103 is in permissive (setenforce 0) for pwlink1.
+
+## 2026-11-24 06:20
+- pwlink1 (codex, report-only): the HAL stream IS linked to the virtio sink (node.target = sink, 2 links); the "silence" was stacked volume. Fixed: WirePlumber `device.routes.default-sink-volume = 1.0` (commit "audio: PipeWire sinks default to unity volume"). Live check on live103: AudioTrack tone 8000 → out.wav peak 7999 with sink at 1.0 and media 15/15.
+- Audio hotplug test results on live103 (permissive, until build-104 confirms enforcing): registration ✅, playback ✅, PipeWire kill -9 → ports drop and return in ~1 s with the same addresses, playback resumes, audioserver/HAL untouched ✅; HAL restart → ports re-synced, playback ✅.
+- The "write blocked ~1 s" cadence is a VM artefact: QEMU's wav audiodev is not real-time (out.wav grows ~10× faster than wall clock). Not chased further; recheck on real hardware.
+- wip/digitalis 846e17d8 has all fixes; build-104 (621abce9) lacks only the volume config.
