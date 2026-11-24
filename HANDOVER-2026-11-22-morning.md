@@ -272,3 +272,9 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 
 ## 2026-11-24 03:17 — hourly
 - Main tree unchanged; no codex running; build-100 (Digitalis + audio fixes) at 91%. VM off until it lands. No new agent: next items need the build-100 image.
+
+## 2026-11-24 03:40
+- build-100 (wip/digitalis c3472003) boots. **Digitalis works:** abilist x86_64,arm64-v8a; a freestanding aarch64 static binary runs via binfmt_misc + Berberis (stdout + exit code 42 OK); an arm64-only NativeActivity APK installs with primaryCpuAbi=arm64-v8a, launches, and loads lib/arm64/libmain.so via libberberis_arm64 ("Initialized Berberis (aarch64)"). Test sources + APK: out/pc-logs/agents/digitalis-test/ (aapt2 + prebuilt clang, no Gradle; throwaway signing key). Not yet tried: a real F-Droid ARM-only app with libc (needs internet fetch; morning).
+- Side note (pre-existing, low): ART warns "Unexpected CPU variant for x86: generic" because TARGET_CPU_VARIANT := generic; harmless.
+- **Audio, second bug:** AudioService took the virtio sink/source, but audioserver aborted 5× (bad_variant_access in AudioPolicyManager::setDeviceConnectionStateInt) and then stayed down. Cause: we published PipeWire node.name (~85 chars) as the device address; the framework limit is 32 (AUDIO_DEVICE_MAX_ADDRESS_LEN), aidl2legacy fails and APM dereferences the error (AOSP bug, but our trigger). Fix 0a60fd8c "audio: publish short PipeWire device addresses": address = pw-<FNV-1a 64 of node.name> (19 chars), mapping logged. build-101 (wip/digitalis 4267ee25) running.
+- Also seen: generic effect service can't dlopen /vendor/lib64/soundfx/libbundleaidl.so (namespace "(default)"), so effects are missing. To look at after hotplug passes; the audio APEX replaces this service anyway.
