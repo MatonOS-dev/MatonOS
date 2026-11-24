@@ -128,7 +128,7 @@ void PublishDeviceChanges() {
     gPresent = physical;
     if (__system_property_set(kPresent, gPresent ? "1" : "0") != 0)
         ALOGE("update %s after Wi-Fi hotplug failed", kPresent);
-    if (!gServer || matonos_ipc_publish(gServer, "devices_changed", change.payload.c_str()) != 0)
+    if (!gServer || matonos_ipc_publish(gServer, "devices_changed", change.payload.c_str()) < 0)
         ALOGE("publish Wi-Fi devices_changed failed: %s", change.payload.c_str());
 }
 bool IsWifiEvent(const struct nlmsghdr* header) {
