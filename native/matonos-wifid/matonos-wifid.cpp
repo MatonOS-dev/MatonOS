@@ -8,8 +8,17 @@
 #include <fstream>
 #include <iterator>
 #include <mutex>
+#include <net/if.h>
+#include <linux/if_link.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
 #include <set>
 #include <string>
+#include <thread>
+#include <cerrno>
+#include <cstdio>
+#include <cstdlib>
+#include <sys/socket.h>
 #include <sys/system_properties.h>
 #include <unistd.h>
 #include <vector>
@@ -17,6 +26,7 @@
 #include <android/log.h>
 #include <matonos_ipc.h>
 #include "switch_core.h"
+#include "hotplug_payload.h"
 
 #define LOG_TAG "matonos-wifid"
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -44,6 +54,8 @@ bool gPresent = false;
 MatonosIpcServer* gServer = nullptr;
 // Binder runs handlers on several threads; one switch at a time.
 std::mutex gLock;
+std::set<std::string> gKnownWifiInterfaces;
+std::set<std::string> gLastPhysicalMacs;
 
 std::string Read(const fs::path& path) {
     std::ifstream input(path);
@@ -88,6 +100,114 @@ std::vector<Device> Enumerate(bool* physical) {
                            Read(it->path() / "phy80211/macaddress"), path, simulated});
     }
     return devices;
+}
+std::set<std::string> PhysicalMacs(const std::vector<Device>& devices) {
+    std::set<std::string> result;
+    for (const auto& device : devices)
+        if (!device.simulated && !device.perm_mac.empty()) result.insert(device.perm_mac);
+    return result;
+}
+std::string Wlan0Mac(const std::vector<Device>& devices) {
+    for (const auto& device : devices)
+        if (device.interface == "wlan0") return device.perm_mac;
+    return "";
+}
+void RefreshKnownNames(const std::vector<Device>& devices) {
+    gKnownWifiInterfaces.clear();
+    for (const auto& device : devices) gKnownWifiInterfaces.insert(device.interface);
+}
+void PublishDeviceChanges() {
+    bool physical = false;
+    gDevices = Enumerate(&physical);
+    const auto current = PhysicalMacs(gDevices);
+    const auto change = wifid::BuildDeviceChange(gLastPhysicalMacs, current,
+                                                  GetProperty(kChoice), Wlan0Mac(gDevices));
+    RefreshKnownNames(gDevices);
+    if (!change.changed) return;
+    gLastPhysicalMacs = current;
+    gPresent = physical;
+    if (__system_property_set(kPresent, gPresent ? "1" : "0") != 0)
+        ALOGE("update %s after Wi-Fi hotplug failed", kPresent);
+    if (!gServer || matonos_ipc_publish(gServer, "devices_changed", change.payload.c_str()) != 0)
+        ALOGE("publish Wi-Fi devices_changed failed: %s", change.payload.c_str());
+}
+bool IsWifiEvent(const struct nlmsghdr* header) {
+    if (header->nlmsg_len < NLMSG_LENGTH(sizeof(struct ifinfomsg))) return false;
+    const auto* info = static_cast<const struct ifinfomsg*>(NLMSG_DATA(header));
+    std::string name;
+    int remaining = static_cast<int>(header->nlmsg_len - NLMSG_LENGTH(sizeof(*info)));
+    for (auto* attr = IFLA_RTA(info); RTA_OK(attr, remaining); attr = RTA_NEXT(attr, remaining)) {
+        if (attr->rta_type == IFLA_IFNAME) {
+            const char* value = static_cast<const char*>(RTA_DATA(attr));
+            name.assign(value, strnlen(value, RTA_PAYLOAD(attr)));
+            break;
+        }
+    }
+    if (name.empty()) return false;
+    std::lock_guard<std::mutex> lock(gLock);
+    if (gKnownWifiInterfaces.count(name)) return true;
+    std::error_code error;
+    return fs::exists(fs::path("/sys/class/net") / name / "phy80211", error);
+}
+void NetlinkListener() {
+    for (;;) {
+        const int fd = socket(AF_NETLINK, SOCK_RAW | SOCK_CLOEXEC, NETLINK_ROUTE);
+        if (fd < 0) {
+            const int error = errno;
+            ALOGE("netlink socket failed: errno=%d (%s); retrying", error, strerror(error));
+            sleep(1);
+            continue;
+        }
+        struct sockaddr_nl address{};
+        address.nl_family = AF_NETLINK;
+        address.nl_groups = RTMGRP_LINK;
+        if (bind(fd, reinterpret_cast<struct sockaddr*>(&address), sizeof(address)) != 0) {
+            const int error = errno;
+            ALOGE("netlink bind fd=%d failed: errno=%d (%s); reopening", fd, error, strerror(error));
+            ALOGE("closing netlink listener fd=%d after bind failure", fd);
+            close(fd);
+            sleep(1);
+            continue;
+        }
+        bool reopen = false;
+        while (!reopen) {
+            char buffer[16384];
+            const ssize_t count = recv(fd, buffer, sizeof(buffer), 0);
+            if (count < 0) {
+                const int error = errno;
+                if (error == EINTR) continue;
+                if (error == ENOBUFS) {
+                    std::lock_guard<std::mutex> lock(gLock);
+                    PublishDeviceChanges();
+                    continue;
+                }
+                ALOGE("netlink recv fd=%d failed: errno=%d (%s); reopening", fd, error, strerror(error));
+                reopen = true;
+                continue;
+            }
+            bool relevant = false;
+            int remaining = static_cast<int>(count);
+            auto* header = reinterpret_cast<struct nlmsghdr*>(buffer);
+            while (remaining >= static_cast<int>(sizeof(*header)) &&
+                   header->nlmsg_len >= sizeof(*header) &&
+                   header->nlmsg_len <= static_cast<unsigned int>(remaining)) {
+                if ((header->nlmsg_type == RTM_NEWLINK || header->nlmsg_type == RTM_DELLINK) &&
+                    IsWifiEvent(header)) relevant = true;
+                const unsigned int step = NLMSG_ALIGN(header->nlmsg_len);
+                if (step > static_cast<unsigned int>(remaining)) break;
+                remaining -= static_cast<int>(step);
+                header = reinterpret_cast<struct nlmsghdr*>(
+                    reinterpret_cast<char*>(header) + step);
+            }
+            if (relevant) {
+                std::lock_guard<std::mutex> lock(gLock);
+                PublishDeviceChanges();
+            }
+        }
+        ALOGE("closing netlink listener fd=%d after socket error", fd);
+        close(fd);
+        sleep(1);
+    }
 }
 int GetState(const char*, char* out, size_t size, void*) {
     std::lock_guard<std::mutex> lock(gLock);
@@ -152,6 +272,8 @@ int main() {
     // Enumerate current phy devices before exposing the control channel.
     bool physical = false;
     gDevices = Enumerate(&physical);
+    gLastPhysicalMacs = PhysicalMacs(gDevices);
+    RefreshKnownNames(gDevices);
     if (!physical && !fs::exists("/sys/module/mac80211_hwsim")) {
         ALOGI("no physical phy80211 found; requesting one empty hwsim radio");
         if (__system_property_set(kHwsimLoad, "1") != 0) ALOGW("could not request hwsim fallback");
@@ -182,6 +304,7 @@ int main() {
         ALOGE("cannot start Wi-Fi control channel");
         return 1;
     }
+    std::thread(NetlinkListener).detach();
     ALOGI("Wi-Fi control channel ready; stock stack owns wlan interfaces");
     for (;;) pause();
 }

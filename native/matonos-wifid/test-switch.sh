@@ -9,3 +9,5 @@ for scenario in already swap three states rollback; do
   unshare -Urn bash -c 'ip link set lo up; exec "$1" "$2"' _ "$tmp/switch_test" "$scenario"
   echo "PASS $scenario"
 done
+"$compiler" -std=c++17 -Wall -Wextra -Werror -O2 "$src/hotplug_test.cpp" -o "$tmp/hotplug_test"
+"$tmp/hotplug_test"
