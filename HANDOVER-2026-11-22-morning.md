@@ -323,3 +323,8 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 4. hotspot hwsim test, audio features, suspend tuning, caption findings, Downloads design.
 
 **Known nits**: HAL reads DMI sysfs (denied, harmless; label is system_ext-private). Effects service can't dlopen vendor soundfx libs (pre-existing; audio APEX replaces it). VM write cadence ~1 s = QEMU wav audiodev artefact.
+
+## 2026-11-24 06:45
+- build-104 boots **enforcing**: tone plays to the virtio sink, no crash, no audio denials (except the known DMI sysfs reads). Audio hotplug confirmed under enforcing.
+- metadata-enc fast-forwarded to wip/systemui-variant (9e595d5e), pushed.
+- build-105 (wip/digitalis 846e17d8 = + unity sink volume) running since 06:40; expected tone peak ≈7999 at media 15/15.
