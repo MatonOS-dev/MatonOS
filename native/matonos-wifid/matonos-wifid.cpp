@@ -245,6 +245,17 @@ int SelectDevice(const char* args, char* out, size_t size, void*) {
     const size_t last = first == std::string::npos ? first : input.find('"', first + 1);
     if (colon == std::string::npos || first == std::string::npos || last == std::string::npos) return -1;
     const std::string choice = input.substr(first + 1, last - first - 1);
+    const size_t persist_key = input.find("\"persist\"");
+    bool persist = true;
+    if (persist_key != std::string::npos) {
+        const size_t persist_colon = input.find(':', persist_key + 9);
+        if (persist_colon == std::string::npos) return -1;
+        const size_t value = input.find_first_not_of(" \t\r\n", persist_colon + 1);
+        if (value == std::string::npos) return -1;
+        if (input.compare(value, 4, "true") == 0) persist = true;
+        else if (input.compare(value, 5, "false") == 0) persist = false;
+        else return -1;
+    }
     const auto found = std::find_if(gDevices.begin(), gDevices.end(), [&](const Device& d) {
         return !d.simulated && (d.perm_mac == choice || d.interface == choice || d.path == choice);
     });
@@ -258,11 +269,11 @@ int SelectDevice(const char* args, char* out, size_t size, void*) {
               selected.perm_mac.c_str(), failure.c_str());
         return -1;
     }
-    if (__system_property_set(kChoice, selected.perm_mac.c_str()) != 0) {
+    if (persist && __system_property_set(kChoice, selected.perm_mac.c_str()) != 0) {
         ALOGE("persist selected Wi-Fi card %s failed", selected.perm_mac.c_str());
         return -1;
     }
-    gSelected = selected.perm_mac;
+    if (persist) gSelected = selected.perm_mac;
     return CopyJson("{\"selected\":" + Quote(selected.perm_mac) +
                     ",\"interface\":\"wlan0\"}", out, size) ? 0 : -1;
 }

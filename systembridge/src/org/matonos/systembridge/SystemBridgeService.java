@@ -62,6 +62,7 @@ public final class SystemBridgeService extends Service {
     // display: framework display APIs, served in-process rather than by a vendor daemon.
     private volatile DisplayChannel displayChannel;
     private volatile TrustChannel trustChannel;
+    private WifiCardSwitcher wifiCardSwitcher;
     private final HardwareChannel hardwareChannel = new HardwareChannel();
     private MatonosClient internalAudioBridge;
     private AudioClient internalAudioClient;
@@ -125,6 +126,11 @@ public final class SystemBridgeService extends Service {
                 JSONObject args = new JSONObject(jsonArgs == null ? "{}" : jsonArgs);
                 if (args.toString().length() > 64 * 1024)
                     throw new IllegalArgumentException("channel arguments too large");
+                if ("wifi".equals(target) && "select_device".equals(command)) {
+                    WifiCardSwitcher switcher = wifiCardSwitcher;
+                    if (switcher == null) throw new IllegalStateException("Wi-Fi card switcher unavailable");
+                    return switcher.switchTo(args.optString("device", ""), args.optBoolean("persist", true));
+                }
                 IChannel channel = channelFor(target);
                 if (channel == null) throw new IllegalStateException("channel instance unavailable: " + target);
                 String result = channel.call(command, args.toString());
@@ -418,6 +424,8 @@ public final class SystemBridgeService extends Service {
         trustChannel = new TrustChannel(this);
         startAudioDeviceForwarding();
         audioChannelHandler.postDelayed(audioChannelRebinder, 3000);
+        wifiCardSwitcher = new WifiCardSwitcher(this, this::channelFor);
+        wifiCardSwitcher.start();
         // The bridge is bound explicitly by apps. Root/adb administration is exposed
         // through the UID-gated ContentProvider below, never ServiceManager.
     }
@@ -426,6 +434,7 @@ public final class SystemBridgeService extends Service {
         // sleep: stop the poller with the persistent bridge service.
         if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
         audioChannelHandler.removeCallbacks(audioChannelRebinder);
+        if (wifiCardSwitcher != null) wifiCardSwitcher.stop();
         if (internalAudioClient != null && internalAudioDeviceListener != null)
             internalAudioClient.unsubscribe(internalAudioDeviceListener);
         if (internalAudioBridge != null) internalAudioBridge.close();
