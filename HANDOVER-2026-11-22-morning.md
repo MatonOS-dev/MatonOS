@@ -259,3 +259,8 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - build-97 (audio hotplug 2f0091f0) at ~10% of 5357 edges. Next on server: Digitalis (wip/digitalis 9dc35694), then audio APEX.
 - audioapex2 done: wip/audio-apex f7e7962e merges tonight's audio fixes; paths moved to /apex/com.matonos.hardware.audio; `<name>.compat.json` sidecar (DT_NEEDED outside APEX, VINTF HALs, sdk, build date). Server ranges: publish only intervals proven per base image. Not built yet.
 - libcamera2 (report only) started: libcamera Android HAL feasibility on this tree.
+
+## 2026-11-24 02:20 — hourly
+- Main tree unchanged (e6c7e37d).
+- build-97 failed: matonos-client-java was java_library_static but MatonOS.java needs the library R → 845d617c makes it android_library + AndroidManifest.soong.xml (Gradle manifest untouched). build-98 running (docs/metalava stage at 02:17).
+- libcamera2 report: conditional GO for phase 2 = IPU3-only libcamera via the stock HIDL camera.provider@2.4 `legacy/0` wrapper (no framework patch); stock AIDL external HAL keeps UVC (never both on UVC). **USER DECISION (morning):** HIDL provider on an Android 17 product — check FCM/target-level compatibility + certification before any work; alternative is our own AIDL provider (large). libexif package metadata lists LGPL-3.0 files → per-file audit before shipping. No work started.
