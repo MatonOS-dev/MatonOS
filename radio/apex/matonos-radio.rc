@@ -8,6 +8,7 @@ on property:apex.all.ready=true
     start vendor.matonos-wifid
 
 service vendor.bluetooth-matonos /apex/com.matonos.hardware.radio/bin/hw/android.hardware.bluetooth-service.matonos
+    interface aidl android.hardware.bluetooth.IBluetoothHci/default
     class hal
     disabled
     capabilities BLOCK_SUSPEND NET_ADMIN SYS_NICE
