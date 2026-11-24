@@ -10,7 +10,10 @@ newest entries at the bottom of each section.
 | 127 | f106f7ac | FAILED Soong 22:53: BT fork linked `libbluetooth_offload_hal`, not visible to device trees |
 | 128 | 3fa4ed6a | FAILED 23:19 compile: `try` in BluetoothHci.cpp (vendor = -fno-exceptions; my syntax check lacked the flag) |
 | 129 | 2a6bd333 | FAILED 23:56 radio APEX packaging: "bootstrap hostapd missing". Soong compile passed (BT + Wi-Fi HAL forks built, media APEX built) |
-| 130 | fb37d44d | running since ~00:05: `BOARD_HOSTAPD_DRIVER := NL80211` |
+| 130 | fb37d44d | OK 01:14 (`BOARD_HOSTAPD_DRIVER := NL80211`); live130 booting at 01:20 for the test list |
+
+Media + radio APEX payload keys backed up to host `~/.config/matonos/release-keys`
+(hashes match the server copies, contents never printed).
 
 **Found by 129:** hostapd has not been in any image since the hotspot commit
 5dcef069. Its Soong module is only enabled when the board sets
