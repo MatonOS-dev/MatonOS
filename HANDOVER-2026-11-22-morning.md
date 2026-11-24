@@ -269,3 +269,6 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - build-98 OK, but on the VM the audio HAL abort-looped (`convertModuleConfigToAidl Line 534 BAD_VALUE`): AIDL XsdcConversion requires `<attachedDevices>` ports to have NO connection type, and the stand-ins were OUT_IP/IN_IP. system_server hung (adb offline, watchdog sysrq dumps). Fix 124630fb: stand-ins = AUDIO_DEVICE_OUT_SPEAKER / IN_BUILTIN_MIC (empty address → stream goes to the PipeWire default node). Lesson: the audiohotplug1 agent only checked XML well-formedness; HAL XML needs the converter's rules.
 - Stopped build-99 (Digitalis without the fix; it would hang the same way). build-100 = wip/digitalis c3472003 (Digitalis + hotplug + client fix + stand-in fix), running. One image tests both audio and Digitalis.
 - wip/audio-apex merged with systemui-variant (321e9348) and pushed for the first time.
+
+## 2026-11-24 03:17 — hourly
+- Main tree unchanged; no codex running; build-100 (Digitalis + audio fixes) at 91%. VM off until it lands. No new agent: next items need the build-100 image.
