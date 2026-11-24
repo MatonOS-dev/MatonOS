@@ -611,6 +611,13 @@ Feature work continues, but in this shape from now on.
      virtual `casimir` controller.
   1 and 2 ship with the first radio APEX; 3 and 4 are roadmap. No real test
   hardware for 3 and 4, so their hardware quirks stay unverified.
+- **Media APEX scope (user, 2026-11-24)**: `com.matonos.hardware.media`
+  (repo `apex_media`, formerly the PipeWire APEX) owns all multimedia that
+  PipeWire provides, except screen sharing: audio (today), webcams/cameras
+  (PipeWire camera nodes behind an Android camera HAL), Bluetooth classic and
+  LE audio, network/Wi-Fi speakers (RAOP/AirPlay, Snapcast, ROC, ...) and
+  similar home-audio targets. The three MatonOS APEXes are platform
+  (sleepd, inputd), media and radio.
 - **v4 decision (user, 2026-09-25): sockets, not shipped binaries.** MatonOS
   ships NO ARM translation and NO Google software; the system bridge offers
   validated hooks the user fills:
