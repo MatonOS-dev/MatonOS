@@ -26,7 +26,7 @@ INPUT=$TMP/input
 for tool in apexer conv_apex_manifest signapk avbtool deapexer; do
   [[ -x $HOSTBIN/$tool ]] || die "missing AOSP host tool: $HOSTBIN/$tool"
 done
-[[ -x $AOSP/out/host/linux-x86/framework/signapk.jar ]] || die "missing signapk.jar"
+[[ -s $AOSP/out/host/linux-x86/framework/signapk.jar ]] || die "missing signapk.jar"
 [[ -d $STAGE/bin && -d $STAGE/lib64 ]] || die "PipeWire APEX staging missing; run tools/build-pipewire.sh"
 [[ -s $PRODUCT_OUT/vendor/bin/hw/matonos-audio-hal ]] || die "Soong HAL binary missing; run the first AOSP build pass"
 [[ -s $PRODUCT_OUT/vendor/apex/com.android.hardware.audio.generic.apex ]] || die "Soong generic audio APEX missing; run the bootstrap product pass"
