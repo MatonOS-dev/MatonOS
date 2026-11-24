@@ -142,6 +142,20 @@ float getPipeWireDeviceBoost(const std::string& identity) {
     return it == gBoosts.end() ? 1.0f : it->second;
 }
 
+std::string pipeWireIdentity(
+        const ::aidl::android::media::audio::common::AudioDeviceAddress& address) {
+    using Tag = ::aidl::android::media::audio::common::AudioDeviceAddress::Tag;
+    if (address.getTag() == Tag::id) return address.get<Tag::id>();
+    if (address.getTag() != Tag::ipv4) return "";
+    const auto& bytes = address.get<Tag::ipv4>();
+    if (bytes.size() != 4) {
+        LOG(ERROR) << __func__ << ": ipv4 address with " << bytes.size() << " bytes";
+        return "";
+    }
+    return std::to_string(bytes[0]) + "." + std::to_string(bytes[1]) + "." +
+           std::to_string(bytes[2]) + "." + std::to_string(bytes[3]);
+}
+
 uint32_t getPipeWireTargetNode(const std::string& identity) {
     std::lock_guard lock(gMutex);
     const auto it = gDevices.find(identity);

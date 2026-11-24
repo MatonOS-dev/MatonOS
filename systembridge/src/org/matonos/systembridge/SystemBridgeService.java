@@ -327,10 +327,10 @@ public final class SystemBridgeService extends Service {
             throw new JSONException("audio device has an empty address or description");
         }
         if ("out".equals(type)) {
-            return new AudioDeviceAttributes(AudioSystem.DEVICE_OUT_BUS, address, description);
+            return new AudioDeviceAttributes(AudioSystem.DEVICE_OUT_IP, address, description);
         }
         if ("in".equals(type)) {
-            return new AudioDeviceAttributes(AudioSystem.DEVICE_IN_BUS, address, description);
+            return new AudioDeviceAttributes(AudioSystem.DEVICE_IN_IP, address, description);
         }
         Log.e(TAG, "Unknown audio device direction=" + type + " address=" + address);
         return null;

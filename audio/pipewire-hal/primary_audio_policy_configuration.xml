@@ -21,11 +21,11 @@
         </mixPort>
     </mixPorts>
     <devicePorts>
-        <devicePort tagName="PipeWire Output" type="AUDIO_DEVICE_OUT_BUS" role="sink">
+        <devicePort tagName="PipeWire Output" type="AUDIO_DEVICE_OUT_IP" role="sink">
             <profile format="AUDIO_FORMAT_PCM_16_BIT" samplingRates="8000 16000 32000 44100 48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
             <profile format="AUDIO_FORMAT_PCM_FLOAT" samplingRates="8000 16000 32000 44100 48000" channelMasks="AUDIO_CHANNEL_OUT_STEREO"/>
         </devicePort>
-        <devicePort tagName="PipeWire Input" type="AUDIO_DEVICE_IN_BUS" role="source">
+        <devicePort tagName="PipeWire Input" type="AUDIO_DEVICE_IN_IP" role="source">
             <profile format="AUDIO_FORMAT_PCM_16_BIT" samplingRates="8000 16000 32000 44100 48000" channelMasks="AUDIO_CHANNEL_IN_MONO AUDIO_CHANNEL_IN_STEREO"/>
             <profile format="AUDIO_FORMAT_PCM_FLOAT" samplingRates="8000 16000 32000 44100 48000" channelMasks="AUDIO_CHANNEL_IN_MONO AUDIO_CHANNEL_IN_STEREO"/>
         </devicePort>
