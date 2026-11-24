@@ -11,7 +11,9 @@ DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
 NDK=${ANDROID_NDK:-}
 API=35
 JOBS=${MATON_BUILD_JOBS:-$(nproc)}
-OUT=${MATON_PIPEWIRE_BUILD:-$MATON_ROOT/out/pipewire-stack}
+# Own work dir: meson trees configured for the old /vendor prefix must not be
+# reused for the APEX prefix (stale -I paths fail with -Wmissing-include-dirs).
+OUT=${MATON_PIPEWIRE_BUILD:-$MATON_ROOT/out/pipewire-stack-apex}
 STAGE=$DEVICE_DIR/buildinfra/native-built/audio-apex
 TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 CC=$TOOLCHAIN/bin/x86_64-linux-android$API-clang
