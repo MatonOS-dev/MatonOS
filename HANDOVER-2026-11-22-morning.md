@@ -332,3 +332,10 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 ## 2026-11-24 07:20
 - wip/audio-apex ← wip/systemui-variant merged (a869ceba, clean; audio fixes now on the APEX branch), pushed.
 - build-105 (digitalis + unity volume) finishing; build-106 = first wip/audio-apex image build, queued to start right after 105 (script build-106.sh = build-95.sh with the branch swapped). Then: inspect the APEX + .compat.json, boot, rerun tone test, back up the payload key.
+
+## 2026-11-24 07:30
+- build-105 (digitalis 846e17d8) cold boot, **enforcing**: tone peak 8000/8000 (unity sink volume confirmed), no crashes. live105 running on 5560.
+- Audio APEX first builds:
+  - build-106 failed: the wip/audio-apex copy of the libudev-zero patch had stripped whitespace → fixed (04142e80, byte-exact copy from digitalis).
+  - build-107 failed: shared out/pipewire-stack meson trees still configured for the /vendor prefix → APEX branch now builds in out/pipewire-stack-apex (17c46b74).
+  - build-108 running from 17c46b74.
