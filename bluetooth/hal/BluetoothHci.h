@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <hal/ffi.h>
+#include "hci_interface.h"
 
 #include <future>
 #include <mutex>

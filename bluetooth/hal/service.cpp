@@ -31,7 +31,7 @@ int main(int /* argc */, char** /* argv */) {
         return 1;
     }
 
-    IBluetoothHci_addService(new BluetoothHci());
+    if (!IBluetoothHci_addService(new BluetoothHci())) return 1;
     ABinderProcess_startThreadPool();
     ABinderProcess_joinThreadPool();
     return 0;

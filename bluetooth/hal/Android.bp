@@ -20,7 +20,6 @@ cc_defaults {
     static_libs: [
         "android.hardware.bluetooth.async",
         "android.hardware.bluetooth.hci",
-        "libbluetooth_offload_hal",
     ],
 }
 
@@ -30,6 +29,7 @@ cc_library_static {
     defaults: ["android.hardware.bluetooth-service.matonos-defaults"],
     srcs: [
         "BluetoothHci.cpp",
+        "aidl_service.cpp",
         "net_bluetooth_mgmt.cpp",
     ],
 }

@@ -52,3 +52,16 @@ No Soong build, VM, or device test was run in this task. Host syntax-only
 compilation is attempted where the checkout's generated headers permit it;
 missing generated headers and resulting unverified interfaces are reported in
 the task report.
+
+## No Rust offload proxy (build-127 fix)
+The stock HAL is served through `libbluetooth_offload_hal`
+(packages/modules/Bluetooth/offload/hal) via `<hal/ffi.h>`. That library's Soong
+visibility only allows Cuttlefish, hardware/interfaces/bluetooth and //vendor,
+so the fork failed analysis in a device tree. `hci_interface.h` keeps the same
+C++ interface (hal::IBluetoothHci / hal::IBluetoothHciCallbacks, Status aliased
+to the AIDL enum) and `aidl_service.cpp` serves it with a plain NDK
+BnBluetoothHci: calls are forwarded, the stack's callback binder is linked to
+death and reported as clientDied(). The proxy's own "not Closed →
+ALREADY_INITIALIZED" gate is intentionally absent; BluetoothHci owns session
+state (stale-session replacement). Lost: HCI A2DP/LE Audio offload modules, which
+MatonOS does not use (LE Audio is software in the media APEX).
