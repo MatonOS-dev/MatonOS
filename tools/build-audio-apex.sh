@@ -49,7 +49,7 @@ printf '%s\n' "$VERSION" > "$VERSION_FILE"
 chmod 0600 "$VERSION_FILE"
 if [[ ! -s $PAYLOAD_KEY ]]; then
   umask 077
-  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$PAYLOAD_KEY"
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -out "$PAYLOAD_KEY"
 fi
 export APEXER_TOOL_PATH="$HOSTBIN:$HOSTLIB:$AOSP/prebuilts/sdk/tools/linux/bin"
 "$HOSTBIN/deapexer" extract "$PRODUCT_OUT/vendor/apex/com.android.hardware.audio.generic.apex" "$TMP/generic-audio"
