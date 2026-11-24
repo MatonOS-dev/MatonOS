@@ -9,7 +9,13 @@ newest entries at the bottom of each section.
 | 126 | a89075a0 | OK 22:43; live126 tested (below) |
 | 127 | f106f7ac | FAILED Soong 22:53: BT fork linked `libbluetooth_offload_hal`, not visible to device trees |
 | 128 | 3fa4ed6a | FAILED 23:19 compile: `try` in BluetoothHci.cpp (vendor = -fno-exceptions; my syntax check lacked the flag) |
-| 129 | 2a6bd333 | running since 23:21: BT fix (no try/catch, -Werror initializers) + first Wi-Fi HAL compile |
+| 129 | 2a6bd333 | FAILED 23:56 radio APEX packaging: "bootstrap hostapd missing". Soong compile passed (BT + Wi-Fi HAL forks built, media APEX built) |
+| 130 | fb37d44d | running since ~00:05: `BOARD_HOSTAPD_DRIVER := NL80211` |
+
+**Found by 129:** hostapd has not been in any image since the hotspot commit
+5dcef069. Its Soong module is only enabled when the board sets
+`BOARD_HOSTAPD_DRIVER`, and a disabled `PRODUCT_PACKAGES` entry is dropped
+silently. So hotspot never had a daemon; the radio APEX check is what caught it.
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
