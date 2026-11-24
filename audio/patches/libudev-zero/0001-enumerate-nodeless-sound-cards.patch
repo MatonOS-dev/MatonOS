@@ -19,7 +19,7 @@ index 6fd49c0..64dab70 100644
 @@ -276,6 +277,36 @@ static int scan_devices(struct udev_enumerate *udev_enumerate, const char *path)
      return 1;
  }
-
+ 
 +/* Sound cards (/sys/class/sound/cardN) have no device node, so the
 + * /sys/dev scan never lists them, yet PipeWire's ALSA monitor acts only on
 + * them. Add class entries without a "dev" attribute; entries that have one
@@ -56,7 +56,8 @@ index 6fd49c0..64dab70 100644
 @@ -291,6 +322,7 @@ int udev_enumerate_scan_devices(struct udev_enumerate *udev_enumerate)
          }
      }
-
+ 
 +    scan_nodeless_class(udev_enumerate, "/sys/class/sound");
      return 0;
  }
+ 
