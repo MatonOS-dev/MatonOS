@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <string>
 #include <sys/system_properties.h>
 #include <unistd.h>
@@ -14,6 +15,7 @@
 
 #include <android/log.h>
 #include <matonos_ipc.h>
+#include "switch_core.h"
 
 #define LOG_TAG "matonos-wifid"
 #define ALOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -29,6 +31,7 @@ constexpr char kHwsimLoad[] = "vendor.maton.wifi.hwsim.load";
 struct Device {
     std::string interface;
     std::string address;
+    std::string perm_mac;
     std::string path;
     bool simulated;
 };
@@ -62,6 +65,7 @@ std::string GetProperty(const char* key) {
 }
 std::vector<Device> Enumerate(bool* physical) {
     std::vector<Device> devices;
+    std::set<std::string> seen_phys;
     *physical = false;
     std::error_code error;
     for (fs::directory_iterator it("/sys/class/net", error), end; !error && it != end; it.increment(error)) {
@@ -72,8 +76,10 @@ std::vector<Device> Enumerate(bool* physical) {
         error.clear();
         const bool simulated = phy.find("mac80211_hwsim") != std::string::npos ||
                                path.find("mac80211_hwsim") != std::string::npos;
+        if (!seen_phys.insert(phy).second) continue;
         if (!simulated) *physical = true;
-        devices.push_back({it->path().filename().string(), Read(it->path() / "address"), path, simulated});
+        devices.push_back({it->path().filename().string(), Read(it->path() / "address"),
+                           Read(it->path() / "phy80211/macaddress"), path, simulated});
     }
     return devices;
 }
@@ -83,20 +89,25 @@ int GetState(const char*, char* out, size_t size, void*) {
                     ",\"selected\":" + Quote(gSelected) + "}", out, size) ? 0 : -1;
 }
 int ListDevices(const char*, char* out, size_t size, void*) {
+    bool physical = false;
+    gDevices = Enumerate(&physical);
     std::string json = "{\"devices\":[";
     bool first = true;
     for (const auto& d : gDevices) {
         if (!first) json += ',';
         first = false;
         json += "{\"interface\":" + Quote(d.interface) + ",\"mac\":" + Quote(d.address) +
+                ",\"perm_mac\":" + Quote(d.perm_mac) +
                 ",\"device\":" + Quote(d.path) + ",\"simulated\":" +
                 (d.simulated ? "true" : "false") + ",\"selected\":" +
-                (d.address == gSelected || d.interface == gSelected || d.path == gSelected
+                (d.perm_mac == gSelected || d.interface == gSelected || d.path == gSelected
                          ? "true" : "false") + "}";
     }
     return CopyJson(json + "]}", out, size) ? 0 : -1;
 }
 int SelectDevice(const char* args, char* out, size_t size, void*) {
+    bool physical = false;
+    gDevices = Enumerate(&physical);
     const std::string input(args ? args : "");
     const size_t key = input.find("\"device\"");
     if (key == std::string::npos) return -1;
@@ -106,16 +117,30 @@ int SelectDevice(const char* args, char* out, size_t size, void*) {
     if (colon == std::string::npos || first == std::string::npos || last == std::string::npos) return -1;
     const std::string choice = input.substr(first + 1, last - first - 1);
     const auto found = std::find_if(gDevices.begin(), gDevices.end(), [&](const Device& d) {
-        return !d.simulated && (d.address == choice || d.interface == choice || d.path == choice);
+        return !d.simulated && (d.perm_mac == choice || d.interface == choice || d.path == choice);
     });
-    if (found == gDevices.end() || __system_property_set(kChoice, choice.c_str()) != 0) return -1;
-    gSelected = choice;
-    return CopyJson("{\"selected\":" + Quote(choice) + "}", out, size) ? 0 : -1;
+    if (found == gDevices.end()) return -1;
+    const Device selected = *found;
+    std::vector<wifid::SwitchInterface> interfaces;
+    for (const auto& device : gDevices) interfaces.push_back({device.interface, device.simulated});
+    std::string failure;
+    if (wifid::SwitchTo(interfaces, selected.interface, &failure) != 0) {
+        ALOGE("Wi-Fi switch to %s (%s) failed: %s", selected.interface.c_str(),
+              selected.perm_mac.c_str(), failure.c_str());
+        return -1;
+    }
+    if (__system_property_set(kChoice, selected.perm_mac.c_str()) != 0) {
+        ALOGE("persist selected Wi-Fi card %s failed", selected.perm_mac.c_str());
+        return -1;
+    }
+    gSelected = selected.perm_mac;
+    return CopyJson("{\"selected\":" + Quote(selected.perm_mac) +
+                    ",\"interface\":\"wlan0\"}", out, size) ? 0 : -1;
 }
 }  // namespace
 
 int main() {
-    // One bounded boot snapshot; the stock nl80211 stack owns interfaces and hotplug.
+    // Enumerate current phy devices before exposing the control channel.
     bool physical = false;
     gDevices = Enumerate(&physical);
     if (!physical && !fs::exists("/sys/module/mac80211_hwsim")) {
@@ -123,6 +148,18 @@ int main() {
         if (__system_property_set(kHwsimLoad, "1") != 0) ALOGW("could not request hwsim fallback");
     }
     gSelected = GetProperty(kChoice);
+    const auto persisted = std::find_if(gDevices.begin(), gDevices.end(), [&](const Device& d) {
+        return !d.simulated && d.perm_mac == gSelected;
+    });
+    if (persisted != gDevices.end() && persisted->interface != "wlan0") {
+        std::vector<wifid::SwitchInterface> interfaces;
+        for (const auto& device : gDevices) interfaces.push_back({device.interface, device.simulated});
+        std::string failure;
+        if (wifid::SwitchTo(interfaces, persisted->interface, &failure) != 0)
+            ALOGE("boot Wi-Fi switch to %s (%s) failed: %s", persisted->interface.c_str(),
+                  persisted->perm_mac.c_str(), failure.c_str());
+        else ALOGI("boot Wi-Fi switch selected %s as wlan0", persisted->perm_mac.c_str());
+    }
     // hwsim only keeps the stock Wi-Fi stack usable for empty scans. It is not
     // physical hardware and must not make hotspot controls appear available.
     gPresent = physical;
