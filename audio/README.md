@@ -153,7 +153,8 @@ node name). The `devices` call returns the current output and input list.
 The persistent system bridge subscribes through `buildinfra/client`, fetches a
 snapshot, and reports each node through
 `AudioManager.setWiredDeviceConnectionState(AudioDeviceAttributes, state)` with
-`AUDIO_DEVICE_OUT_IP` or `AUDIO_DEVICE_IN_IP`. A media-strategy preferred device
+`AUDIO_DEVICE_OUT_BUS` or `AUDIO_DEVICE_IN_BUS` (IP types force an IPv4
+address in AIDL conversion; BUS takes a free-form id). A media-strategy preferred device
 keeps the selected available PipeWire output ahead of the attached no-device
 stand-in; removing the last PipeWire output clears that preference and returns
 policy to its default. The HAL's framework-driven
