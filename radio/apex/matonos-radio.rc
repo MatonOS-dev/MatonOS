@@ -20,7 +20,6 @@ service vendor.matonos-wifid /apex/com.matonos.hardware.radio/bin/matonos-wifid
     user root
     group system
     disabled
-    oneshot
 
 service wpa_supplicant /apex/com.matonos.hardware.radio/bin/hw/wpa_supplicant \
     -O/data/vendor/wifi/wpa/sockets -dd \
