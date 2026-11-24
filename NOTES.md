@@ -601,8 +601,10 @@ Feature work continues, but in this shape from now on.
   carries wifid, btd, wpa_supplicant and hostapd, plus:
   1. GNSS: stock GNSS HAL on the kernel `/dev/gnss0` (USB receivers, modem
      GNSS); VM test with a fake NMEA stream on a QEMU serial port.
-  2. Cross-radio glue: airplane mode via rfkill for all radios, regulatory
-     domain (Wi-Fi country code).
+  2. Cross-radio glue: airplane mode via rfkill for all radios. The Wi-Fi
+     country code is NOT in the APEX: MatonOS Settings sets it through the
+     bridge with the stock `WifiManager.setDefaultCountryCode` (system API,
+     MANAGE_WIFI_COUNTRY_CODE, persisted by the Wi-Fi module).
   3. Thread (Matter border router): stock Thread HAL; USB RCP dongles
      (nRF52840); VM test with the simulated OpenThread `ot-rcp`.
   4. NFC: USB readers need an NCI adapter layer; VM test with AOSP's
