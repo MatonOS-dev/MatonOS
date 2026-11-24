@@ -144,12 +144,7 @@ StreamPipeWire::~StreamPipeWire() {
     mCoreListenerInstalled = true;
 
     const auto& devices = getConnectedDevices();
-    if (!mInput && !devices.empty() &&
-        devices.front().address.getTag() ==
-                ::aidl::android::media::audio::common::AudioDeviceAddress::id) {
-        mActiveIdentity = devices.front().address.get<
-                ::aidl::android::media::audio::common::AudioDeviceAddress::id>();
-    }
+    if (!mInput && !devices.empty()) mActiveIdentity = pipeWireIdentity(devices.front().address);
     const uint32_t targetNode = getPipeWireTargetNode(mActiveIdentity);
     pw_properties* properties = pw_properties_new(
             PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, mInput ? "Capture" : "Playback",
@@ -550,10 +545,8 @@ ndk::ScopedAStatus StreamPipeWire::setConnectedDevices(
         const std::vector<::aidl::android::media::audio::common::AudioDevice>& devices) {
     auto status = StreamCommonImpl::setConnectedDevices(devices);
     if (!status.isOk()) return status;
-    if (mInput || devices.empty() || devices.front().address.getTag() !=
-            ::aidl::android::media::audio::common::AudioDeviceAddress::id) return status;
-    mActiveIdentity = devices.front().address.get<
-            ::aidl::android::media::audio::common::AudioDeviceAddress::id>();
+    if (mInput || devices.empty()) return status;
+    mActiveIdentity = pipeWireIdentity(devices.front().address);
     const uint32_t targetNode = getPipeWireTargetNode(mActiveIdentity);
     if (!mPipeWireDown && mState != PW_STREAM_STATE_ERROR &&
         mStream != nullptr && mLoop != nullptr) {

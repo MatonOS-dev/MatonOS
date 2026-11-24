@@ -189,18 +189,21 @@ The policy keeps `No audio device` and `No audio device input` attached, with
 PipeWire discovery and whenever no real nodes exist. The HAL does not call
 `connectExternalDevice` or `disconnectExternalDevice` itself. It keeps a private
 PipeWire global-ID-to-node table and publishes add/remove events through
-`IChannel/audio` topic `devices`; each address is exactly the PipeWire
-`node.name`, and each description is `node.description` (falling back to the
+`IChannel/audio` topic `devices`; each address is the 32-bit FNV-1a digest of the
+PipeWire `node.name` written as an IPv4 address `a.b.c.d` (AIDL requires IPv4
+for IP-connection devices; the HAL logs each node.name-to-address mapping and
+errors on a digest collision), and each description is `node.description` (falling back to the
 node name). The `devices` call returns the current output and input list.
 
 The persistent system bridge subscribes through `buildinfra/client`, fetches a
 snapshot, and reports each node through
 `AudioManager.setWiredDeviceConnectionState(AudioDeviceAttributes, state)` with
-`AUDIO_DEVICE_OUT_IP` or `AUDIO_DEVICE_IN_IP`. A media-strategy preferred device
+`AUDIO_DEVICE_OUT_IP` or `AUDIO_DEVICE_IN_IP` (apps see TYPE_IP; BUS is
+attached-only in AIDL and LINE broadcasts HEADSET_PLUG). A media-strategy preferred device
 keeps the selected available PipeWire output ahead of the attached no-device
 stand-in; removing the last PipeWire output clears that preference and returns
 policy to its default. The HAL's framework-driven
-`populateConnectedDevicePort` resolves `node.name` back to the current registry
+`populateConnectedDevicePort` resolves that address back to the current registry
 node ID for stream targeting. The bridge periodically rebinds and re-snapshots
 after a HAL restart; PipeWire server restarts are handled by the HAL registry
 retry path and node remove/add events.

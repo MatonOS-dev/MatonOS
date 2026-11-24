@@ -264,3 +264,67 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Main tree unchanged (e6c7e37d).
 - build-97 failed: matonos-client-java was java_library_static but MatonOS.java needs the library R → 845d617c makes it android_library + AndroidManifest.soong.xml (Gradle manifest untouched). build-98 running (docs/metalava stage at 02:17).
 - libcamera2 report: conditional GO for phase 2 = IPU3-only libcamera via the stock HIDL camera.provider@2.4 `legacy/0` wrapper (no framework patch); stock AIDL external HAL keeps UVC (never both on UVC). **USER DECISION (morning):** HIDL provider on an Android 17 product — check FCM/target-level compatibility + certification before any work; alternative is our own AIDL provider (large). libexif package metadata lists LGPL-3.0 files → per-file audit before shipping. No work started.
+
+## 2026-11-24 02:40
+- build-98 OK, but on the VM the audio HAL abort-looped (`convertModuleConfigToAidl Line 534 BAD_VALUE`): AIDL XsdcConversion requires `<attachedDevices>` ports to have NO connection type, and the stand-ins were OUT_IP/IN_IP. system_server hung (adb offline, watchdog sysrq dumps). Fix 124630fb: stand-ins = AUDIO_DEVICE_OUT_SPEAKER / IN_BUILTIN_MIC (empty address → stream goes to the PipeWire default node). Lesson: the audiohotplug1 agent only checked XML well-formedness; HAL XML needs the converter's rules.
+- Stopped build-99 (Digitalis without the fix; it would hang the same way). build-100 = wip/digitalis c3472003 (Digitalis + hotplug + client fix + stand-in fix), running. One image tests both audio and Digitalis.
+- wip/audio-apex merged with systemui-variant (321e9348) and pushed for the first time.
+
+## 2026-11-24 03:17 — hourly
+- Main tree unchanged; no codex running; build-100 (Digitalis + audio fixes) at 91%. VM off until it lands. No new agent: next items need the build-100 image.
+
+## 2026-11-24 03:40
+- build-100 (wip/digitalis c3472003) boots. **Digitalis works:** abilist x86_64,arm64-v8a; a freestanding aarch64 static binary runs via binfmt_misc + Berberis (stdout + exit code 42 OK); an arm64-only NativeActivity APK installs with primaryCpuAbi=arm64-v8a, launches, and loads lib/arm64/libmain.so via libberberis_arm64 ("Initialized Berberis (aarch64)"). Test sources + APK: out/pc-logs/agents/digitalis-test/ (aapt2 + prebuilt clang, no Gradle; throwaway signing key). Not yet tried: a real F-Droid ARM-only app with libc (needs internet fetch; morning).
+- Side note (pre-existing, low): ART warns "Unexpected CPU variant for x86: generic" because TARGET_CPU_VARIANT := generic; harmless.
+- **Audio, second bug:** AudioService took the virtio sink/source, but audioserver aborted 5× (bad_variant_access in AudioPolicyManager::setDeviceConnectionStateInt) and then stayed down. Cause: we published PipeWire node.name (~85 chars) as the device address; the framework limit is 32 (AUDIO_DEVICE_MAX_ADDRESS_LEN), aidl2legacy fails and APM dereferences the error (AOSP bug, but our trigger). Fix 0a60fd8c "audio: publish short PipeWire device addresses": address = pw-<FNV-1a 64 of node.name> (19 chars), mapping logged. build-101 (wip/digitalis 4267ee25) running.
+- Also seen: generic effect service can't dlopen /vendor/lib64/soundfx/libbundleaidl.so (namespace "(default)"), so effects are missing. To look at after hotplug passes; the audio APEX replaces this service anyway.
+
+## 2026-11-24 04:20
+- build-101: no more crashes; the bridge connects both ports with short addresses (pw-3850bb48…), but APM rejects them: `legacy2aidl_audio_device_AudioDevice: malformed IPv4 address` → Error -22. AIDL forces an IPv4 address for IP-connection devices. Fix 2a: PipeWire template ports and bridge use AUDIO_DEVICE_OUT_BUS / IN_BUS (free-form id address; APM tells BUS devices apart by address). README updated. build-102 (wip/digitalis 09ff3aa0) running.
+
+## 2026-11-24 05:10
+- build-102 hung like build-98: BUS has no AIDL connection type, so XsdcConversion counts it as attached-only and the HAL aborted. Device-type choice, settled from AOSP source: IP is the only type that is external, app-visible (TYPE_IP) and side-effect free (LINE broadcasts HEADSET_PLUG/"headphones"; PROXY is TYPE_UNKNOWN to apps; HDMI/SPDIF are wrong). Its one constraint is an IPv4 address, so the identity is now FNV-1a-32(node.name) as a.b.c.d; the HAL maps ipv4 (or id) addresses back for naming + stream targeting and logs+skips on a digest collision. Commit "audio: IP ports with IPv4-form PipeWire identities". build-103 (wip/digitalis a23219ea) running since 05:06.
+- Lesson for briefs: every audio XML/type change must be checked against XsdcConversion.cpp (attached ⇔ no connection) and AidlConversionCppNdk suggestDeviceAddressTag (ipv4/mac/alsa address formats), not just XML parsing.
+
+## 2026-11-24 06:00
+- build-103 (IPv4-form identities) boots clean: no HAL abort; bridge connects "VirtIO SoundCard Stereo" as AUDIO_DEVICE_OUT_IP 12.62.231.39 + IN_IP 204.83.105.106; APM lists PipeWire Output/Input; media strategy prefers the IP sink. **Device registration works.**
+- Playback test (new no-Gradle tool: out/pc-logs/agents/digitalis-test/play/play.dex, `CLASSPATH=/data/local/tmp/play.dex app_process /system/bin Play <s>`, 440 Hz AudioTrack) found two bugs:
+  1. Enforcing: hal_audio_default denied `fd use` + `memfd_file {getattr map read write}` on matonos_pipewire → HAL stream EPROTO (-71) → write stalls → audioserver TimeCheck abort in createTrack. Fixed in policy (commit "sepolicy: let the audio HAL use PipeWire buffer fds"); build-104 (wip/digitalis 621abce9) running since 05:54.
+  2. Permissive: track routes to the IP port, but each 20 ms write takes ~1 s and out.wav stays silent → HAL stream not linked to the virtio sink / driven by a ~1 Hz cycle. codex pwlink1 (luna high, report-only, using the live103 VM) investigating.
+- Harmless denials left: HAL reads DMI product_name/sys_vendor/bios_vendor (label is system_ext-private, vendor policy cannot name it; reads come from libpipewire client side). Not fixed.
+- VM live103 is in permissive (setenforce 0) for pwlink1.
+
+## 2026-11-24 06:20
+- pwlink1 (codex, report-only): the HAL stream IS linked to the virtio sink (node.target = sink, 2 links); the "silence" was stacked volume. Fixed: WirePlumber `device.routes.default-sink-volume = 1.0` (commit "audio: PipeWire sinks default to unity volume"). Live check on live103: AudioTrack tone 8000 → out.wav peak 7999 with sink at 1.0 and media 15/15.
+- Audio hotplug test results on live103 (permissive, until build-104 confirms enforcing): registration ✅, playback ✅, PipeWire kill -9 → ports drop and return in ~1 s with the same addresses, playback resumes, audioserver/HAL untouched ✅; HAL restart → ports re-synced, playback ✅.
+- The "write blocked ~1 s" cadence is a VM artefact: QEMU's wav audiodev is not real-time (out.wav grows ~10× faster than wall clock). Not chased further; recheck on real hardware.
+- wip/digitalis 846e17d8 has all fixes; build-104 (621abce9) lacks only the volume config.
+
+## MORNING REPORT 2026-11-24 (06:20)
+
+**Done tonight**
+- **Digitalis (ARM64 apps via Berberis)** — verified on build-100: abilist `x86_64,arm64-v8a`; static aarch64 binary runs via binfmt_misc (exit code 42 passed through); arm64-only NativeActivity APK installs (primaryCpuAbi arm64-v8a), launches, maps libberberis_arm64. Not yet tried: a real F-Droid ARM-only app.
+- **Audio hotplug** — PipeWire devices now reach Android as AUDIO_DEVICE_OUT_IP/IN_IP ports via the bridge → AudioService. Took 5 image rounds (98–103) to land the device type: attached stand-ins must have no AIDL connection (SPEAKER/BUILTIN_MIC); hotplug ports need a connection *and* an address format AIDL accepts → IP with FNV-1a-32(node.name) written as a.b.c.d (addresses ≤32 bytes; BUS is attached-only, LINE fakes headphones). On live103: registration, playback (full-level tone), PipeWire kill -9 recovery, HAL restart re-sync all pass (permissive).
+- Fixed along the way: SELinux fd/memfd rules for HAL→PipeWire (enforcing playback crashed audioserver), WirePlumber sink default volume 1.0 (was 0.064 stacked under Android volume).
+- libcamera2 verdict (see 03:40): conditional GO for IPU3 only.
+- Audio APEX branch wip/audio-apex first push (321e9348).
+
+**Running**
+- build-104 (wip/digitalis 621abce9, policy fix) — ~40% at 06:17; next: boot enforcing, rerun tone test. wip/digitalis tip 846e17d8 also has the volume fix.
+
+**Needs you**
+- libcamera: HIDL camera.provider@2.4 under Android 17 FCM acceptable? libexif LGPL-3.0 per-file audit (no-GPLv3 rule).
+- chmod 600 on server matonos.local.env — still unanswered.
+
+**Next in queue**
+1. build-104 enforcing check → merge wip/systemui-variant into metadata-enc.
+2. Audio APEX: rebase on the audio fixes, build, compat.json, staged install + rollback, back up payload key.
+3. Device-side /api/update/apex client + OTA-CONTRACT.md section; apex-keys round 2.
+4. hotspot hwsim test, audio features, suspend tuning, caption findings, Downloads design.
+
+**Known nits**: HAL reads DMI sysfs (denied, harmless; label is system_ext-private). Effects service can't dlopen vendor soundfx libs (pre-existing; audio APEX replaces it). VM write cadence ~1 s = QEMU wav audiodev artefact.
+
+## 2026-11-24 06:45
+- build-104 boots **enforcing**: tone plays to the virtio sink, no crash, no audio denials (except the known DMI sysfs reads). Audio hotplug confirmed under enforcing.
+- metadata-enc fast-forwarded to wip/systemui-variant (9e595d5e), pushed.
+- build-105 (wip/digitalis 846e17d8 = + unity sink volume) running since 06:40; expected tone peak ≈7999 at media 15/15.
