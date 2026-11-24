@@ -193,21 +193,8 @@ void BluetoothHci::initialize(const std::shared_ptr<hal::IBluetoothHciCallbacks>
         return;
     }
 
-    try {
-        mInitializationThread = std::thread(&BluetoothHci::initializeWorker, this, cb, management);
-    } catch (const std::system_error& error) {
-        ALOGE("starting Bluetooth initialization worker failed: %s", error.what());
-        {
-            std::lock_guard<std::mutex> guard(mStateMutex);
-            if (mState == HalState::INITIALIZING) {
-                mState = HalState::READY;
-                mCb.reset();
-                management_.reset();
-            }
-        }
-        lifecycle_guard.unlock();
-        cb->initializationComplete(Status::HARDWARE_INITIALIZATION_ERROR);
-    }
+    // Built with -fno-exceptions: a failed thread spawn aborts and init restarts the HAL.
+    mInitializationThread = std::thread(&BluetoothHci::initializeWorker, this, cb, management);
 }
 
 void BluetoothHci::initializeWorker(

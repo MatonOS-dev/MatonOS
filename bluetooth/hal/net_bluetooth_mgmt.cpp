@@ -167,6 +167,7 @@ int NetBluetoothMgmt::waitHciDev(int hci_interface) {
             .opcode = MGMT_OP_READ_INDEX_LIST,
             .index = MGMT_INDEX_NONE,
             .len = 0,
+            .data = {},
     };
 
     for (;;) {
@@ -182,8 +183,8 @@ int NetBluetoothMgmt::waitHciDev(int hci_interface) {
 
         // Poll the control socket waiting for the command response,
         // and subsequent [Index Added] events.
-        pollfds[0] = {.fd = fd, .events = POLLIN};
-        pollfds[1] = {.fd = cancel_fd_, .events = POLLIN};
+        pollfds[0] = {.fd = fd, .events = POLLIN, .revents = 0};
+        pollfds[1] = {.fd = cancel_fd_, .events = POLLIN, .revents = 0};
         do {
             ret = poll(pollfds, cancel_fd_ >= 0 ? 2 : 1, 500);
         } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
