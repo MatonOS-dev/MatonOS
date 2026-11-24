@@ -281,3 +281,7 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 
 ## 2026-11-24 04:20
 - build-101: no more crashes; the bridge connects both ports with short addresses (pw-3850bb48…), but APM rejects them: `legacy2aidl_audio_device_AudioDevice: malformed IPv4 address` → Error -22. AIDL forces an IPv4 address for IP-connection devices. Fix 2a: PipeWire template ports and bridge use AUDIO_DEVICE_OUT_BUS / IN_BUS (free-form id address; APM tells BUS devices apart by address). README updated. build-102 (wip/digitalis 09ff3aa0) running.
+
+## 2026-11-24 05:10
+- build-102 hung like build-98: BUS has no AIDL connection type, so XsdcConversion counts it as attached-only and the HAL aborted. Device-type choice, settled from AOSP source: IP is the only type that is external, app-visible (TYPE_IP) and side-effect free (LINE broadcasts HEADSET_PLUG/"headphones"; PROXY is TYPE_UNKNOWN to apps; HDMI/SPDIF are wrong). Its one constraint is an IPv4 address, so the identity is now FNV-1a-32(node.name) as a.b.c.d; the HAL maps ipv4 (or id) addresses back for naming + stream targeting and logs+skips on a digest collision. Commit "audio: IP ports with IPv4-form PipeWire identities". build-103 (wip/digitalis a23219ea) running since 05:06.
+- Lesson for briefs: every audio XML/type change must be checked against XsdcConversion.cpp (attached ⇔ no connection) and AidlConversionCppNdk suggestDeviceAddressTag (ipv4/mac/alsa address formats), not just XML parsing.
