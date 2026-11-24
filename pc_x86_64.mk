@@ -48,6 +48,9 @@ PRODUCT_DEFAULT_DEV_CERTIFICATE := maton-release-keys/releasekey
 PRODUCT_MAINLINE_SEPOLICY_DEV_CERTIFICATES := maton-release-keys
 PRODUCT_MAINLINE_BLUETOOTH_SEPOLICY_DEV_CERTIFICATES := maton-release-keys
 PRODUCT_MAINLINE_NFC_SEPOLICY_DEV_CERTIFICATES := maton-release-keys
+# Bluetooth pins its own certificate module (AOSP dev key); sign it with our
+# bluetooth key so seinfo=bluetooth matches (else zygote aborts on BT enable).
+PRODUCT_CERTIFICATE_OVERRIDES += Bluetooth:com.matonos.bluetooth.certificate
 
 # With a non-test default certificate AOSP tags the build dev-keys
 # (build/make/core/config.mk BUILD_KEYS); no manual ro.build.tags override.

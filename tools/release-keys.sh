@@ -74,3 +74,10 @@ if [[ -L $LINK || ! -e $LINK ]]; then
 else
   die "$LINK exists and is not a symlink; move it away"
 fi
+# Same key dir for Soong android_app_certificate modules (certs/Android.bp).
+CERT_LINK="$REPO/certs/release-keys"
+if [[ -L $CERT_LINK || ! -e $CERT_LINK ]]; then
+  ln -sfn -- "$KEY_DIR" "$CERT_LINK"
+else
+  die "$CERT_LINK exists and is not a symlink; move it away"
+fi

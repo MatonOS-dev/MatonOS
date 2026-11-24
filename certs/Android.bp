@@ -1,0 +1,8 @@
+// Release-key certificates for mainline apps that pin their own certificate
+// module. release-keys.sh links certs/release-keys to MATON_RELEASE_KEY_DIR
+// (untracked); pc_x86_64.mk maps the apps here via PRODUCT_CERTIFICATE_OVERRIDES
+// so their signer matches the @BLUETOOTH entry in mac_permissions.xml.
+android_app_certificate {
+    name: "com.matonos.bluetooth.certificate",
+    certificate: "release-keys/bluetooth",
+}
