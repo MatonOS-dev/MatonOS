@@ -8,8 +8,8 @@ newest entries at the bottom of each section.
 |---|---|---|
 | 126 | a89075a0 | OK 22:43; live126 tested (below) |
 | 127 | f106f7ac | FAILED Soong 22:53: BT fork linked `libbluetooth_offload_hal`, not visible to device trees |
-| 128 | 3fa4ed6a | running since 22:59 (past Soong analysis, compiling) |
-| 129 | ≥ 1cab10fa | queued: adds the forked Wi-Fi HAL (first compile) |
+| 128 | 3fa4ed6a | FAILED 23:19 compile: `try` in BluetoothHci.cpp (vendor = -fno-exceptions; my syntax check lacked the flag) |
+| 129 | 2a6bd333 | running since 23:21: BT fix (no try/catch, -Werror initializers) + first Wi-Fi HAL compile |
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
