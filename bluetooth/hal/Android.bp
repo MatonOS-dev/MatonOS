@@ -1,0 +1,63 @@
+package {
+    default_applicable_licenses: ["Android-Apache-2.0"],
+}
+
+cc_defaults {
+    name: "android.hardware.bluetooth-service.matonos-defaults",
+    cflags: [
+        "-Wall",
+        "-Wextra",
+    ],
+    shared_libs: [
+        "android.hardware.bluetooth-V1-ndk",
+        "libbase",
+        "libbinder_ndk",
+        "libcutils",
+        "libhidlbase",
+        "liblog",
+        "libutils",
+    ],
+    static_libs: [
+        "android.hardware.bluetooth.async",
+        "android.hardware.bluetooth.hci",
+        "libbluetooth_offload_hal",
+    ],
+}
+
+cc_library_static {
+    name: "libmatonosbluetoothhci",
+    vendor_available: true,
+    defaults: ["android.hardware.bluetooth-service.matonos-defaults"],
+    srcs: [
+        "BluetoothHci.cpp",
+        "net_bluetooth_mgmt.cpp",
+    ],
+}
+
+cc_binary {
+    name: "android.hardware.bluetooth-service.matonos",
+    relative_install_path: "hw",
+    init_rc: ["bluetooth-service-matonos.rc"],
+    vintf_fragments: [":manifest_android.hardware.bluetooth-service.matonos.xml"],
+    vendor: true,
+    defaults: ["android.hardware.bluetooth-service.matonos-defaults"],
+    srcs: [
+        "service.cpp",
+    ],
+    shared_libs: [
+        "android.hardware.bluetooth-V1-ndk",
+        "libbase",
+        "libbinder_ndk",
+        "libhidlbase",
+        "libutils",
+        "liblog",
+    ],
+    static_libs: [
+        "libmatonosbluetoothhci",
+    ],
+}
+
+filegroup {
+    name: "manifest_android.hardware.bluetooth-service.matonos.xml",
+    srcs: ["bluetooth-service-matonos.xml"],
+}

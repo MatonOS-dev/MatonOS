@@ -1,18 +1,22 @@
 # Bluetooth
 
-MatonOS packages AOSP's stock `android.hardware.bluetooth-service.default`
-Linux HCI AIDL HAL. The HAL uses the kernel's Bluetooth management channel to
-unblock rfkill and discover the controller, then opens the standard HCI user
-channel. It registers the stable `IBluetoothHci/default` instance for the
-Android Bluetooth stack.
+MatonOS packages its fork of AOSP's generic `android.hardware.bluetooth-service.matonos`
+Linux HCI AIDL HAL. The fork keeps AOSP's MGMT discovery and kernel HCI user
+channel path, while moving controller discovery and setup to a worker. Binder
+calls remain available during that wait, so close and client death cancel the
+wait and return the HAL to READY without notifying a dead client. An initialize
+received in an unexpected live state reports `ALREADY_INITIALIZED` and returns;
+a stale ONE_CLIENT state whose client-death notice has arrived is cleaned up
+before a fresh initialization.
 
-With no controller, the stock HAL reports initialization failure and the
-Bluetooth stack aborts on it (`hci_backend_aidl.cc` checks for SUCCESS). The
-SettingsProvider overlay therefore defaults `bluetooth_on` to off, so boot does
-not enable the stack; a user toggle on a controller-less PC still crashes it. No virtual controller is
-created. Controller selection, hotplug replacement, and the MatonOS Bluetooth
-adapter picker are dropped; the stock HAL binds the kernel's `hci0`. Keep
-`vendor.ser.bt-uart` unset so the HAL follows the kernel HCI path.
+With no controller, initialization waits for one to appear. A controller
+hotplug therefore completes initialization without restarting the HAL. If the
+controller is unplugged while active, the HCI socket disconnects; Android's
+Bluetooth stack and HAL restart path can initialize again and wait for the next
+controller. The service retains AOSP's `IBluetoothHci/default` instance, and
+runs a one-thread Binder pool so close/death calls can run while setup is
+waiting. No virtual controller is created. Keep `vendor.ser.bt-uart` unset so
+the HAL follows the kernel HCI path.
 
 ## Bluetooth audio
 
@@ -54,7 +58,7 @@ The shipping configuration is in `audio/config-odm/` and the matching vendor
 fallback is in `audio/config/`. Both declare the same `bluetooth` module. The
 audio README records source and validation details.
 
-The stock HAL runs in AOSP's `hal_bluetooth_default` domain. The shared fixed
+The forked HAL runs in AOSP's `hal_bluetooth_default` domain. The shared fixed
 MatonOS policy labels `/dev/rfkill` and grants that domain access to the node;
 AOSP's existing Bluetooth policy grants its HCI socket access. The custom
 HAL's former `matonos_driver` Bluetooth server/socket/property rules are gone.
@@ -70,8 +74,10 @@ After a fresh QEMU boot with no host Bluetooth passthrough:
    `com.android.bluetooth` aborts.
 3. Open Developer options and confirm it stays open.
 4. Confirm `service check android.hardware.bluetooth.IBluetoothHci/default`
-   shows the stock service and inspect init/service logs for its
-   `UNABLE_TO_OPEN_INTERFACE` result when no controller exists.
+   shows the MatonOS service. With no controller, confirm the service remains
+   responsive while initialization waits; then hotplug a controller and check
+   that initialization completes. Toggle Bluetooth off during a wait and
+   confirm the stack can restart without repeated `ALREADY_INITIALIZED` aborts.
 
 With a real Bluetooth controller attached to a test PC, fresh boot and
 confirm `hci0` appears in `dumpsys bluetooth_manager`/`dmesg`, and
@@ -99,7 +105,7 @@ QEMU test limitations and the proposed VM plan are documented in
 
 ## Dropped behavior
 
-Dynamic selection, persisted adapter preference, hotplug switching, and the
-empty VHCI emulator are intentionally removed. The stock HAL supports the
-kernel's default controller interface; a later need for selection would
-require a small HAL fork/proxy, but no such fork is included now.
+Dynamic selection, persisted adapter preference, and the empty VHCI emulator
+remain out of scope. The HAL binds the kernel's default controller interface.
+The fork only makes discovery cancellable and setup asynchronous; it does not
+proxy between multiple physical controllers.
