@@ -33,7 +33,7 @@ info() { echo "==> $*"; }
 
 TOOLS=$(dirname "$(readlink -f "$0")")
 DEVICE_DIR=$(dirname "$TOOLS")
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+AOSP=${MATON_AOSP_ROOT:-$(readlink -f "$DEVICE_DIR/../../..")}
 OUT=$AOSP/out/target/product/pc_x86_64
 IMAGE=${MATON_DEVSYNC_SINCE:-$OUT/matonos-live-x86_64.img}
 STATE=$AOSP/out/pc-logs/devsync

@@ -25,7 +25,7 @@ die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+AOSP=${MATON_AOSP_ROOT:-$(readlink -f "$DEVICE_DIR/../../..")}
 # secureboot: early CPU microcode is included for every boot profile.
 source "$DEVICE_DIR/secureboot/microcode.sh"
 source "$DEVICE_DIR/secureboot/avb.sh"

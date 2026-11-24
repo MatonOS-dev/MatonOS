@@ -26,7 +26,7 @@ info() { echo "==> $*"; }
 
 HERE=$(dirname "$(readlink -f "$0")")
 DEVICE_DIR=$(dirname "$HERE")
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+AOSP=${MATON_AOSP_ROOT:-$(readlink -f "$DEVICE_DIR/../../..")}
 LOCK=$DEVICE_DIR/apps/apps.lock
 OUT=$DEVICE_DIR/apps/apks
 REPO=https://f-droid.org/repo

@@ -15,7 +15,7 @@ die()  { echo "ERROR: $*" >&2; exit 1; }
 info() { echo "==> $*"; }
 
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+AOSP=${MATON_AOSP_ROOT:-$(readlink -f "$DEVICE_DIR/../../..")}
 CHECK=0
 while getopts "a:ch" opt; do
   case $opt in

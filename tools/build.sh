@@ -60,7 +60,8 @@ info() { echo; echo "######## $* [$(date +%T)]"; }
 TOOLS=$(dirname "$(readlink -f "$0")")
 DEVICE_DIR=$(dirname "$TOOLS")
 . "$TOOLS/local-env.sh"
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+AOSP=${MATON_AOSP_ROOT:-$(readlink -f "$DEVICE_DIR/../../..")}
+export MATON_AOSP_ROOT=$AOSP
 PRODUCT=pc_x86_64
 RELEASE=aosp_current
 VARIANT=userdebug
@@ -234,17 +235,18 @@ if [[ $DO_AOSP == 1 ]]; then
   # Show action counts as Soong receives Ninja/Siso status updates.
   export NINJA_STATUS='[%p %f/%t done, %r running, %l remaining, %e sec] '
 
-  # The audio APEX consumes Soong-built HAL/effects binaries. First build those
-  # installable inputs with the prebuilt APEX hidden, then package and rebuild
-  # the product with the prebuilt APEX selected.
+  # The audio and radio APEXes consume Soong/NDK binaries. Build installable
+  # inputs with both prebuilts hidden, package them, then rebuild with the
+  # signed prebuilts selected.
   if [[ -z $MODULES ]]; then
     export MATON_AUDIO_APEX_READY=false
-    python3 - "$DEVICE_DIR/audio/apex/Android.bp" <<'PY_BOOTSTRAP'
+    export MATON_RADIO_APEX_READY=false
+    python3 - "$DEVICE_DIR/audio/apex/Android.bp" "$DEVICE_DIR/radio/apex/Android.bp" <<'PY_BOOTSTRAP'
 from pathlib import Path
 import sys
-Path(sys.argv[1]).unlink(missing_ok=True)
+for path in sys.argv[1:]: Path(path).unlink(missing_ok=True)
 PY_BOOTSTRAP
-    touch "$DEVICE_DIR/audio/apex/.find-ignore"
+    touch "$DEVICE_DIR/audio/apex/.find-ignore" "$DEVICE_DIR/radio/apex/.find-ignore"
   fi
 
   # envsetup/lunch aren't set -u clean; run them in a subshell without it.
@@ -384,14 +386,20 @@ PY_BOOTSTRAP
         "$TOOLS/build-audio-apex.sh" || build_status=$?
       fi
       if (( build_status == 0 )); then
+        info "Package updateable radio APEX from Soong and NDK outputs (pass 1)"
+        "$TOOLS/build-radio-apex.sh" || build_status=$?
+      fi
+      if (( build_status == 0 )); then
         install -m 0644 "$DEVICE_DIR/audio/apex/Android.bp.in" "$DEVICE_DIR/audio/apex/Android.bp"
+        install -m 0644 "$DEVICE_DIR/radio/apex/Android.bp.in" "$DEVICE_DIR/radio/apex/Android.bp"
         export MATON_AUDIO_APEX_READY=true
-        python3 - "$DEVICE_DIR/audio/apex/.find-ignore" <<'PY_IGNORE'
+        export MATON_RADIO_APEX_READY=true
+        python3 - "$DEVICE_DIR/audio/apex/.find-ignore" "$DEVICE_DIR/radio/apex/.find-ignore" <<'PY_IGNORE'
 from pathlib import Path
 import sys
-Path(sys.argv[1]).unlink(missing_ok=True)
+for path in sys.argv[1:]: Path(path).unlink(missing_ok=True)
 PY_IGNORE
-        info "Clean bootstrap audio binaries before final product install"
+        info "Clean bootstrap radio and audio binaries before final product install"
         # installclean deletes $PRODUCT_OUT/*.img, including the ODM bundle
         # built before pass 1 (odm.img's BOARD_PREBUILT_ODMIMAGE); keep it.
         bundle_keep=$(mktemp "$AOSP/out/odm-bundle.keep.XXXXXX")
@@ -401,14 +409,14 @@ PY_IGNORE
         mv -f -- "$bundle_keep" "$PRODUCT_OUT/odm-bundle.img" || build_status=$?
       fi
       if (( build_status == 0 )); then
-        info "Build final product with prebuilt audio APEX (pass 2)"
+        info "Build final product with prebuilt audio and radio APEXes (pass 2)"
         m -j"$JOBS" || build_status=$?
       fi
-      touch "$DEVICE_DIR/audio/apex/.find-ignore"
-      python3 - "$DEVICE_DIR/audio/apex/Android.bp" <<'PY_CLEANUP'
+      touch "$DEVICE_DIR/audio/apex/.find-ignore" "$DEVICE_DIR/radio/apex/.find-ignore"
+      python3 - "$DEVICE_DIR/audio/apex/Android.bp" "$DEVICE_DIR/radio/apex/Android.bp" <<'PY_CLEANUP'
 from pathlib import Path
 import sys
-Path(sys.argv[1]).unlink(missing_ok=True)
+for path in sys.argv[1:]: Path(path).unlink(missing_ok=True)
 PY_CLEANUP
     fi
     : > "$build_progress_done"

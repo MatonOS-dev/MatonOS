@@ -5,7 +5,6 @@
 
 file buildinfra/native-built/libmatonos-ipc.so lib64/libmatonos-ipc.so
 file buildinfra/native-built/matonos-sleepd bin/matonos-sleepd
-file buildinfra/native-built/matonos-wifid bin/matonos-wifid
 file buildinfra/native-built/matonos-inputd bin/matonos-inputd
 file buildinfra/native-built/matonos-bootlogo bin/matonos-bootlogo
 file bootanim/out/wordmark.rgba etc/bootanim/wordmark.rgba

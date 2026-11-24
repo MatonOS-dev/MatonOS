@@ -2,11 +2,10 @@
 # wpa_supplicant's AIDL service, and Android's network stack DHCP client.
 LOCAL_PATH := device/maton/pc_x86_64
 
-PRODUCT_PACKAGES += \
-    hostapd \
-    wpa_cli \
-    wpa_supplicant \
-    wificond
+PRODUCT_PACKAGES += wificond wpa_cli
+ifneq ($(MATON_RADIO_APEX_READY),true)
+PRODUCT_PACKAGES += hostapd wpa_supplicant
+endif
 
 # Build the supplicant with upstream's generic nl80211 backend. AOSP's default
 # CONFIG_DRIVER_NL80211_QCA backend is for Qualcomm-specific nl80211 commands.

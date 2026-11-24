@@ -1,0 +1,44 @@
+# This rc is loaded from the vendor APEX. The property trigger is emitted only
+# after apexd has activated the vendor APEX set; all starts are asynchronous.
+on property:apex.all.ready=true
+    mkdir /data/vendor/wifi/hostapd 0770 wifi wifi
+    mkdir /data/vendor/wifi/hostapd/sockets 0770 wifi wifi
+    start vendor.bluetooth-matonos
+    start vendor.matonos-wifid
+
+service vendor.bluetooth-matonos /apex/com.matonos.hardware.radio/bin/hw/android.hardware.bluetooth-service.matonos
+    class hal
+    disabled
+    capabilities BLOCK_SUSPEND NET_ADMIN SYS_NICE
+    user bluetooth
+    group bluetooth
+    task_profiles HighPerformance
+
+service vendor.matonos-wifid /apex/com.matonos.hardware.radio/bin/matonos-wifid
+    class core
+    setenv LD_LIBRARY_PATH /apex/com.matonos.hardware.radio/lib64:/odm/lib64
+    user root
+    group system
+    disabled
+    oneshot
+
+service wpa_supplicant /apex/com.matonos.hardware.radio/bin/hw/wpa_supplicant \
+    -O/data/vendor/wifi/wpa/sockets -dd \
+    -g@android:wpa_wlan0
+    interface aidl android.hardware.wifi.supplicant.ISupplicant/default
+    class main
+    socket wpa_wlan0 dgram 660 wifi wifi
+    user wifi
+    group wifi net_raw net_admin
+    capabilities NET_RAW NET_ADMIN
+    disabled
+    oneshot
+
+service hostapd /apex/com.matonos.hardware.radio/bin/hw/hostapd
+    interface aidl android.hardware.wifi.hostapd.IHostapd/default
+    class main
+    capabilities NET_ADMIN NET_RAW
+    user wifi
+    group wifi net_raw net_admin
+    disabled
+    oneshot

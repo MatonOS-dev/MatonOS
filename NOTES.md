@@ -99,6 +99,16 @@ Feature work continues, but in this shape from now on.
     settings app), rfkill power on/off, firmware, hotplug, and present the
     chosen one as `wlan0` / the HCI device the HAL opens, plus presence
     properties (`vendor.maton.{wifi,bluetooth}.present`).
+- **Radio update packaging (radioapex1, 2026-11-24):** the final image uses
+  one updatable vendor APEX, `com.matonos.hardware.radio`, for the forked
+  Bluetooth HCI HAL, stock `wpa_supplicant`/`hostapd`, and `matonos-wifid`.
+  The two-pass build keeps Soong binaries only for the packaging pass; the
+  final pass imports the externally assembled and signed APEX. Wi-Fi config,
+  regulatory database/signature, feature XML, `wificond`, and kernel modules
+  remain in vendor/ODM. The existing post-fs-data Wi-Fi setup stays in ODM;
+  APEX services start on `apex.all.ready` without blocking init. See
+  [`radio/README.md`](radio/README.md). Image and boot verification remain
+  pending coordinator build.
 - **One MatonOS Settings app, inlined into AOSP Settings (user leaning,
   2026-09-24)**: a single app (not one per area) whose pages are injected
   into the standard Settings via tile injection — activities with action

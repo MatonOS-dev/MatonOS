@@ -13,6 +13,18 @@
 #include <string>
 #include <vector>
 
+#define WIFID_CLOSE(fd) do { \
+    const int close_fd = (fd); \
+    const int saved_errno = errno; \
+    std::fprintf(stderr, "CLOSE fd=%d at %s:%d\n", close_fd, __FILE__, __LINE__); \
+    if (::close(close_fd) != 0) { \
+        const int close_error = errno; \
+        std::fprintf(stderr, "close fd=%d failed errno=%d (%s) at %s:%d\n", \
+                     close_fd, close_error, std::strerror(close_error), __FILE__, __LINE__); \
+    } \
+    errno = saved_errno; \
+} while (0)
+
 namespace wifid {
 struct SwitchInterface {
     std::string name;
@@ -21,7 +33,12 @@ struct SwitchInterface {
 
 inline bool NameExists(const std::string& name) {
     struct if_nameindex* names = if_nameindex();
-    if (!names) return false;
+    if (!names) {
+        const int error = errno;
+        std::fprintf(stderr, "if_nameindex failed errno=%d (%s)\n", error, std::strerror(error));
+        errno = error;
+        return false;
+    }
     bool found = false;
     for (auto* item = names; item->if_index && !found; ++item) found = name == item->if_name;
     if_freenameindex(names);
@@ -61,7 +78,7 @@ inline int SwitchTo(const std::vector<SwitchInterface>& interfaces, const std::s
         std::snprintf(request.ifr_name, sizeof(request.ifr_name), "%s", item.name.c_str());
         if (ioctl(fd, SIOCGIFFLAGS, &request) != 0) {
             if (failure) *failure = "SIOCGIFFLAGS " + item.name + ": " + strerror(errno);
-            close(fd); return -1;
+            WIFID_CLOSE(fd); return -1;
         }
         saved.push_back({item.name, item.name, (request.ifr_flags & IFF_UP) != 0, item.simulated});
     }
@@ -73,15 +90,17 @@ inline int SwitchTo(const std::vector<SwitchInterface>& interfaces, const std::s
         if (SetUp(fd, item.current, false) != 0) { set_failure("bring down", item.current); ok = false; break; }
     }
     auto unique_name = [&](const char* prefix, unsigned* counter) {
-        for (;;) {
+        for (unsigned attempt = 0; attempt < 4096; ++attempt) {
             std::string name = std::string(prefix) + std::to_string((*counter)++);
             if (name.size() < IFNAMSIZ && !NameExists(name)) return name;
         }
+        errno = ENOSPC;
+        return std::string();
     };
     unsigned temp_id = 0;
     if (ok) for (auto& item : saved) {
         const std::string next = unique_name("wtmp", &temp_id);
-        if (Rename(fd, item.current, next) != 0) { set_failure("rename " + item.current + " to", next); ok = false; break; }
+        if (next.empty() || Rename(fd, item.current, next) != 0) { set_failure("rename " + item.current + " to", next); ok = false; break; }
         item.current = next;
     }
     unsigned other_id = 0;
@@ -90,10 +109,18 @@ inline int SwitchTo(const std::vector<SwitchInterface>& interfaces, const std::s
         if (item.original == chosen) next = "wlan0";
         else if (item.simulated && item.original != "wlan0") next = item.original;
         else {
-            for (;;) {
+            bool allocated = false;
+            errno = ENOSPC;
+            for (unsigned attempt = 0; attempt < 4096; ++attempt) {
                 next = "wlan_int" + std::to_string(other_id++);
-                if (next.size() >= IFNAMSIZ) { errno = ENAMETOOLONG; set_failure("allocate name for", item.original); ok = false; break; }
-                if (!NameExists(next)) break;
+                if (next.size() >= IFNAMSIZ) { errno = ENAMETOOLONG; break; }
+                if (!NameExists(next)) { allocated = true; break; }
+            }
+            if (!allocated) {
+                if (errno != ENAMETOOLONG) errno = ENOSPC;
+                set_failure("allocate name for", item.original);
+                ok = false;
+                break;
             }
             if (!ok) break;
         }
@@ -110,7 +137,7 @@ inline int SwitchTo(const std::vector<SwitchInterface>& interfaces, const std::s
         for (auto& item : saved) {
             if (item.current == item.original) continue;
             const std::string park = unique_name("wtmp", &temp_id);
-            if (Rename(fd, item.current, park) != 0) {
+            if (park.empty() || Rename(fd, item.current, park) != 0) {
                 if (failure) *failure += "; rollback park " + item.current + ": " + strerror(errno);
                 continue;
             }
@@ -123,7 +150,7 @@ inline int SwitchTo(const std::vector<SwitchInterface>& interfaces, const std::s
                 *failure += "; rollback flags " + item.original + ": " + strerror(errno);
         }
     }
-    close(fd);
+    WIFID_CLOSE(fd);
     return ok ? 0 : -1;
 }
 }  // namespace wifid

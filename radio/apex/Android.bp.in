@@ -1,0 +1,7 @@
+prebuilt_apex {
+    name: "com.matonos.hardware.radio",
+    src: "prebuilt/com.matonos.hardware.radio.apex",
+    filename: "com.matonos.hardware.radio.apex",
+    prefer: true,
+    vendor: true,
+}

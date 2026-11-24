@@ -37,7 +37,7 @@ warn() { echo "WARNING: $*" >&2; }
 info() { echo "==> $*"; }
 
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+AOSP=${MATON_AOSP_ROOT:-$(readlink -f "$DEVICE_DIR/../../..")}
 # secureboot: pinned CPU microcode is staged on every kernel build, with or without -S.
 source "$DEVICE_DIR/secureboot/microcode.sh"
 ACK_MODE=0

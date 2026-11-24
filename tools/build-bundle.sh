@@ -4,7 +4,7 @@ set -Eeuo pipefail
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 DEVICE_DIR=$(dirname "$(dirname "$(readlink -f "$0")")")
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+AOSP=${MATON_AOSP_ROOT:-$(readlink -f "$DEVICE_DIR/../../..")}
 PRODUCT_OUT=$AOSP/out/target/product/pc_x86_64
 OUT=$PRODUCT_OUT/odm.img
 while getopts 'o:h' opt; do

@@ -10,7 +10,7 @@ info() { echo "==> $*"; }
 
 TOOLS=$(dirname "$(readlink -f "$0")")
 DEVICE_DIR=$(dirname "$TOOLS")
-AOSP=$(readlink -f "$DEVICE_DIR/../../..")
+AOSP=${MATON_AOSP_ROOT:-$(readlink -f "$DEVICE_DIR/../../..")}
 PRODUCT=pc_x86_64
 VARIANT=userdebug
 PRODUCT_OUT=$AOSP/out/target/product/$PRODUCT
