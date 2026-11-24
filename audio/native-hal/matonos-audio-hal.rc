@@ -1,4 +1,4 @@
-service vendor.audio-hal-aidl /apex/com.matonos.hardware.audio/bin/hw/matonos-audio-hal
+service vendor.audio-hal-aidl /apex/com.matonos.hardware.pipewire/bin/hw/matonos-audio-hal
     class hal
     disabled
     user audio
@@ -6,6 +6,8 @@ service vendor.audio-hal-aidl /apex/com.matonos.hardware.audio/bin/hw/matonos-au
     setenv HOME /data/vendor/maton-audio
     setenv XDG_RUNTIME_DIR /data/vendor/maton-audio
     setenv PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
+    # Explicit "no VM": PipeWire skips DMI reads (patch 0007), denied to hal_audio_default.
+    setenv PIPEWIRE_VM 0
     capabilities BLOCK_SUSPEND SYS_NICE
     rlimit rtprio 10 10
     ioprio rt 4

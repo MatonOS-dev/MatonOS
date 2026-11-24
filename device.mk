@@ -63,7 +63,7 @@ PRODUCT_PACKAGES += \
     com.android.hardware.thermal \
     com.android.hardware.usb \
     com.android.hardware.dumpstate
-# Audio APEX selection (generic vs com.matonos.hardware.audio) lives in audio/audio.mk.
+# Audio APEX selection (generic vs com.matonos.hardware.pipewire) lives in audio/audio.mk.
 
 # Audio: AOSP's example AIDL HAL (software only; real ALSA output is a v1.x
 # item, see NOTES.md). What it needs to come up:

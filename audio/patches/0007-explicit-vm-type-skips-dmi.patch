@@ -1,0 +1,43 @@
+From: MatonOS
+Subject: [PATCH] spa: cpu: treat an explicit VM type as final
+
+PIPEWIRE_VM=0 now means "no VM" instead of "detect". Android vendor
+clients (the audio HAL) set it so the CPU plugin never reads
+/sys/class/dmi/id/*, which their SELinux domain may not access.
+---
+--- a/spa/plugins/support/cpu.c
++++ b/spa/plugins/support/cpu.c
+@@ -40,6 +40,7 @@
+ 	uint32_t count;
+ 	uint32_t max_align;
+ 	uint32_t vm_type;
++	bool vm_type_set;
+ };
+ 
+ static char *spa_cpu_read_file(const char *name, char *buffer, size_t len)
+@@ -132,7 +133,7 @@
+ {
+ 	struct impl *impl = object;
+ 
+-	if (impl->vm_type != 0)
++	if (impl->vm_type != 0 || impl->vm_type_set)
+ 		return impl->vm_type;
+ 
+ #if defined(__i386__) || defined(__x86_64__) || defined(__arm__) || defined(__aarch64__)
+@@ -253,8 +254,10 @@
+ 	if (info) {
+ 		if ((str = spa_dict_lookup(info, SPA_KEY_CPU_FORCE)) != NULL)
+ 			this->flags = atoi(str);
+-		if ((str = spa_dict_lookup(info, SPA_KEY_CPU_VM_TYPE)) != NULL)
++		if ((str = spa_dict_lookup(info, SPA_KEY_CPU_VM_TYPE)) != NULL) {
+ 			this->vm_type = atoi(str);
++			this->vm_type_set = true;
++		}
+ 		if ((str = spa_dict_lookup(info, SPA_KEY_CPU_ZERO_DENORMALS)) != NULL)
+ 			spa_cpu_zero_denormals(&this->cpu, spa_atob(str));
+ 	}
+5:#include "config.h"
+7:#include <stddef.h>
+8:#include <unistd.h>
+9:#include <string.h>
+10:#include <errno.h>

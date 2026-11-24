@@ -1,5 +1,5 @@
 <manifest version="1.0" type="device">
-    <hal format="aidl" override="true" updatable-via-apex="com.matonos.hardware.audio">
+    <hal format="aidl" override="true" updatable-via-apex="com.matonos.hardware.pipewire">
         <name>android.hardware.audio.core</name>
         <version>4</version>
         <interface>
@@ -15,7 +15,7 @@
             <instance>bluetooth</instance>
         </interface>
     </hal>
-    <hal format="aidl" updatable-via-apex="com.matonos.hardware.audio">
+    <hal format="aidl" updatable-via-apex="com.matonos.hardware.pipewire">
         <name>android.hardware.audio.effect</name>
         <version>4</version>
         <interface>

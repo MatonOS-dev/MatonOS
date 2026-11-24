@@ -1,7 +1,7 @@
 prebuilt_apex {
-    name: "com.matonos.hardware.audio",
-    src: "prebuilt/com.matonos.hardware.audio.apex",
-    filename: "com.matonos.hardware.audio.apex",
+    name: "com.matonos.hardware.pipewire",
+    src: "prebuilt/com.matonos.hardware.pipewire.apex",
+    filename: "com.matonos.hardware.pipewire.apex",
     prefer: true,
     vendor: true,
 }

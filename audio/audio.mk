@@ -2,10 +2,10 @@
 MATON_AUDIO_PIPEWIRE_HAL ?= true
 PRODUCT_PACKAGES := $(filter-out com.android.hardware.audio com.android.hardware.audio.generic audio_effects_config.xml,$(PRODUCT_PACKAGES))
 # Bootstrap pass builds the APEX-compiled effects implementation; the final
-# product uses only com.matonos.hardware.audio and has no generic audio APEX.
+# product uses only com.matonos.hardware.pipewire and has no generic audio APEX.
 ifeq ($(MATON_AUDIO_PIPEWIRE_HAL),true)
 ifeq ($(MATON_AUDIO_APEX_READY),true)
-PRODUCT_PACKAGES += com.matonos.hardware.audio
+PRODUCT_PACKAGES += com.matonos.hardware.pipewire
 else
 # Bootstrap pass: build the Soong HAL and APEX-compiled effects implementation before apexer packages them.
 PRODUCT_PACKAGES += \
