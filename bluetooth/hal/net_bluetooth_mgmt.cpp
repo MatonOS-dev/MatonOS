@@ -185,7 +185,7 @@ int NetBluetoothMgmt::waitHciDev(int hci_interface) {
         pollfds[0] = {.fd = fd, .events = POLLIN};
         pollfds[1] = {.fd = cancel_fd_, .events = POLLIN};
         do {
-            ret = poll(pollfds, cancel_fd_ >= 0 ? 2 : 1, cancel_fd_ >= 0 ? -1 : 500);
+            ret = poll(pollfds, cancel_fd_ >= 0 ? 2 : 1, 500);
         } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
 
         // Poll failure, abandon.
@@ -206,7 +206,7 @@ int NetBluetoothMgmt::waitHciDev(int hci_interface) {
             goto end;
         }
 
-        if ((pollfds[0].revents & POLLIN) == 0) {
+        if (ret == 0 || (pollfds[0].revents & POLLIN) == 0) {
             continue;
         }
 

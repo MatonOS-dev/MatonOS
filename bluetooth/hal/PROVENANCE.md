@@ -27,8 +27,12 @@ MatonOS changes:
   close stops the watcher before clearing shared state.
 - Configured one Binder worker thread so close and client death can be
   dispatched during setup. The old unexpected-state path now returns after
-  reporting `ALREADY_INITIALIZED`. If a client-death notice leaves a stale
-  `ONE_CLIENT` state, the next initialize cleans it before starting again.
+  reporting `ALREADY_INITIALIZED`. The stack is the only client, so an
+  initialize while a previous setup is still waiting (`INITIALIZING`) or after
+  the previous client died cancels and cleans up that session first, then
+  starts again; it never waits for hardware.
+- The controller wait keeps upstream's 500 ms re-poll and adds the cancel
+  eventfd to the same poll.
 
 ## Threading and locking
 

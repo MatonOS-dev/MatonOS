@@ -155,21 +155,29 @@ void BluetoothHci::initialize(const std::shared_ptr<hal::IBluetoothHciCallbacks>
     }
 
     std::unique_lock<std::mutex> lifecycle_guard(mLifecycleMutex);
-    if (mInitializationThread.joinable()) mInitializationThread.join();
 
-    std::shared_ptr<NetBluetoothMgmt> management;
-    std::shared_ptr<NetBluetoothMgmt> stale_management;
+    // The stack is the only client. A new initialize() while a previous
+    // setup is still waiting for a controller, or after the previous client
+    // died, means that session is gone: cancel and clean it up first. This
+    // never waits for hardware (the wait is cancellable).
     HalState old_state;
-    bool stale_dead_client = false;
     {
         std::lock_guard<std::mutex> guard(mStateMutex);
         old_state = mState;
-        if (mState == HalState::ONE_CLIENT && mClientDead) {
-            ALOGI("initialize: previous client is dead; cleaning up before restart");
-            mState = HalState::CLOSING;
-            stale_management = management_;
-            stale_dead_client = true;
-        } else if (mState == HalState::READY) {
+    }
+    if (old_state == HalState::INITIALIZING ||
+        (old_state == HalState::ONE_CLIENT && mClientDead)) {
+        ALOGI("initialize: replacing stale session (state %d)", static_cast<int>(old_state));
+        closeLockedLifecycle();
+    }
+    // A worker that already finished (success or failure) may still be joinable.
+    if (mInitializationThread.joinable()) mInitializationThread.join();
+
+    std::shared_ptr<NetBluetoothMgmt> management;
+    {
+        std::lock_guard<std::mutex> guard(mStateMutex);
+        old_state = mState;
+        if (mState == HalState::READY) {
             mState = HalState::INITIALIZING;
             mCb = cb;
             mClientDead = false;
@@ -178,32 +186,7 @@ void BluetoothHci::initialize(const std::shared_ptr<hal::IBluetoothHciCallbacks>
             management->resetCancellation();
         }
     }
-
-    if (stale_dead_client) {
-        if (stale_management) stale_management->cancel();
-        mFdWatcher.StopWatchingFileDescriptors();
-        int stale_fd;
-        {
-            std::lock_guard<std::mutex> guard(mStateMutex);
-            stale_fd = mFd;
-            mFd = -1;
-            mCb.reset();
-            mH4.reset();
-            management_.reset();
-        }
-        if (stale_management) stale_management->closeHci();
-        else CLOSE_FD(stale_fd);
-        {
-            std::lock_guard<std::mutex> guard(mStateMutex);
-            mState = HalState::READY;
-            mClientDead = false;
-            mState = HalState::INITIALIZING;
-            mCb = cb;
-            management_ = std::make_shared<NetBluetoothMgmt>();
-            management = management_;
-            management->resetCancellation();
-        }
-    } else if (old_state != HalState::READY) {
+    if (old_state != HalState::READY) {
         ALOGE("initialize: Unexpected State %d", static_cast<int>(old_state));
         lifecycle_guard.unlock();
         cb->initializationComplete(Status::ALREADY_INITIALIZED);
