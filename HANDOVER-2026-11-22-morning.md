@@ -299,3 +299,27 @@ store blank-page/refresh fixes). Still not allowed: public ISO, stable OTA, mail
 - Audio hotplug test results on live103 (permissive, until build-104 confirms enforcing): registration ✅, playback ✅, PipeWire kill -9 → ports drop and return in ~1 s with the same addresses, playback resumes, audioserver/HAL untouched ✅; HAL restart → ports re-synced, playback ✅.
 - The "write blocked ~1 s" cadence is a VM artefact: QEMU's wav audiodev is not real-time (out.wav grows ~10× faster than wall clock). Not chased further; recheck on real hardware.
 - wip/digitalis 846e17d8 has all fixes; build-104 (621abce9) lacks only the volume config.
+
+## MORNING REPORT 2026-11-24 (06:20)
+
+**Done tonight**
+- **Digitalis (ARM64 apps via Berberis)** — verified on build-100: abilist `x86_64,arm64-v8a`; static aarch64 binary runs via binfmt_misc (exit code 42 passed through); arm64-only NativeActivity APK installs (primaryCpuAbi arm64-v8a), launches, maps libberberis_arm64. Not yet tried: a real F-Droid ARM-only app.
+- **Audio hotplug** — PipeWire devices now reach Android as AUDIO_DEVICE_OUT_IP/IN_IP ports via the bridge → AudioService. Took 5 image rounds (98–103) to land the device type: attached stand-ins must have no AIDL connection (SPEAKER/BUILTIN_MIC); hotplug ports need a connection *and* an address format AIDL accepts → IP with FNV-1a-32(node.name) written as a.b.c.d (addresses ≤32 bytes; BUS is attached-only, LINE fakes headphones). On live103: registration, playback (full-level tone), PipeWire kill -9 recovery, HAL restart re-sync all pass (permissive).
+- Fixed along the way: SELinux fd/memfd rules for HAL→PipeWire (enforcing playback crashed audioserver), WirePlumber sink default volume 1.0 (was 0.064 stacked under Android volume).
+- libcamera2 verdict (see 03:40): conditional GO for IPU3 only.
+- Audio APEX branch wip/audio-apex first push (321e9348).
+
+**Running**
+- build-104 (wip/digitalis 621abce9, policy fix) — ~40% at 06:17; next: boot enforcing, rerun tone test. wip/digitalis tip 846e17d8 also has the volume fix.
+
+**Needs you**
+- libcamera: HIDL camera.provider@2.4 under Android 17 FCM acceptable? libexif LGPL-3.0 per-file audit (no-GPLv3 rule).
+- chmod 600 on server matonos.local.env — still unanswered.
+
+**Next in queue**
+1. build-104 enforcing check → merge wip/systemui-variant into metadata-enc.
+2. Audio APEX: rebase on the audio fixes, build, compat.json, staged install + rollback, back up payload key.
+3. Device-side /api/update/apex client + OTA-CONTRACT.md section; apex-keys round 2.
+4. hotspot hwsim test, audio features, suspend tuning, caption findings, Downloads design.
+
+**Known nits**: HAL reads DMI sysfs (denied, harmless; label is system_ext-private). Effects service can't dlopen vendor soundfx libs (pre-existing; audio APEX replaces it). VM write cadence ~1 s = QEMU wav audiodev artefact.
