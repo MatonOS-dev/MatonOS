@@ -28,7 +28,11 @@ If stable device addresses are required by AudioPolicy, use a role URI such as
 
 Bluetooth remains the platform Bluetooth audio path. Android's existing
 `IModule/bluetooth` handles A2DP, hearing aid, and LE audio endpoints; those
-are not duplicated as PipeWire roles. Future call devices (earpiece, telephony
+are not duplicated as PipeWire roles. The provider behind it is our software
+fork in `audio/bt-audio/` (A2DP, hearing aid, LE unicast/broadcast, HFP; PCM
+only, no offload), linked into the audio HAL in the media APEX
+(`IBluetoothAudioProviderFactory/default`). LE Audio still needs an
+ISO-capable controller; older adapters report it unsupported. Future call devices (earpiece, telephony
 RX/TX, SCO) stay out of the generic-PC role set unless a real telephony use
 case is added.
 
