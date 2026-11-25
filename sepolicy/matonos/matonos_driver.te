@@ -489,6 +489,9 @@ allow matonos_pipewire node_type:tcp_socket node_bind;
 allow matonos_pipewire port_type:udp_socket name_bind;
 allow matonos_pipewire node_type:udp_socket node_bind;
 # No mDNS client or multicast permission: the platform NSD service owns discovery.
+# bionic's netd client tries /dev/socket/fwmarkd on socket creation; Treble forbids
+# vendor domains from it and sockets work untagged, so keep the log quiet.
+dontaudit matonos_pipewire fwmarkd_socket:sock_file write;
 
 # mediahal2: the V4L2 SPA plugin in PipeWire opens UVC capture nodes; WP enumerates them.
 allow { matonos_pipewire matonos_wireplumber } video_device:dir r_dir_perms;
