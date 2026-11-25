@@ -16,7 +16,7 @@ newest entries at the bottom of each section.
 | 133 | d0d8b8b8 | OK 04:38; live133 tested (below) |
 | 134 | 97019aa5 | stopped by me after ~3 min to fold in the nl80211 fix |
 | 135 | ac0ec3be | OK 05:57; live135 tested (below) |
-| 136 | 656a541d | running since 06:06: hwsim rc trigger reverted to one condition |
+| 136 | 656a541d | OK 07:09; live136: hwsim loads at boot again (phy0 + wlan0), enforcing, 0 denials |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -116,6 +116,13 @@ silently. So hotspot never had a daemon; the radio APEX check is what caught it.
   wlan2`. The goldfish backend's `wifi_get_ifaces` only lists interfaces it
   found at start, so per-iface vendor calls on the AP iface fail. The AP works
   without them.
+
+**live136:** `hwsim_radios=2` set (read back as 2), but after a reboot it is
+empty again: the live image starts with a fresh `/data` every boot
+(`/data/property` created at boot time, system settings files missing). So
+any `persist.*` setting is lost on the live image, which is also what
+happened on live133. The two-radio card-switch test needs the installed
+disk VM (persistent `/data`). Still to do.
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
