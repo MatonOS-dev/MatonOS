@@ -90,7 +90,7 @@ fetch libffi https://gitlab.freedesktop.org/gstreamer/meson-ports/libffi.git 83d
 fetch libudev-zero https://github.com/illiliti/libudev-zero.git 7a6eee2db11f2eb0f7fd065ae9597fcd270e6734
 fetch pipewire https://gitlab.freedesktop.org/pipewire/pipewire.git 8fa27cabdc6c0c1350c69c026af5850ef0af1e26
 fetch wireplumber https://gitlab.freedesktop.org/pipewire/wireplumber.git 11e501181fb87dc8e72e55156d672109fbad2434
-# MatonOS' MIT glibc-ism header (index/rindex for the RAOP sink).
+# MatonOS' MIT glibc-ism header, force-included into all of PipeWire.
 fetch bionic-fill https://github.com/MatonOS-dev/bionic-fill.git 4638ac47ae02f6abb95d386588718bc9c22926f4
 
 # Bionic does not expose pthread_cancel(). PipeWire's cancel flag is an
@@ -229,8 +229,6 @@ BORINGSSL_PIN=0cd1f6a94b670e6b61af95a06e71e690ae8e3262
 "$CMAKE" --build "$OUT/boringssl" --target crypto --parallel "$JOBS"
 install -m 0644 "$OUT/boringssl/libcrypto.a" "$DEST$PREFIX/lib64/libcrypto.a"
 cp -a "$BORINGSSL/include/openssl" "$DEST$PREFIX/include/"
-# Under ${includedir}: PKG_CONFIG_SYSROOT_DIR prefixes every absolute .pc path.
-install -m 0644 "$SRC/bionic-fill/bionic-fill.h" "$DEST$PREFIX/include/bionic-fill.h"
 cat > "$DEST$PREFIX/lib64/pkgconfig/openssl.pc" <<EOF
 prefix=$PREFIX
 libdir=\${prefix}/lib64
@@ -239,14 +237,14 @@ Name: OpenSSL API (BoringSSL)
 Description: pinned AOSP BoringSSL for RAOP only
 Version: 1.1.1
 Libs: -L\${libdir} -lcrypto -lc++_static -lc++abi
-Cflags: -I\${includedir} -include \${includedir}/bionic-fill.h
+Cflags: -I\${includedir}
 EOF
 
 info "Building PipeWire (ALSA SPA backend; systemd, D-Bus and BlueZ disabled)"
 export PKG_CONFIG_PATH="$DEST$PREFIX/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
 meson_configure "$OUT/pipewire" "$SRC/pipewire" --cross-file "$OUT/android-x86_64.ini" \
-  -Dc_args="-march=x86-64-v2 -I$DEVICE_DIR/audio/compat/include" \
+  -Dc_args="-march=x86-64-v2 -I$DEVICE_DIR/audio/compat/include -include $SRC/bionic-fill/bionic-fill.h" \
   --prefix=$PREFIX --libdir=lib64 --buildtype=release -Ddefault_library=shared \
   -Dalsa=enabled -Dspa-plugins=enabled -Dsupport=enabled \
   -Djack=disabled -Dv4l2=enabled -Draop=enabled -Davahi=disabled \

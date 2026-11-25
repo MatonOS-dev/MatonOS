@@ -34,8 +34,8 @@ below 30000). Its used external symbols are `EVP_EncryptInit`,
 called: random bytes come from `pw_getrandom`. OpenSSL 3 provider/OSSL_PARAM
 symbols are in the excluded branch and are not required.
 
-`bionic-fill.h` (MatonOS-dev/bionic-fill 4638ac47, MIT), applied only
-through the RAOP OpenSSL dependency's Cflags, maps the obsolete BSD
+`bionic-fill.h` (MatonOS-dev/bionic-fill 4638ac47, MIT), force-included
+into the whole PipeWire build by `tools/build-pipewire.sh`, maps the obsolete BSD
 `index`/`rindex` to `strchr`/`strrchr` on bionic. BoringSSL does not include
 `openssl/bn.h` from `rsa.h`; `audio/patches/0008-raop-include-openssl-bn.patch`
 adds the explicit include. Static libc++/libc++abi use the NDK's
