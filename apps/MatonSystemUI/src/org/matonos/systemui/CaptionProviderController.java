@@ -6,11 +6,14 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.Region;
+import android.graphics.drawable.Drawable;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.Handler;
@@ -269,11 +272,35 @@ final class CaptionProviderController implements DesktopCaptionFactory {
         });
     }
 
+    private final Map<ComponentName, Bitmap> mIcons = new ConcurrentHashMap<>();
+
+    private Bitmap activityIcon(ActivityInfo info, PackageManager pm) {
+        ComponentName key = new ComponentName(info.packageName, info.name);
+        Bitmap cached = mIcons.get(key);
+        if (cached != null) return cached;
+        Drawable drawable = info.loadIcon(pm);
+        int size = Math.round(32 * mContext.getResources().getDisplayMetrics().density);
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        drawable.setBounds(0, 0, size, size);
+        drawable.draw(canvas);
+        mIcons.put(key, bitmap);
+        return bitmap;
+    }
+
     private Bundle taskState(RunningTaskInfo task) {
         Bundle state = new Bundle();
         String pkg = task.baseActivity == null ? "" : task.baseActivity.getPackageName();
         CharSequence title = task.taskDescription == null ? null : task.taskDescription.getLabel();
         Bitmap icon = task.taskDescription == null ? null : task.taskDescription.getIcon();
+        // TaskDescription carries a label/bitmap only when the app sets one; like
+        // WM Shell's own decoration, fall back to the top activity's label and icon.
+        ActivityInfo info = task.topActivityInfo;
+        if (info != null) {
+            PackageManager pm = mContext.getPackageManager();
+            if (title == null || title.length() == 0) title = info.loadLabel(pm);
+            if (icon == null) icon = activityIcon(info, pm);
+        }
         state.putCharSequence("title", title);
         state.putString("package", pkg);
         state.putParcelable("icon", icon);
