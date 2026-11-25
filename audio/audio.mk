@@ -65,10 +65,11 @@ PRODUCT_COPY_FILES := $(filter-out device/maton/pc_x86_64/audio/effects/audio_ef
 endif
 
 # mediahal1: all five Config.LE_AUDIO_UNICAST_PROFILES gates, plus broadcast.
-# These are system-owned BluetoothProperties, so they belong in product config.
+# Vendor props like cuttlefish (shared/phone/vendor.prop): the generic system
+# image forbids PRODUCT_SYSTEM_PROPERTIES from device makefiles.
 # Software codec paths still require controller CIS/BIS support for radio I/O.
 ifeq ($(MATON_AUDIO_PIPEWIRE_HAL),true)
-PRODUCT_SYSTEM_PROPERTIES += \
+PRODUCT_VENDOR_PROPERTIES += \
     bluetooth.profile.bap.unicast.client.enabled=true \
     bluetooth.profile.csip.set_coordinator.enabled=true \
     bluetooth.profile.vcp.controller.enabled=true \
