@@ -266,3 +266,14 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - In for build-153: 2689a752 System Bridge default-permissions (ACCESS_LOCAL_NETWORK + BLUETOOTH_CONNECT, kills the NSD picker popup), 9b9982e5 SystemUI caption icon/title fallback from topActivityInfo, b5b08ac4/030fa84c caption buttons = Lucide icons (octagon-x, square-plus, copy-plus restore, diamond-minus; ISC notice in caption/README.md).
 - live150 VM (user's window): caption APK from 030fa84c installed by adb (built via server worktree /mnt/data/matonos/tmp/dt-caption, MATON_APPS_ONLY=matonos-caption). SystemUI half pending: `build.sh -m MatonSystemUI` after 152 ends, then push to VM.
 - Open: boot animation shows stock AOSP "android" text on live150 (cause unknown); live150 rebooted itself once; adb shell hangs until `adb disconnect/connect`.
+
+## 20:20 update
+- Caption (wip/caption-look, merged 3575c57b): Lucide buttons 16 dp / 3-unit stroke
+  (2 px at 160 dpi) in tonal circles 70% of caption height; WM Shell patch 0004 slot now
+  fills the header height (fixes the stock strip under our caption).
+- Settings: Lucide square-letter-m app icon + Android Settings tile (3f1d26f6);
+  Developer section hidden until 5 taps on Build in About, GApps moved under it (ab66b31d).
+  Both installed on live150 as app updates; taskbar icon may show the cached old M.
+- build-152 (3955d695) finished OK but predates today's fixes, so it was skipped untested.
+- build-153 (dt 3575c57b) started 20:15: test title/icon, no strip, boot animation,
+  NSD picker, BT, denials; then keep only live-153.
