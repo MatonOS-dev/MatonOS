@@ -28,7 +28,11 @@ void logIfFailed(const ndk::ScopedAStatus& status, const char* what) {
 class AidlHci : public ::aidl::android::hardware::bluetooth::BnBluetoothHci {
   public:
     explicit AidlHci(HalHci* hci)
-        : hci_(hci), death_(AIBinder_DeathRecipient_new(&AidlHci::onDeath)) {}
+        : hci_(hci), death_(AIBinder_DeathRecipient_new(&AidlHci::onDeath)) {
+        // The cookie is this registered service object, alive for the process
+        // lifetime: nothing to release when a link goes away.
+        AIBinder_DeathRecipient_setOnUnlinked(death_.get(), [](void*) {});
+    }
 
     ndk::ScopedAStatus initialize(const std::shared_ptr<AidlCallbacks>& cb) override {
         if (!cb) return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);

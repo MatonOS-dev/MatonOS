@@ -11,7 +11,8 @@ newest entries at the bottom of each section.
 | 128 | 3fa4ed6a | FAILED 23:19 compile: `try` in BluetoothHci.cpp (vendor = -fno-exceptions; my syntax check lacked the flag) |
 | 129 | 2a6bd333 | FAILED 23:56 radio APEX packaging: "bootstrap hostapd missing". Soong compile passed (BT + Wi-Fi HAL forks built, media APEX built) |
 | 130 | fb37d44d | OK 01:14 (`BOARD_HOSTAPD_DRIVER := NL80211`); live130 tested (below) |
-| 131 | 25035145 | running since ~01:30: radio rc moved to `etc/`, BT HAL `interface` line |
+| 131 | 25035145 | OK 02:21 (radio rc in `etc/`, BT HAL `interface` line); live131 tested (below) |
+| 132 | a9fdf8a5 | running since ~02:40: Wi-Fi HAL fixes from live131 |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -30,6 +31,27 @@ Media + radio APEX payload keys backed up to host `~/.config/matonos/release-key
 5dcef069. Its Soong module is only enabled when the board sets
 `BOARD_HOSTAPD_DRIVER`, and a disabled `PRODUCT_PACKAGES` entry is dropped
 silently. So hotspot never had a daemon; the radio APEX check is what caught it.
+
+**live131 results** (enforcing):
+- PASS: radio services run in their stock domains: Wi-Fi HAL
+  (`hal_wifi_default`), BT HAL (`hal_bluetooth_default`), wifid
+  (`matonos_wifid`); `IWifi/default` and `IBluetoothHci/default` registered.
+- PASS: **BT sequence.** With no adapter, enable waits and a disable during
+  the wait cancels cleanly. After the host Intel adapter (8087:0a2a) is
+  passed through, enable reaches **ON** with the real address. The adapter
+  was given back to the host afterwards (host `hci0` OK).
+- FAIL → fixed for 132 (a9fdf8a5), Wi-Fi would not enable:
+  1. codex bug: `SO_RCVTIMEO` was set before `genl_connect()` (EBADF), so the
+     combinations query was skipped, the chip had no modes and no interface
+     could be created;
+  2. `hal_wifi_default` was missing a `netlink_route_socket` rule (goldfish
+     carries the same one);
+  3. `vendor.wlan.{firmware,driver}.version` had no label;
+  4. the bridge was denied `find wifi_service` (WifiCardSwitcher).
+  After 2 failed starts, WifiSelfRecovery turned Wi-Fi off, as expected.
+- Fixed after 132 started (goes into 133): the BT HAL now sets an `onUnlinked`
+  callback, so the "AIBinder_linkToDeath … will become an abort" warning is gone. The
+  stock Wi-Fi HAL code logs the same warning; still open.
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
