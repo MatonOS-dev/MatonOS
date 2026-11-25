@@ -45,6 +45,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
     static final String SETTING_PROVIDER = "matonos_caption_provider";
     static final String DEFAULT_PACKAGE = "org.matonos.caption";
     private static final long ATTACH_TIMEOUT_MS = 2000;
+    private static final long RECONNECT_DELAY_MS = 1000;
 
     private final Context mContext;
     // Shell's main thread owns the caption views (config_enableShellMainThread=true); every
@@ -53,6 +54,8 @@ final class CaptionProviderController implements DesktopCaptionFactory {
     // One thread: attach/update/detach for a task must reach the provider in order.
     private final ExecutorService mIpcExecutor = Executors.newSingleThreadExecutor();
     private final Map<Integer, Binding> mBindings = new ConcurrentHashMap<>();
+    // Tasks waiting for fallbackAndReconnect; unbindCaption cancels a pending retry.
+    private final java.util.Set<Integer> mReconnecting = ConcurrentHashMap.newKeySet();
 
     CaptionProviderController(Context context, Handler shellMainHandler) {
         mContext = context;
@@ -124,6 +127,7 @@ final class CaptionProviderController implements DesktopCaptionFactory {
 
     @Override
     public void unbindCaption(int taskId) {
+        mReconnecting.remove(taskId);
         Binding binding = mBindings.remove(taskId);
         if (binding == null) return;
         mHandler.removeCallbacks(binding.timeout);
@@ -215,12 +219,12 @@ final class CaptionProviderController implements DesktopCaptionFactory {
 
             @Override public void onServiceDisconnected(ComponentName name) {
                 Log.e(TAG, "provider disconnected task=" + b.taskInfo.taskId + " component=" + name);
-                fallback(b);
+                fallbackAndReconnect(b);
             }
 
             @Override public void onBindingDied(ComponentName name) {
                 Log.e(TAG, "provider binding died task=" + b.taskInfo.taskId + " component=" + name);
-                fallback(b);
+                fallbackAndReconnect(b);
             }
 
             @Override public void onNullBinding(ComponentName name) {
@@ -313,6 +317,23 @@ final class CaptionProviderController implements DesktopCaptionFactory {
                 == android.content.res.Configuration.UI_MODE_NIGHT_YES);
         state.putBoolean("buttonsAllowed", true);
         return state;
+    }
+
+    /**
+     * A provider that had drawn its caption and then went away (app update, process kill)
+     * gets one fresh bind; one that dies before drawing stays on the system header.
+     */
+    private void fallbackAndReconnect(Binding b) {
+        boolean wasWorking = b.surfacePackage != null && mBindings.get(b.taskInfo.taskId) == b;
+        fallback(b);
+        if (!wasWorking) return;
+        int taskId = b.taskInfo.taskId;
+        mReconnecting.add(taskId);
+        mHandler.postDelayed(() -> {
+            if (!mReconnecting.remove(taskId) || mBindings.containsKey(taskId)) return;
+            Log.i(TAG, "reconnecting provider task=" + taskId + " component=" + componentLabel(b));
+            bindCaption(b.context, b.slot, b.taskInfo, b.actions, b.width, b.height);
+        }, RECONNECT_DELAY_MS);
     }
 
     private void fail(Binding b, String reason, Throwable error) {
