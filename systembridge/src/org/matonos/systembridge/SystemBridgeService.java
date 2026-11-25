@@ -130,7 +130,7 @@ public final class SystemBridgeService extends Service {
                 if ("bluetooth".equals(target) && "select_device".equals(command)) {
                     BluetoothControllerSwitcher switcher = bluetoothControllerSwitcher;
                     if (switcher == null) throw new IllegalStateException("Bluetooth controller switcher unavailable");
-                    return switcher.switchTo(args.optString("device", ""), true);
+                    return switcher.switchTo(args.optString("device", ""), args.optBoolean("persist", true));
                 }
                 if ("wifi".equals(target) && "select_device".equals(command)) {
                     WifiCardSwitcher switcher = wifiCardSwitcher;

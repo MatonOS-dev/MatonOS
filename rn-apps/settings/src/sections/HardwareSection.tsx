@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { Column, Slider, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth } from "@expo/ui/jetpack-compose/modifiers";
@@ -69,12 +69,19 @@ export function HardwareSection() {
       }
     }
   }, []);
-  const selectRadioDevice = useCallback(async (target: "wifi" | "bluetooth", device: RadioDevice) => {
-    const identity = device.perm_mac || device.address || "";
+  // One switch at a time: each one cycles the radio and can take up to 30 s.
+  const switching = useRef(false);
+  const selectRadioDevice = useCallback(async (target: "wifi" | "bluetooth", device: RadioDevice, active: boolean) => {
+    // The hwsim radio is only a stand-in (wifid refuses it), and re-selecting the
+    // active device would drop every connection for nothing.
+    if (device.simulated || active || switching.current) return;
+    // wifid also accepts the interface name; btd needs the controller address.
+    const identity = device.perm_mac || device.address || (target === "wifi" ? device.interface : "");
     if (!identity) {
       console.error(`${target} device has no selectable permanent address: ${device.interface}`);
       return;
     }
+    switching.current = true;
     try {
       const result = await MatonOS.call(target, "select_device", { device: identity, persist: true });
       if (!result.available) {
@@ -84,6 +91,8 @@ export function HardwareSection() {
       await refreshHardware();
     } catch (error) {
       console.error(`${target} selection failed for ${identity}`, error);
+    } finally {
+      switching.current = false;
     }
   }, [refreshHardware]);
   const updateDeviceBoost = useCallback((id: string, value: number) => {
@@ -96,6 +105,12 @@ export function HardwareSection() {
   useFocusEffect(
     useCallback(() => {
       void refreshHardware();
+      // Hotplug and bridge renames/binds arrive as devices_changed.
+      const subscriptions = [
+        MatonOS.subscribe("wifi", "devices_changed", () => void refreshHardware()),
+        MatonOS.subscribe("bluetooth", "devices_changed", () => void refreshHardware()),
+      ];
+      return () => subscriptions.forEach((subscription) => subscription.remove());
     }, [refreshHardware]),
   );
   const batteryStatus = !hardware
@@ -135,22 +150,23 @@ export function HardwareSection() {
         title={device.interface}
         description={details}
         selected={active}
-        onSelect={() => void selectRadioDevice("wifi", device)}
+        onSelect={() => void selectRadioDevice("wifi", device, active)}
       />
     );
   });
   const bluetoothDeviceRows = (bluetoothDevices ?? []).map((device) => {
     const identifier = device.perm_mac || device.address || copy.unknown;
-    const active = device.selected === true;
+    // bound = in use by Android; selected is only the saved preference.
+    const active = device.bound === true;
     const driver = device.driver || copy.unknown;
     const details = `${device.name || device.interface} · ${driver} · ${identifier}${device.bus ? ` · ${device.bus}` : ""}${active ? ` · ${copy.active}` : ""}`;
     return (
       <ModeRow
         key={`bluetooth-${device.interface}-${identifier}`}
-        title={device.interface}
+        title={device.interface || device.name || copy.unknown}
         description={details}
         selected={active}
-        onSelect={() => void selectRadioDevice("bluetooth", device)}
+        onSelect={() => void selectRadioDevice("bluetooth", device, active)}
       />
     );
   });
@@ -169,7 +185,7 @@ export function HardwareSection() {
   const bluetoothStatus =
     bluetoothDevices === null
       ? copy.unknown
-      : bluetoothDevices.length > 0
+      : bluetoothDevices.some((device) => device.bound)
         ? copy.physicalController
         : copy.notDetected;
   const audioStatus =
