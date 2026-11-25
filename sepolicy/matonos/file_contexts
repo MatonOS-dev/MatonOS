@@ -49,3 +49,4 @@
 
 # btd: controller identities retained while the USB driver is unbound.
 /data/vendor/maton-btd(/.*)? u:object_r:vendor_maton_btd_data_file:s0
+/vendor/firmware/regulatory\.db(\.p7s)? u:object_r:matonos_regdb_file:s0

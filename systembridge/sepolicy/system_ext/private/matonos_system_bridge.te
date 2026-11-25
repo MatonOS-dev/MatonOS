@@ -49,7 +49,6 @@ allow { appdomain system_server surfaceflinger bootanim } sysfs_type:dir search;
 type sysfs_matonos_ksm, fs_type, sysfs_type;
 allow system_server sysfs_matonos_ksm:file { open read };
 # DMI product name is presentation metadata, not a firmware control.
-type sysfs_matonos_product_name, fs_type, sysfs_type;
 allow untrusted_app_all sysfs_matonos_product_name:file { open read };
 
 # v3 virtual mount setup uses memfds in the existing app domain.

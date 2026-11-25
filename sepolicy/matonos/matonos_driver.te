@@ -22,6 +22,10 @@ type hal_audio_default_tmpfs, file_type;
 type matonos_addon_firmware_lookup, file_type, vendor_file_type;
 # Read-only overlay exposing add-on + OS firmware at firmware_class.path.
 type matonos_addon_firmware_overlay, file_type, vendor_file_type, contextmount_type;
+# cfg80211 loads the Wi-Fi regulatory database directly in kernel context (no
+# ueventd fallback), so it needs its own readable label.
+type matonos_regdb_file, file_type, vendor_file_type;
+allow kernel matonos_regdb_file:file r_file_perms;
 
 init_daemon_domain(matonos_driver)
 init_daemon_domain(matonos_addon_manager)
@@ -123,6 +127,8 @@ allow { matonos_pipewire matonos_wireplumber } proc_asound:file r_file_perms;
 allow { matonos_pipewire matonos_wireplumber } sysfs:dir r_dir_perms;
 allow { matonos_pipewire matonos_wireplumber } sysfs:file r_file_perms;
 allow { matonos_pipewire matonos_wireplumber } sysfs:lnk_file r_file_perms;
+# ALSA UCM matches card profiles on DMI vendor/product; card naming reads PCI ids.
+allow { matonos_pipewire matonos_wireplumber } { sysfs_matonos_product_name sysfs_matonos_pci_id }:file r_file_perms;
 allow { matonos_pipewire matonos_wireplumber } self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
 allow { matonos_pipewire matonos_wireplumber } vendor_file:dir r_dir_perms;
 allow { matonos_pipewire matonos_wireplumber } vendor_file:file { getattr map open read };

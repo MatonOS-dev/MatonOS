@@ -6,4 +6,8 @@ type matonos_system_bridge, domain;
 # Public PCI identity only: vendor HALs and platform Mesa clients share it.
 # No config/resource/modalias/uevent files and no writable hardware controls.
 type sysfs_matonos_pci_id, fs_type, sysfs_type;
+
+# DMI product_name/sys_vendor only. Public so vendor PipeWire can read it for
+# ALSA UCM DMI matching (laptop card profiles).
+type sysfs_matonos_product_name, fs_type, sysfs_type;
 type ntsync_device, dev_type, mlstrustedobject;
