@@ -22,7 +22,8 @@ newest entries at the bottom of each section.
 | 139 | 7c9af06e | FAILED link 10:15: extern "C" names ignored the namespace |
 | 140 | 62340005 | FAILED link 10:42: backend static lib never reached the binary link |
 | 141 | 3c8f117a | OK 11:53; live141 PASS except WPA2 hotspot (below) |
-| kernel | 42440352 | CONFIG_CRYPTO_CCM=y: ACK 7.3 rebuild on the server (kernel-ack73c.log), then next image |
+| kernel | 42440352 | CONFIG_CRYPTO_CCM=y: ACK 7.3 rebuilt 12:15, staged into server prebuilt/ (old kernel in backup/prebuilt-kernel-pre-ccm) |
+| 142 | 2a9c0336 | running since 12:19: CCM kernel + software Bluetooth audio provider (mediahal1) |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -188,6 +189,18 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   the off/on around it is the bridge's WifiCardSwitcher (the Settings
   path), so the shell test re-enables by hand.
 - 0 crashes; the only denials came from my shell under a hand-set permissive.
+
+**Media APEX (user 12:00: "put sol on it"):**
+- mediahal1 (sol): software Bluetooth audio provider fork `audio/bt-audio/`
+  (A2DP, LE unicast + broadcast, hearing aid, HFP; PCM only, no offload),
+  LE Audio profile properties, VINTF entry. Source-compiled only; merged
+  2a9c0336, first built in 142. LE Audio still needs an ISO-capable
+  controller; older adapters keep showing it unsupported.
+- Webcam and network-speaker phases came back as notes only. mediahal2
+  (sol, running) implements them: speakers via NsdManager in the bridge →
+  `IChannel/audio` → HAL loads stock RAOP/Snapcast sink modules (no Avahi);
+  then the PipeWire camera provider fork. ROC allowed (MPL-2.0; my first
+  brief wrongly said permissive only).
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
