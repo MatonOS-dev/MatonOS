@@ -1,8 +1,8 @@
 From: MatonOS audio team
 Subject: [PATCH] build: allow bionic's no-op gettext compatibility
 
-Bionic has no libintl. MatonOS is a single-locale image and supplies a small
-compatibility header whose translation macros return their original strings.
+Bionic has no libintl. bionic-fill supplies a header-only
+libintl fallback whose translation functions return their original strings.
 Keep libintl for normal hosts, but do not require a separate library there.
 
 --- a/meson.build

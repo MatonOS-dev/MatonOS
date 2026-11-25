@@ -90,8 +90,8 @@ fetch libffi https://gitlab.freedesktop.org/gstreamer/meson-ports/libffi.git 83d
 fetch libudev-zero https://github.com/illiliti/libudev-zero.git 7a6eee2db11f2eb0f7fd065ae9597fcd270e6734
 fetch pipewire https://gitlab.freedesktop.org/pipewire/pipewire.git 8fa27cabdc6c0c1350c69c026af5850ef0af1e26
 fetch wireplumber https://gitlab.freedesktop.org/pipewire/wireplumber.git 11e501181fb87dc8e72e55156d672109fbad2434
-# MatonOS' MIT glibc-ism header, force-included into all of PipeWire.
-fetch bionic-fill https://github.com/MatonOS-dev/bionic-fill.git 4638ac47ae02f6abb95d386588718bc9c22926f4
+# MatonOS' MIT glibc-ism header, force-included into PipeWire and WirePlumber.
+fetch bionic-fill https://github.com/MatonOS-dev/bionic-fill.git 89f806d01ec47f99a67b6e40111f9bf9466d6678
 
 # Bionic does not expose pthread_cancel(). PipeWire's cancel flag is an
 # optimization; invoke the same loop stop callback on Android instead.
@@ -151,7 +151,7 @@ c_args = ['-march=x86-64-v2']
 cpp_args = ['-march=x86-64-v2']
 EOF
 export CC CXX AR STRIP
-export CFLAGS="-O2 -march=x86-64-v2 -fPIC -D_FILE_OFFSET_BITS=64 -I$DEVICE_DIR/audio/compat/include"
+export CFLAGS="-O2 -march=x86-64-v2 -fPIC -D_FILE_OFFSET_BITS=64"
 export CXXFLAGS="-O2 -march=x86-64-v2 -fPIC -D_FILE_OFFSET_BITS=64"
 export LDFLAGS="-Wl,-z,relro -Wl,-z,now"
 export PKG_CONFIG_PATH="$DEST$PREFIX/lib64/pkgconfig"
@@ -245,7 +245,7 @@ info "Building PipeWire (ALSA SPA backend; systemd, D-Bus and BlueZ disabled)"
 export PKG_CONFIG_PATH="$DEST$PREFIX/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
 meson_configure "$OUT/pipewire" "$SRC/pipewire" --cross-file "$OUT/android-x86_64.ini" \
-  -Dc_args="-march=x86-64-v2 -I$DEVICE_DIR/audio/compat/include -include $SRC/bionic-fill/bionic-fill.h" \
+  -Dc_args="-march=x86-64-v2 -I$SRC/bionic-fill -include $SRC/bionic-fill/bionic-fill.h" \
   --prefix=$PREFIX --libdir=lib64 --buildtype=release -Ddefault_library=shared \
   -Dalsa=enabled -Dspa-plugins=enabled -Dsupport=enabled \
   -Djack=disabled -Dv4l2=enabled -Draop=enabled -Davahi=disabled \
@@ -291,7 +291,7 @@ sed -i \
   -e 's|^glib_mkenums=.*|glib_mkenums=${bindir}/glib-mkenums|' \
   "$DEST$PREFIX/lib64/pkgconfig/glib-2.0.pc"
 meson_configure "$OUT/wireplumber" "$SRC/wireplumber" --cross-file "$OUT/android-x86_64.ini" \
-  -Dc_args="-march=x86-64-v2 -I$DEVICE_DIR/audio/compat/include" \
+  -Dc_args="-march=x86-64-v2 -I$SRC/bionic-fill -include $SRC/bionic-fill/bionic-fill.h" \
   --prefix=$PREFIX --libdir=lib64 --buildtype=release -Ddefault_library=shared \
   -Dsystem-lua=false -Dsystemd=disabled -Dsystemd-system-service=false \
   -Dsystemd-user-service=false -Dintrospection=disabled \
