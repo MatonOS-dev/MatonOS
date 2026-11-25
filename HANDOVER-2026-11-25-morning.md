@@ -19,7 +19,8 @@ newest entries at the bottom of each section.
 | 136 | 656a541d | OK 07:09; live136: hwsim loads at boot again (phy0 + wlan0), enforcing, 0 denials |
 | 137 | 12794e03 | OK 08:34; live137 tested (below) |
 | 138 | 6c3620ac | OK 09:46; live138 Wi-Fi PASS (below) |
-| 139 | 7c9af06e | running since 09:47: wifid logcat errors, forked nl80211 backend |
+| 139 | 7c9af06e | FAILED link 10:15: extern "C" names ignored the namespace |
+| 140 | 62340005 | running since 10:16: backend functions renamed emu_* |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
