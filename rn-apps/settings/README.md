@@ -49,3 +49,23 @@ stock mappings in `input/keylayout/Vendor_4d54_Product_0001.kl`.
 3. From the live image's launcher, open Install MatonOS. Confirm that it opens the Install page directly, without first showing Sleep. Check drive detection, refresh, plan review, and erase confirmation; do not confirm an erase on a disk containing data.
 4. Boot an installed image and verify that the Install launcher alias is absent. Opening `/install` directly should show the live-image-only message.
 5. Check sleep controls on the Intel HDA / Surface Pro 3 system and hardware reporting with Wi-Fi/BT present and absent. Confirm unavailable hardware remains a clean empty/unknown state.
+
+## Third-party assets
+
+The app icon and the Android Settings tile use the Lucide `square-letter-m` icon,
+converted to Android vector drawables. Lucide is ISC-licensed: Copyright (c) for portions
+of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT), all
+other copyright (c) for Lucide are held by Lucide Contributors 2022.
+https://lucide.dev/license
+
+    Permission to use, copy, modify, and/or distribute this software for any
+    purpose with or without fee is hereby granted, provided that the above
+    copyright notice and this permission notice appear in all copies.
+
+    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+    SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+    OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+    CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

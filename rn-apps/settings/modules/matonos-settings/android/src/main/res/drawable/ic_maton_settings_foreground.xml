@@ -1,9 +1,24 @@
+<!-- Launcher foreground: Lucide square-letter-m (ISC, see rn-apps/settings/README.md),
+     scaled to sit inside the adaptive icon's 66 dp safe zone. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M4,20V4h3l5,7 5,-7h3v16h-4V11l-4,6 -4,-6v9z" />
+    <group android:pivotX="12" android:pivotY="12" android:scaleX="0.6" android:scaleY="0.6">
+        <path
+            android:pathData="M8,16.001v-7.5a0.5,0.5 0 0,1 0.9,-0.3l2.7,3.599a0.5,0.5 0 0,0 0.8,0l2.7,-3.6a0.5,0.5 0 0,1 0.9,0.3v7.501"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M5,3h14a2,2 0 0,1 2,2v14a2,2 0 0,1 -2,2h-14a2,2 0 0,1 -2,-2v-14a2,2 0 0,1 2,-2z"
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+    </group>
 </vector>
