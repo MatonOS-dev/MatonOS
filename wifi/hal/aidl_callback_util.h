@@ -42,6 +42,9 @@ class AidlCallbackHandler {
   public:
     AidlCallbackHandler() {
         death_handler_ = AIBinder_DeathRecipient_new(AidlCallbackHandler::onCallbackDeath);
+        // MatonOS: the cookie is only a lookup key (the callback's binder,
+        // owned by cb_set_); nothing to release when a link goes away.
+        AIBinder_DeathRecipient_setOnUnlinked(death_handler_, [](void*) {});
     }
 
     // Instances of this class are not dynamically allocated, so the destructor
