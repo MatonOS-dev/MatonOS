@@ -23,7 +23,9 @@ newest entries at the bottom of each section.
 | 140 | 62340005 | FAILED link 10:42: backend static lib never reached the binary link |
 | 141 | 3c8f117a | OK 11:53; live141 PASS except WPA2 hotspot (below) |
 | kernel | 42440352 | CONFIG_CRYPTO_CCM=y: ACK 7.3 rebuilt 12:15, staged into server prebuilt/ (old kernel in backup/prebuilt-kernel-pre-ccm) |
-| 142 | 2a9c0336 | running since 12:19: CCM kernel + software Bluetooth audio provider (mediahal1) |
+| 142 | 2a9c0336 | FAILED Soong: mediahal1 BT props in PRODUCT_SYSTEM_PROPERTIES (generic_system forbids) |
+| 143 | 8f6fb45a | running since 12:31: same + props as PRODUCT_VENDOR_PROPERTIES (as cuttlefish) |
+| 144 | 06ccf770 | next: + mediahal2 (network speakers, camera fork opt-in) |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -201,6 +203,10 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   `IChannel/audio` → HAL loads stock RAOP/Snapcast sink modules (no Avahi);
   then the PipeWire camera provider fork. ROC allowed (MPL-2.0; my first
   brief wrongly said permissive only).
+- mediahal2 done 12:45, merged 06ccf770. Compile-checked only. Camera fork
+  stays off (`MATON_PIPEWIRE_CAMERA=true` after a verified link). Speaker
+  test needs a LAN-connected machine (QEMU NAT sees no mDNS). ROC not built.
+  Acceptance steps: `audio/mediahal2.report.md`.
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
