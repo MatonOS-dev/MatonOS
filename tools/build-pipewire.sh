@@ -40,6 +40,8 @@ done
 [[ $JOBS =~ ^[1-9][0-9]*$ ]] || die "MATON_BUILD_JOBS must be a positive integer"
 [[ -n $NDK ]] || die "set ANDROID_NDK in matonos.local.env or pass -n NDK"
 
+CMAKE=${MATON_CMAKE:-$MATON_AOSP_ROOT/prebuilts/cmake/linux-x86/bin/cmake}
+[[ -x $CMAKE ]] || die "CMake missing: $CMAKE"
 for tool in git meson ninja pkg-config python3 curl sha256sum tar make; do
   command -v "$tool" >/dev/null || die "missing host tool: $tool"
 done
@@ -211,6 +213,30 @@ if [[ ! -f $DEST$PREFIX/lib64/libasound.so.2 ]]; then
   make -C "$OUT/alsa-lib" DESTDIR="$DEST" install
 fi
 
+# RAOP uses the OpenSSL 1.1 API branch exposed by the checkout's BoringSSL.
+# Build it outside Soong; never depend on a host OpenSSL or an unbundled vendor ABI.
+BORINGSSL=$MATON_AOSP_ROOT/external/boringssl/src
+BORINGSSL_PIN=0cd1f6a94b670e6b61af95a06e71e690ae8e3262
+[[ $(git -C "$BORINGSSL/.." rev-parse HEAD) == "$BORINGSSL_PIN" ]] || die "BoringSSL revision changed; recheck RAOP symbols and provenance"
+"$CMAKE" -S "$BORINGSSL" -B "$OUT/boringssl" -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+  -DANDROID_ABI=x86_64 -DANDROID_PLATFORM=android-$API -DANDROID_STL=c++_static \
+  -DBUILD_TESTING=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+  -DCMAKE_BUILD_TYPE=Release
+"$CMAKE" --build "$OUT/boringssl" --target crypto --parallel "$JOBS"
+install -m 0644 "$OUT/boringssl/libcrypto.a" "$DEST$PREFIX/lib64/libcrypto.a"
+cp -a "$BORINGSSL/include/openssl" "$DEST$PREFIX/include/"
+cat > "$DEST$PREFIX/lib64/pkgconfig/openssl.pc" <<EOF
+prefix=$PREFIX
+libdir=\${prefix}/lib64
+includedir=\${prefix}/include
+Name: OpenSSL API (BoringSSL)
+Description: pinned AOSP BoringSSL for RAOP only
+Version: 1.1.1
+Libs: -L\${libdir} -lcrypto -lc++_static -lc++abi
+Cflags: -I\${includedir} -include $DEVICE_DIR/audio/network-speakers/raop-compat.h
+EOF
+
 info "Building PipeWire (ALSA SPA backend; systemd, D-Bus and BlueZ disabled)"
 export PKG_CONFIG_PATH="$DEST$PREFIX/lib64/pkgconfig"
 export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH"
@@ -218,7 +244,7 @@ meson_configure "$OUT/pipewire" "$SRC/pipewire" --cross-file "$OUT/android-x86_6
   -Dc_args="-march=x86-64-v2 -I$DEVICE_DIR/audio/compat/include" \
   --prefix=$PREFIX --libdir=lib64 --buildtype=release -Ddefault_library=shared \
   -Dalsa=enabled -Dspa-plugins=enabled -Dsupport=enabled \
-  -Djack=disabled -Dv4l2=disabled \
+  -Djack=disabled -Dv4l2=enabled -Draop=enabled -Davahi=disabled \
   -Daudioconvert=enabled -Daudiomixer=enabled -Dlibsystemd=disabled \
   -Dsystemd-system-service=disabled -Dsystemd-user-service=disabled \
   -Ddbus=disabled -Dbluez5=disabled -Dpipewire-alsa=disabled \
@@ -230,6 +256,17 @@ meson_configure "$OUT/pipewire" "$SRC/pipewire" --cross-file "$OUT/android-x86_6
   -Dlibpulse=disabled -Dpw-cat=disabled -Dgsettings=disabled
 ninja -C "$OUT/pipewire" -j"$JOBS"
 DESTDIR="$DEST" ninja -C "$OUT/pipewire" install
+
+# Optional sink controller runs INSIDE the existing PipeWire daemon. The HAL
+# uses metadata over its existing Unix client connection; HALs cannot use IP.
+for module in NetworkSpeakerModules:maton-network-speakers module-maton-snapcast:maton-snapcast; do
+  source_file=${module%%:*}; module_name=${module##*:}
+  "$CC" $CFLAGS -shared -fPIC -Wall -Wextra -Werror \
+    $(pkg-config --cflags libpipewire-0.3) \
+    "$DEVICE_DIR/audio/network-speakers/$source_file.c" \
+    $(pkg-config --libs libpipewire-0.3) -llog \
+    -Wl,--no-undefined -o "$DEST$PREFIX/lib64/pipewire-0.3/libpipewire-module-$module_name.so"
+done
 
 info "Building WirePlumber (bundled Lua; no systemd or D-Bus)"
 # WirePlumber's Meson helpers execute GLib generators at build time. Their
@@ -272,6 +309,8 @@ mkdir -p "$DEST$PREFIX/etc/wireplumber/wireplumber.conf.d"
 cp "$DEVICE_DIR/audio/config/wireplumber/wireplumber.conf.d/10-maton.conf" \
   "$DEST$PREFIX/etc/wireplumber/wireplumber.conf.d/10-maton.conf"
 mkdir -p "$DEST$PREFIX/etc/pipewire/pipewire.conf.d"
+cp "$DEVICE_DIR/audio/config/pipewire/pipewire.conf.d/20-network-speakers.conf" \
+  "$DEST$PREFIX/etc/pipewire/pipewire.conf.d/20-network-speakers.conf"
 cp "$DEVICE_DIR/audio/config/pipewire/pipewire.conf.d/10-maton-fallback.conf" \
   "$DEST$PREFIX/etc/pipewire/pipewire.conf.d/10-maton-fallback.conf"
 # Keep only runtime assets in the image; cross-build headers, pkg-config files
@@ -298,7 +337,6 @@ for module in dbus-connection portal-permissionstore reserve-device \
   rm -f "$DEST$PREFIX/lib64/wireplumber-0.5/libwireplumber-module-$module.so"
 done
 rm -rf "$DEST$PREFIX/share/wireplumber/scripts/monitors/bluez" \
-  "$DEST$PREFIX/share/wireplumber/scripts/monitors/v4l2" \
   "$DEST$PREFIX/share/wireplumber/scripts/monitors/libcamera"
 rm -f "$DEST$PREFIX/share/wireplumber/scripts/monitors/bluez-midi.lua"
 # PRODUCT_COPY_FILES installs regular files only. Dereference the versioned
@@ -330,6 +368,8 @@ rm -f "$STAGE/lib64/libgirepository-2.0.so"
 # Include license texts for the runtime and statically linked GLib fallbacks.
 LICENSES=$STAGE/share/licenses/pipewire-stack
 mkdir -p "$LICENSES"
+install -m 0644 "$NDK/toolchains/llvm/prebuilt/linux-x86_64/NOTICE" "$LICENSES/ndk-llvm-NOTICE.txt"
+install -m 0644 "$BORINGSSL/../LICENSE" "$LICENSES/boringssl-LICENSE.txt"
 install -m 0644 "$SRC/pipewire/COPYING" "$LICENSES/pipewire-MIT.txt"
 install -m 0644 "$SRC/wireplumber/LICENSE" "$LICENSES/wireplumber-MIT.txt"
 install -m 0644 "$SRC/alsa-lib-1.2.15/COPYING" "$LICENSES/alsa-lib-LGPL-2.1.txt"
@@ -349,6 +389,7 @@ for bin in "$STAGE/bin"/*; do
 done
 {
   printf 'PipeWire 1.6.9\ncommit %s\n' 8fa27cabdc6c0c1350c69c026af5850ef0af1e26
+  printf 'BoringSSL commit %s\n' "$BORINGSSL_PIN"
   printf 'WirePlumber commit %s\n' 11e501181fb87dc8e72e55156d672109fbad2434
   printf 'alsa-ucm-conf commit %s\n' 28776e1e22a952e4ab01037033380aa111985101
   printf 'glib commit %s\n' 41eca60845d3fc309af361f5e7f801ba339099aa
@@ -368,11 +409,16 @@ for required in bin/pipewire bin/wireplumber \
                 lib64/spa-0.2/audioconvert/libspa-audioconvert.so \
                 lib64/spa-0.2/audiomixer/libspa-audiomixer.so \
                 lib64/spa-0.2/alsa/libspa-alsa.so \
+                lib64/spa-0.2/v4l2/libspa-v4l2.so \
+                lib64/pipewire-0.3/libpipewire-module-raop-sink.so \
+                lib64/pipewire-0.3/libpipewire-module-protocol-simple.so \
+                lib64/pipewire-0.3/libpipewire-module-maton-snapcast.so \
+                lib64/pipewire-0.3/libpipewire-module-maton-network-speakers.so \
                 etc/pipewire/pipewire.conf etc/wireplumber/wireplumber.conf \
                 etc/alsa/ucm2; do
   [[ -e $STAGE/$required ]] || die "required staged PipeWire file missing: $required"
 done
-for unwanted in '*bluez*' '*v4l2*' '*jack*' '*pulse*' '*systemd*' '*dbus-connection*'; do
+for unwanted in '*bluez*' '*jack*' '*pulse*' '*systemd*' '*dbus-connection*'; do
   if find "$STAGE/bin" "$STAGE/lib64" "$STAGE/share/pipewire" \
       "$STAGE/share/wireplumber" -iname "$unwanted" -print -quit | grep -q .; then
     die "disabled feature artifact remains in staged PipeWire tree: $unwanted"

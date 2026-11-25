@@ -456,3 +456,32 @@ allow hal_audio_default vendor_configs_file:file r_file_perms;
 # vm.swappiness, written once by vendor_init after boot (see genfs_contexts).
 type proc_maton_swappiness, fs_type, proc_type;
 allow vendor_init proc_maton_swappiness:file w_file_perms;
+
+# mediahal2: optional sink modules execute in the existing PipeWire daemon.
+# AOSP forbids TCP/UDP in audio HAL domains, so the HAL forwards metadata over
+# its existing private Unix connection. RAOP uses RTSP/TCP and UDP timing/audio;
+# Snapcast uses JSON-RPC/TCP and an ephemeral PCM listener for the server.
+allow matonos_pipewire self:tcp_socket create_stream_socket_perms;
+allow matonos_pipewire self:udp_socket create_socket_perms;
+allow matonos_pipewire port_type:tcp_socket { name_connect name_bind };
+allow matonos_pipewire node_type:tcp_socket node_bind;
+allow matonos_pipewire port_type:udp_socket name_bind;
+allow matonos_pipewire node_type:udp_socket node_bind;
+# No mDNS client or multicast permission: the platform NSD service owns discovery.
+
+# mediahal2: the V4L2 SPA plugin in PipeWire opens UVC capture nodes; WP enumerates them.
+allow { matonos_pipewire matonos_wireplumber } video_device:dir r_dir_perms;
+# The WP monitor probes capabilities; the server opens the selected capture stream.
+allow { matonos_pipewire matonos_wireplumber } video_device:chr_file rw_file_perms;
+# Camera provider alone joins the existing audio-owned private runtime as group audio.
+# It exchanges buffers with PipeWire; Linux application domains receive no new access.
+allow hal_camera_default matonos_driver_data_file:dir search;
+allow hal_camera_default matonos_driver_data_file:sock_file write;
+allow hal_camera_default self:unix_stream_socket create_stream_socket_perms;
+allow hal_camera_default matonos_pipewire:unix_stream_socket connectto;
+allow hal_camera_default matonos_pipewire:fd use;
+allow hal_camera_default matonos_pipewire:memfd_file { getattr map read write };
+allow hal_camera_default vendor_file:dir r_dir_perms;
+allow hal_camera_default vendor_file:file { getattr map open read };
+allow hal_camera_default vendor_configs_file:dir r_dir_perms;
+allow hal_camera_default vendor_configs_file:file r_file_perms;

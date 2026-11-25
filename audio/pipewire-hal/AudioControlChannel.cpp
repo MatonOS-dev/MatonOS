@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include "AudioControlChannel.h"
+#include "../network-speakers/NetworkSpeakers.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -165,6 +166,15 @@ uint32_t getPipeWireTargetNode(const std::string& identity) {
 ndk::ScopedAStatus AudioControlChannel::call(const std::string& command,
                                              const std::string& jsonArgs,
                                              std::string* result) {
+    if (command == "network_upsert" || command == "network_remove" || command == "network_reset") {
+        const int status = maton_network_speaker(command.c_str(), jsonArgs.c_str());
+        if (status < 0) {
+            LOG(ERROR) << "network speaker command=" << command << " failed result=" << status;
+            return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+        }
+        *result = "{\"queued\":true}";
+        return ndk::ScopedAStatus::ok();
+    }
     std::lock_guard lock(gMutex);
     if (gBoosts.empty()) loadBoostsLocked();
     if (command == "devices" || command == "get_devices") {

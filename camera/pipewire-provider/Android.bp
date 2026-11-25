@@ -1,0 +1,67 @@
+cc_library_static {
+    name: "libmatonos_pipewire_camera_transport",
+    vendor: true,
+    srcs: ["src/PipeWireCamera.c"],
+    shared_libs: [
+        "libpipewire_matonos",
+        "liblog",
+    ],
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+}
+
+// Stock Camera2 request/metadata/conversion code with a PipeWire transport.
+// Keep the stock provider selected until the coordinator verifies the final link.
+cc_binary {
+    name: "matonos-camera-provider",
+    vendor: true,
+    relative_install_path: "hw",
+    defaults: [
+        "hidl_defaults",
+        "android.hardware.graphics.common-ndk_shared",
+    ],
+    srcs: ["src/*.cpp"],
+    local_include_dirs: ["src"],
+    whole_static_libs: [
+        "libmatonos_pipewire_camera_transport",
+        "android.hardware.camera.common@1.0-helper",
+        "libaidlcommonsupport",
+    ],
+    shared_libs: [
+        "android.hardware.camera.common-V1-ndk",
+        "android.hardware.camera.device-V1-ndk",
+        "android.hardware.camera.provider-V1-ndk",
+        "android.hardware.graphics.allocator-V2-ndk",
+        "android.hardware.graphics.mapper@2.0",
+        "android.hardware.graphics.mapper@3.0",
+        "android.hardware.graphics.mapper@4.0",
+        "android.hidl.allocator@1.0",
+        "android.hidl.memory@1.0",
+        "libbase",
+        "libbinder_ndk",
+        "libcamera_metadata",
+        "libcutils",
+        "libexif",
+        "libfmq",
+        "libgralloctypes",
+        "libhardware",
+        "libhidlbase",
+        "libhidlmemory",
+        "libjpeg",
+        "liblog",
+        "libpipewire_matonos",
+        "libsync",
+        "libtinyxml2",
+        "libui",
+        "libutils",
+        "libyuv",
+    ],
+    header_libs: ["media_plugin_headers"],
+    cflags: [
+        "-Wall",
+        "-Werror",
+    ],
+}

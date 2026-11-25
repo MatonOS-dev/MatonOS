@@ -34,7 +34,10 @@ cc_binary {
     static_libs: ["libaudioserviceexampleimpl"],
     // ModuleBluetooth calls createIBluetoothAudioProviderFactory in this archive.
     // Drop its unused upstream shared-provider dependency at the final link.
-    whole_static_libs: ["libmatonos_bluetooth_audio_software"],
+    whole_static_libs: [
+        "libmatonos_bluetooth_audio_software",
+        "libmatonos_network_speakers",
+    ],
     ldflags: ["-Wl,--as-needed"],
     shared_libs: [
         "libaudio_aidl_conversion_common_ndk",
