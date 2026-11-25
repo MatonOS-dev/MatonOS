@@ -21,7 +21,7 @@
 #define CLOSE(fd) do { INFO("close fd=%d at %s:%d",fd,__FILE__,__LINE__); if(close(fd)<0) ERR("close fd=%d errno=%d (%s)",fd,errno,strerror(errno)); } while(0)
 static const char *choiceKey="persist.vendor.maton.bluetooth.device";
 static const char *cachePath="/data/vendor/maton-btd/devices";
-struct Device { std::string address, path, usb, vendor, product, generation, name, bus, hci; bool bound=false; };
+struct Device { std::string address, path, usb, vendor, product, generation, name, bus, hci, driver; bool bound=false; };
 static std::vector<Device> devices;
 static std::mutex lock;
 static MatonosIpcServer *server;
@@ -80,6 +80,7 @@ static void scan() {
         Device d; d.hci=e->d_name; d.bound=true; d.path=real("/sys/class/bluetooth/"+d.hci+"/device"); d.bus="other";
         std::string parent=d.path;
         while(!parent.empty() && parent!="/sys") {
+            if(d.driver.empty()) d.driver=real(parent+"/driver");
             if(real(parent+"/driver")=="/sys/bus/usb/drivers/btusb") {
                 d.usb=parent.substr(parent.rfind('/')+1); d.bus="USB";
                 auto dev=parent.substr(0,parent.rfind('/')); d.vendor=readText(dev+"/idVendor"); d.product=readText(dev+"/idProduct"); d.generation=readText(dev+"/devnum"); break;
@@ -109,7 +110,8 @@ static bool saveCache() {
 static std::string snapshot() {
     std::string s="{\"devices\":["; bool first=true;
     for(const auto& d:devices) { if(!first) s+=','; first=false;
-        s+="{\"address\":"+quote(d.address)+",\"perm_mac\":"+quote(d.address)+",\"interface\":"+quote(d.hci)+",\"device\":"+quote(d.path)+",\"bus\":"+quote(d.bus)+",\"usb_id\":"+quote(d.vendor+":"+d.product)+",\"name\":"+quote(d.name)+",\"bound\":"+(d.bound?"true":"false")+",\"selected\":"+(d.address==preferred?"true":"false")+"}";
+        std::string driver=d.driver; if(!driver.empty()) driver=driver.substr(driver.rfind('/')+1);
+        s+="{\"address\":"+quote(d.address)+",\"perm_mac\":"+quote(d.address)+",\"interface\":"+quote(d.hci)+",\"driver\":"+quote(driver)+",\"device\":"+quote(d.path)+",\"bus\":"+quote(d.bus)+",\"usb_id\":"+quote(d.vendor+":"+d.product)+",\"name\":"+quote(d.name)+",\"bound\":"+(d.bound?"true":"false")+",\"selected\":"+(d.address==preferred?"true":"false")+"}";
     } return s+"]}";
 }
 static bool apply(const std::string& address) {
