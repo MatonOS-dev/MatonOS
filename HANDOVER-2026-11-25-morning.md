@@ -305,3 +305,12 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   still call enable()). **Decision for the user.** Nothing changed.
 - VM self-reboot: seen once on live150 (VM since deleted, no logs). Watching live154
   uptime instead.
+
+## 23:25 update
+- DeepSeek reviewed the radio page (report: out/pc-logs/agents/ds-review-radio/report.md).
+  All 8 findings checked against the code and real; fixed in 38f40372 (hwsim/active rows
+  not selectable, single switch at a time, BT active = bound, unbound title fallback,
+  interface-name fallback for Wi-Fi, devices_changed refresh, bridge BT persist).
+  Not typechecked locally; build-156 compiles it.
+- build-155 (fdc52372, first after the apex_media split) at ~35% at 23:19.
+- live154 uptime 29 min at 23:19 (since last boot); no self-reboot seen yet.
