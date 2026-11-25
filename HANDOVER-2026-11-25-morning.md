@@ -346,3 +346,10 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - luna `settings-security` started 01:2x: read-only Security page (SELinux, encryption,
   patch level, verified boot, build keys, ADB) in worktree ~/matonos/build/settings-security
   (wip/settings-security). Low-prio backlog item.
+
+## 01:25b update
+- Security page merged (fc77d9f0): luna's page (34d022be) + my 41fd2c07. The Settings APK is
+  not platform-signed, so SELinux / encryption / vendor patch / verified boot come from a
+  new read-only `hardware` → `security` bridge command (bridge policy: selinuxfs read +
+  vendor_security_patch_level_prop); native module keeps patch level, build tags, ADB.
+- build-157 started 01:23 on fc77d9f0 — first compile of the Security page.
