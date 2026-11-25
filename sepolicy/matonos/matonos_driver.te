@@ -455,6 +455,11 @@ allow bootanim matonos_bootlogo_file:dir r_dir_perms;
 # /oem is a tmpfs (matonos-bootlogo.rc) on top of the empty erofs /oem dir.
 # The empty /oem dir on the system image is labelled oemfs; init mounts the tmpfs over it.
 allow init oemfs:dir mounton;
+# The rc's mkdir/copy/chmod/restorecon run in vendor_init, which fills the tmpfs.
+allow vendor_init tmpfs:dir { search write add_name };
+type_transition vendor_init tmpfs:dir matonos_bootlogo_file "media";
+allow vendor_init matonos_bootlogo_file:dir { create_dir_perms relabelfrom relabelto };
+allow vendor_init matonos_bootlogo_file:file { create_file_perms relabelfrom relabelto };
 allow { bootanim matonos_bootlogo } tmpfs:dir search;
 allow bootanim matonos_bootlogo_file:file r_file_perms;
 # The BGRT subtree gets a dedicated sysfs type so only the compositor reads it.
@@ -469,6 +474,9 @@ allow hal_audio_default vendor_configs_file:file r_file_perms;
 # vm.swappiness, written once by vendor_init after boot (see genfs_contexts).
 type proc_maton_swappiness, fs_type, proc_type;
 allow vendor_init proc_maton_swappiness:file w_file_perms;
+# fs.file-max (init.pc_x86_64.rc), same pattern.
+type proc_maton_file_max, fs_type, proc_type;
+allow vendor_init proc_maton_file_max:file w_file_perms;
 
 # mediahal2: optional sink modules execute in the existing PipeWire daemon.
 # AOSP forbids TCP/UDP in audio HAL domains, so the HAL forwards metadata over

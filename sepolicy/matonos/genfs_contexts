@@ -3,6 +3,7 @@ genfscon sysfs /firmware/acpi/bgrt u:object_r:sysfs_bgrt:s0
 # vm.swappiness 180 (init.pc_x86_64.rc). Platform policy leaves it as plain
 # proc, which vendor_init may not write; give it its own vendor label.
 genfscon proc /sys/vm/swappiness u:object_r:proc_maton_swappiness:s0
+genfscon proc /sys/fs/file-max u:object_r:proc_maton_file_max:s0
 # btd: only the btusb driver's explicit binding controls are writable.
 genfscon sysfs /bus/usb/drivers/btusb/bind u:object_r:sysfs_maton_btusb:s0
 genfscon sysfs /bus/usb/drivers/btusb/unbind u:object_r:sysfs_maton_btusb:s0
