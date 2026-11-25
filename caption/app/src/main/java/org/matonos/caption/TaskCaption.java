@@ -94,12 +94,13 @@ final class TaskCaption {
         buttons.setGravity(Gravity.CENTER_VERTICAL);
         root.addView(buttons, buttonsLp);
 
-        String[] symbols = theme.right
-                ? new String[]{"−", maximized ? "❐" : "□", "×"}
-                : new String[]{"×", maximized ? "❐" : "□", "−"};
+        int maxGlyph = maximized ? CaptionGlyph.RESTORE : CaptionGlyph.MAXIMIZE;
+        int[] glyphs = theme.right
+                ? new int[]{CaptionGlyph.MINIMIZE, maxGlyph, CaptionGlyph.CLOSE}
+                : new int[]{CaptionGlyph.CLOSE, maxGlyph, CaptionGlyph.MINIMIZE};
         for (int i = 0; i < 3; i++) {
             final int action = theme.right ? 2 - i : i;
-            TextView button = button(symbols[i], theme, theme.circles);
+            ImageView button = button(glyphs[i], theme, theme.circles);
             buttons.addView(button, new LinearLayout.LayoutParams(dp(Math.max(32, heightDp - 2 * pad)),
                     ViewGroup.LayoutParams.MATCH_PARENT));
             button.setOnClickListener(v -> invoke(action));
@@ -117,7 +118,7 @@ final class TaskCaption {
         title = new TextView(context);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        title.setText(state.getString("title", ""));
+        title.setText(state.getCharSequence("title", ""));
         title.setTextColor(theme.foreground);
         title.setTextSize(14);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
@@ -139,12 +140,11 @@ final class TaskCaption {
         root.post(this::sendRegions);
     }
 
-    private TextView button(String glyph, CaptionTheme theme, boolean circle) {
-        TextView view = new TextView(context);
-        view.setText(glyph);
-        view.setGravity(Gravity.CENTER);
-        view.setTextSize(20);
-        view.setTextColor(theme.foreground);
+    private ImageView button(int glyph, CaptionTheme theme, boolean circle) {
+        ImageView view = new ImageView(context);
+        view.setScaleType(ImageView.ScaleType.FIT_XY);
+        view.setImageDrawable(new CaptionGlyph(glyph, theme.foreground, dp(10),
+                context.getResources().getDisplayMetrics().density * 1.5f));
         if (circle) {
             StateListDrawable states = new StateListDrawable();
             states.addState(new int[]{android.R.attr.state_pressed}, shape(theme.accent, true));
