@@ -290,3 +290,18 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - **Settings icon:** the launcher's "Settings" is stock com.android.settings (gear). The MatonOS tile in stock Settings shows the Lucide M, on a grey background unlike the coloured stock tiles (your call). Launcher3 data was cleared on the VM → taskbar is back to default pins.
 - **Decisions tonight:** microG spoofing stays until certification; LineageOS: no rebase. Low-prio backlog: installer-as-setup-wizard (setup.json, luna scope: out/pc-logs/agents/setupjson-scope.last.md), Seedvault, release-key signing check, security status page.
 - VM: live154 only, headless, adb localhost:5560.
+
+## 23:00 update
+- f1a112eb btd: 1 s poll replaced with a NETLINK_KOBJECT_UEVENT listener (rescans on
+  SUBSYSTEM=bluetooth events or ENOBUFS) + `netlink_kobject_uevent_socket` allow. Not
+  compiled locally (no NDK on host); build-156 is the compile check.
+- **Bluetooth with no controller (live154):** `cmd bluetooth_manager enable` → the HAL
+  waits in waitHciDev, the stack aborts after 3 s (`hci_hal_impl_android.cc:103
+  waitForInitialization: Can't start HAL`, a fixed 3000 ms on SDK ≥ 37), and it restarts
+  5 times before the framework gives up and leaves the state OFF. Making the HAL fail
+  fast in waitHciDev does NOT help: any failed init hits the same assert. A real fix
+  means not enabling the stack when no controller exists (the BluetoothManagerService
+  gate is an AOSP patch; hiding the QS/Settings toggles is vendor-side but apps can
+  still call enable()). **Decision for the user.** Nothing changed.
+- VM self-reboot: seen once on live150 (VM since deleted, no logs). Watching live154
+  uptime instead.
