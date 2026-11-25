@@ -94,9 +94,10 @@ final class TaskCaption {
         buttons.setGravity(Gravity.CENTER_VERTICAL);
         root.addView(buttons, buttonsLp);
 
+        int maxGlyph = maximized ? R.drawable.caption_restore : R.drawable.caption_maximize;
         int[] glyphs = theme.right
-                ? new int[]{R.drawable.caption_minimize, R.drawable.caption_maximize, R.drawable.caption_close}
-                : new int[]{R.drawable.caption_close, R.drawable.caption_maximize, R.drawable.caption_minimize};
+                ? new int[]{R.drawable.caption_minimize, maxGlyph, R.drawable.caption_close}
+                : new int[]{R.drawable.caption_close, maxGlyph, R.drawable.caption_minimize};
         for (int i = 0; i < 3; i++) {
             final int action = theme.right ? 2 - i : i;
             ImageView button = button(glyphs[i], theme, theme.circles);

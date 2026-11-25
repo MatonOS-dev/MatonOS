@@ -63,7 +63,7 @@ After the coordinator has built and booted a fresh image:
 ## Third-party assets
 
 The window button icons in `app/src/main/res/drawable/caption_*.xml` are
-Lucide icons (`octagon-x`, `diamond-plus`, `diamond-minus`), converted to
+Lucide icons (`octagon-x`, `square-plus`, `copy-plus`, `diamond-minus`), converted to
 Android vector drawables. Lucide is ISC-licensed: Copyright (c) for portions
 of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT), all
 other copyright (c) for Lucide are held by Lucide Contributors 2022.
