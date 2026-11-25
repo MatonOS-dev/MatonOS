@@ -91,7 +91,7 @@ fetch libudev-zero https://github.com/illiliti/libudev-zero.git 7a6eee2db11f2eb0
 fetch pipewire https://gitlab.freedesktop.org/pipewire/pipewire.git 8fa27cabdc6c0c1350c69c026af5850ef0af1e26
 fetch wireplumber https://gitlab.freedesktop.org/pipewire/wireplumber.git 11e501181fb87dc8e72e55156d672109fbad2434
 # MatonOS' MIT glibc-ism header, force-included into PipeWire and WirePlumber.
-fetch bionic-fill https://github.com/MatonOS-dev/bionic-fill.git 89f806d01ec47f99a67b6e40111f9bf9466d6678
+fetch bionic-fill https://github.com/MatonOS-dev/bionic-fill.git 50e5459fdfbf9722193e74ab40d074645ef90be0
 
 # Bionic does not expose pthread_cancel(). PipeWire's cancel flag is an
 # optimization; invoke the same loop stop callback on Android instead.
