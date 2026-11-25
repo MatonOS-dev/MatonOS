@@ -8,6 +8,7 @@ records the selected commits and ALSA-lib archive hash.
 
 | Component | Pin | License reviewed at source pin | Role |
 |---|---|---|---|
+| bionic-fill | `89f806d01ec47f99a67b6e40111f9bf9466d6678` | MIT (`LICENSE`) | Header-only libc gaps for PipeWire and WirePlumber |
 | BoringSSL | `0cd1f6a94b670e6b61af95a06e71e690ae8e3262` (existing AOSP checkout) | Apache-2.0 plus retained ISC/OpenSSL notices (`LICENSE`) | Static libcrypto in RAOP sink; see `network-speakers/PROVENANCE.md` |
 | PipeWire | `8fa27cabdc6c0c1350c69c026af5850ef0af1e26` (1.6.9) | MIT (`COPYING`) | Daemon, libpipewire, SPA support, audioconvert, audiomixer, ALSA, V4L2; RAOP and protocol-simple network sinks |
 | WirePlumber | `11e501181fb87dc8e72e55156d672109fbad2434` (0.5.17) | MIT (`LICENSE`) | ALSA/V4L2 monitors and Lua default policy |
@@ -33,8 +34,6 @@ pinned source revisions:
 
 - `audio/patches/0001-bionic-data-loop-stop.patch`: bionic lacks
   `pthread_cancel`; use PipeWire's existing loop stop callback.
-- `audio/patches/0002-bionic-no-thread-affinity.patch`: bionic lacks the
-  optional pthread affinity API used for realtime tuning.
 - `audio/patches/0003-respect-pipewire-alsa-option.patch`: gate the ALSA
   compatibility plugin subdirectories on the Meson option. The requested SPA
   ALSA backend is separately enabled; this prevents a disabled compatibility
@@ -42,14 +41,12 @@ pinned source revisions:
 - `audio/patches/0004-build-alsa-spa-on-android.patch`: Android NDK Meson
   targets report `android`, although the ALSA SPA backend uses Linux kernel
   ALSA interfaces.
-- `audio/patches/0005-avoid-glibc-fopencookie-on-bionic.patch`: bionic lacks
-  `fopencookie`; optional ALSA diagnostic output uses `/dev/null` on Android.
 - `audio/patches/wireplumber/0001-define-po-helper-for-minimal-build.patch`:
   define the `spa_json_po` input consumed by WirePlumber's build when the
   documentation/translation build path is disabled.
 - `audio/patches/wireplumber/0002-bionic-optional-libintl.patch`: bionic has no
-  libintl library; the single-locale compatibility header provides the
-  no-op translation macros used instead.
+  libintl library; retain only this Meson dependency relaxation. bionic-fill
+  supplies the untranslated header-only functions.
 
 PipeWire 1.6.9 does not offer a Meson switch for its Pulse protocol module, so
 the build removes `libpipewire-module-protocol-pulse.so` and the
@@ -62,3 +59,10 @@ applies nor is already present fails the build.
 
 The staged runtime is only the build deliverable. This work does not start
 PipeWire, register the future AIDL HAL, or claim runtime audio verification.
+
+The removed affinity and cookie-stream workaround patches are replaced by
+bionic-fill: affinity now calls sched affinity through the pthread TID, and
+ALSA diagnostic cookies reach PipeWire logging instead of /dev/null.
+Both PipeWire and WirePlumber force-include bionic-fill and search its header
+directory for unconditional libintl.h includes. Remaining patch numbers are
+kept stable (gaps are intentional); audio/compat/include is no longer used.
