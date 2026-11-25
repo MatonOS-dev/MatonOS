@@ -50,7 +50,7 @@ final class CaptionSettingsSession {
         addChoice("Button side", CaptionTheme.SIDE, new String[]{"left", "right"},
                 new String[]{"Left", "Right"}, fg);
         addChoice("Button style", CaptionTheme.STYLE, new String[]{"icons", "circles"},
-                new String[]{"Icons", "Coloured circles"}, fg);
+                new String[]{"Icons", "Circles"}, fg);
         addChoice("Title alignment", CaptionTheme.ALIGNMENT, new String[]{"centre", "start"},
                 new String[]{"Centre", "Start"}, fg);
         addChoice("Accent colour", CaptionTheme.ACCENT, new String[]{"wallpaper", "neutral"},

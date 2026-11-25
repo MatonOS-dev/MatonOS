@@ -25,7 +25,7 @@ final class CaptionTheme {
     CaptionTheme(Context context, boolean dark, boolean focused) {
         SharedPreferences p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         right = "right".equals(p.getString(SIDE, "left"));
-        circles = "circles".equals(p.getString(STYLE, "icons"));
+        circles = !"icons".equals(p.getString(STYLE, "circles"));
         startTitle = "start".equals(p.getString(ALIGNMENT, "centre"));
         neutralAccent = "neutral".equals(p.getString(ACCENT, "wallpaper"));
         this.dark = dark;

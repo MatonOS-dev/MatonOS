@@ -98,11 +98,13 @@ final class TaskCaption {
         int[] glyphs = theme.right
                 ? new int[]{R.drawable.caption_minimize, maxGlyph, R.drawable.caption_close}
                 : new int[]{R.drawable.caption_close, maxGlyph, R.drawable.caption_minimize};
+        int buttonDp = Math.max(28, heightDp - 2 * pad);
         for (int i = 0; i < 3; i++) {
             final int action = theme.right ? 2 - i : i;
             ImageView button = button(glyphs[i], theme, theme.circles);
-            buttons.addView(button, new LinearLayout.LayoutParams(dp(Math.max(32, heightDp - 2 * pad)),
-                    ViewGroup.LayoutParams.MATCH_PARENT));
+            LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(dp(buttonDp), dp(buttonDp));
+            if (i > 0) buttonLp.leftMargin = dp(BUTTON_GAP_DP);
+            buttons.addView(button, buttonLp);
             button.setOnClickListener(v -> invoke(action));
         }
 
@@ -129,7 +131,7 @@ final class TaskCaption {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT,
                 theme.startTitle ? Gravity.LEFT | Gravity.CENTER_VERTICAL : Gravity.CENTER);
         if (theme.startTitle) {
-            int controlsWidth = dp(Math.max(32, heightDp - 2 * pad) * 3 + pad);
+            int controlsWidth = dp(Math.max(28, heightDp - 2 * pad) * 3 + 2 * BUTTON_GAP_DP + pad);
             identityLp.leftMargin = theme.right ? dp(12) : controlsWidth + dp(12);
             identityLp.rightMargin = theme.right ? controlsWidth + dp(12) : dp(12);
         }
@@ -142,27 +144,26 @@ final class TaskCaption {
 
     private ImageView button(int glyph, CaptionTheme theme, boolean circle) {
         ImageView view = new ImageView(context);
-        view.setScaleType(ImageView.ScaleType.CENTER);
+        // Lucide icons are drawn on a 24 px grid with a 2 px stroke: at 24 dp every
+        // straight edge lands on whole pixels, so all lines have the same width.
+        view.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
         android.graphics.drawable.Drawable drawable = context.getDrawable(glyph).mutate();
         drawable.setTint(theme.foreground);
         view.setImageDrawable(drawable);
-        if (circle) {
-            StateListDrawable states = new StateListDrawable();
-            states.addState(new int[]{android.R.attr.state_pressed}, shape(theme.accent, true));
-            states.addState(new int[]{android.R.attr.state_hovered}, shape(theme.accent, true));
-            states.addState(new int[]{}, shape(android.graphics.Color.TRANSPARENT, true));
-            view.setBackground(states);
-        } else {
-            StateListDrawable states = new StateListDrawable();
-            states.addState(new int[]{android.R.attr.state_pressed}, shape(theme.accent, false));
-            states.addState(new int[]{android.R.attr.state_hovered}, shape(theme.accent, false));
-            states.addState(new int[]{}, shape(android.graphics.Color.TRANSPARENT, false));
-            view.setBackground(states);
-        }
+        // Soft tonal backdrop in the icon colour; hover and press only deepen it.
+        // The "circles" style shows the backdrop at rest, "icons" only on hover.
+        int rest = circle ? 0x14 : 0x00;
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_pressed}, shape(tone(theme.foreground, 0x38), circle));
+        states.addState(new int[]{android.R.attr.state_hovered}, shape(tone(theme.foreground, 0x24), circle));
+        states.addState(new int[]{}, shape(tone(theme.foreground, rest), circle));
+        view.setBackground(states);
         view.setClickable(true);
         view.setFocusable(true);
         return view;
     }
+
+    private static int tone(int color, int alpha) { return (color & 0x00FFFFFF) | (alpha << 24); }
 
     private GradientDrawable shape(int color, boolean circle) {
         GradientDrawable d = new GradientDrawable();
@@ -214,6 +215,8 @@ final class TaskCaption {
         }
         root = null;
     }
+
+    private static final int BUTTON_GAP_DP = 6;
 
     private int dp(int value) { return Math.round(value * context.getResources().getDisplayMetrics().density); }
 
