@@ -30,8 +30,8 @@ export function HardwareSection() {
   const colors = useMaterialColors();
   const [hardware, setHardware] = useState<HardwareState | null>(null);
   const [audioDevices, setAudioDevices] = useState<Array<{ id: string; name: string; multiplier: number }>>([]);
-  const [wifiDevices, setWifiDevices] = useState<RadioDevice[]>([]);
-  const [bluetoothDevices, setBluetoothDevices] = useState<RadioDevice[]>([]);
+  const [wifiDevices, setWifiDevices] = useState<RadioDevice[] | null>(null);
+  const [bluetoothDevices, setBluetoothDevices] = useState<RadioDevice[] | null>(null);
   const refreshHardware = useCallback(async () => {
     try {
       setHardware(await Hardware.getState());
@@ -58,14 +58,14 @@ export function HardwareSection() {
         const result = await MatonOS.call(target, "list_devices");
         if (!result.available) {
           console.error(`${target} device list unavailable: ${result.reason}`);
-          setDevices([]);
+          setDevices(null);
           continue;
         }
         const state = JSON.parse(result.value) as { devices?: RadioDevice[] };
         setDevices(state.devices ?? []);
       } catch (error) {
         console.error(`${target} device list read failed`, error);
-        setDevices([]);
+        setDevices(null);
       }
     }
   }, []);
@@ -124,7 +124,7 @@ export function HardwareSection() {
       </Text>,
     );
   }
-  const wifiDeviceRows = wifiDevices.map((device) => {
+  const wifiDeviceRows = (wifiDevices ?? []).map((device) => {
     const active = device.interface === "wlan0";
     const identifier = device.perm_mac || device.mac || copy.unknown;
     const driver = device.driver || copy.unknown;
@@ -139,7 +139,7 @@ export function HardwareSection() {
       />
     );
   });
-  const bluetoothDeviceRows = bluetoothDevices.map((device) => {
+  const bluetoothDeviceRows = (bluetoothDevices ?? []).map((device) => {
     const identifier = device.perm_mac || device.address || copy.unknown;
     const active = device.selected === true;
     const driver = device.driver || copy.unknown;
@@ -157,22 +157,21 @@ export function HardwareSection() {
   const powerStatus = hardware?.battery.pluggedIn
     ? copy.connectedToPower
     : copy.batteryOrDesktop;
+  // The daemon lists are the source of truth; null means the list could not be read.
   const wifiStatus =
-    !hardware || hardware.wifi.present === null
+    wifiDevices === null
       ? copy.unknown
-      : hardware.wifi.present
+      : wifiDevices.some((device) => !device.simulated)
         ? copy.physicalAdapter
-        : hardware.wifi.virtual
+        : wifiDevices.length > 0
           ? copy.virtualRadio
           : copy.notDetected;
   const bluetoothStatus =
-    !hardware || hardware.bluetooth.present === null
+    bluetoothDevices === null
       ? copy.unknown
-      : hardware.bluetooth.present
+      : bluetoothDevices.length > 0
         ? copy.physicalController
-        : hardware.bluetooth.virtual
-          ? copy.virtualController
-          : copy.notDetected;
+        : copy.notDetected;
   const audioStatus =
     !hardware || hardware.audio.present === null
       ? copy.unknown
