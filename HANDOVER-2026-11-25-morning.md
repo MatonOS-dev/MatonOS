@@ -29,7 +29,7 @@ newest entries at the bottom of each section.
 | 145 | 6e999e96 | FAILED same: meson reused cached dep flags → `meson setup --reconfigure --clearcache` |
 | 146 | 03a79281 | OK 14:49; live146 boots 35 s enforcing; PipeWire loads module-maton-network-speakers. **Correction:** my earlier "0 denials" (143–146) used a grep that missed auditd's `avc:  denied`; real denials found: kernel can't read regulatory.db (Wi-Fi world domain only), bridge NSD `find` (speaker browse NPE every 5 s), PipeWire DMI/PCI reads → fixed in 2eb1da94 + 06cfdda2 (build-148). Still open, pre-existing: init `mounton /oem`, vendor_init `search oem` |
 | 147 | 7901c583 | running since 14:50 (without the 146 policy fixes): bionic-fill force-included over all PipeWire (pin 4638ac47, replaces raop-compat.h), openssl.pc `-include openssl/bn.h` (no patch), matonos-btd + bridge BluetoothControllerSwitcher (btd1, merge ef4e8c9b) |
-| 148 | (next) | 147 + policy fixes 2eb1da94, 06cfdda2 |
+| 148 | (next) | 147 + policy fixes 2eb1da94, 06cfdda2 + bfill2 (d935cbda: bionic-fill 89f806d gives pthread affinity, fopencookie, libintl; PipeWire 0002/0005 + compat libintl.h removed). bfill3 (subsystem shims → bionic-fill) in progress |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
