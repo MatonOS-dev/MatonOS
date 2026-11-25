@@ -277,3 +277,16 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - build-152 (3955d695) finished OK but predates today's fixes, so it was skipped untested.
 - build-153 (dt 3575c57b) started 20:15: test title/icon, no strip, boot animation,
   NSD picker, BT, denials; then keep only live-153.
+
+## 22:55 update (night 11-25→26)
+
+| Build | dt | Result |
+|---|---|---|
+| 154 | 917d92a7 | OK 22:47. live154 boots enforcing. **Boot animation = ours**: /oem/media/bootanimation.zip (matonos_bootlogo_file) played by BootAnimation. Gone: bridge netlink, vendor_modprobe key, kernel key, pc_gpu_detect sys_admin, regulatory.db, WirePlumber sysfs. Left: MediaProvider getattr/search on /oem/media (12×, harmless; mediaprovider_app is a private type, vendor policy can't name it), PipeWire fwmarkd write (Treble neverallow → dontaudit 29a6a8a5, in 156) |
+| 155 | fdc52372 | running (started 22:48): first build after the apex_media split + Settings radio page |
+
+- **Media APEX split (sol-low):** `audio/` = submodule https://github.com/MatonOS-dev/apex_media (public, 59 commits of history, 0 key markers, no GPLv3). build-hal.sh takes MATON_AOSP_ROOT/MATON_AUDIO_STAGE. Server: build-155.sh moves the old audio/ to logs/audio-pre-split once and copies the generated prebuilt dirs back.
+- **Settings Hardware page (luna, b35f865c, merged 48b47705):** lists Wi-Fi cards / BT controllers (driver, MAC, virtual, active); select goes through the bridge's WifiCardSwitcher / BluetoothControllerSwitcher. wifid/btd snapshots gained `driver`. Open: the "present/virtual" status rows still say Unknown (HardwareModule.kt).
+- **Settings icon:** the launcher's "Settings" is stock com.android.settings (gear). The MatonOS tile in stock Settings shows the Lucide M, on a grey background unlike the coloured stock tiles (your call). Launcher3 data was cleared on the VM → taskbar is back to default pins.
+- **Decisions tonight:** microG spoofing stays until certification; LineageOS: no rebase. Low-prio backlog: installer-as-setup-wizard (setup.json, luna scope: out/pc-logs/agents/setupjson-scope.last.md), Seedvault, release-key signing check, security status page.
+- VM: live154 only, headless, adb localhost:5560.
