@@ -1,5 +1,7 @@
 typeattribute matonos_system_bridge coredomain;
 app_domain(matonos_system_bridge)
+# The app holds INTERNET; NetworkSpeakerDiscovery resolves interface indexes via netlink.
+net_domain(matonos_system_bridge)
 
 # Coarse Binder transport only; bridge methods enforce stub identity and scope.
 binder_call(untrusted_app_all, matonos_system_bridge)
