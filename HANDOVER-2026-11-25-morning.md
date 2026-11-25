@@ -17,7 +17,8 @@ newest entries at the bottom of each section.
 | 134 | 97019aa5 | stopped by me after ~3 min to fold in the nl80211 fix |
 | 135 | ac0ec3be | OK 05:57; live135 tested (below) |
 | 136 | 656a541d | OK 07:09; live136: hwsim loads at boot again (phy0 + wlan0), enforcing, 0 denials |
-| 137 | 12794e03 | running since 07:23: wifid RTM_GETLINK + Wi-Fi HAL onUnlinked |
+| 137 | 12794e03 | OK 08:34; live137 tested (below) |
+| 138 | 6c3620ac | running since 08:39: Wi-Fi HAL modes loaded in configureChip |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -139,6 +140,22 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   lookup key).
 - Open, minor: `switch_core.h` reports errors with `fprintf(stderr)`, which goes
   nowhere for an init service; should be ALOGE (errors-loud rule).
+
+**live137 results** (enforcing):
+- PASS: no RTM_GETLINK denial; the Wi-Fi HAL no longer logs "will become an
+  abort" (the remaining ones are stock: system_server, mediaswcodec,
+  SystemUI, netd, adbd, statsd).
+- PASS: card switch both ways (to card 2, then back to card 1 while `wlan0`
+  is taken): names swap cleanly, 0 denials, 0 crashes.
+- **FAIL → fixed for 138 (6c3620ac): Wi-Fi only turns on once.** After the
+  first successful enable, WifiService caches the chip modes and calls
+  `configureChip(3)` without asking `getAvailableModes` again. Every new chip
+  object (any Wi-Fi off/on or HAL restart) still held the compile-time modes,
+  so `configureChip` returned INVALID_ARGS without a log line and
+  WifiSelfRecovery turned Wi-Fi off. Confirmed without any card switch: a
+  fresh HAL process failed the same way. The HAL now loads wlan0's runtime
+  mode in `configureChip` as well, and logs the rejection. The earlier tests
+  missed this because each one did only the first enable.
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
