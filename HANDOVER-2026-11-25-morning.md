@@ -24,8 +24,8 @@ newest entries at the bottom of each section.
 | 141 | 3c8f117a | OK 11:53; live141 PASS except WPA2 hotspot (below) |
 | kernel | 42440352 | CONFIG_CRYPTO_CCM=y: ACK 7.3 rebuilt 12:15, staged into server prebuilt/ (old kernel in backup/prebuilt-kernel-pre-ccm) |
 | 142 | 2a9c0336 | FAILED Soong: mediahal1 BT props in PRODUCT_SYSTEM_PROPERTIES (generic_system forbids) |
-| 143 | 8f6fb45a | running since 12:31: same + props as PRODUCT_VENDOR_PROPERTIES (as cuttlefish) |
-| 144 | 06ccf770 | next: + mediahal2 (network speakers, camera fork opt-in) |
+| 143 | 8f6fb45a | OK 13:34; live143 boots 40 s enforcing, kernel 7.3.0-g180e0b21ff6a: **WPA2 hotspot PASS** (AP-ENABLED, ccm(aes) built in), BT audio provider/default registered, LE Audio + offload=false props set (vendor), 0 crashes, 0 denials |
+| 144 | f73b15ce | running since 13:36: + mediahal2 (network speakers, camera fork opt-in) |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
