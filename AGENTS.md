@@ -428,8 +428,10 @@ force-included with `-include bionic-fill.h`, pinned by commit in the recipe
 (see `tools/build-pipewire.sh`, MatonOS_apexs `flatpak/fetch.sh`).
 - Missing symbol → add it there (with a README row naming the project that
   needed it), bump the pin. Never write a private per-project compat header.
-- Only libc symbol gaps belong in it. Behaviour changes (bionic semantics,
-  missing syscalls) are patches in the recipe's patch dir. Library API gaps
+- Only glibc/BSD helpers bionic lacks, reimplemented on what bionic already
+  provides (user, 2026-11-25). Never kernel features Android removed or blocks
+  (SysV IPC, POSIX shm, …). Behaviour changes (bionic semantics, missing
+  syscalls) are patches in the recipe's patch dir. Library API gaps
   go into that library's build flags (e.g. BoringSSL's `openssl.pc` in
   `tools/build-pipewire.sh` force-includes `openssl/bn.h`), not patches.
 
