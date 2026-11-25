@@ -83,7 +83,9 @@ final class TaskCaption {
         CaptionTheme theme = new CaptionTheme(context, dark, state.getBoolean("focused"));
         root.setBackgroundColor(theme.background);
         int heightDp = Math.max(1, Math.round(height / context.getResources().getDisplayMetrics().density));
-        int pad = Math.max(4, heightDp / 8);
+        int buttonDp = Math.max(1, Math.round(heightDp * 0.7f));
+        // Same gap beside the first circle as above and below it, as in the reference.
+        int pad = Math.max(1, (heightDp - buttonDp) / 2);
         FrameLayout.LayoutParams buttonsLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT,
                 theme.right ? Gravity.RIGHT : Gravity.LEFT);
@@ -98,7 +100,6 @@ final class TaskCaption {
         int[] glyphs = theme.right
                 ? new int[]{R.drawable.caption_minimize, maxGlyph, R.drawable.caption_close}
                 : new int[]{R.drawable.caption_close, maxGlyph, R.drawable.caption_minimize};
-        int buttonDp = Math.max(28, heightDp - 2 * pad);
         for (int i = 0; i < 3; i++) {
             final int action = theme.right ? 2 - i : i;
             ImageView button = button(glyphs[i], theme, theme.circles);
@@ -111,27 +112,28 @@ final class TaskCaption {
         LinearLayout identity = new LinearLayout(context);
         identity.setOrientation(LinearLayout.HORIZONTAL);
         identity.setGravity(Gravity.CENTER_VERTICAL);
-        int side = dp(Math.max(18, heightDp - 2 * pad));
+        int side = dp(26);
         icon = new ImageView(context);
         icon.setScaleType(ImageView.ScaleType.FIT_CENTER);
         Bitmap bitmap = state.getParcelable("icon", Bitmap.class);
         if (bitmap != null) icon.setImageBitmap(bitmap);
+        else icon.setVisibility(View.GONE);
         identity.addView(icon, new LinearLayout.LayoutParams(side, side));
         title = new TextView(context);
         title.setSingleLine(true);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         title.setText(state.getCharSequence("title", ""));
         title.setTextColor(theme.foreground);
-        title.setTextSize(14);
+        title.setTextSize(18);
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        titleLp.leftMargin = dp(8);
+        titleLp.leftMargin = bitmap != null ? dp(8) : 0;
         identity.addView(title, titleLp);
         FrameLayout.LayoutParams identityLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT,
                 theme.startTitle ? Gravity.LEFT | Gravity.CENTER_VERTICAL : Gravity.CENTER);
         if (theme.startTitle) {
-            int controlsWidth = dp(Math.max(28, heightDp - 2 * pad) * 3 + 2 * BUTTON_GAP_DP + pad);
+            int controlsWidth = dp(buttonDp * 3 + 2 * BUTTON_GAP_DP + pad);
             identityLp.leftMargin = theme.right ? dp(12) : controlsWidth + dp(12);
             identityLp.rightMargin = theme.right ? controlsWidth + dp(12) : dp(12);
         }
@@ -144,19 +146,21 @@ final class TaskCaption {
 
     private ImageView button(int glyph, CaptionTheme theme, boolean circle) {
         ImageView view = new ImageView(context);
-        // Lucide icons are drawn on a 24 px grid with a 2 px stroke: at 24 dp every
-        // straight edge lands on whole pixels, so all lines have the same width.
-        view.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        // The caption_* drawables are 16 dp with a 3-unit stroke on Lucide's 24 grid:
+        // 2 px at 160 dpi, 3 px at 240, 4 px at 320, so every line has the same width.
+        // Centred at its own size, never scaled, so nothing resamples the stroke.
+        view.setScaleType(ImageView.ScaleType.CENTER);
         android.graphics.drawable.Drawable drawable = context.getDrawable(glyph).mutate();
         drawable.setTint(theme.foreground);
         view.setImageDrawable(drawable);
-        // Soft tonal backdrop in the icon colour; hover and press only deepen it.
-        // The "circles" style shows the backdrop at rest, "icons" only on hover.
-        int rest = circle ? 0x14 : 0x00;
+        // Neutral tones deepen in light mode and lighten in dark mode; no accent fill.
+        int rest = circle ? 0x0C : 0x00;
         StateListDrawable states = new StateListDrawable();
-        states.addState(new int[]{android.R.attr.state_pressed}, shape(tone(theme.foreground, 0x38), circle));
-        states.addState(new int[]{android.R.attr.state_hovered}, shape(tone(theme.foreground, 0x24), circle));
-        states.addState(new int[]{}, shape(tone(theme.foreground, rest), circle));
+        states.addState(new int[]{android.R.attr.state_pressed},
+                shape(theme, 0x24, circle));
+        states.addState(new int[]{android.R.attr.state_hovered},
+                shape(theme, 0x18, circle));
+        states.addState(new int[]{}, shape(theme, rest, circle));
         view.setBackground(states);
         view.setClickable(true);
         view.setFocusable(true);
@@ -165,10 +169,13 @@ final class TaskCaption {
 
     private static int tone(int color, int alpha) { return (color & 0x00FFFFFF) | (alpha << 24); }
 
-    private GradientDrawable shape(int color, boolean circle) {
+    private GradientDrawable shape(CaptionTheme theme, int alpha, boolean circle) {
         GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(circle ? dp(100) : dp(5));
+        int tonalColor = theme.dark ? android.graphics.Color.WHITE : android.graphics.Color.BLACK;
+        d.setColor(tone(tonalColor, alpha));
+        d.setShape(circle ? GradientDrawable.OVAL : GradientDrawable.RECTANGLE);
+        if (circle) d.setStroke(dp(1), tone(tonalColor, alpha + 0x10));
+        else d.setCornerRadius(dp(5));
         return d;
     }
 
