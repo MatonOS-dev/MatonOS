@@ -19,6 +19,7 @@ newest entries at the bottom of each section.
 | 136 | 656a541d | OK 07:09; live136: hwsim loads at boot again (phy0 + wlan0), enforcing, 0 denials |
 | 137 | 12794e03 | OK 08:34; live137 tested (below) |
 | 138 | 6c3620ac | running since 08:39: Wi-Fi HAL modes loaded in configureChip |
+| 139 | 33948688 | queued after 138: wifid logcat errors, forked nl80211 backend |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -114,10 +115,13 @@ silently. So hotspot never had a daemon; the radio APEX check is what caught it.
   - Note: `cmd wifi connect-network` alone bails with "no requests" because
     the VM's ethernet satisfies the default request; `cmd wifi add-request`
     (pre-approved) works. On a laptop without ethernet this does not arise.
-- Open, minor: after the nl80211 create, the HAL logs `Unknown iface name:
-  wlan2`. The goldfish backend's `wifi_get_ifaces` only lists interfaces it
-  found at start, so per-iface vendor calls on the AP iface fail. The AP works
-  without them.
+- Was "minor", turned out worse: after the nl80211 create, the HAL logs
+  `Unknown iface name: wlan2`. The goldfish backend (used for every card)
+  only lists wlan0/wlan1 as found at start, and passes the resulting null
+  handle straight on as `Interface*`, so per-iface calls on a later
+  interface could crash the HAL. **Fixed for 139 (33948688):** goldfish
+  backend forked into `wifi/legacy_hal` as `libwifi-hal-matonos`, which
+  lists every wireless netdev live; no AOSP change.
 
 **live136:** `hwsim_radios=2` set (read back as 2), but after a reboot it is
 empty again: the live image starts with a fresh `/data` every boot
