@@ -12,7 +12,8 @@ newest entries at the bottom of each section.
 | 129 | 2a6bd333 | FAILED 23:56 radio APEX packaging: "bootstrap hostapd missing". Soong compile passed (BT + Wi-Fi HAL forks built, media APEX built) |
 | 130 | fb37d44d | OK 01:14 (`BOARD_HOSTAPD_DRIVER := NL80211`); live130 tested (below) |
 | 131 | 25035145 | OK 02:21 (radio rc in `etc/`, BT HAL `interface` line); live131 tested (below) |
-| 132 | a9fdf8a5 | running since ~02:40: Wi-Fi HAL fixes from live131 |
+| 132 | a9fdf8a5 | OK 03:30; live132 tested (below) |
+| 133 | d0d8b8b8 | running since ~03:55: Wi-Fi HAL mode/limit fixes + BT onUnlinked |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -52,6 +53,21 @@ silently. So hotspot never had a daemon; the radio APEX check is what caught it.
 - Fixed after 132 started (goes into 133): the BT HAL now sets an `onUnlinked`
   callback, so the "AIBinder_linkToDeath … will become an abort" warning is gone. The
   stock Wi-Fi HAL code logs the same warning; still open.
+
+**live132 results** (enforcing, booted in ~35 s):
+- PASS: zero denials. The Wi-Fi HAL read 6 combinations from wlan0's phy over nl80211.
+- FAIL → fixed for 133 (d0d8b8b8), two more bugs in the forked HAL:
+  1. The mode IDs changed after configureChip (legacy V1 modes swapped for one
+     runtime kV3 mode), so the chip was "not configured" and no STA iface could
+     be created.
+  2. hwsim advertises limits of 2048 interfaces; the framework expands each
+     limit as types^maxIfaces and **system_server's Wi-Fi thread crashed**
+     (NegativeArraySizeException in HalDeviceManager). Limits are now capped
+     at what WifiService can use (STA 2, AP 2, P2P 1, NAN 1). The framework
+     crash itself is a stock robustness gap (not patched, AOSP).
+- How I check HAL C++ before a build now: AOSP clang on the server against the
+  generated `android.hardware.wifi-V4` + `wifi.common` NDK headers,
+  `--target=x86_64-linux-android37 -nostdlibinc -fno-exceptions -Werror`.
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
