@@ -21,6 +21,7 @@ final class HardwareChannel extends IChannel.Stub {
     @Override public String getInterfaceHash() { return IChannel.HASH; }
 
     @Override public String call(String command, String jsonArgs) {
+        if ("security".equals(command)) return security();
         if (!"summary".equals(command)) throw new IllegalArgumentException("unknown hardware command: " + command);
         try {
             JSONObject result = new JSONObject();
@@ -46,6 +47,33 @@ final class HardwareChannel extends IChannel.Stub {
             return result.toString();
         } catch (JSONException e) {
             throw new IllegalStateException("hardware summary encoding failed", e);
+        }
+    }
+
+    /** Read-only security status for the Settings Security page; values the Settings app
+     * cannot read itself because it is not platform-signed. Empty properties are null. */
+    private static String security() {
+        try {
+            JSONObject result = new JSONObject();
+            result.put("selinux", !android.os.SELinux.isSELinuxEnabled() ? "Disabled"
+                    : android.os.SELinux.isSELinuxEnforced() ? "Enforcing" : "Permissive");
+            String cryptoState = SystemProperties.get("ro.crypto.state");
+            String cryptoType = SystemProperties.get("ro.crypto.type");
+            boolean metadata = SystemProperties.getBoolean("ro.crypto.metadata.enabled", false);
+            result.put("encryption", cryptoState.isEmpty() ? JSONObject.NULL
+                    : !"encrypted".equals(cryptoState) ? "Not encrypted"
+                    : "file".equals(cryptoType) ? (metadata ? "Encrypted (file + metadata)" : "Encrypted (file)")
+                    : "Encrypted (" + cryptoType + ")");
+            String vendorPatch = SystemProperties.get("ro.vendor.build.security_patch");
+            result.put("vendorSecurityPatch", vendorPatch.isEmpty() ? JSONObject.NULL : vendorPatch);
+            String bootState = SystemProperties.get("ro.boot.verifiedbootstate");
+            String deviceState = SystemProperties.get("ro.boot.vbmeta.device_state");
+            result.put("verifiedBoot", bootState.isEmpty() ? JSONObject.NULL
+                    : ("locked".equals(deviceState) ? "Locked" : deviceState.isEmpty() ? "Unknown lock state" : "Unlocked")
+                    + ", " + ("green".equals(bootState) ? "verified" : bootState));
+            return result.toString();
+        } catch (JSONException e) {
+            throw new IllegalStateException("security status encoding failed", e);
         }
     }
 

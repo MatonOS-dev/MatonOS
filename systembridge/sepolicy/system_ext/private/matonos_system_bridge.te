@@ -16,6 +16,9 @@ allow matonos_system_bridge power_service:service_manager find;
 binder_call(matonos_system_bridge, system_server)
 allow matonos_system_bridge vendor_configs_file:dir search;
 allow matonos_system_bridge vendor_configs_file:file r_file_perms;
+# Settings Security page: SELinux mode (SELinux.isSELinuxEnforced) and vendor patch level.
+allow matonos_system_bridge selinuxfs:file r_file_perms;
+get_prop(matonos_system_bridge, vendor_security_patch_level_prop)
 
 # Runtime sockets live in each stub's PM-owned app data and use stock app policy.
 
