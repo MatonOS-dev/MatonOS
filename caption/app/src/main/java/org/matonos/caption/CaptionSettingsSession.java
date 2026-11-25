@@ -49,8 +49,8 @@ final class CaptionSettingsSession {
         content.addView(heading);
         addChoice("Button side", CaptionTheme.SIDE, new String[]{"left", "right"},
                 new String[]{"Left", "Right"}, fg);
-        addChoice("Button style", CaptionTheme.STYLE, new String[]{"icons", "circles"},
-                new String[]{"Icons", "Circles"}, fg);
+        addChoice("Button style", CaptionTheme.STYLE, new String[]{"circles", "icons"},
+                new String[]{"Circles", "Icons"}, fg);
         addChoice("Title alignment", CaptionTheme.ALIGNMENT, new String[]{"centre", "start"},
                 new String[]{"Centre", "Start"}, fg);
         addChoice("Accent colour", CaptionTheme.ACCENT, new String[]{"wallpaper", "neutral"},
