@@ -60,6 +60,8 @@ target_effects.mkdir(parents=True, exist_ok=True)
 for lib in source_effects.glob('*.so*'): shutil.copy2(lib, target_effects / lib.name)
 for lib in (product / 'vendor/lib64/soundfx').glob('*.so*'): shutil.copy2(lib, target_effects / lib.name)
 for rel, source in [
+ ('share/licenses/matonos-bluetooth-audio/NOTICE', device / 'audio/bt-audio/NOTICE'),
+ ('share/licenses/matonos-bluetooth-audio/PROVENANCE.md', device / 'audio/bt-audio/PROVENANCE.md'),
  ('bin/hw/matonos-audio-hal', product / 'vendor/bin/hw/matonos-audio-hal'),
  ('bin/hw/audio-effect-service', temp / 'generic-audio/bin/hw/android.hardware.audio.effect.service-aidl.generic'),
  ('etc/audio_effects_config.xml', device / 'audio/effects/audio_effects_config.xml'),

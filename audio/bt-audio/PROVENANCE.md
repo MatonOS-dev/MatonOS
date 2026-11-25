@@ -37,6 +37,10 @@ Changes from upstream:
 - The Bluetooth audio v6 VINTF entry is in the media APEX's existing manifest,
   rather than a second bootstrap vendor fragment.
 
+The local Apache-2.0 licence module avoids the upstream licence module's
+`hardware/interfaces`-only visibility. The APEX includes `NOTICE` and this
+provenance under `share/licenses/matonos-bluetooth-audio`.
+
 The Binder/FMQ implementation requires C++ and is retained in upstream's
 language. No new native daemon, private API, Linux-app access, driver or
 kernel option is added. The default module and its PipeWire connection are

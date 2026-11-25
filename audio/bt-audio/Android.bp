@@ -1,5 +1,12 @@
 package {
-    default_applicable_licenses: ["hardware_interfaces_license"],
+    default_applicable_licenses: ["matonos_bluetooth_audio_software_license"],
+}
+
+license {
+    name: "matonos_bluetooth_audio_software_license",
+    visibility: [":__subpackages__"],
+    license_kinds: ["SPDX-license-identifier-Apache-2.0"],
+    license_text: ["NOTICE"],
 }
 
 cc_library_static {
