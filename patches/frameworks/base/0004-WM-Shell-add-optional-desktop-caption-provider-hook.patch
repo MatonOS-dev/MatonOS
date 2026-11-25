@@ -115,8 +115,9 @@ index 8d06c8de54b6..662db28a4358 100644
 +         provider's touchable region fall through to caption_handle. -->
 +    <FrameLayout
 +        android:layout_width="0dp"
-         android:layout_height="40dp"
+-        android:layout_height="40dp"
 -        android:layout_weight="1"/>
++        android:layout_height="match_parent"
 +        android:layout_weight="1">
 +
 +        <View
