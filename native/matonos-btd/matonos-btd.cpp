@@ -2,6 +2,7 @@
 #include <android/log.h>
 #include <sys/system_properties.h>
 #include <sys/socket.h>
+#include <linux/netlink.h>
 #include <poll.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -159,9 +160,22 @@ int main(int argc,char **argv) {
     if(argc>1 && strcmp(argv[1],"--boot")==0) { if(!preferred.empty()) apply(preferred); return 0; }
     server=matonos_ipc_create("bluetooth");
     if(!server || matonos_ipc_register(server,"get_state",state,nullptr)!=0 || matonos_ipc_register(server,"list_devices",list,nullptr)!=0 || matonos_ipc_register(server,"select_device",selectDevice,nullptr)!=0 || matonos_ipc_start(server)!=0) { ERR("bluetooth IPC startup failed"); return 1; }
+    // Rescan on kernel hotplug events for the bluetooth subsystem instead of polling.
+    int ue=socket(AF_NETLINK,SOCK_DGRAM|SOCK_CLOEXEC,NETLINK_KOBJECT_UEVENT);
+    if(ue<0) { ERR("uevent socket errno=%d (%s)",errno,strerror(errno)); return 1; }
+    sockaddr_nl ua{}; ua.nl_family=AF_NETLINK; ua.nl_groups=1;
+    if(bind(ue,reinterpret_cast<sockaddr*>(&ua),sizeof(ua))<0) { ERR("uevent bind fd=%d errno=%d (%s)",ue,errno,strerror(errno)); return 1; }
     std::string previous=snapshot();
-    for(;;) { sleep(1); std::lock_guard<std::mutex> guard(lock); scan(); std::string now=snapshot(); if(now!=previous) {
-        // Bridge performs powered-down reconciliation on hotplug.
-        if(matonos_ipc_publish(server,"devices_changed",now.c_str())<0) ERR("publish devices_changed failed"); previous=now;
-    } }
+    for(;;) {
+        char b[8192]; ssize_t n=recv(ue,b,sizeof(b),0);
+        if(n<0 && errno==EINTR) continue;
+        // ENOBUFS: events were dropped, so rescan rather than trust the stream.
+        if(n<0 && errno!=ENOBUFS) { ERR("uevent recv fd=%d errno=%d (%s)",ue,errno,strerror(errno)); return 1; }
+        // Fields are NUL-separated; matching the trailing NUL avoids SUBSYSTEM=bluetoothX.
+        if(n>=0 && std::string(b,n).find(std::string("SUBSYSTEM=bluetooth",20))==std::string::npos) continue;
+        std::lock_guard<std::mutex> guard(lock); scan(); std::string now=snapshot(); if(now!=previous) {
+            // Bridge performs powered-down reconciliation on hotplug.
+            if(matonos_ipc_publish(server,"devices_changed",now.c_str())<0) ERR("publish devices_changed failed"); previous=now;
+        }
+    }
 }

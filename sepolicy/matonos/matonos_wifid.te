@@ -39,6 +39,8 @@ binder_call(matonos_system_bridge, matonos_btd)
 # MGMT READ_INFO on a powered-off controller.
 allow matonos_btd self:capability net_admin;
 allow matonos_btd self:bluetooth_socket { create bind read write };
+# Hotplug: btd rescans on bluetooth-subsystem uevents instead of polling.
+allow matonos_btd self:netlink_kobject_uevent_socket { create bind read };
 get_prop(matonos_btd, vendor_maton_prop)
 set_prop(matonos_btd, vendor_maton_prop)
 # Discover HCI/USB ancestry and descriptors; bind/unbind has a narrow label.
