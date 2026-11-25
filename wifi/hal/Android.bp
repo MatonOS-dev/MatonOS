@@ -94,6 +94,7 @@ cc_library_static {
         "wifi_status_util.cpp",
     ],
 
+    static_libs: ["libwifi-hal-matonos"],
     shared_libs: [
         "libbase",
         "libbinder_ndk",

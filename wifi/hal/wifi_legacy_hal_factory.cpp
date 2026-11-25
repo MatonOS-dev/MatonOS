@@ -16,6 +16,8 @@
 
 #include "wifi_legacy_hal_factory.h"
 
+#include <matonos_wifi_emu.h>
+
 #include <android-base/logging.h>
 #include <dirent.h>
 #include <dlfcn.h>
@@ -94,14 +96,9 @@ bool WifiLegacyHalFactory::initVendorHalDescriptorFromLinked() {
 }
 
 bool WifiLegacyHalFactory::initLinkedHalFunctionTable(wifi_hal_fn* hal_fn) {
-    init_wifi_vendor_hal_func_table_t initfn;
-
-    initfn = (init_wifi_vendor_hal_func_table_t)dlsym(RTLD_DEFAULT,
-                                                      "init_wifi_vendor_hal_func_table");
-    if (!initfn) {
-        LOG(INFO) << "no vendor HAL library linked, will try dynamic load";
-        return false;
-    }
+    // MatonOS: the linked backend is our nl80211 fork, called directly. The
+    // goldfish copy that libwifi-hal.so also exports stays unused.
+    init_wifi_vendor_hal_func_table_t initfn = matonos_wifi_emu::init_wifi_vendor_hal_func_table;
 
     if (!initHalFuncTableWithStubs(hal_fn)) {
         LOG(ERROR) << "Can not initialize the basic function pointer table";
