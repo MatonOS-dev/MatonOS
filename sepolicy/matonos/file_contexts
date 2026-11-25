@@ -46,3 +46,6 @@
 /odm/bin/matonos-bootlogo u:object_r:matonos_bootlogo_exec:s0
 /oem/media(/.*)? u:object_r:matonos_bootlogo_file:s0
 
+
+# btd: controller identities retained while the USB driver is unbound.
+/data/vendor/maton-btd(/.*)? u:object_r:vendor_maton_btd_data_file:s0

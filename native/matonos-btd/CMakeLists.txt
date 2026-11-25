@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.22)
+project(matonos_btd CXX)
+add_executable(matonos-btd matonos-btd.cpp)
+target_compile_features(matonos-btd PRIVATE cxx_std_17)
+target_compile_options(matonos-btd PRIVATE -Wall -Wextra -Werror)
+target_include_directories(matonos-btd PRIVATE "${MATON_IPC_INCLUDE_DIR}")
+target_link_libraries(matonos-btd PRIVATE log "${MATON_IPC_LIBRARY}")
+install(TARGETS matonos-btd RUNTIME DESTINATION .)

@@ -27,3 +27,28 @@ allow matonos_wifid self:netlink_route_socket { create_socket_perms_no_ioctl nlm
 # if_nameindex() (name collision check before a rename) dumps links.
 allow matonos_wifid self:netlink_route_socket nlmsg;
 allowxperm matonos_wifid self:netlink_route_socket nlmsg RTM_GETLINK;
+
+# btd: separate from HAL domains because MGMT needs net_admin (HAL neverallow).
+type matonos_btd, domain;
+type matonos_btd_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(matonos_btd)
+binder_use(matonos_btd)
+allow matonos_btd matonos_channel_service:service_manager add;
+binder_call(matonos_btd, matonos_system_bridge)
+binder_call(matonos_system_bridge, matonos_btd)
+# MGMT READ_INFO on a powered-off controller.
+allow matonos_btd self:capability net_admin;
+allow matonos_btd self:bluetooth_socket { create bind read write };
+get_prop(matonos_btd, vendor_maton_prop)
+set_prop(matonos_btd, vendor_maton_prop)
+# Discover HCI/USB ancestry and descriptors; bind/unbind has a narrow label.
+r_dir_file(matonos_btd, sysfs)
+type sysfs_maton_btusb, fs_type, sysfs_type;
+allow matonos_btd sysfs_maton_btusb:dir search;
+allow matonos_btd sysfs_maton_btusb:file { open write getattr };
+# Retain address->USB identity when btusb is detached, including across restarts.
+allow matonos_btd vendor_maton_btd_data_file:dir rw_dir_perms;
+allow matonos_btd vendor_maton_btd_data_file:file create_file_perms;
+
+# btd identity cache is vendor-owned, separate from the platform Bluetooth data.
+type vendor_maton_btd_data_file, file_type, data_file_type;

@@ -7,3 +7,4 @@ native:matonos-wifid bin/matonos-wifid
 native:libmatonos-ipc.so lib64/libmatonos-ipc.so
 radio:apex/matonos-radio.rc etc/matonos-radio.rc
 radio:apex/vintf.xml etc/vintf/manifest.xml
+native:matonos-btd bin/matonos-btd

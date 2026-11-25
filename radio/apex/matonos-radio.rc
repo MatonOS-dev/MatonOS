@@ -4,6 +4,9 @@ on property:apex.all.ready=true
     mkdir /data/vendor/wifi/hostapd 0770 wifi wifi
     mkdir /data/vendor/wifi/hostapd/sockets 0770 wifi wifi
     start vendor.wifi_hal_matonos
+    mkdir /data/vendor/maton-btd 0700 root root
+    exec_start vendor.matonos-btd-boot
+    start vendor.matonos-btd
     start vendor.bluetooth-matonos
     start vendor.matonos-wifid
 
@@ -51,3 +54,23 @@ service hostapd /apex/com.matonos.hardware.radio/bin/hw/hostapd
     group wifi net_raw net_admin
     disabled
     oneshot
+
+# A bounded one-shot completes choice before the HAL starts. Timeout or failure
+# continues the init action; the HAL never requires btd's channel to be ready.
+service vendor.matonos-btd-boot /apex/com.matonos.hardware.radio/bin/matonos-btd --boot
+    class core
+    user root
+    group bluetooth
+    capabilities NET_ADMIN
+    setenv LD_LIBRARY_PATH /apex/com.matonos.hardware.radio/lib64:/odm/lib64
+    disabled
+    oneshot
+    timeout_period 5
+
+service vendor.matonos-btd /apex/com.matonos.hardware.radio/bin/matonos-btd
+    class core
+    user root
+    group bluetooth
+    capabilities NET_ADMIN
+    setenv LD_LIBRARY_PATH /apex/com.matonos.hardware.radio/lib64:/odm/lib64
+    disabled

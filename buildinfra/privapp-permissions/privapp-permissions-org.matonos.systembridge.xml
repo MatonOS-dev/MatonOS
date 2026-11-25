@@ -9,5 +9,7 @@
         <permission name="android.permission.MODIFY_AUDIO_ROUTING" />
         <!-- input: per-user pointer settings (USER_CURRENT). -->
         <permission name="android.permission.MANAGE_USERS" />
+        <!-- btd: privileged controller enable/disable around driver selection. -->
+        <permission name="android.permission.BLUETOOTH_PRIVILEGED" />
     </privapp-permissions>
 </permissions>
