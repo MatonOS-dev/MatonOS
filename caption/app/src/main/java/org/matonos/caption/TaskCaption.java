@@ -94,10 +94,9 @@ final class TaskCaption {
         buttons.setGravity(Gravity.CENTER_VERTICAL);
         root.addView(buttons, buttonsLp);
 
-        int maxGlyph = maximized ? CaptionGlyph.RESTORE : CaptionGlyph.MAXIMIZE;
         int[] glyphs = theme.right
-                ? new int[]{CaptionGlyph.MINIMIZE, maxGlyph, CaptionGlyph.CLOSE}
-                : new int[]{CaptionGlyph.CLOSE, maxGlyph, CaptionGlyph.MINIMIZE};
+                ? new int[]{R.drawable.caption_minimize, R.drawable.caption_maximize, R.drawable.caption_close}
+                : new int[]{R.drawable.caption_close, R.drawable.caption_maximize, R.drawable.caption_minimize};
         for (int i = 0; i < 3; i++) {
             final int action = theme.right ? 2 - i : i;
             ImageView button = button(glyphs[i], theme, theme.circles);
@@ -142,9 +141,10 @@ final class TaskCaption {
 
     private ImageView button(int glyph, CaptionTheme theme, boolean circle) {
         ImageView view = new ImageView(context);
-        view.setScaleType(ImageView.ScaleType.FIT_XY);
-        view.setImageDrawable(new CaptionGlyph(glyph, theme.foreground, dp(10),
-                context.getResources().getDisplayMetrics().density * 1.5f));
+        view.setScaleType(ImageView.ScaleType.CENTER);
+        android.graphics.drawable.Drawable drawable = context.getDrawable(glyph).mutate();
+        drawable.setTint(theme.foreground);
+        view.setImageDrawable(drawable);
         if (circle) {
             StateListDrawable states = new StateListDrawable();
             states.addState(new int[]{android.R.attr.state_pressed}, shape(theme.accent, true));
