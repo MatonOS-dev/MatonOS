@@ -13,7 +13,9 @@ newest entries at the bottom of each section.
 | 130 | fb37d44d | OK 01:14 (`BOARD_HOSTAPD_DRIVER := NL80211`); live130 tested (below) |
 | 131 | 25035145 | OK 02:21 (radio rc in `etc/`, BT HAL `interface` line); live131 tested (below) |
 | 132 | a9fdf8a5 | OK 03:30; live132 tested (below) |
-| 133 | d0d8b8b8 | running since ~03:55: Wi-Fi HAL mode/limit fixes + BT onUnlinked |
+| 133 | d0d8b8b8 | OK 04:38; live133 tested (below) |
+| 134 | 97019aa5 | stopped by me after ~3 min to fold in the nl80211 fix |
+| 135 | ac0ec3be | running since ~05:05: hwsim rc trigger + nl80211 iface fallback |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -68,6 +70,27 @@ silently. So hotspot never had a daemon; the radio APEX check is what caught it.
 - How I check HAL C++ before a build now: AOSP clang on the server against the
   generated `android.hardware.wifi-V4` + `wifi.common` NDK headers,
   `--target=x86_64-linux-android37 -nostdlibinc -fno-exceptions -Werror`.
+
+**live133 results** (enforcing):
+- **PASS: Wi-Fi turns on.** wlan0 up, wpa_supplicant running, scan
+  completes (0 results, nothing in range), no denials, no crash.
+- PASS: hostapd now exists and registers `IHostapd/default`.
+- FAIL → fixed for 135 (ac0ec3be): hotspot. The HAL could not create the AP
+  interface (`wlan2 NOT_SUPPORTED`): the goldfish legacy backend expects
+  pre-made interfaces. Our HAL now creates STA/AP interfaces itself through
+  nl80211 NEW_INTERFACE on wlan0's phy and deletes them again.
+- FAIL → fixed for 135 (97019aa5): `persist.vendor.maton.wifi.hwsim_radios=2`
+  was ignored. wifid asks for hwsim on `apex.all.ready`, before persist
+  props are loaded; the rc trigger now also waits for
+  `ro.persistent_properties.ready`. So the two-radio switch and a real STA
+  connect (radio 2 as AP) are still untested.
+- Note: `su` runs in the shell domain, so it cannot set `persist.vendor.maton.*`
+  (correct policy); for tests I set it with a brief `setenforce 0`.
+- Seen, harmless: modprobe `key write` denial while loading modules.
+- Boot without the radio APEX: not run as a separate image yet. Evidence so
+  far: live130 booted with none of the radio services running, and the HAL
+  VINTF fragments live inside the APEX, so no APEX means no declared HAL to
+  wait for.
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
