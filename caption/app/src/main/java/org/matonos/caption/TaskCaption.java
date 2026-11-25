@@ -102,7 +102,7 @@ final class TaskCaption {
                 : new int[]{R.drawable.caption_close, maxGlyph, R.drawable.caption_minimize};
         for (int i = 0; i < 3; i++) {
             final int action = theme.right ? 2 - i : i;
-            ImageView button = button(glyphs[i], theme, theme.circles, dp(buttonDp));
+            ImageView button = button(glyphs[i], theme, theme.circles);
             LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(dp(buttonDp), dp(buttonDp));
             if (i > 0) buttonLp.leftMargin = dp(BUTTON_GAP_DP);
             buttons.addView(button, buttonLp);
@@ -144,15 +144,12 @@ final class TaskCaption {
         root.post(this::sendRegions);
     }
 
-    private ImageView button(int glyph, CaptionTheme theme, boolean circle, int diameterPx) {
+    private ImageView button(int glyph, CaptionTheme theme, boolean circle) {
         ImageView view = new ImageView(context);
-        // A 24-viewport Lucide stroke is 2 units: multiples of 12 physical pixels
-        // keep it an integer pixel wide at any density, near half the circle size.
-        int iconPx = Math.max(12, Math.round(diameterPx / 24f) * 12);
-        int inset = Math.max(0, (diameterPx - iconPx) / 2);
-        view.setPadding(inset, inset, diameterPx - iconPx - inset,
-                diameterPx - iconPx - inset);
-        view.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        // The caption_* drawables are 18 dp with a 2.6667-unit stroke on Lucide's 24 grid:
+        // 2 px at 160 dpi, 3 px at 240, 4 px at 320, so every line has the same width.
+        // Centred at its own size, never scaled, so nothing resamples the stroke.
+        view.setScaleType(ImageView.ScaleType.CENTER);
         android.graphics.drawable.Drawable drawable = context.getDrawable(glyph).mutate();
         drawable.setTint(theme.foreground);
         view.setImageDrawable(drawable);
