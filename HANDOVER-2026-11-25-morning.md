@@ -148,8 +148,8 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - Also in 137: the Wi-Fi HAL death recipient sets `onUnlinked`, so the
   "will become an abort" warning is gone there too (the cookie is just a
   lookup key).
-- Open, minor: `switch_core.h` reports errors with `fprintf(stderr)`, which goes
-  nowhere for an init service; should be ALOGE (errors-loud rule).
+- Done: `switch_core.h` logs errors with `__android_log_print` on Android;
+  `fprintf(stderr)` is only the host unit-test build.
 
 **live137 results** (enforcing):
 - PASS: no RTM_GETLINK denial; the Wi-Fi HAL no longer logs "will become an
