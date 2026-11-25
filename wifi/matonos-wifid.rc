@@ -17,8 +17,8 @@ on post-fs-data
 # the fallback to one empty nl80211 radio. Real adapters never get a phantom.
 # modprobe is the shared vendor toolbox; it needs an explicit domain (as in
 # bluetooth/matonos-bluetooth.rc), a plain service has none and init refuses it.
-# wifid asks on apex.all.ready, which can come before init loads persist.*
-# props; wait for them or the radio count falls back to 1.
-on property:vendor.maton.wifi.hwsim.load=1 && property:ro.persistent_properties.ready=true
+# persist.* props are loaded before apexd runs, so they are set when this
+# (APEX-parsed) rc can first fire.
+on property:vendor.maton.wifi.hwsim.load=1
     exec_background u:r:vendor_modprobe:s0 -- /vendor/bin/modprobe -d /vendor/lib/modules mac80211_hwsim radios=${persist.vendor.maton.wifi.hwsim_radios:-1}
     setprop vendor.maton.wifi.hwsim.load 0
