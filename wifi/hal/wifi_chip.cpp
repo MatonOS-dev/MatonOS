@@ -706,7 +706,16 @@ WifiChip::getAvailableModesInternal() {
 
 ndk::ScopedAStatus WifiChip::configureChipInternal(
         /* NONNULL */ std::unique_lock<std::recursive_mutex>* lock, int32_t mode_id) {
+    // MatonOS: WifiService may reuse cached chip modes without calling
+    // getAvailableModes after a HAL restart (Wi-Fi off/on), so a new chip still
+    // holds the compile-time modes. Load wlan0's runtime mode here too.
+    if (!isValidModeId(current_mode_id_)) {
+        using_dynamic_iface_combination_ = false;
+        retrieveDynamicIfaceCombination();
+    }
     if (!isValidModeId(mode_id)) {
+        LOG(ERROR) << "configureChip: mode " << mode_id << " is not one of the "
+                   << modes_.size() << " available modes";
         return createWifiStatus(WifiStatusCode::ERROR_INVALID_ARGS);
     }
     if (mode_id == current_mode_id_) {
