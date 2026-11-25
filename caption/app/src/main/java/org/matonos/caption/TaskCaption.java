@@ -83,7 +83,7 @@ final class TaskCaption {
         CaptionTheme theme = new CaptionTheme(context, dark, state.getBoolean("focused"));
         root.setBackgroundColor(theme.background);
         int heightDp = Math.max(1, Math.round(height / context.getResources().getDisplayMetrics().density));
-        int buttonDp = Math.max(1, Math.round(heightDp * 0.75f));
+        int buttonDp = Math.max(1, Math.round(heightDp * 0.7f));
         // Same gap beside the first circle as above and below it, as in the reference.
         int pad = Math.max(1, (heightDp - buttonDp) / 2);
         FrameLayout.LayoutParams buttonsLp = new FrameLayout.LayoutParams(
@@ -146,7 +146,7 @@ final class TaskCaption {
 
     private ImageView button(int glyph, CaptionTheme theme, boolean circle) {
         ImageView view = new ImageView(context);
-        // The caption_* drawables are 18 dp with a 2.6667-unit stroke on Lucide's 24 grid:
+        // The caption_* drawables are 16 dp with a 3-unit stroke on Lucide's 24 grid:
         // 2 px at 160 dpi, 3 px at 240, 4 px at 320, so every line has the same width.
         // Centred at its own size, never scaled, so nothing resamples the stroke.
         view.setScaleType(ImageView.ScaleType.CENTER);
