@@ -90,7 +90,7 @@ silently. So hotspot never had a daemon; the radio APEX check is what caught it.
 - Note: `su` runs in the shell domain, so it cannot set `persist.vendor.maton.*`
   (correct policy); for tests I set it with a brief `setenforce 0`.
 - Seen, harmless: modprobe `key write` denial while loading modules.
-- Boot without the radio APEX: not run as a separate image yet. Evidence so
+- Boot without the radio APEX: skipped for now (your call 08:50). Evidence so
   far: live130 booted with none of the radio services running, and the HAL
   VINTF fragments live inside the APEX, so no APEX means no declared HAL to
   wait for.

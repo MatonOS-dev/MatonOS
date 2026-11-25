@@ -13,13 +13,19 @@
 #include <string>
 #include <vector>
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#define WIFID_LOGE(...) __android_log_print(ANDROID_LOG_ERROR, "matonos-wifid", __VA_ARGS__)
+#else
+#define WIFID_LOGE(...) (std::fprintf(stderr, __VA_ARGS__), std::fputc('\n', stderr))
+#endif
+
 #define WIFID_CLOSE(fd) do { \
     const int close_fd = (fd); \
     const int saved_errno = errno; \
-    std::fprintf(stderr, "CLOSE fd=%d at %s:%d\n", close_fd, __FILE__, __LINE__); \
     if (::close(close_fd) != 0) { \
         const int close_error = errno; \
-        std::fprintf(stderr, "close fd=%d failed errno=%d (%s) at %s:%d\n", \
+        WIFID_LOGE("close fd=%d failed errno=%d (%s) at %s:%d", \
                      close_fd, close_error, std::strerror(close_error), __FILE__, __LINE__); \
     } \
     errno = saved_errno; \
@@ -35,7 +41,7 @@ inline bool NameExists(const std::string& name) {
     struct if_nameindex* names = if_nameindex();
     if (!names) {
         const int error = errno;
-        std::fprintf(stderr, "if_nameindex failed errno=%d (%s)\n", error, std::strerror(error));
+        WIFID_LOGE("if_nameindex failed errno=%d (%s)", error, std::strerror(error));
         errno = error;
         return false;
     }
