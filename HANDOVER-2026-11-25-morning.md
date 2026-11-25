@@ -15,7 +15,8 @@ newest entries at the bottom of each section.
 | 132 | a9fdf8a5 | OK 03:30; live132 tested (below) |
 | 133 | d0d8b8b8 | OK 04:38; live133 tested (below) |
 | 134 | 97019aa5 | stopped by me after ~3 min to fold in the nl80211 fix |
-| 135 | ac0ec3be | running since ~05:05: hwsim rc trigger + nl80211 iface fallback |
+| 135 | ac0ec3be | OK 05:57; live135 tested (below) |
+| 136 | 656a541d | running since 06:06: hwsim rc trigger reverted to one condition |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -91,6 +92,30 @@ silently. So hotspot never had a daemon; the radio APEX check is what caught it.
   far: live130 booted with none of the radio services running, and the HAL
   VINTF fragments live inside the APEX, so no APEX means no declared HAL to
   wait for.
+
+**live135 results** (enforcing):
+- FAIL → fixed for 136 (656a541d): hwsim never loaded, so there was no wlan0.
+  My 97019aa5 trigger waited on `ro.persistent_properties.ready`, which
+  vendor_init may not read (denied). That condition was also never needed:
+  init loads persist props (and waits for them) before apexd runs, and this rc
+  is parsed from the APEX. So the "persist race" I blamed on live133 was
+  wrong; the likely cause there is that my `setprop` never took. 136 retests
+  `hwsim_radios=2` properly.
+- With hwsim loaded by hand (`radios=2`, two phys) and the HAL restarted:
+  - **PASS: hotspot.** The HAL created `wlan2` (AP) on wlan0's phy via
+    nl80211, hostapd reported `AP-ENABLED`, and the other radio saw
+    `MatonTest` at -30 dBm. Stopping the hotspot deleted `wlan2` again.
+  - **PASS: Wi-Fi connect.** With a test AP `MatonNet` on the second radio,
+    the framework STA (wlan0) associated: supplicant `COMPLETED`, 48 Mbps,
+    `CTRL-EVENT-CONNECTED`. 0 denials, 0 crashes. No IPv4 because the test
+    AP had no DHCP server.
+  - Note: `cmd wifi connect-network` alone bails with "no requests" because
+    the VM's ethernet satisfies the default request; `cmd wifi add-request`
+    (pre-approved) works. On a laptop without ethernet this does not arise.
+- Open, minor: after the nl80211 create, the HAL logs `Unknown iface name:
+  wlan2`. The goldfish backend's `wifi_get_ifaces` only lists interfaces it
+  found at start, so per-iface vendor calls on the AP iface fail. The AP works
+  without them.
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
