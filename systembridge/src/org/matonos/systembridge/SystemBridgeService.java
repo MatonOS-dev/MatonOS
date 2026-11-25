@@ -414,8 +414,12 @@ public final class SystemBridgeService extends Service {
         return START_STICKY;
     }
 
+    private NetworkSpeakerDiscovery networkSpeakers;
+
     @Override public void onCreate() {
         super.onCreate();
+        networkSpeakers = new NetworkSpeakerDiscovery(this);
+        networkSpeakers.start();
         activeService = this;
         // sleep: poll off the main thread; failed power inspection keeps sleep blocked.
         sleepWakeForwarder = new AndroidWakeStateForwarder(this);
@@ -431,6 +435,7 @@ public final class SystemBridgeService extends Service {
     }
 
     @Override public void onDestroy() {
+        if (networkSpeakers != null) networkSpeakers.stop();
         // sleep: stop the poller with the persistent bridge service.
         if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
         audioChannelHandler.removeCallbacks(audioChannelRebinder);

@@ -71,6 +71,23 @@ for rel, source in [
  ('etc/vintf/audio.xml', device / 'audio/native-hal/vintf/manifest.xml')]:
  target = payload / rel; target.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(source, target)
 PY
+# The default remains the stock external provider until the coordinator has
+# linked the fork. Enable together with camera.mk's MATON_PIPEWIRE_CAMERA=true.
+if [[ ${MATON_PIPEWIRE_CAMERA:-false} == true ]]; then
+  [[ -s $PRODUCT_OUT/vendor/bin/hw/matonos-camera-provider ]] || die "PipeWire camera provider binary missing"
+  install -m 0755 "$PRODUCT_OUT/vendor/bin/hw/matonos-camera-provider" "$INPUT/bin/hw/"
+  install -m 0644 "$DEVICE_DIR/camera/pipewire-provider/matonos-camera-provider.rc" "$INPUT/etc/"
+  install -m 0644 "$DEVICE_DIR/camera/external_camera_config.xml" "$INPUT/etc/"
+  python3 - "$INPUT/etc/vintf/audio.xml" "$DEVICE_DIR/camera/android.hardware.camera.provider-V1-external-service.xml" <<'PY_CAMERA'
+import sys, xml.etree.ElementTree as ET
+manifest = ET.parse(sys.argv[1])
+for hal in ET.parse(sys.argv[2]).getroot():
+    hal.set('override', 'true')
+    hal.set('updatable-via-apex', 'com.matonos.hardware.media')
+    manifest.getroot().append(hal)
+manifest.write(sys.argv[1], encoding='utf-8', xml_declaration=True)
+PY_CAMERA
+fi
 READELF=${READELF:-$HOSTBIN/llvm-readelf}; [[ -x $READELF ]] || READELF=$(command -v readelf || true)
 [[ -n $READELF && -x $READELF ]] || die "readelf is required"
 VENDOR_APEX_PREPARE_ARGS=(--lib-root "$PRODUCT_OUT/vendor/lib64" --xml "$DEVICE_DIR/audio/effects/audio_effects_config.xml" --require-needed libpipewire-0.3.so)

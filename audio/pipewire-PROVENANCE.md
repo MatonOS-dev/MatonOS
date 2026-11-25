@@ -8,8 +8,9 @@ records the selected commits and ALSA-lib archive hash.
 
 | Component | Pin | License reviewed at source pin | Role |
 |---|---|---|---|
-| PipeWire | `8fa27cabdc6c0c1350c69c026af5850ef0af1e26` (1.6.9) | MIT (`COPYING`) | Daemon, libpipewire, SPA support, audioconvert, audiomixer, ALSA |
-| WirePlumber | `11e501181fb87dc8e72e55156d672109fbad2434` (0.5.17) | MIT (`LICENSE`) | ALSA monitor and Lua default policy |
+| BoringSSL | `0cd1f6a94b670e6b61af95a06e71e690ae8e3262` (existing AOSP checkout) | Apache-2.0 plus retained ISC/OpenSSL notices (`LICENSE`) | Static libcrypto in RAOP sink; see `network-speakers/PROVENANCE.md` |
+| PipeWire | `8fa27cabdc6c0c1350c69c026af5850ef0af1e26` (1.6.9) | MIT (`COPYING`) | Daemon, libpipewire, SPA support, audioconvert, audiomixer, ALSA, V4L2; RAOP and protocol-simple network sinks |
+| WirePlumber | `11e501181fb87dc8e72e55156d672109fbad2434` (0.5.17) | MIT (`LICENSE`) | ALSA/V4L2 monitors and Lua default policy |
 | ALSA-lib | 1.2.15; SHA-256 pinned in build script | LGPL-2.1-or-later (`COPYING`) | ALSA client library and UCM runtime |
 | alsa-ucm-conf | `28776e1e22a952e4ab01037033380aa111985101` | BSD-3-Clause (`LICENSE`) | UCM profiles |
 | GLib | `41eca60845d3fc309af361f5e7f801ba339099aa` (2.84.4) | LGPL-2.1-or-later (`COPYING`) | WirePlumber runtime (GLib/GObject/GIO); bundled PCRE2 is BSD-3-Clause and proxy-libintl is LGPL-2.1 |

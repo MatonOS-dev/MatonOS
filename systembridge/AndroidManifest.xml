@@ -24,6 +24,8 @@
     <!-- sleep: read PowerManager's held wake locks from its privileged dump. -->
     <uses-permission android:name="android.permission.DUMP" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Network speaker discovery delegates multicast to the platform NSD service. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.NETWORK_SETTINGS" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />

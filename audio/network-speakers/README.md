@@ -1,76 +1,59 @@
-# Network speakers: unfinished
+# Network speakers
 
-RAOP/AirPlay and Snapcast discovery are not enabled by this task. No network
-sinks, discovery service, policy permissions or new dependency libraries
-have been added. This is unfinished integration work, not a claim that an
-AOSP patch is necessary. Existing local audio remains the active path.
+The existing system bridge browses RAOP `_raop._tcp`, Snapcast
+`_snapcast-jsonrpc._tcp` and `_snapcast-ctrl._tcp` with NsdManager. Persistent
+service-info callbacks follow address/TXT updates and loss. Browsers and
+failed watches retry on its worker thread. Duplicate RAOP names and Snapcast
+numeric address/port pairs share one sink; loss of one duplicate does not
+remove a surviving announcement. Network loss removes affected watches.
 
-The inspected PipeWire pin is
-`8fa27cabdc6c0c1350c69c026af5850ef0af1e26` (1.6.9, MIT), already used by
-`tools/build-pipewire.sh`. Relevant primary sources:
+The bridge sends desired add/remove/reset commands over the existing
+`IChannel/audio`. The HAL queues them, then forwards them through PipeWire
+metadata on its private Unix connection. `NetworkSpeakerModules.c` runs
+inside the existing PipeWire process and loads/unloads the stock RAOP sink
+or the Snapcast integration. There is no additional daemon and no Avahi.
+AOSP forbids IP sockets in audio HAL domains: moving the socket work into
+the existing PipeWire process is necessary for stock policy/CTS compliance.
 
-- [Module build rules](https://github.com/PipeWire/pipewire/blob/8fa27cabdc6c0c1350c69c026af5850ef0af1e26/src/modules/meson.build):
-  `raop-discover` and `snapcast-discover` require `avahi-client`;
-  `raop-sink` requires OpenSSL. Enabling only `-Davahi=enabled` will fail
-  without the client dependency; setting module config does not build it.
-- [RAOP discovery](https://github.com/PipeWire/pipewire/blob/8fa27cabdc6c0c1350c69c026af5850ef0af1e26/src/modules/module-raop-discover.c)
-  and [Snapcast discovery](https://github.com/PipeWire/pipewire/blob/8fa27cabdc6c0c1350c69c026af5850ef0af1e26/src/modules/module-snapcast-discover.c)
-  use Avahi client browser/resolver callbacks. Snapcast discovers server
-  control/JSON-RPC services and creates a stream on the server; the server
-  must route that stream to its clients. It is not discovery of individual
-  speaker hardware.
-- `packages/modules/Connectivity/service-t/src/com/android/server/NsdService.java`
-  in the current AOSP checkout uses the Java MdnsDiscoveryManager/socket
-  client; `mMDnsManager` is null on V and later. A running Android NSD service
-  does not implement Avahi's D-Bus client API. Merely linking a client or
-  allowing multicast sockets cannot connect the stock modules to it.
+Module loads are asynchronous to Binder/startup and optional. Failures log
+with receiver/module/error context and retry every three seconds. The bridge
+replays every five seconds; both transport and daemon use 15-second monotonic
+leases to clean up after a lost bridge/HAL. Restarted PipeWire metadata is
+rebound and current desired state is replayed. Receiver failure never removes
+the local sink or the existing `maton-fallback` object. Actual resulting
+`Audio/Sink` nodes go through the HAL's existing registry/device mirroring.
 
-Smallest direction with no additional long-running daemon: reuse
-`NsdManager` from an existing trusted Android service and forward verified
-add/remove/resolve events to multimedia glue which creates/destroys stock
-PipeWire sink modules. That bridge/glue has not been written. It needs
-network-change handling, IPv6 scope IDs, TXT-to-module-property mapping,
-restart reconciliation, sink removal, and authorization on its control
-channel. Alternatively, fork the discovery modules to embed Avahi core
-instead of its D-Bus client. Stock modules without a fork need an Avahi
-service and D-Bus bus; neither is currently shipped in the media APEX.
-Those are alternatives for completing the integration, not installed
-backends. No new dependency pin or unreviewed Avahi build is introduced.
+RAOP TXT mapping, dependency symbols, licences and policy are recorded in
+`PROVENANCE.md` and `../mediahal2.report.md`. RAOP supports resolved IPv4 and
+scoped IPv6 (including discovery-interface suffix for link-local addresses).
+Snapcast follows the pinned discover module's IPv4 selection. It creates a
+48 kHz / S16LE / stereo stock protocol-simple sink and asks the server to add
+its PCM TCP stream. **The server connects back to a local ephemeral listener**;
+this is the stock protocol and requires LAN/firewall reachability in that
+direction. Users must assign that stream to Snapcast clients on the server.
+Roc is allowed (MPL-2.0) but optional and not included.
 
-ROC is deliberately excluded by the task's permissive-licence condition.
-[Roc Toolkit's licence](https://github.com/roc-streaming/roc-toolkit/blob/master/LICENSE)
-is MPL-2.0 (file-level copyleft), not a permissive licence.
-[Upstream's dependency review](https://roc-streaming.org/toolkit/docs/about_project/licensing.html)
-also identifies additional optional codec licence obligations. This is a
-licence-condition exclusion, not an allegation that Roc uses GPLv3.
-`-Droc=disabled` remains appropriate.
+Run `check-native.sh AOSP NDK PW_SOURCE PW_BUILD PW_PREFIX OUTPUT` for NDK
+object/link checks without Soong. The existing PipeWire build must provide
+its RTP common archive and installed libpipewire. This passed locally,
+including building pinned BoringSSL and linking all three network modules
+with `--no-undefined`. The complete updated stack recipe, APEX/image, policy
+compilation and real receiver playback remain unverified.
 
-No SELinux rules were added, since there is no new network client to grant.
-A completed implementation needs only its own domain's UDP/TCP socket
-creation/use, outbound sink connection, and discovery transport rights.
-With NsdManager the Android NSD service owns multicast discovery; do not add
-mDNS socket rights to PipeWire for that architecture. Audit actual AVCs and
-source operations before writing the exact rules. Linux app domains must
-retain no access to the system PipeWire socket.
+Coordinator acceptance on a fresh image:
 
-Boot safety today: no startup behaviour changed. Future module loads must
-be optional (`nofail`), with connection/discovery failure logged and
-asynchronous; retain the local/fallback sink when networks vanish. Do not
-wait for mDNS, an interface, receiver, or APEX content in init. Do not make
-WirePlumber startup depend on a speaker.
+1. Without a network/receivers, check `sys.boot_completed=1`, local playback,
+   `maton-fallback` existence, and absence of boot waits.
+2. Advertise RAOP and Snapcast on a reachable LAN. Inspect private PipeWire
+   nodes and `dumpsys media.audio_policy`; select each mirrored device and
+   verify audible PCM, volume and local fallback after removal.
+3. Test duplicate IPv4/IPv6 advertisements, both Snapcast service types,
+   TXT/address changes, Wi-Fi roam/loss and receiver restarts. After all
+   advertisements disappear, confirm the remote sink disappears.
+4. Restart PipeWire and the HAL with the coordinator's normal fresh-image
+   procedure; confirm reconciliation, with no duplicate sinks. Check logcat
+   and AVCs. Kill/restart the bridge and verify stale sinks expire.
+5. Repeat on Ryzen/RX6600/Intel7265, Surface Pro 3/Marvell and HP ProDesk
+   Haswell with the normal real network adapter. No VM USB/VFIO passthrough.
 
-Coordinator acceptance after the missing implementation exists:
-
-1. Fresh boot without network/receivers: `getprop sys.boot_completed` is 1,
-   local playback works, and the fallback sink exists.
-2. With a reachable RAOP receiver and Snapcast server on the test LAN,
-   inspect `/apex/com.matonos.hardware.media/bin/pw-cli ls Node` as the audio
-   user in the private PipeWire runtime. Confirm actual `Audio/Sink` nodes.
-3. Inspect `dumpsys media.audio_policy`, select each mirrored device using
-   the current settings app, play PCM and verify audible output at the
-   receiver. Validate volume, disconnect and sink removal while playing.
-4. Repeat after Wi-Fi roam, interface loss, IPv4/IPv6 changes, receiver
-   restart, PipeWire restart and duplicate advertisements. Local audio must
-   remain usable throughout. Inspect logcat and SELinux AVCs.
-
-No receiver, network discovery, build or playback test was run here.
+No receiver, VM, policy-runtime or audible playback test was run here.

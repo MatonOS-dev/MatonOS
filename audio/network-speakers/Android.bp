@@ -1,0 +1,14 @@
+cc_library_static {
+    name: "libmatonos_network_speakers",
+    vendor: true,
+    srcs: ["NetworkSpeakers.c"],
+    shared_libs: [
+        "libpipewire_matonos",
+        "liblog",
+    ],
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+    ],
+}

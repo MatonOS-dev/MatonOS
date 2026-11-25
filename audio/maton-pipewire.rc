@@ -3,7 +3,7 @@ service vendor.pipewire /apex/com.matonos.hardware.media/bin/pipewire
     class late_start
     disabled
     user audio
-    group audio system input
+    group audio system input camera inet
     setenv HOME /data/vendor/maton-audio
     setenv XDG_STATE_HOME /data/vendor/maton-audio/state
     setenv XDG_RUNTIME_DIR /data/vendor/maton-audio
@@ -27,7 +27,7 @@ service vendor.wireplumber /apex/com.matonos.hardware.media/bin/wireplumber
     class late_start
     disabled
     user audio
-    group audio system input
+    group audio system input camera inet
     setenv HOME /data/vendor/maton-audio
     setenv XDG_STATE_HOME /data/vendor/maton-audio/state
     setenv XDG_RUNTIME_DIR /data/vendor/maton-audio
