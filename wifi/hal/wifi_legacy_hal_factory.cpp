@@ -98,7 +98,7 @@ bool WifiLegacyHalFactory::initVendorHalDescriptorFromLinked() {
 bool WifiLegacyHalFactory::initLinkedHalFunctionTable(wifi_hal_fn* hal_fn) {
     // MatonOS: the linked backend is our nl80211 fork, called directly. The
     // goldfish copy that libwifi-hal.so also exports stays unused.
-    init_wifi_vendor_hal_func_table_t initfn = matonos_wifi_emu::init_wifi_vendor_hal_func_table;
+    init_wifi_vendor_hal_func_table_t initfn = matonos_wifi_emu::emu_init_wifi_vendor_hal_func_table;
 
     if (!initHalFuncTableWithStubs(hal_fn)) {
         LOG(ERROR) << "Can not initialize the basic function pointer table";

@@ -6,5 +6,7 @@
 
 namespace matonos_wifi_emu {
 // The forked nl80211 backend's function table (libwifi-hal-matonos).
-wifi_error init_wifi_vendor_hal_func_table(wifi_hal_fn* fn);
+// Not the C API name: wifi_hal.h is extern "C", which would ignore the
+// namespace and clash with the goldfish copy in libwifi-hal.so.
+wifi_error emu_init_wifi_vendor_hal_func_table(wifi_hal_fn* fn);
 }  // namespace matonos_wifi_emu

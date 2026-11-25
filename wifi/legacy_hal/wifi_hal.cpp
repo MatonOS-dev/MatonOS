@@ -51,7 +51,7 @@ Interface* asInterface(wifi_interface_handle h) {
     return reinterpret_cast<Interface*>(h);
 }
 
-wifi_error wifi_initialize(wifi_handle* handle) {
+wifi_error emu_wifi_initialize(wifi_handle* handle) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
     }
@@ -76,7 +76,7 @@ wifi_error wifi_initialize(wifi_handle* handle) {
     return WIFI_SUCCESS;
 }
 
-void wifi_cleanup(wifi_handle handle, wifi_cleaned_up_handler handler) {
+void emu_wifi_cleanup(wifi_handle handle, wifi_cleaned_up_handler handler) {
     if (handle == nullptr) {
         return;
     }
@@ -109,7 +109,7 @@ void wifi_cleanup(wifi_handle handle, wifi_cleaned_up_handler handler) {
     handler(handle);
 }
 
-void wifi_event_loop(wifi_handle handle) {
+void emu_wifi_event_loop(wifi_handle handle) {
     if (handle == nullptr) {
         return;
     }
@@ -117,7 +117,7 @@ void wifi_event_loop(wifi_handle handle) {
     asHalState(handle)->eventLoop();
 }
 
-wifi_error wifi_get_supported_feature_set(wifi_interface_handle handle,
+wifi_error emu_wifi_get_supported_feature_set(wifi_interface_handle handle,
                                           feature_set* set) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
@@ -126,7 +126,7 @@ wifi_error wifi_get_supported_feature_set(wifi_interface_handle handle,
     return asInterface(handle)->getSupportedFeatureSet(set);
 }
 
-wifi_error wifi_get_ifaces(wifi_handle handle,
+wifi_error emu_wifi_get_ifaces(wifi_handle handle,
                            int* num,
                            wifi_interface_handle** interfaces) {
     if (handle == nullptr) {
@@ -136,7 +136,7 @@ wifi_error wifi_get_ifaces(wifi_handle handle,
     return asInfo(handle)->getInterfaces(num, interfaces);
 }
 
-wifi_error wifi_get_iface_name(wifi_interface_handle handle,
+wifi_error emu_wifi_get_iface_name(wifi_interface_handle handle,
                                char* name,
                                size_t size) {
     if (handle == nullptr || (name == nullptr && size > 0)) {
@@ -146,7 +146,7 @@ wifi_error wifi_get_iface_name(wifi_interface_handle handle,
     return asInterface(handle)->getName(name, size);
 }
 
-wifi_error wifi_get_link_stats(wifi_request_id id,
+wifi_error emu_wifi_get_link_stats(wifi_request_id id,
                                wifi_interface_handle handle,
                                wifi_stats_result_handler handler) {
     if (handle == nullptr) {
@@ -156,7 +156,7 @@ wifi_error wifi_get_link_stats(wifi_request_id id,
     return asInterface(handle)->getLinkStats(id, handler);
 }
 
-wifi_error wifi_set_link_stats(wifi_interface_handle handle,
+wifi_error emu_wifi_set_link_stats(wifi_interface_handle handle,
                                wifi_link_layer_params params) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
@@ -165,7 +165,7 @@ wifi_error wifi_set_link_stats(wifi_interface_handle handle,
     return asInterface(handle)->setLinkStats(params);
 }
 
-wifi_error wifi_set_alert_handler(wifi_request_id id,
+wifi_error emu_wifi_set_alert_handler(wifi_request_id id,
                                   wifi_interface_handle handle,
                                   wifi_alert_handler handler) {
     if (handle == nullptr) {
@@ -175,7 +175,7 @@ wifi_error wifi_set_alert_handler(wifi_request_id id,
     return asInterface(handle)->setAlertHandler(id, handler);
 }
 
-wifi_error wifi_reset_alert_handler(wifi_request_id id,
+wifi_error emu_wifi_reset_alert_handler(wifi_request_id id,
                                     wifi_interface_handle handle) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
@@ -184,7 +184,7 @@ wifi_error wifi_reset_alert_handler(wifi_request_id id,
     return asInterface(handle)->resetAlertHandler(id);
 }
 
-wifi_error wifi_get_firmware_version(wifi_interface_handle handle,
+wifi_error emu_wifi_get_firmware_version(wifi_interface_handle handle,
                                      char* buffer,
                                      int buffer_size) {
     if (handle == nullptr) {
@@ -194,7 +194,7 @@ wifi_error wifi_get_firmware_version(wifi_interface_handle handle,
     return asInterface(handle)->getFirmwareVersion(buffer, buffer_size);
 }
 
-wifi_error wifi_get_driver_version(wifi_interface_handle handle,
+wifi_error emu_wifi_get_driver_version(wifi_interface_handle handle,
                                    char* buffer,
                                    int buffer_size) {
     if (handle == nullptr) {
@@ -204,7 +204,7 @@ wifi_error wifi_get_driver_version(wifi_interface_handle handle,
     return asInterface(handle)->getDriverVersion(buffer, buffer_size);
 }
 
-wifi_error wifi_set_scanning_mac_oui(wifi_interface_handle handle,
+wifi_error emu_wifi_set_scanning_mac_oui(wifi_interface_handle handle,
                                      oui scan_oui) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
@@ -213,7 +213,7 @@ wifi_error wifi_set_scanning_mac_oui(wifi_interface_handle handle,
     return asInterface(handle)->setScanningMacOui(scan_oui);
 }
 
-wifi_error wifi_clear_link_stats(wifi_interface_handle handle,
+wifi_error emu_wifi_clear_link_stats(wifi_interface_handle handle,
                                  u32 stats_clear_req_mask,
                                  u32 *stats_clear_rsp_mask,
                                  u8 stop_req,
@@ -228,7 +228,7 @@ wifi_error wifi_clear_link_stats(wifi_interface_handle handle,
                                                stop_rsp);
 }
 
-wifi_error wifi_get_valid_channels(wifi_interface_handle handle,
+wifi_error emu_wifi_get_valid_channels(wifi_interface_handle handle,
                                    int band,
                                    int max_channels,
                                    wifi_channel *channels,
@@ -244,7 +244,7 @@ wifi_error wifi_get_valid_channels(wifi_interface_handle handle,
                                                  num_channels);
 }
 
-wifi_error wifi_start_logging(wifi_interface_handle handle,
+wifi_error emu_wifi_start_logging(wifi_interface_handle handle,
                               u32 verbose_level,
                               u32 flags,
                               u32 max_interval_sec,
@@ -261,7 +261,7 @@ wifi_error wifi_start_logging(wifi_interface_handle handle,
                                              ring_name);
 }
 
-wifi_error wifi_set_country_code(wifi_interface_handle handle,
+wifi_error emu_wifi_set_country_code(wifi_interface_handle handle,
                                  const char *country_code) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
@@ -270,7 +270,7 @@ wifi_error wifi_set_country_code(wifi_interface_handle handle,
     return asInterface(handle)->setCountryCode(country_code);
 }
 
-wifi_error wifi_set_log_handler(wifi_request_id id,
+wifi_error emu_wifi_set_log_handler(wifi_request_id id,
                                 wifi_interface_handle handle,
                                 wifi_ring_buffer_data_handler handler) {
     if (handle == nullptr) {
@@ -280,7 +280,7 @@ wifi_error wifi_set_log_handler(wifi_request_id id,
     return asInterface(handle)->setLogHandler(id, handler);
 }
 
-wifi_error wifi_get_ring_buffers_status(wifi_interface_handle handle,
+wifi_error emu_wifi_get_ring_buffers_status(wifi_interface_handle handle,
                                         u32 *num_rings,
                                         wifi_ring_buffer_status *status) {
     if (handle == nullptr) {
@@ -290,7 +290,7 @@ wifi_error wifi_get_ring_buffers_status(wifi_interface_handle handle,
     return asInterface(handle)->getRingBuffersStatus(num_rings, status);
 }
 
-wifi_error wifi_get_logger_supported_feature_set(wifi_interface_handle handle,
+wifi_error emu_wifi_get_logger_supported_feature_set(wifi_interface_handle handle,
                                                  unsigned int *support) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
@@ -299,7 +299,7 @@ wifi_error wifi_get_logger_supported_feature_set(wifi_interface_handle handle,
     return asInterface(handle)->getLoggerSupportedFeatureSet(support);
 }
 
-wifi_error wifi_get_ring_data(wifi_interface_handle handle, char *ring_name) {
+wifi_error emu_wifi_get_ring_data(wifi_interface_handle handle, char *ring_name) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
     }
@@ -307,7 +307,7 @@ wifi_error wifi_get_ring_data(wifi_interface_handle handle, char *ring_name) {
     return asInterface(handle)->getRingData(ring_name);
 }
 
-wifi_error wifi_configure_nd_offload(wifi_interface_handle handle, u8 enable) {
+wifi_error emu_wifi_configure_nd_offload(wifi_interface_handle handle, u8 enable) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
     }
@@ -315,7 +315,7 @@ wifi_error wifi_configure_nd_offload(wifi_interface_handle handle, u8 enable) {
     return asInterface(handle)->configureNdOffload(enable);
 }
 
-wifi_error wifi_start_pkt_fate_monitoring(wifi_interface_handle handle) {
+wifi_error emu_wifi_start_pkt_fate_monitoring(wifi_interface_handle handle) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
     }
@@ -323,7 +323,7 @@ wifi_error wifi_start_pkt_fate_monitoring(wifi_interface_handle handle) {
     return asInterface(handle)->startPacketFateMonitoring();
 }
 
-wifi_error wifi_get_tx_pkt_fates(wifi_interface_handle handle,
+wifi_error emu_wifi_get_tx_pkt_fates(wifi_interface_handle handle,
                                  wifi_tx_report *tx_report_bufs,
                                  size_t n_requested_fates,
                                  size_t *n_provided_fates) {
@@ -336,7 +336,7 @@ wifi_error wifi_get_tx_pkt_fates(wifi_interface_handle handle,
                                                  n_provided_fates);
 }
 
-wifi_error wifi_get_rx_pkt_fates(wifi_interface_handle handle,
+wifi_error emu_wifi_get_rx_pkt_fates(wifi_interface_handle handle,
                                  wifi_rx_report *rx_report_bufs,
                                  size_t n_requested_fates,
                                  size_t *n_provided_fates) {
@@ -349,7 +349,7 @@ wifi_error wifi_get_rx_pkt_fates(wifi_interface_handle handle,
                                                  n_provided_fates);
 }
 
-wifi_error wifi_get_packet_filter_capabilities(wifi_interface_handle handle,
+wifi_error emu_wifi_get_packet_filter_capabilities(wifi_interface_handle handle,
                                                u32 *version,
                                                u32 *max_len) {
     if (handle == nullptr) {
@@ -359,7 +359,7 @@ wifi_error wifi_get_packet_filter_capabilities(wifi_interface_handle handle,
     return asInterface(handle)->getPacketFilterCapabilities(version, max_len);
 }
 
-wifi_error wifi_set_packet_filter(wifi_interface_handle handle,
+wifi_error emu_wifi_set_packet_filter(wifi_interface_handle handle,
                                   const u8 *program, u32 len) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
@@ -368,7 +368,7 @@ wifi_error wifi_set_packet_filter(wifi_interface_handle handle,
     return asInterface(handle)->setPacketFilter(program, len);
 }
 
-wifi_error wifi_read_packet_filter(wifi_interface_handle handle,
+wifi_error emu_wifi_read_packet_filter(wifi_interface_handle handle,
                                       u32 src_offset, u8 *host_dst,
                                       u32 length) {
     if (handle == nullptr) {
@@ -379,15 +379,15 @@ wifi_error wifi_read_packet_filter(wifi_interface_handle handle,
 }
 
 wifi_error
-wifi_get_wake_reason_stats(wifi_interface_handle handle,
-                           WLAN_DRIVER_WAKE_REASON_CNT *wifi_wake_reason_cnt) {
+emu_wifi_get_wake_reason_stats(wifi_interface_handle handle,
+                               WLAN_DRIVER_WAKE_REASON_CNT *wifi_wake_reason_cnt) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
     }
 
     return asInterface(handle)->getWakeReasonStats(wifi_wake_reason_cnt);
 }
-wifi_error wifi_start_sending_offloaded_packet(wifi_request_id id,
+wifi_error emu_wifi_start_sending_offloaded_packet(wifi_request_id id,
                                                wifi_interface_handle handle,
                                                u16 ether_type,
                                                u8 *ip_packet,
@@ -408,7 +408,7 @@ wifi_error wifi_start_sending_offloaded_packet(wifi_request_id id,
                                                             period_msec);
 }
 
-wifi_error wifi_stop_sending_offloaded_packet(wifi_request_id id,
+wifi_error emu_wifi_stop_sending_offloaded_packet(wifi_request_id id,
                                               wifi_interface_handle handle) {
     if (handle == nullptr) {
         return WIFI_ERROR_INVALID_ARGS;
@@ -417,49 +417,49 @@ wifi_error wifi_stop_sending_offloaded_packet(wifi_request_id id,
     return asInterface(handle)->stopSendingOffloadedPacket(id);
 }
 
-wifi_error init_wifi_vendor_hal_func_table(wifi_hal_fn* fn)
+wifi_error emu_init_wifi_vendor_hal_func_table(wifi_hal_fn* fn)
 {
     if (fn == NULL) {
         return WIFI_ERROR_UNKNOWN;
     }
-    fn->wifi_initialize = wifi_initialize;
-    fn->wifi_cleanup = wifi_cleanup;
-    fn->wifi_event_loop = wifi_event_loop;
-    fn->wifi_get_supported_feature_set = wifi_get_supported_feature_set;
+    fn->wifi_initialize = emu_wifi_initialize;
+    fn->wifi_cleanup = emu_wifi_cleanup;
+    fn->wifi_event_loop = emu_wifi_event_loop;
+    fn->wifi_get_supported_feature_set = emu_wifi_get_supported_feature_set;
 
-    fn->wifi_get_ifaces = wifi_get_ifaces;
-    fn->wifi_get_iface_name = wifi_get_iface_name;
-    fn->wifi_get_link_stats = wifi_get_link_stats;
-    fn->wifi_set_link_stats = wifi_set_link_stats;
-    fn->wifi_clear_link_stats = wifi_clear_link_stats;
+    fn->wifi_get_ifaces = emu_wifi_get_ifaces;
+    fn->wifi_get_iface_name = emu_wifi_get_iface_name;
+    fn->wifi_get_link_stats = emu_wifi_get_link_stats;
+    fn->wifi_set_link_stats = emu_wifi_set_link_stats;
+    fn->wifi_clear_link_stats = emu_wifi_clear_link_stats;
 
-    fn->wifi_set_alert_handler = wifi_set_alert_handler;
-    fn->wifi_reset_alert_handler = wifi_reset_alert_handler;
-    fn->wifi_get_firmware_version = wifi_get_firmware_version;
-    fn->wifi_get_driver_version = wifi_get_driver_version;
+    fn->wifi_set_alert_handler = emu_wifi_set_alert_handler;
+    fn->wifi_reset_alert_handler = emu_wifi_reset_alert_handler;
+    fn->wifi_get_firmware_version = emu_wifi_get_firmware_version;
+    fn->wifi_get_driver_version = emu_wifi_get_driver_version;
 
-    fn->wifi_set_scanning_mac_oui = wifi_set_scanning_mac_oui;
-    fn->wifi_get_valid_channels = wifi_get_valid_channels;
-    fn->wifi_start_logging = wifi_start_logging;
-    fn->wifi_set_country_code = wifi_set_country_code;
-    fn->wifi_set_log_handler = wifi_set_log_handler;
-    fn->wifi_get_ring_buffers_status = wifi_get_ring_buffers_status;
+    fn->wifi_set_scanning_mac_oui = emu_wifi_set_scanning_mac_oui;
+    fn->wifi_get_valid_channels = emu_wifi_get_valid_channels;
+    fn->wifi_start_logging = emu_wifi_start_logging;
+    fn->wifi_set_country_code = emu_wifi_set_country_code;
+    fn->wifi_set_log_handler = emu_wifi_set_log_handler;
+    fn->wifi_get_ring_buffers_status = emu_wifi_get_ring_buffers_status;
     fn->wifi_get_logger_supported_feature_set
-        = wifi_get_logger_supported_feature_set;
-    fn->wifi_get_ring_data = wifi_get_ring_data;
-    fn->wifi_configure_nd_offload = wifi_configure_nd_offload;
-    fn->wifi_start_pkt_fate_monitoring = wifi_start_pkt_fate_monitoring;
-    fn->wifi_get_tx_pkt_fates = wifi_get_tx_pkt_fates;
-    fn->wifi_get_rx_pkt_fates = wifi_get_rx_pkt_fates;
+        = emu_wifi_get_logger_supported_feature_set;
+    fn->wifi_get_ring_data = emu_wifi_get_ring_data;
+    fn->wifi_configure_nd_offload = emu_wifi_configure_nd_offload;
+    fn->wifi_start_pkt_fate_monitoring = emu_wifi_start_pkt_fate_monitoring;
+    fn->wifi_get_tx_pkt_fates = emu_wifi_get_tx_pkt_fates;
+    fn->wifi_get_rx_pkt_fates = emu_wifi_get_rx_pkt_fates;
     fn->wifi_get_packet_filter_capabilities
-        = wifi_get_packet_filter_capabilities;
-    fn->wifi_set_packet_filter = wifi_set_packet_filter;
-    fn->wifi_read_packet_filter = wifi_read_packet_filter;
-    fn->wifi_get_wake_reason_stats = wifi_get_wake_reason_stats;
+        = emu_wifi_get_packet_filter_capabilities;
+    fn->wifi_set_packet_filter = emu_wifi_set_packet_filter;
+    fn->wifi_read_packet_filter = emu_wifi_read_packet_filter;
+    fn->wifi_get_wake_reason_stats = emu_wifi_get_wake_reason_stats;
 
     fn->wifi_start_sending_offloaded_packet
-        = wifi_start_sending_offloaded_packet;
-    fn->wifi_stop_sending_offloaded_packet = wifi_stop_sending_offloaded_packet;
+        = emu_wifi_start_sending_offloaded_packet;
+    fn->wifi_stop_sending_offloaded_packet = emu_wifi_stop_sending_offloaded_packet;
 
     // These function will either return WIFI_ERROR_NOT_SUPPORTED or do nothing
     notSupported(fn->wifi_set_nodfs_flag);
