@@ -38,14 +38,17 @@ final class CaptionTheme {
                 : resource(context, dark ? android.R.color.system_neutral2_200 : android.R.color.system_neutral2_700,
                         dark ? Color.LTGRAY : Color.DKGRAY);
         background = focused
-                ? resource(context, dark ? android.R.color.system_neutral1_800 : android.R.color.system_neutral1_100,
+                ? resource(context, dark ? android.R.color.system_neutral1_800 : android.R.color.system_neutral1_50,
                         dark ? Color.rgb(50, 50, 50) : Color.rgb(240, 240, 240))
                 : resource(context, dark ? android.R.color.system_neutral1_900 : android.R.color.system_neutral1_50,
                         dark ? Color.rgb(32, 32, 32) : Color.rgb(250, 250, 250));
     }
 
     private static int resource(Context c, int id, int fallback) {
-        try { return c.getColor(id); } catch (RuntimeException e) { return fallback; }
+        try { return c.getColor(id); } catch (RuntimeException e) {
+            android.util.Log.e(CaptionProviderService.TAG, "Theme color lookup failed resource=" + id, e);
+            return fallback;
+        }
     }
     static void addListener(Runnable r) { LISTENERS.add(r); }
     static void removeListener(Runnable r) { LISTENERS.remove(r); }
