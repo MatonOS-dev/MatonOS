@@ -21,7 +21,8 @@ newest entries at the bottom of each section.
 | 138 | 6c3620ac | OK 09:46; live138 Wi-Fi PASS (below) |
 | 139 | 7c9af06e | FAILED link 10:15: extern "C" names ignored the namespace |
 | 140 | 62340005 | FAILED link 10:42: backend static lib never reached the binary link |
-| 141 | 3c8f117a | running since 10:45: whole_static_libs |
+| 141 | 3c8f117a | OK 11:53; live141 PASS except WPA2 hotspot (below) |
+| kernel | 42440352 | CONFIG_CRYPTO_CCM=y: ACK 7.3 rebuild on the server (kernel-ack73c.log), then next image |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -168,6 +169,25 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - Two cards: switch to card 2 → on, back to card 1 → on, card 2 again → on;
   `wlan0` carries the chosen card's MAC each time, scans run. 0 denials,
   0 crashes.
+
+**live141 results** (enforcing; build-141 = forked legacy backend):
+- The backend creates handles for interfaces made later (`Adding interface
+  handle for wlan2`); no "Unknown iface name" for wlan2.
+- Open hotspot: PASS next to the STA connection (wlan2 UP, AP-ENABLED).
+- **WPA2 hotspot: FAIL, kernel cause.** hostapd `set_key failed; err=-2`.
+  Same with a hand-run hostapd on a bare hwsim radio, so not Android or the
+  HAL. mac80211 asks for `ccm(aes)` through request_module, which Android
+  cannot serve, and `CONFIG_CRYPTO_CCM=m`. After loading `ccm.ko` by hand
+  the same config reaches AP-ENABLED. This breaks every WPA2/WPA3 (CCMP)
+  link on real cards too, client side included. Fix 42440352 builds CCM
+  into the kernel; the kernel is being rebuilt.
+- Wi-Fi off/on three times: on every time.
+- Card switch both ways via wifid: rename right (chosen card = wlan0,
+  other = wlan_int0), Wi-Fi on again on each card with the right MAC.
+  Note: `IChannel/wifi select_device` is served by wifid and only renames;
+  the off/on around it is the bridge's WifiCardSwitcher (the Settings
+  path), so the shell test re-enables by hand.
+- 0 crashes; the only denials came from my shell under a hand-set permissive.
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
