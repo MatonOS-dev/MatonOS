@@ -314,3 +314,15 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   Not typechecked locally; build-156 compiles it.
 - build-155 (fdc52372, first after the apex_media split) at ~35% at 23:19.
 - live154 uptime 29 min at 23:19 (since last boot); no self-reboot seen yet.
+
+## 00:10 update (11-26)
+- build-155 (fdc52372, first after the apex_media split) passed 00:04. live155 VM boots
+  enforcing; denials only MediaProvider /oem/media getattr (known, private type); no
+  crashes; pipewire + wireplumber + matonos-audio-hal up, AudioFlinger output thread
+  present → the submodule split works. live154 VM + server live-154.img deleted.
+- live154 had been up 1 h 16 min when I stopped it: no self-reboot seen.
+- build-156 started 00:04 on dt 99b9b5f1 (fwmarkd dontaudit, radio-page fixes incl.
+  review fixes, btd uevents). It's the first compile of the TSX and btd changes.
+- VM launch: cmd.txt is one arg per line and needs
+  `LD_LIBRARY_PATH=~/matonos/qemu-venus/lib` (virglrenderer 1.11):
+  `LD_LIBRARY_PATH=… setsid nohup xargs -d '\n' -a cmd.txt env > qemu.log 2>&1 < /dev/null &`
