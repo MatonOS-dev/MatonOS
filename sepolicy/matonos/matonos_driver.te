@@ -453,6 +453,8 @@ allow matonos_bootlogo matonos_bootlogo_file:file create_file_perms;
 type_transition matonos_bootlogo matonos_bootlogo_file:file matonos_bootlogo_file;
 allow bootanim matonos_bootlogo_file:dir r_dir_perms;
 # /oem is a tmpfs (matonos-bootlogo.rc) on top of the empty erofs /oem dir.
+# The empty /oem dir on the system image is labelled oemfs; init mounts the tmpfs over it.
+allow init oemfs:dir mounton;
 allow { bootanim matonos_bootlogo } tmpfs:dir search;
 allow bootanim matonos_bootlogo_file:file r_file_perms;
 # The BGRT subtree gets a dedicated sysfs type so only the compositor reads it.
