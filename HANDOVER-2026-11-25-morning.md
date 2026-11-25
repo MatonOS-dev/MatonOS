@@ -335,3 +335,14 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   carries no code, but an update signed with the public key could replace it).
   **User decision:** drop the shim from the image, or re-sign it with our key. Not
   wired into build.sh yet.
+
+## 01:25 update
+- build-156 (99b9b5f1) passed 01:19 → TSX radio fixes and btd uevent loop compile.
+  live156 VM: enforcing, only the known MediaProvider getattr denials, no crashes.
+  btd main thread waits in `__skb_wait_for_more_packets` (uevent recv) instead of
+  nanosleep; no uevent denial. Hardware page: Wi-Fi "Virtual radio" + wlan0 row,
+  Bluetooth "Not detected"; tapping the virtual wlan0 row makes no switcher/Wi-Fi call.
+  live155 + server live-155.img deleted (live155 had been up 1 h 11 min, no self-reboot).
+- luna `settings-security` started 01:2x: read-only Security page (SELinux, encryption,
+  patch level, verified boot, build keys, ADB) in worktree ~/matonos/build/settings-security
+  (wip/settings-security). Low-prio backlog item.
