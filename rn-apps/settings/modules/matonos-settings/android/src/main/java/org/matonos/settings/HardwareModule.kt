@@ -8,6 +8,9 @@ import android.content.IntentFilter
 import android.hardware.camera2.CameraManager
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
+import android.os.Build
+import android.provider.Settings
+import android.util.Log
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.matonos.settings.SystemComponents
@@ -27,6 +30,7 @@ class HardwareModule : Module() {
     Events("hardwareChanged")
 
     AsyncFunction("getHardwareState") { state(requireNotNull(appContext.reactContext)) }
+    AsyncFunction("getSecurityStatus") { securityStatus(requireNotNull(appContext.reactContext)) }
     AsyncFunction("getEmbeddedSettings") {
       EmbeddedSettingsDiscovery.list(requireNotNull(appContext.reactContext))
     }
@@ -85,6 +89,52 @@ class HardwareModule : Module() {
       "gpu" to mapOf("present" to null, "software" to null),
       "camera" to mapOf("count" to cameras),
     )
+  }
+
+  /** Security properties are deliberately not read through hidden SystemProperties APIs:
+   * this APK uses its own release key, not the platform key. */
+  private fun securityStatus(context: Context): Map<String, String> {
+    val adb = try {
+      if (Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1) "Enabled" else "Disabled"
+    } catch (e: Exception) {
+      Log.e("MatonOSSettings", "security status read failed: Settings.Global.ADB_ENABLED", e)
+      "Unknown"
+    }
+    val patch = try {
+      Build.VERSION.SECURITY_PATCH.takeIf { it.isNotBlank() } ?: "Unknown".also {
+        Log.e("MatonOSSettings", "security status unavailable: Build.VERSION.SECURITY_PATCH is empty")
+      }
+    } catch (e: Exception) {
+      Log.e("MatonOSSettings", "security status read failed: Build.VERSION.SECURITY_PATCH", e)
+      "Unknown"
+    }
+    val tags = try {
+      Build.TAGS?.takeIf { it.isNotBlank() } ?: "Unknown".also {
+        Log.e("MatonOSSettings", "security status unavailable: Build.TAGS is empty")
+      }
+    } catch (e: Exception) {
+      Log.e("MatonOSSettings", "security status read failed: Build.TAGS", e)
+      "Unknown"
+    }
+    return mapOf(
+      "selinux" to unavailable("ro.boot.selinux / SELinux enforcement state"),
+      "encryption" to unavailable("ro.crypto.state, ro.crypto.type, ro.crypto.metadata.enabled"),
+      "securityPatch" to patch,
+      "vendorSecurityPatch" to unavailable("ro.vendor.build.security_patch"),
+      "verifiedBoot" to unavailable("ro.boot.verifiedbootstate and ro.boot.vbmeta.device_state"),
+      "buildKeys" to when {
+        tags.contains("release-keys") -> "Release keys"
+        tags.contains("test-keys") || tags.contains("dev-keys") -> "Test/development keys"
+        tags == "Unknown" -> tags
+        else -> tags
+      },
+      "adb" to adb,
+    )
+  }
+
+  private fun unavailable(property: String): String {
+    Log.e("MatonOSSettings", "security status unavailable: $property requires platform-signed property access")
+    return "Unknown"
   }
 
 }

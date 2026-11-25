@@ -41,6 +41,7 @@ type Section =
   | "sleep"
   | "display"
   | "hardware"
+  | "security"
   | "app-settings"
   | "system-components"
   | "developer"
@@ -88,6 +89,12 @@ const navItems: Record<Section, NavEntry> = {
     title: copy.hardware,
     symbol: "devices",
     fallback: devicesIcon,
+  },
+  security: {
+    id: "security",
+    title: copy.security,
+    symbol: "shield",
+    fallback: infoIcon,
   },
   "app-settings": {
     id: "app-settings",
@@ -507,6 +514,7 @@ export function NavRail({ live }: { live: boolean }) {
         <NavItem section="sleep" selected={current === "sleep"} />
         <NavItem section="display" selected={current === "display"} />
         <NavItem section="hardware" selected={current === "hardware"} />
+        <NavItem section="security" selected={current === "security"} />
         <NavItem section="app-settings" selected={current.startsWith("app-settings")} />
         <NavItem section="system-components" selected={current === "system-components"} />
         <NavItem section="account" selected={current === "account"} />
