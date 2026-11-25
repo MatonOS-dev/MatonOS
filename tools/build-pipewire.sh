@@ -226,6 +226,8 @@ BORINGSSL_PIN=0cd1f6a94b670e6b61af95a06e71e690ae8e3262
 "$CMAKE" --build "$OUT/boringssl" --target crypto --parallel "$JOBS"
 install -m 0644 "$OUT/boringssl/libcrypto.a" "$DEST$PREFIX/lib64/libcrypto.a"
 cp -a "$BORINGSSL/include/openssl" "$DEST$PREFIX/include/"
+# Under ${includedir}: PKG_CONFIG_SYSROOT_DIR prefixes every absolute .pc path.
+install -m 0644 "$DEVICE_DIR/audio/network-speakers/raop-compat.h" "$DEST$PREFIX/include/raop-compat.h"
 cat > "$DEST$PREFIX/lib64/pkgconfig/openssl.pc" <<EOF
 prefix=$PREFIX
 libdir=\${prefix}/lib64
@@ -234,7 +236,7 @@ Name: OpenSSL API (BoringSSL)
 Description: pinned AOSP BoringSSL for RAOP only
 Version: 1.1.1
 Libs: -L\${libdir} -lcrypto -lc++_static -lc++abi
-Cflags: -I\${includedir} -include $DEVICE_DIR/audio/network-speakers/raop-compat.h
+Cflags: -I\${includedir} -include \${includedir}/raop-compat.h
 EOF
 
 info "Building PipeWire (ALSA SPA backend; systemd, D-Bus and BlueZ disabled)"
