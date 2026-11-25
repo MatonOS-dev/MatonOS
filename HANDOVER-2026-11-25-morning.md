@@ -18,8 +18,8 @@ newest entries at the bottom of each section.
 | 135 | ac0ec3be | OK 05:57; live135 tested (below) |
 | 136 | 656a541d | OK 07:09; live136: hwsim loads at boot again (phy0 + wlan0), enforcing, 0 denials |
 | 137 | 12794e03 | OK 08:34; live137 tested (below) |
-| 138 | 6c3620ac | running since 08:39: Wi-Fi HAL modes loaded in configureChip |
-| 139 | 33948688 | queued after 138: wifid logcat errors, forked nl80211 backend |
+| 138 | 6c3620ac | OK 09:46; live138 Wi-Fi PASS (below) |
+| 139 | 7c9af06e | running since 09:47: wifid logcat errors, forked nl80211 backend |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -160,6 +160,12 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   fresh HAL process failed the same way. The HAL now loads wlan0's runtime
   mode in `configureChip` as well, and logs the rejection. The earlier tests
   missed this because each one did only the first enable.
+
+**live138 results** (enforcing): the second-enable fix works.
+- Wi-Fi off/on three times: on every time, no configureChip error.
+- Two cards: switch to card 2 → on, back to card 1 → on, card 2 again → on;
+  `wlan0` carries the chosen card's MAC each time, scans run. 0 denials,
+  0 crashes.
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
