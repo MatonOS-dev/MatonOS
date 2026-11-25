@@ -1,2 +1,0 @@
-# Avoid HDA codec-probe failures on virtual and interrupt-routing-sensitive controllers.
-options snd_hda_intel enable_msi=0

@@ -1,1 +1,0 @@
-../../include_all/hardware/gps_internal.h
