@@ -37,6 +37,5 @@ symbols are in the excluded branch and are not required.
 `bionic-fill.h` (MatonOS-dev/bionic-fill 4638ac47, MIT), force-included
 into the whole PipeWire build by `tools/build-pipewire.sh`, maps the obsolete BSD
 `index`/`rindex` to `strchr`/`strrchr` on bionic. BoringSSL does not include
-`openssl/bn.h` from `rsa.h`; `audio/patches/0008-raop-include-openssl-bn.patch`
-adds the explicit include. Static libc++/libc++abi use the NDK's
+`openssl/bn.h` from `rsa.h`; the generated `openssl.pc` force-includes it. Static libc++/libc++abi use the NDK's
 Apache-2.0 WITH LLVM-exception licence.

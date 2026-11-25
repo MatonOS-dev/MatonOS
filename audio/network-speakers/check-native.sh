@@ -25,7 +25,7 @@ for pair in NetworkSpeakerModules:maton-network-speakers module-maton-snapcast:m
     -o "$OUTPUT/libpipewire-module-${pair##*:}.so"
 done
 "$CC" -std=gnu11 -fPIC -shared -Wall -Werror -Wno-unused-function -Wno-unused-parameter \
-  -Wl,--no-undefined -include "${BIONIC_FILL_H:?set BIONIC_FILL_H to bionic-fill.h}" \
+  -Wl,--no-undefined -include "${BIONIC_FILL_H:?set BIONIC_FILL_H to bionic-fill.h}" -include openssl/bn.h \
   -I"$AOSP/external/boringssl/src/include" -I"$BUILD" -I"$SOURCE/src" -I"$SOURCE/spa/include" \
   -I"$PREFIX/include/pipewire-0.3" \
   "$SOURCE/src/modules/module-raop-sink.c" "$SOURCE/src/modules/module-raop/rtsp-client.c" \

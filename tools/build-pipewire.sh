@@ -229,6 +229,7 @@ BORINGSSL_PIN=0cd1f6a94b670e6b61af95a06e71e690ae8e3262
 "$CMAKE" --build "$OUT/boringssl" --target crypto --parallel "$JOBS"
 install -m 0644 "$OUT/boringssl/libcrypto.a" "$DEST$PREFIX/lib64/libcrypto.a"
 cp -a "$BORINGSSL/include/openssl" "$DEST$PREFIX/include/"
+# OpenSSL pulls bn.h in through rsa.h; BoringSSL does not, so the .pc adds it.
 cat > "$DEST$PREFIX/lib64/pkgconfig/openssl.pc" <<EOF
 prefix=$PREFIX
 libdir=\${prefix}/lib64
@@ -237,7 +238,7 @@ Name: OpenSSL API (BoringSSL)
 Description: pinned AOSP BoringSSL for RAOP only
 Version: 1.1.1
 Libs: -L\${libdir} -lcrypto -lc++_static -lc++abi
-Cflags: -I\${includedir}
+Cflags: -I\${includedir} -include openssl/bn.h
 EOF
 
 info "Building PipeWire (ALSA SPA backend; systemd, D-Bus and BlueZ disabled)"
