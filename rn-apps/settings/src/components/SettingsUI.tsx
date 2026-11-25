@@ -26,6 +26,7 @@ import {
 } from "@expo/ui/jetpack-compose/modifiers";
 import { usePathname, useRouter } from "expo-router";
 import { MatonOS } from "../bridge/MatonOS";
+import { useDeveloperOptions } from "../context/DeveloperOptionsContext";
 import { copy } from "../strings";
 import bedtimeIcon from "../../assets/icons/bedtime.xml";
 import devicesIcon from "../../assets/icons/devices.xml";
@@ -494,7 +495,6 @@ export function NavRail({ live }: { live: boolean }) {
         modifiers={[fillMaxWidth(), paddingAll(4)]}
         verticalArrangement={{ spacedBy: 8 }}
       >
-        <NavItem section="gapps" selected={current === "gapps"} />
         <LiveOnly live={live}>
           <NavItem section="install" selected={current === "install"} />
         </LiveOnly>
@@ -510,11 +510,18 @@ export function NavRail({ live }: { live: boolean }) {
         <NavItem section="app-settings" selected={current.startsWith("app-settings")} />
         <NavItem section="system-components" selected={current === "system-components"} />
         <NavItem section="account" selected={current === "account"} />
-        <NavItem section="developer" selected={current === "developer"} />
+        <DeveloperOnly>
+          <NavItem section="developer" selected={current === "developer"} />
+        </DeveloperOnly>
         <NavItem section="about" selected={current === "about"} />
       </Column>
     </Column>
   );
+}
+
+function DeveloperOnly({ children }: { children: ReactNode }) {
+  const { enabled, ready } = useDeveloperOptions();
+  return ready && enabled ? <>{children}</> : null;
 }
 
 export function BackButton() {

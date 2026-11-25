@@ -36,6 +36,8 @@ type MatonOSClientModule = NativeEvents<EventMap> & {
     model: string;
     sdk: number;
   }>;
+  isDeveloperOptionsEnabled(): Promise<boolean>;
+  enableDeveloperOptions(): Promise<boolean>;
   accountMachineInfo(): Promise<{ machineId: string; deviceName: string }>;
   accountComplete(username: string, email: string, token: string, refreshToken: string, machineId: string): Promise<boolean>;
   accountInvalidate(token: string): Promise<boolean>;
@@ -69,6 +71,8 @@ export const MatonOS = {
   getUpdateStatus: () => Native.getUpdateStatus(),
   isLiveImage: () => Native.isLiveImage(),
   getSystemInfo: () => Native.getSystemInfo(),
+  isDeveloperOptionsEnabled: () => Native.isDeveloperOptionsEnabled(),
+  enableDeveloperOptions: () => Native.enableDeveloperOptions(),
   pickAndInstallGapps: () => Native.pickAndInstallGapps(),
   uninstallGappsUpdates: () => Native.uninstallGappsUpdates(),
   getGappsDeviceId: () => Native.getGappsDeviceId(),

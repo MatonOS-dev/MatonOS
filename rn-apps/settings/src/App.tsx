@@ -4,6 +4,7 @@ import { setBackgroundColorAsync } from "expo-system-ui";
 import { Host } from "@expo/ui/jetpack-compose";
 import { useColorScheme } from "react-native";
 import { MatonSettingsProvider } from "./context/MatonSettingsContext";
+import { DeveloperOptionsProvider } from "./context/DeveloperOptionsContext";
 import { SettingsShell } from "./components/SettingsShell";
 
 export default function App(): React.JSX.Element {
@@ -21,7 +22,9 @@ export default function App(): React.JSX.Element {
         useViewportSizeMeasurement
       >
         <MatonSettingsProvider>
-          <SettingsShell />
+          <DeveloperOptionsProvider>
+            <SettingsShell />
+          </DeveloperOptionsProvider>
         </MatonSettingsProvider>
       </Host>
     </>

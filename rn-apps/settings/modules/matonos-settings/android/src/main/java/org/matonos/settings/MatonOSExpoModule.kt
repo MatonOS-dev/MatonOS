@@ -100,6 +100,16 @@ class MatonOSExpoModule : Module() {
       mapOf("version" to Build.VERSION.RELEASE, "build" to Build.DISPLAY,
         "device" to Build.DEVICE, "model" to Build.MODEL, "sdk" to Build.VERSION.SDK_INT)
     }
+    AsyncFunction("isDeveloperOptionsEnabled") {
+      requireNotNull(appContext.reactContext)
+        .getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+        .getBoolean("developer_options_enabled", false)
+    }
+    AsyncFunction("enableDeveloperOptions") {
+      requireNotNull(appContext.reactContext)
+        .getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+        .edit().putBoolean("developer_options_enabled", true).commit()
+    }
     AsyncFunction("accountMachineInfo") {
       val context = requireNotNull(appContext.reactContext)
       val machineId = android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID)
