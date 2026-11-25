@@ -32,8 +32,11 @@ cc_binary {
         "StreamPipeWire.cpp",
     ],
     static_libs: ["libaudioserviceexampleimpl"],
+    // ModuleBluetooth calls createIBluetoothAudioProviderFactory in this archive.
+    // Drop its unused upstream shared-provider dependency at the final link.
+    whole_static_libs: ["libmatonos_bluetooth_audio_software"],
+    ldflags: ["-Wl,--as-needed"],
     shared_libs: [
-        "android.hardware.bluetooth.audio-impl",
         "libaudio_aidl_conversion_common_ndk",
         "libbase",
         "vendor.matonos.channel-V2-ndk",

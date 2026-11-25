@@ -52,11 +52,16 @@ shutil.copytree(stage, payload, symlinks=False)
 for name in ('SOURCE', 'NEEDED.txt'): (payload / name).unlink(missing_ok=True)
 source_lib64 = temp / 'generic-audio/lib64'
 for lib in source_lib64.glob('*.so*'): shutil.copy2(lib, payload / 'lib64' / lib.name)
+# A bootstrap effects APEX may carry the stock provider. The final HAL owns
+# the software factory in-process; never retain a second provider implementation.
+(payload / 'lib64/android.hardware.bluetooth.audio-impl.so').unlink(missing_ok=True)
 source_effects, target_effects = source_lib64 / 'soundfx', payload / 'lib64/soundfx'
 target_effects.mkdir(parents=True, exist_ok=True)
 for lib in source_effects.glob('*.so*'): shutil.copy2(lib, target_effects / lib.name)
 for lib in (product / 'vendor/lib64/soundfx').glob('*.so*'): shutil.copy2(lib, target_effects / lib.name)
 for rel, source in [
+ ('share/licenses/matonos-bluetooth-audio/NOTICE', device / 'audio/bt-audio/NOTICE'),
+ ('share/licenses/matonos-bluetooth-audio/PROVENANCE.md', device / 'audio/bt-audio/PROVENANCE.md'),
  ('bin/hw/matonos-audio-hal', product / 'vendor/bin/hw/matonos-audio-hal'),
  ('bin/hw/audio-effect-service', temp / 'generic-audio/bin/hw/android.hardware.audio.effect.service-aidl.generic'),
  ('etc/audio_effects_config.xml', device / 'audio/effects/audio_effects_config.xml'),
@@ -77,6 +82,10 @@ hal = payload / 'bin/hw/matonos-audio-hal'
 needed = subprocess.run([readelf, '-d', str(hal)], check=True, text=True, capture_output=True).stdout
 if 'libpipewire-0.3.so' not in needed or not (payload / 'lib64/libpipewire-0.3.so').is_file():
  raise SystemExit('HAL DT_NEEDED libpipewire-0.3.so is not resolved inside the audio APEX')
+# The whole-linked software factory must resolve ModuleBluetooth's C entrypoint.
+# A shared stock provider here would silently restore offload implementations.
+if 'android.hardware.bluetooth.audio-impl.so' in needed:
+ raise SystemExit('HAL still imports the stock Bluetooth audio provider; software factory was not linked')
 if not list((payload / 'lib64/spa-0.2').rglob('*.so')): raise SystemExit('PipeWire SPA plugins missing from audio APEX')
 PY
 source "$DEVICE_DIR/tools/lib/vendor-apex.sh"

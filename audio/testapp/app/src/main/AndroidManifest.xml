@@ -1,7 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
     <application
         android:label="MatonOS Audio Tone Test"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <activity android:name=".BluetoothStatusActivity" android:exported="true" />
         <activity
             android:name=".ToneActivity"
             android:exported="true">

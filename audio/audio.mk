@@ -63,3 +63,20 @@ PRODUCT_COPY_FILES += \
 ifeq ($(MATON_AUDIO_APEX_READY),true)
 PRODUCT_COPY_FILES := $(filter-out device/maton/pc_x86_64/audio/effects/audio_effects_config.xml:%,$(PRODUCT_COPY_FILES))
 endif
+
+# mediahal1: all five Config.LE_AUDIO_UNICAST_PROFILES gates, plus broadcast.
+# These are system-owned BluetoothProperties, so they belong in product config.
+# Software codec paths still require controller CIS/BIS support for radio I/O.
+ifeq ($(MATON_AUDIO_PIPEWIRE_HAL),true)
+PRODUCT_SYSTEM_PROPERTIES += \
+    bluetooth.profile.bap.unicast.client.enabled=true \
+    bluetooth.profile.csip.set_coordinator.enabled=true \
+    bluetooth.profile.vcp.controller.enabled=true \
+    bluetooth.profile.mcp.server.enabled=true \
+    bluetooth.profile.ccp.server.enabled=true \
+    bluetooth.profile.bap.broadcast.source.enabled=true \
+    bluetooth.profile.bap.broadcast.assist.enabled=true \
+    bluetooth.profile.hap.client.enabled=true \
+    ro.bluetooth.leaudio_offload.supported=false \
+    ro.bluetooth.a2dp_offload.supported=false
+endif
