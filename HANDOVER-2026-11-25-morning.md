@@ -27,8 +27,9 @@ newest entries at the bottom of each section.
 | 143 | 8f6fb45a | OK 13:34; live143 boots 40 s enforcing, kernel 7.3.0-g180e0b21ff6a: **WPA2 hotspot PASS** (AP-ENABLED, ccm(aes) built in), BT audio provider/default registered, LE Audio + offload=false props set (vendor), 0 crashes, 0 denials |
 | 144 | f73b15ce | FAILED PipeWire RAOP: `-include` abs path in openssl.pc got sysroot-prefixed by pkg-config |
 | 145 | 6e999e96 | FAILED same: meson reused cached dep flags → `meson setup --reconfigure --clearcache` |
-| 146 | 03a79281 | running since 13:40: mediahal2 (RAOP compiled); final image pass ~14:20 |
-| 147 | (next) | bionic-fill force-included over all PipeWire (pin 4638ac47, replaces raop-compat.h), openssl.pc `-include openssl/bn.h` (no patch), matonos-btd + bridge BluetoothControllerSwitcher (btd1, merge ef4e8c9b) |
+| 146 | 03a79281 | OK 14:49; live146 boots 35 s enforcing; PipeWire loads module-maton-network-speakers. **Correction:** my earlier "0 denials" (143–146) used a grep that missed auditd's `avc:  denied`; real denials found: kernel can't read regulatory.db (Wi-Fi world domain only), bridge NSD `find` (speaker browse NPE every 5 s), PipeWire DMI/PCI reads → fixed in 2eb1da94 + 06cfdda2 (build-148). Still open, pre-existing: init `mounton /oem`, vendor_init `search oem` |
+| 147 | 7901c583 | running since 14:50 (without the 146 policy fixes): bionic-fill force-included over all PipeWire (pin 4638ac47, replaces raop-compat.h), openssl.pc `-include openssl/bn.h` (no patch), matonos-btd + bridge BluetoothControllerSwitcher (btd1, merge ef4e8c9b) |
+| 148 | (next) | 147 + policy fixes 2eb1da94, 06cfdda2 |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
