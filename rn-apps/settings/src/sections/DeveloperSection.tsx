@@ -11,6 +11,7 @@ import {
   ToggleRow,
 } from "../components/SettingsUI";
 import { copy } from "../strings";
+import { GappsSection } from "./GappsSection";
 
 type TrustedApp = {
   package: string;
@@ -106,6 +107,7 @@ export function DeveloperSection() {
         </SettingsCard>
         {cards}
         {note}
+        <GappsSection />
       </Column>
     </>
   );
