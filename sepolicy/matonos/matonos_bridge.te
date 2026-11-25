@@ -2,6 +2,8 @@
 allow matonos_system_bridge matonos_channel_service:service_manager find;
 # NetworkSpeakerDiscovery browses RAOP/Snapcast speakers through NsdManager.
 allow matonos_system_bridge servicediscovery_service:service_manager find;
+# BluetoothControllerSwitcher toggles the adapter through BluetoothManager.
+allow matonos_system_bridge bluetooth_manager_service:service_manager find;
 binder_call(matonos_system_bridge, matonos_driver)
 get_prop(matonos_system_bridge, vendor_maton_prop)
 # Input proxy dimensions are computed from Android's active display mode.

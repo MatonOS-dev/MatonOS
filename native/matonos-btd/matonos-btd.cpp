@@ -91,7 +91,7 @@ static void scan() {
         auto old=std::find_if(devices.begin(),devices.end(),[&](const Device& v){return v.path==d.path;});
         if(old==devices.end()) devices.push_back(d); else *old=d;
     }
-    INFO("closedir at %s:%d",__FILE__,__LINE__); if(closedir(dir)<0) ERR("closedir bluetooth errno=%d",errno);
+    if(closedir(dir)<0 ERR("closedir bluetooth errno=%d",errno);
     // USB device numbers change on replug. Never reuse an unbound identity
     // for a replacement adapter that happened to occupy the same port.
     devices.erase(std::remove_if(devices.begin(),devices.end(),[](const Device& d){
