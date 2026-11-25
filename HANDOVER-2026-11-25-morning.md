@@ -17,6 +17,7 @@ newest entries at the bottom of each section.
 | 134 | 97019aa5 | stopped by me after ~3 min to fold in the nl80211 fix |
 | 135 | ac0ec3be | OK 05:57; live135 tested (below) |
 | 136 | 656a541d | OK 07:09; live136: hwsim loads at boot again (phy0 + wlan0), enforcing, 0 denials |
+| 137 | 12794e03 | running since 07:23: wifid RTM_GETLINK + Wi-Fi HAL onUnlinked |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
@@ -121,8 +122,23 @@ silently. So hotspot never had a daemon; the radio APEX check is what caught it.
 empty again: the live image starts with a fresh `/data` every boot
 (`/data/property` created at boot time, system settings files missing). So
 any `persist.*` setting is lost on the live image, which is also what
-happened on live133. The two-radio card-switch test needs the installed
-disk VM (persistent `/data`). Still to do.
+happened on live133. Instead, on live136 I reloaded hwsim by hand with
+`radios=2` (rmmod works now; the 126 EPERM is gone) and ran the switch:
+- `persist.vendor.maton.wifi.hwsim_selectable=1` is needed: wifid refuses to
+  select simulated cards otherwise (by design).
+- **PASS: card switch.** wifid `select_device 02:00:00:00:01:00` renamed the
+  old card to `wlan_int0` and the chosen one to `wlan0`; Wi-Fi then came up
+  on the new card (framework STA on wlan0 = phy2), no crash.
+- FAIL → fixed for 137 (12794e03): wifid was denied `nlmsg RTM_GETLINK`
+  (kernel netlink_xperm). `if_nameindex()` failed, so the name collision check
+  before a rename always said "free"; this switch only worked because no
+  collision existed. Now allowed with `allowxperm … nlmsg RTM_GETLINK`, as
+  AOSP dumpstate does.
+- Also in 137: the Wi-Fi HAL death recipient sets `onUnlinked`, so the
+  "will become an abort" warning is gone there too (the cookie is just a
+  lookup key).
+- Open, minor: `switch_core.h` reports errors with `fprintf(stderr)`, which goes
+  nowhere for an init service; should be ALOGE (errors-loud rule).
 
 ## Done overnight
 - **live126** (enforcing, boot ~40 s): zram swap 8 GB OK. swappiness stayed 60
