@@ -10,3 +10,5 @@ vendor.mesa. u:object_r:vendor_maton_mesa_prop:s0 prefix
 vendor.minigbm.debug u:object_r:vendor_maton_graphics_prop:s0 exact string
 # pc-gpu-detect snapshot: readable by every domain (apps: v3 proxy GPU sysfs).
 vendor.maton.graphics. u:object_r:vendor_maton_graphics_prop:s0 prefix
+vendor.wlan.firmware.version u:object_r:vendor_wlan_versions_prop:s0 exact string
+vendor.wlan.driver.version u:object_r:vendor_wlan_versions_prop:s0 exact string

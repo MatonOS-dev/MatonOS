@@ -6,3 +6,5 @@ vendor_public_prop(vendor_maton_mesa_prop)
 
 # Public graphics options queried inside Mesa/minigbm in Android clients.
 vendor_public_prop(vendor_maton_graphics_prop)
+# Forked Wi-Fi HAL (goldfish legacy backend) publishes its versions here.
+vendor_restricted_prop(vendor_wlan_versions_prop)

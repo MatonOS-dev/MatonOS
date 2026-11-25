@@ -148,15 +148,16 @@ bool queryCombinations(unsigned ifindex,
     bool success = false;
     struct nl_cb* callbacks = nullptr;
     do {
+        int nl_status = genl_connect(socket);
+        if (nl_status < 0) {
+            LOG(ERROR) << "Wi-Fi HAL genl_connect failed: " << nl_geterror(nl_status);
+            break;
+        }
+        // The fd exists only after genl_connect().
         timeval timeout{1, 0};
         if (setsockopt(nl_socket_get_fd(socket), SOL_SOCKET, SO_RCVTIMEO, &timeout,
                        sizeof(timeout)) < 0) {
             PLOG(ERROR) << "Wi-Fi HAL failed to bound nl80211 receive time";
-            break;
-        }
-        int nl_status = genl_connect(socket);
-        if (nl_status < 0) {
-            LOG(ERROR) << "Wi-Fi HAL genl_connect failed: " << nl_geterror(nl_status);
             break;
         }
 

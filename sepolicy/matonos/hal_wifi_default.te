@@ -1,0 +1,5 @@
+# Forked Wi-Fi HAL (radio APEX, stock hal_wifi_default domain): the goldfish
+# nl80211 legacy backend opens an rtnetlink socket for link state and stats.
+# Same rule device/generic/goldfish carries for this backend.
+allow hal_wifi_default self:netlink_route_socket { create bind write read nlmsg_read nlmsg_readpriv };
+set_prop(hal_wifi_default, vendor_wlan_versions_prop)
