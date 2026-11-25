@@ -326,3 +326,12 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - VM launch: cmd.txt is one arg per line and needs
   `LD_LIBRARY_PATH=~/matonos/qemu-venus/lib` (virglrenderer 1.11):
   `LD_LIBRARY_PATH=… setsid nohup xargs -d '\n' -a cmd.txt env > qemu.log 2>&1 < /dev/null &`
+
+## 00:45 update
+- Low-prio backlog item done (main queue empty): tools/check-release-keys.sh flags any
+  installed APK/APEX signed with AOSP's public test certs. Trial on server out dir
+  (mid build-156, so not a clean run): 162 files, 1 hit — `system/apex/
+  com.android.apex.cts.shim.apex` (AOSP prebuilt CTS shim, testkey-signed upstream; it
+  carries no code, but an update signed with the public key could replace it).
+  **User decision:** drop the shim from the image, or re-sign it with our key. Not
+  wired into build.sh yet.
