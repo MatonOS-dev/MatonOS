@@ -28,8 +28,11 @@ newest entries at the bottom of each section.
 | 144 | f73b15ce | FAILED PipeWire RAOP: `-include` abs path in openssl.pc got sysroot-prefixed by pkg-config |
 | 145 | 6e999e96 | FAILED same: meson reused cached dep flags → `meson setup --reconfigure --clearcache` |
 | 146 | 03a79281 | OK 14:49; live146 boots 35 s enforcing; PipeWire loads module-maton-network-speakers. **Correction:** my earlier "0 denials" (143–146) used a grep that missed auditd's `avc:  denied`; real denials found: kernel can't read regulatory.db (Wi-Fi world domain only), bridge NSD `find` (speaker browse NPE every 5 s), PipeWire DMI/PCI reads → fixed in 2eb1da94 + 06cfdda2 (build-148). Still open, pre-existing: init `mounton /oem`, vendor_init `search oem` |
-| 147 | 7901c583 | running since 14:50 (without the 146 policy fixes): bionic-fill force-included over all PipeWire (pin 4638ac47, replaces raop-compat.h), openssl.pc `-include openssl/bn.h` (no patch), matonos-btd + bridge BluetoothControllerSwitcher (btd1, merge ef4e8c9b) |
-| 148 | (next) | 147 + policy fixes 2eb1da94, 06cfdda2 + bfill2 (d935cbda: bionic-fill 89f806d gives pthread affinity, fopencookie, libintl; PipeWire 0002/0005 + compat libintl.h removed). bfill3 (subsystem shims → bionic-fill) in progress |
+| 147 | 7901c583 | OK 16:00 (bionic-fill, openssl.pc bn.h, btd compile). Not VM-tested: superseded by 150 |
+| 148 | ed3229c8 | FAILED 16:04 in subsystem PipeWire: cross-file c_args only apply at first meson setup, server build dir reused → no bionic-fill. Fix sub f09cf02b (c_args via -D + --clearcache; Xwayland helper rebuilds when cross file changes) |
+| 149 | ed3229c8 | FAILED 16:08: force-included fills need cpu_set_t/funopen64, broke meson's plain probes (“8-byte atomics required”). Fix: bionic-fill 50e5459 gates GNU fills on _GNU_SOURCE (like glibc); pins sub 1267963f, dt 58b41da8; sub refetches bionic-fill on pin change |
+| 150 | 58b41da8 | OK 17:22. live150 boots enforcing; pipewire, wireplumber, btd, BT HAL, wifid running; no crashes; NSD NPE gone. Still: regulatory.db firmware_load denied (-13), bridge bluetooth_manager find denied, btd debug log every 1 s, ~100 WirePlumber sysfs search denials (libudev-zero enumerates everything). Pre-existing: vendor_init oemfs search, vendor_modprobe key write, vendor_init proc write, pc_gpu_detect sys_admin |
+| 151 | 8a80dcc0 | running since 18:54: regdb firmware_load, bridge bluetooth_manager find, WirePlumber sysfs dontaudit, btd debug line removed. Only live-150.img kept |
 
 **live130 results** (enforcing, booted in under a minute):
 - PASS: both APEXes active (`media@1795560288`, `radio@1795560296`).
