@@ -13,6 +13,7 @@
 #include <netlink/netlink.h>
 #include <sys/socket.h>
 
+#include <algorithm>
 #include <array>
 #include <set>
 #include <utility>
@@ -26,6 +27,21 @@ struct QueryResult {
     bool failed = false;
     bool done = false;
 };
+
+// Most interfaces of a type WifiService can ever use at once (dual STA,
+// bridged AP, one P2P, one NAN). nl80211 limits can be far larger (hwsim
+// advertises 2048), and the framework expands each limit as
+// types^maxIfaces, so raw driver values overflow it.
+uint32_t frameworkMax(IfaceConcurrencyType type) {
+    switch (type) {
+        case IfaceConcurrencyType::STA:
+        case IfaceConcurrencyType::AP:
+        case IfaceConcurrencyType::AP_BRIDGED:
+            return 2;
+        default:
+            return 1;
+    }
+}
 
 void addType(std::set<IfaceConcurrencyType>* types, int type) {
     switch (type) {
@@ -97,8 +113,12 @@ int parseValidMessage(struct nl_msg* message, void* opaque) {
                 }
                 if (types.empty()) continue;
 
+                uint32_t usable = 0;
+                for (const auto type : types) usable += frameworkMax(type);
                 IWifiChip::ChipConcurrencyCombinationLimit limit;
-                limit.maxIfaces = nla_get_u32(limit_attrs[NL80211_IFACE_LIMIT_MAX]);
+                limit.maxIfaces = static_cast<int32_t>(std::min(
+                        nla_get_u32(limit_attrs[NL80211_IFACE_LIMIT_MAX]), usable));
+                if (limit.maxIfaces == 0) continue;
                 limit.types.assign(types.begin(), types.end());
                 combination.limits.push_back(std::move(limit));
             }

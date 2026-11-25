@@ -694,6 +694,13 @@ std::pair<int32_t, ndk::ScopedAStatus> WifiChip::getFeatureSetInternal() {
 
 std::pair<std::vector<IWifiChip::ChipMode>, ndk::ScopedAStatus>
 WifiChip::getAvailableModesInternal() {
+    // Until a mode is chosen, report what wlan0's phy supports now (the card
+    // can change through wifid renames). Loading only after configureChip
+    // would swap the mode ids under the mode the framework just picked.
+    if (!isValidModeId(current_mode_id_)) {
+        using_dynamic_iface_combination_ = false;
+        retrieveDynamicIfaceCombination();
+    }
     return {modes_, ndk::ScopedAStatus::ok()};
 }
 
