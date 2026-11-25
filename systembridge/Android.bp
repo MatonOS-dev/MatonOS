@@ -29,7 +29,17 @@ android_app {
         "messaging",
         "Music",
     ],
-    required: ["privapp-permissions-org.matonos.systembridge"],
+    required: [
+        "privapp-permissions-org.matonos.systembridge",
+        "default-permissions-org.matonos.systembridge.xml",
+    ],
+}
+
+prebuilt_etc {
+    name: "default-permissions-org.matonos.systembridge.xml",
+    src: "default-permissions-org.matonos.systembridge.xml",
+    sub_dir: "default-permissions",
+    system_ext_specific: true,
 }
 
 java_library_static {

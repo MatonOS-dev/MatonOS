@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Runtime permissions the bridge needs without ever prompting:
+     ACCESS_LOCAL_NETWORK  NetworkSpeakerDiscovery's NSD browse (otherwise
+                           Android 17 shows the "Choose a device" picker).
+     BLUETOOTH_CONNECT     BluetoothControllerSwitcher. -->
+<exceptions>
+    <exception package="org.matonos.systembridge">
+        <permission name="android.permission.ACCESS_LOCAL_NETWORK" fixed="true"/>
+        <permission name="android.permission.BLUETOOTH_CONNECT" fixed="true"/>
+    </exception>
+</exceptions>
