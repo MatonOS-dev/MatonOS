@@ -91,8 +91,8 @@ class HardwareModule : Module() {
     )
   }
 
-  /** Security properties are deliberately not read through hidden SystemProperties APIs:
-   * this APK uses its own release key, not the platform key. */
+  /** Public-API security values only. SELinux, encryption, vendor patch level and verified
+   * boot need platform-signed property access and come from the System Bridge (Security.ts). */
   private fun securityStatus(context: Context): Map<String, String> {
     val adb = try {
       if (Settings.Global.getInt(context.contentResolver, Settings.Global.ADB_ENABLED, 0) == 1) "Enabled" else "Disabled"
@@ -117,11 +117,7 @@ class HardwareModule : Module() {
       "Unknown"
     }
     return mapOf(
-      "selinux" to unavailable("ro.boot.selinux / SELinux enforcement state"),
-      "encryption" to unavailable("ro.crypto.state, ro.crypto.type, ro.crypto.metadata.enabled"),
       "securityPatch" to patch,
-      "vendorSecurityPatch" to unavailable("ro.vendor.build.security_patch"),
-      "verifiedBoot" to unavailable("ro.boot.verifiedbootstate and ro.boot.vbmeta.device_state"),
       "buildKeys" to when {
         tags.contains("release-keys") -> "Release keys"
         tags.contains("test-keys") || tags.contains("dev-keys") -> "Test/development keys"
@@ -130,11 +126,6 @@ class HardwareModule : Module() {
       },
       "adb" to adb,
     )
-  }
-
-  private fun unavailable(property: String): String {
-    Log.e("MatonOSSettings", "security status unavailable: $property requires platform-signed property access")
-    return "Unknown"
   }
 
 }
