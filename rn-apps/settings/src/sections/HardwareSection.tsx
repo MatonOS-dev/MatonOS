@@ -6,16 +6,32 @@ import { Hardware, type HardwareState } from "../hardware/Hardware";
 import { MatonOS } from "../bridge/MatonOS";
 import {
   ActionButton,
+  ModeRow,
   SectionHeader,
   SettingsCard,
   StatusRow,
 } from "../components/SettingsUI";
 import { copy, numberFormat } from "../strings";
 
+type RadioDevice = {
+  interface: string;
+  driver: string;
+  perm_mac: string;
+  mac?: string;
+  address?: string;
+  simulated?: boolean;
+  selected?: boolean;
+  bound?: boolean;
+  name?: string;
+  bus?: string;
+};
+
 export function HardwareSection() {
   const colors = useMaterialColors();
   const [hardware, setHardware] = useState<HardwareState | null>(null);
   const [audioDevices, setAudioDevices] = useState<Array<{ id: string; name: string; multiplier: number }>>([]);
+  const [wifiDevices, setWifiDevices] = useState<RadioDevice[]>([]);
+  const [bluetoothDevices, setBluetoothDevices] = useState<RadioDevice[]>([]);
   const refreshHardware = useCallback(async () => {
     try {
       setHardware(await Hardware.getState());
@@ -34,7 +50,42 @@ export function HardwareSection() {
       console.error("audio device list read failed", error);
       setAudioDevices([]);
     }
+    for (const [target, setDevices] of [
+      ["wifi", setWifiDevices],
+      ["bluetooth", setBluetoothDevices],
+    ] as const) {
+      try {
+        const result = await MatonOS.call(target, "list_devices");
+        if (!result.available) {
+          console.error(`${target} device list unavailable: ${result.reason}`);
+          setDevices([]);
+          continue;
+        }
+        const state = JSON.parse(result.value) as { devices?: RadioDevice[] };
+        setDevices(state.devices ?? []);
+      } catch (error) {
+        console.error(`${target} device list read failed`, error);
+        setDevices([]);
+      }
+    }
   }, []);
+  const selectRadioDevice = useCallback(async (target: "wifi" | "bluetooth", device: RadioDevice) => {
+    const identity = device.perm_mac || device.address || "";
+    if (!identity) {
+      console.error(`${target} device has no selectable permanent address: ${device.interface}`);
+      return;
+    }
+    try {
+      const result = await MatonOS.call(target, "select_device", { device: identity, persist: true });
+      if (!result.available) {
+        console.error(`${target} selection unavailable for ${identity}: ${result.reason}`);
+        return;
+      }
+      await refreshHardware();
+    } catch (error) {
+      console.error(`${target} selection failed for ${identity}`, error);
+    }
+  }, [refreshHardware]);
   const updateDeviceBoost = useCallback((id: string, value: number) => {
     const multiplier = Math.max(0.5, Math.min(1.5, Math.round(value * 100) / 100));
     setAudioDevices((devices) => devices.map((device) => device.id === id ? { ...device, multiplier } : device));
@@ -73,6 +124,36 @@ export function HardwareSection() {
       </Text>,
     );
   }
+  const wifiDeviceRows = wifiDevices.map((device) => {
+    const active = device.interface === "wlan0";
+    const identifier = device.perm_mac || device.mac || copy.unknown;
+    const driver = device.driver || copy.unknown;
+    const details = `${driver} · ${identifier}${device.simulated ? ` · ${copy.virtualRadio}` : ""}${active ? ` · ${copy.active}` : ""}`;
+    return (
+      <ModeRow
+        key={`wifi-${device.interface}-${identifier}`}
+        title={device.interface}
+        description={details}
+        selected={active}
+        onSelect={() => void selectRadioDevice("wifi", device)}
+      />
+    );
+  });
+  const bluetoothDeviceRows = bluetoothDevices.map((device) => {
+    const identifier = device.perm_mac || device.address || copy.unknown;
+    const active = device.selected === true;
+    const driver = device.driver || copy.unknown;
+    const details = `${device.name || device.interface} · ${driver} · ${identifier}${device.bus ? ` · ${device.bus}` : ""}${active ? ` · ${copy.active}` : ""}`;
+    return (
+      <ModeRow
+        key={`bluetooth-${device.interface}-${identifier}`}
+        title={device.interface}
+        description={details}
+        selected={active}
+        onSelect={() => void selectRadioDevice("bluetooth", device)}
+      />
+    );
+  });
   const powerStatus = hardware?.battery.pluggedIn
     ? copy.connectedToPower
     : copy.batteryOrDesktop;
@@ -123,7 +204,9 @@ export function HardwareSection() {
         </SettingsCard>
         <SettingsCard title={copy.wireless}>
           <StatusRow label={copy.wifi} value={wifiStatus} />
+          {wifiDeviceRows}
           <StatusRow label={copy.bluetooth} value={bluetoothStatus} />
+          {bluetoothDeviceRows}
         </SettingsCard>
         <SettingsCard title={copy.audioGraphics}>
           <StatusRow label={copy.audioOutput} value={audioStatus} />

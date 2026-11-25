@@ -46,6 +46,7 @@ struct Device {
     std::string address;
     std::string perm_mac;
     std::string path;
+    std::string driver;
     bool simulated;
 };
 std::vector<Device> gDevices;
@@ -96,8 +97,10 @@ std::vector<Device> Enumerate(bool* physical) {
                                 path.find("mac80211_hwsim") != std::string::npos);
         if (!seen_phys.insert(phy).second) continue;
         if (!simulated) *physical = true;
+        const std::string driver = fs::canonical(it->path() / "device/driver", error).filename().string();
+        error.clear();
         devices.push_back({it->path().filename().string(), Read(it->path() / "address"),
-                           Read(it->path() / "phy80211/macaddress"), path, simulated});
+                           Read(it->path() / "phy80211/macaddress"), path, driver, simulated});
     }
     return devices;
 }
@@ -224,7 +227,7 @@ int ListDevices(const char*, char* out, size_t size, void*) {
     for (const auto& d : gDevices) {
         if (!first) json += ',';
         first = false;
-        json += "{\"interface\":" + Quote(d.interface) + ",\"mac\":" + Quote(d.address) +
+        json += "{\"interface\":" + Quote(d.interface) + ",\"driver\":" + Quote(d.driver) + ",\"mac\":" + Quote(d.address) +
                 ",\"perm_mac\":" + Quote(d.perm_mac) +
                 ",\"device\":" + Quote(d.path) + ",\"simulated\":" +
                 (d.simulated ? "true" : "false") + ",\"selected\":" +

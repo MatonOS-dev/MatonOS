@@ -118,6 +118,7 @@ const en = {
   virtualRadio: "Virtual radio",
   physicalController: "Physical controller",
   virtualController: "Virtual controller",
+  active: "Active",
   audioGraphics: "Audio and graphics",
   audioOutput: "Audio output",
   noAudioDevices: "No audio output devices are connected.",
