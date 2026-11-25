@@ -418,6 +418,20 @@ defined inside the fixed files (a new type in matonos_driver.te is not a new
 file): `matonos_installer` (v2 install service, raw block-device write, live
 image only) — the shared driver domain never gets disk-wiping rights. The system bridge (platform app side) keeps its own small policy.
 
+## Tool: bionic-fill for glibc-isms (user, 2026-11-25)
+
+Upstream Linux code that misses a glibc/BSD name on bionic (`strdupa`,
+`strverscmp`, `index`, `get_current_dir_name`, …) uses
+[MatonOS-dev/bionic-fill](https://github.com/MatonOS-dev/bionic-fill)
+(local clone `~/matonos/repos/bionic-fill`, MIT): one guarded header,
+force-included with `-include bionic-fill.h`, pinned by commit in the recipe
+(see `tools/build-pipewire.sh`, MatonOS_apexs `flatpak/fetch.sh`).
+- Missing symbol → add it there (with a README row naming the project that
+  needed it), bump the pin. Never write a private per-project compat header.
+- Only plain symbol gaps belong in it. Behaviour changes (bionic semantics,
+  missing syscalls) and non-libc gaps (BoringSSL vs OpenSSL headers) are
+  normal patches in the recipe's patch dir.
+
 ## Checklist: adding or changing anything init starts
 
 Every new vendor service, HAL, or `exec`'d script needs **all** of these, or

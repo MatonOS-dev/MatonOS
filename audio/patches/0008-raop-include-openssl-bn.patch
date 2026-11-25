@@ -1,0 +1,18 @@
+From: MatonOS
+Subject: [PATCH] module-raop-sink: include openssl/bn.h explicitly
+
+The sink calls BN_bin2bn/BN_free but relies on OpenSSL including bn.h
+through rsa.h. BoringSSL does not, so the build fails there.
+---
+diff --git a/src/modules/module-raop-sink.c b/src/modules/module-raop-sink.c
+index 36fdfa04d..89278ea95 100644
+--- a/src/modules/module-raop-sink.c
++++ b/src/modules/module-raop-sink.c
+@@ -25,6 +25,7 @@
+ #endif
+ #include <openssl/rand.h>
+ #include <openssl/rsa.h>
++#include <openssl/bn.h>
+ #include <openssl/aes.h>
+ #include <openssl/md5.h>
+ #include <openssl/evp.h>

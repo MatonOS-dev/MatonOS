@@ -90,6 +90,8 @@ fetch libffi https://gitlab.freedesktop.org/gstreamer/meson-ports/libffi.git 83d
 fetch libudev-zero https://github.com/illiliti/libudev-zero.git 7a6eee2db11f2eb0f7fd065ae9597fcd270e6734
 fetch pipewire https://gitlab.freedesktop.org/pipewire/pipewire.git 8fa27cabdc6c0c1350c69c026af5850ef0af1e26
 fetch wireplumber https://gitlab.freedesktop.org/pipewire/wireplumber.git 11e501181fb87dc8e72e55156d672109fbad2434
+# MatonOS' MIT glibc-ism header (index/rindex for the RAOP sink).
+fetch bionic-fill https://github.com/MatonOS-dev/bionic-fill.git 4638ac47ae02f6abb95d386588718bc9c22926f4
 
 # Bionic does not expose pthread_cancel(). PipeWire's cancel flag is an
 # optimization; invoke the same loop stop callback on Android instead.
@@ -228,7 +230,7 @@ BORINGSSL_PIN=0cd1f6a94b670e6b61af95a06e71e690ae8e3262
 install -m 0644 "$OUT/boringssl/libcrypto.a" "$DEST$PREFIX/lib64/libcrypto.a"
 cp -a "$BORINGSSL/include/openssl" "$DEST$PREFIX/include/"
 # Under ${includedir}: PKG_CONFIG_SYSROOT_DIR prefixes every absolute .pc path.
-install -m 0644 "$DEVICE_DIR/audio/network-speakers/raop-compat.h" "$DEST$PREFIX/include/raop-compat.h"
+install -m 0644 "$SRC/bionic-fill/bionic-fill.h" "$DEST$PREFIX/include/bionic-fill.h"
 cat > "$DEST$PREFIX/lib64/pkgconfig/openssl.pc" <<EOF
 prefix=$PREFIX
 libdir=\${prefix}/lib64
@@ -237,7 +239,7 @@ Name: OpenSSL API (BoringSSL)
 Description: pinned AOSP BoringSSL for RAOP only
 Version: 1.1.1
 Libs: -L\${libdir} -lcrypto -lc++_static -lc++abi
-Cflags: -I\${includedir} -include \${includedir}/raop-compat.h
+Cflags: -I\${includedir} -include \${includedir}/bionic-fill.h
 EOF
 
 info "Building PipeWire (ALSA SPA backend; systemd, D-Bus and BlueZ disabled)"
