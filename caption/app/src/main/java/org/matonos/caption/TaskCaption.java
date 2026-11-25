@@ -83,7 +83,9 @@ final class TaskCaption {
         CaptionTheme theme = new CaptionTheme(context, dark, state.getBoolean("focused"));
         root.setBackgroundColor(theme.background);
         int heightDp = Math.max(1, Math.round(height / context.getResources().getDisplayMetrics().density));
-        int pad = 1;
+        int buttonDp = Math.max(1, Math.round(heightDp * 0.75f));
+        // Same gap beside the first circle as above and below it, as in the reference.
+        int pad = Math.max(1, (heightDp - buttonDp) / 2);
         FrameLayout.LayoutParams buttonsLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT,
                 theme.right ? Gravity.RIGHT : Gravity.LEFT);
@@ -98,7 +100,6 @@ final class TaskCaption {
         int[] glyphs = theme.right
                 ? new int[]{R.drawable.caption_minimize, maxGlyph, R.drawable.caption_close}
                 : new int[]{R.drawable.caption_close, maxGlyph, R.drawable.caption_minimize};
-        int buttonDp = Math.max(1, Math.round(heightDp * 0.75f));
         for (int i = 0; i < 3; i++) {
             final int action = theme.right ? 2 - i : i;
             ImageView button = button(glyphs[i], theme, theme.circles, dp(buttonDp));
