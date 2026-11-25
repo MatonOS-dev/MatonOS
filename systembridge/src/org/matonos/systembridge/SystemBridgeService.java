@@ -63,6 +63,7 @@ public final class SystemBridgeService extends Service {
     private volatile DisplayChannel displayChannel;
     private volatile TrustChannel trustChannel;
     private WifiCardSwitcher wifiCardSwitcher;
+    private BluetoothControllerSwitcher bluetoothControllerSwitcher;
     private final HardwareChannel hardwareChannel = new HardwareChannel();
     private MatonosClient internalAudioBridge;
     private AudioClient internalAudioClient;
@@ -126,6 +127,11 @@ public final class SystemBridgeService extends Service {
                 JSONObject args = new JSONObject(jsonArgs == null ? "{}" : jsonArgs);
                 if (args.toString().length() > 64 * 1024)
                     throw new IllegalArgumentException("channel arguments too large");
+                if ("bluetooth".equals(target) && "select_device".equals(command)) {
+                    BluetoothControllerSwitcher switcher = bluetoothControllerSwitcher;
+                    if (switcher == null) throw new IllegalStateException("Bluetooth controller switcher unavailable");
+                    return switcher.switchTo(args.optString("device", ""), true);
+                }
                 if ("wifi".equals(target) && "select_device".equals(command)) {
                     WifiCardSwitcher switcher = wifiCardSwitcher;
                     if (switcher == null) throw new IllegalStateException("Wi-Fi card switcher unavailable");
@@ -430,6 +436,8 @@ public final class SystemBridgeService extends Service {
         audioChannelHandler.postDelayed(audioChannelRebinder, 3000);
         wifiCardSwitcher = new WifiCardSwitcher(this, this::channelFor);
         wifiCardSwitcher.start();
+        bluetoothControllerSwitcher = new BluetoothControllerSwitcher(this, this::channelFor);
+        bluetoothControllerSwitcher.start();
         // The bridge is bound explicitly by apps. Root/adb administration is exposed
         // through the UID-gated ContentProvider below, never ServiceManager.
     }
@@ -440,6 +448,7 @@ public final class SystemBridgeService extends Service {
         if (sleepWakeForwarder != null) sleepWakeForwarder.stop();
         audioChannelHandler.removeCallbacks(audioChannelRebinder);
         if (wifiCardSwitcher != null) wifiCardSwitcher.stop();
+        if (bluetoothControllerSwitcher != null) bluetoothControllerSwitcher.stop();
         if (internalAudioClient != null && internalAudioDeviceListener != null)
             internalAudioClient.unsubscribe(internalAudioDeviceListener);
         if (internalAudioBridge != null) internalAudioBridge.close();
@@ -552,7 +561,7 @@ public final class SystemBridgeService extends Service {
     }
 
     private static Set<String> knownTargets() {
-        return new HashSet<>(java.util.Arrays.asList("input", "sleep", "wifi", "audio",
+        return new HashSet<>(java.util.Arrays.asList("input", "sleep", "wifi", "bluetooth", "audio",
                 "camera", "install", "addons", "status", "display", "trust", "hardware"));
     }
 

@@ -105,7 +105,38 @@ QEMU test limitations and the proposed VM plan are documented in
 
 ## Dropped behavior
 
-Dynamic selection, persisted adapter preference, and the empty VHCI emulator
-remain out of scope. The HAL binds the kernel's default controller interface.
+The empty VHCI emulator remains out of scope. Controller choice is handled by
+`native/matonos-btd` and the bridge; the HAL binds the kernel's default controller interface.
 The fork only makes discovery cancellable and setup asynchronous; it does not
 proxy between multiple physical controllers.
+
+
+## Controller choice (btd1)
+
+`native/matonos-btd` lists HCI controllers using MGMT READ_INFO (including
+powered-off controllers), and remembers USB identities before detaching btusb.
+The bridge's `bluetooth` target is allowlisted for Settings, with the same
+certificate/permission checks as `wifi`. `select_device` disables Bluetooth,
+waits for OFF, asks btd to unbind other USB controllers and bind the chosen
+one, then restores the previous enabled state. Non-USB competitors are logged
+and left alone. No HAL transport or virtual controller is introduced.
+
+The persisted key is `persist.vendor.maton.bluetooth.device` (BD address).
+No key means no boot-time changes. A five-second init one-shot runs before
+the HAL; failure/timeout proceeds with the HAL regardless. The long-running
+daemon polls sysfs once per second and publishes `devices_changed`; the bridge
+reconciles a reappearing preferred controller with Bluetooth powered down.
+Cache: `/data/vendor/maton-btd/devices`, written before unbinding so detached
+controllers remain selectable after a daemon restart. Unknown identities are
+listed with an empty address and prevent destructive selection until readable.
+
+NDK link and switcher javac checks pass locally. Preflight has only the six
+existing missing APK inputs; policy/image/runtime tests remain unverified.
+See `btd1.report.md` for exact commands and coordinator tests. On Ryzen/Intel
+7265, Surface/Marvell and HP ProDesk (no controller), fresh-boot first, disable
+sleepd idle suspend, list devices, select an address while on and off, verify
+state restoration, and unplug/replug the preferred controller. Add two USB
+adapters to test switching back to the cached unbound adapter; verify the
+chosen address is the HAL's controller, pairing/HID still work, and no AVCs or
+crash loop occurs. Non-USB competing controllers cannot be made the default
+by USB unbind alone; this is reported rather than changing the HAL.

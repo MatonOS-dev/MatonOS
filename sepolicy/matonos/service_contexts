@@ -16,3 +16,4 @@ mapper/minigbm u:object_r:hal_graphics_mapper_service:s0
 # camera: AOSP labels only internal/0 and virtual/0; without this the stock
 # external provider cannot register and init restarts it forever.
 android.hardware.camera.provider.ICameraProvider/external/0 u:object_r:hal_camera_service:s0
+vendor.matonos.channel.IChannel/bluetooth u:object_r:matonos_channel_service:s0

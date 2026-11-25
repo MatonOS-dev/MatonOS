@@ -7,3 +7,4 @@
 /bin/matonos-wifid u:object_r:matonos_wifid_exec:s0
 /apex_manifest\.pb u:object_r:vendor_apex_metadata_file:s0
 / u:object_r:vendor_file:s0
+/bin/matonos-btd u:object_r:matonos_btd_exec:s0
