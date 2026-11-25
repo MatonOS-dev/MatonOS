@@ -260,3 +260,9 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 ## Notes for you
 - Minecraft on build-server: the build wrapper restarts it only if it was
   running when the build started; it was, so it is up again. Left alone.
+
+## 19:20 update
+- build-152 (dt 3955d695, btd paren fix) running, ~70% at 19:19.
+- In for build-153: 2689a752 System Bridge default-permissions (ACCESS_LOCAL_NETWORK + BLUETOOTH_CONNECT, kills the NSD picker popup), 9b9982e5 SystemUI caption icon/title fallback from topActivityInfo, b5b08ac4/030fa84c caption buttons = Lucide icons (octagon-x, square-plus, copy-plus restore, diamond-minus; ISC notice in caption/README.md).
+- live150 VM (user's window): caption APK from 030fa84c installed by adb (built via server worktree /mnt/data/matonos/tmp/dt-caption, MATON_APPS_ONLY=matonos-caption). SystemUI half pending: `build.sh -m MatonSystemUI` after 152 ends, then push to VM.
+- Open: boot animation shows stock AOSP "android" text on live150 (cause unknown); live150 rebooted itself once; adb shell hangs until `adb disconnect/connect`.
