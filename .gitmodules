@@ -7,3 +7,6 @@
 [submodule "store-sources/fdroid"]
 	path = store-sources/fdroid
 	url = https://github.com/MatonOS-dev/store-source-fdroid
+[submodule "audio"]
+	path = audio
+	url = https://github.com/MatonOS-dev/apex_media.git

@@ -89,7 +89,8 @@ install -m 0755 "$ipc_built" "$DEVICE_DIR/buildinfra/native-built/libmatonos-ipc
 # bundle/contents.list are commented out until then too.
 if [[ ${MATON_AUDIO_HAL:-0} == 1 ]]; then
   ANDROID_NDK="$NDK" MATON_CMAKE="$CMAKE" MATON_NINJA="$NINJA" \
-    MATON_NATIVE_OUT="$OUT/maton-audio-hal" MATON_BUILD_JOBS="$JOBS" \
+    MATON_AOSP_ROOT="$AOSP" MATON_AUDIO_STAGE="$DEVICE_DIR/buildinfra/native-built" \
+    MATON_AUDIO_OUT="$OUT/maton-audio-hal" MATON_BUILD_JOBS="$JOBS" \
     bash "$DEVICE_DIR/audio/build-hal.sh"
 fi
 

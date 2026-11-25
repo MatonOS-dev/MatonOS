@@ -9,8 +9,17 @@ the product/lunch name stays the generic `pc_x86_64` (it is also the
 AOSP (`android-latest-release`, `aosp_current` → `cp2a`) for generic x86_64
 UEFI PCs, mainline kernel, Mesa graphics, installed by `tools/installer.sh`.
 
-Layout: everything lives in `device/maton/pc_x86_64/` (the monorepo root).
-Scripts are in `tools/`.
+Layout: the integration tree lives in `device/maton/pc_x86_64/`.
+Scripts are in `tools/`. The media APEX sources at `audio/` are the
+`https://github.com/MatonOS-dev/apex_media.git` submodule (repository
+`apex_media`, preserving the former `audio/` history). Initialize it with
+`git submodule update --init audio`; existing `audio/audio.mk`, BoardConfig
+and server build paths remain unchanged. Its root README documents the
+integration contract and license provenance. Signing keys stay machine-local.
+The standalone HAL builder now takes explicit `MATON_AOSP_ROOT` and
+`MATON_AUDIO_STAGE` inputs from `tools/build-native.sh` rather than reading
+parent device-tree paths. This repository split was source/history checked
+only; no Soong, Gradle or image build was run.
 
 **When adding any service/HAL/script that init starts, follow the SELinux
 checklist in `CLAUDE.md`** and run `tools/check-selinux-labels.sh` (build.sh

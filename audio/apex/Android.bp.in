@@ -1,7 +1,0 @@
-prebuilt_apex {
-    name: "com.matonos.hardware.media",
-    src: "prebuilt/com.matonos.hardware.media.apex",
-    filename: "com.matonos.hardware.media.apex",
-    prefer: true,
-    vendor: true,
-}
