@@ -73,8 +73,9 @@ printf '%s\n' "$PREFIX" > "$OUT/.prefix"
 meson_configure() {
   local build_dir=$1 source_dir=$2
   shift 2
+  # --clearcache: meson otherwise keeps pkg-config results from older .pc files.
   if [[ -f $build_dir/build.ninja ]]; then
-    meson setup --reconfigure "$build_dir" "$source_dir" "$@"
+    meson setup --reconfigure --clearcache "$build_dir" "$source_dir" "$@"
   else
     meson setup "$build_dir" "$source_dir" "$@"
   fi
