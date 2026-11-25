@@ -24,6 +24,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <set>
 #include <thread>
 #include <vector>
 
@@ -895,6 +896,8 @@ class WifiLegacyHal {
     wifi_link_stat* copyLinkStat(wifi_link_stat* stat_ptr, std::vector<LinkStats>& stats);
     wifi_peer_info* copyPeerInfo(wifi_peer_info* peer_ptr, std::vector<WifiPeerInfo>& peers);
 
+    // MatonOS: interfaces this HAL created through nl80211 (backend could not).
+    std::set<std::string> nl80211_created_ifaces_;
     // Global function table of legacy HAL.
     wifi_hal_fn global_func_table_;
     // Opaque handle to be used for all global operations.

@@ -242,3 +242,84 @@ bool getRuntimeIfaceCombinations(
     if (ifindex == 0) return false;  // Expected when hardware is absent or being renamed.
     return queryCombinations(ifindex, out);
 }
+
+namespace {
+// Sends one nl80211 command built by |fill| and waits for the kernel's ack.
+template <typename Fill>
+bool sendNl80211Command(uint8_t command, const char* what, Fill fill) {
+    struct nl_sock* socket = nl_socket_alloc();
+    if (socket == nullptr) {
+        PLOG(ERROR) << "Wi-Fi HAL nl_socket_alloc failed (" << what << ")";
+        return false;
+    }
+    bool success = false;
+    do {
+        int status = genl_connect(socket);
+        if (status < 0) {
+            LOG(ERROR) << "Wi-Fi HAL genl_connect failed (" << what << "): "
+                       << nl_geterror(status);
+            break;
+        }
+        timeval timeout{1, 0};
+        if (setsockopt(nl_socket_get_fd(socket), SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                       sizeof(timeout)) < 0) {
+            PLOG(ERROR) << "Wi-Fi HAL failed to bound nl80211 receive time (" << what << ")";
+            break;
+        }
+        const int family = genl_ctrl_resolve(socket, "nl80211");
+        if (family < 0) {
+            LOG(ERROR) << "Wi-Fi HAL could not resolve nl80211 (" << what << "): "
+                       << nl_geterror(family);
+            break;
+        }
+        struct nl_msg* message = nlmsg_alloc();
+        if (message == nullptr) {
+            PLOG(ERROR) << "Wi-Fi HAL nlmsg_alloc failed (" << what << ")";
+            break;
+        }
+        if (genlmsg_put(message, NL_AUTO_PORT, NL_AUTO_SEQ, family, 0, 0, command, 0) ==
+                    nullptr ||
+            !fill(message)) {
+            LOG(ERROR) << "Wi-Fi HAL could not encode nl80211 " << what;
+            nlmsg_free(message);
+            break;
+        }
+        status = nl_send_sync(socket, message);  // frees |message|
+        if (status < 0) {
+            LOG(ERROR) << "Wi-Fi HAL nl80211 " << what << " failed: " << nl_geterror(status);
+            break;
+        }
+        success = true;
+    } while (false);
+    nl_socket_free(socket);
+    return success;
+}
+}  // namespace
+
+bool nl80211CreateInterface(const std::string& parent, const std::string& name,
+                            uint32_t nl80211_type) {
+    const unsigned parent_index = if_nametoindex(parent.c_str());
+    if (parent_index == 0) {
+        LOG(ERROR) << "Wi-Fi HAL cannot create " << name << ": no " << parent;
+        return false;
+    }
+    const bool ok = sendNl80211Command(
+            NL80211_CMD_NEW_INTERFACE, "NEW_INTERFACE", [&](struct nl_msg* message) {
+                return nla_put_u32(message, NL80211_ATTR_IFINDEX, parent_index) == 0 &&
+                       nla_put_string(message, NL80211_ATTR_IFNAME, name.c_str()) == 0 &&
+                       nla_put_u32(message, NL80211_ATTR_IFTYPE, nl80211_type) == 0;
+            });
+    if (ok) LOG(INFO) << "Created " << name << " on " << parent << "'s phy via nl80211";
+    return ok;
+}
+
+bool nl80211DeleteInterface(const std::string& name) {
+    const unsigned index = if_nametoindex(name.c_str());
+    if (index == 0) return true;  // Already gone (unplug, rename).
+    const bool ok = sendNl80211Command(
+            NL80211_CMD_DEL_INTERFACE, "DEL_INTERFACE", [&](struct nl_msg* message) {
+                return nla_put_u32(message, NL80211_ATTR_IFINDEX, index) == 0;
+            });
+    if (ok) LOG(INFO) << "Deleted " << name << " via nl80211";
+    return ok;
+}

@@ -18,6 +18,7 @@
 
 #include <android-base/logging.h>
 #include <cutils/properties.h>
+#include <linux/nl80211.h>
 #include <net/if.h>
 
 #include <algorithm>
@@ -26,6 +27,7 @@
 
 #include "aidl_sync_util.h"
 #include "wifi_legacy_hal_stubs.h"
+#include "wifi_runtime_combinations.h"
 
 namespace {
 // Constants ported over from the legacy HAL calling code
@@ -1869,6 +1871,16 @@ wifi_error WifiLegacyHal::createVirtualInterface(const std::string& ifname,
     // Vendor Hal should return WIFI_SUCCESS.
     wifi_error status = global_func_table_.wifi_virtual_interface_create(global_handle_,
                                                                          ifname.c_str(), iftype);
+    // MatonOS: backends without virtual interface support (goldfish) expect
+    // the interface to exist already; create STA/AP ones through nl80211.
+    if (status == WIFI_ERROR_NOT_SUPPORTED && if_nametoindex(ifname.c_str()) == 0 &&
+        (iftype == WIFI_INTERFACE_TYPE_STA || iftype == WIFI_INTERFACE_TYPE_AP)) {
+        const uint32_t nl80211_type =
+                iftype == WIFI_INTERFACE_TYPE_AP ? NL80211_IFTYPE_AP : NL80211_IFTYPE_STATION;
+        if (!nl80211CreateInterface("wlan0", ifname, nl80211_type)) return WIFI_ERROR_UNKNOWN;
+        nl80211_created_ifaces_.insert(ifname);
+        status = WIFI_SUCCESS;
+    }
     return handleVirtualInterfaceCreateOrDeleteStatus(ifname, status);
 }
 
@@ -1876,6 +1888,11 @@ wifi_error WifiLegacyHal::deleteVirtualInterface(const std::string& ifname) {
     // Delete the interface if it was created dynamically.
     wifi_error status =
             global_func_table_.wifi_virtual_interface_delete(global_handle_, ifname.c_str());
+    if (status == WIFI_ERROR_NOT_SUPPORTED && nl80211_created_ifaces_.count(ifname) != 0) {
+        if (!nl80211DeleteInterface(ifname)) return WIFI_ERROR_UNKNOWN;
+        nl80211_created_ifaces_.erase(ifname);
+        status = WIFI_SUCCESS;
+    }
     return handleVirtualInterfaceCreateOrDeleteStatus(ifname, status);
 }
 
