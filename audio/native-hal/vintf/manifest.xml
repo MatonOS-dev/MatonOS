@@ -23,4 +23,9 @@
             <instance>default</instance>
         </interface>
     </hal>
+    <hal format="aidl" updatable-via-apex="com.matonos.hardware.media">
+        <name>android.hardware.bluetooth.audio</name>
+        <version>6</version>
+        <fqname>IBluetoothAudioProviderFactory/default</fqname>
+    </hal>
 </manifest>

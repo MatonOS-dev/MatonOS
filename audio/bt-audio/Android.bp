@@ -1,0 +1,43 @@
+package {
+    default_applicable_licenses: ["hardware_interfaces_license"],
+}
+
+cc_library_static {
+    name: "libmatonos_bluetooth_audio_software",
+    vendor: true,
+    defaults: ["latest_android_hardware_bluetooth_audio_ndk_shared"],
+    srcs: [
+        "BluetoothAudioProvider.cpp",
+        "BluetoothAudioProviderFactory.cpp",
+        "A2dpSoftwareAudioProvider.cpp",
+        "HearingAidAudioProvider.cpp",
+        "HfpSoftwareAudioProvider.cpp",
+        "LeAudioSoftwareAudioProvider.cpp",
+        "service.cpp",
+    ],
+    header_libs: ["libhardware_headers"],
+    shared_libs: [
+        "libbase",
+        "libbinder_ndk",
+        "libcutils",
+        "libfmq",
+        "liblog",
+        "libbluetooth_audio_session_aidl",
+    ],
+}
+
+cc_test {
+    name: "matonos_bluetooth_audio_software_test",
+    vendor: true,
+    defaults: ["latest_android_hardware_bluetooth_audio_ndk_shared"],
+    srcs: ["tests/FactoryTest.cpp"],
+    whole_static_libs: ["libmatonos_bluetooth_audio_software"],
+    shared_libs: [
+        "libbase",
+        "libbinder_ndk",
+        "libcutils",
+        "libfmq",
+        "liblog",
+        "libbluetooth_audio_session_aidl",
+    ],
+}

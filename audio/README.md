@@ -1,5 +1,10 @@
 # MatonOS audio
 
+The software-only Bluetooth audio provider is documented in
+[`bt-audio/README.md`](bt-audio/README.md). Its sources and tests compile;
+server linking and runtime acceptance remain unverified. Camera and network
+speaker work is not complete; see [`mediahal1.report.md`](mediahal1.report.md).
+
 ## Updateable vendor audio APEX (audioapex1)
 
 The default PipeWire audio stack is packaged as one signed, prebuilt vendor
