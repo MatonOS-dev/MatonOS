@@ -427,3 +427,16 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   android.hardware.bluetooth only when a controller exists at boot (AOSP's own
   "No Bluetooth Service (Bluetooth Hardware Not Present)" path; hides tile + Settings;
   dongle plugged after boot needs a reboot) or (b) a SystemUI/BluetoothManagerService patch.
+
+## 21:20 update
+- User picked (a) + DeepSeek analysis. DeepSeek hit its free-usage limit before
+  reporting (out/pc-logs/agents/ds-bt-feature/report.md); design checked by hand.
+- 67d98024: bluetooth/matonos-bt-detect.sh (ODM, domain matonos_bt_detect) runs as
+  blocking exec_start in post-fs-data (before zygote-start). No /sys/class/bluetooth/hci*
+  → writes /oem/etc/permissions/matonos-no-bluetooth.xml (<unavailable-feature>
+  bluetooth + bluetooth_le, oemfs label; system_server already reads oemfs) → SystemServer
+  skips the Bluetooth service. btd's own --boot step was not usable: it runs on
+  apex.all.ready, which init queues after zygote-start (race).
+- Dropped uninstalled VHCI-era bluetooth_features.xml; fixed stale rc/xml comments.
+- build-160 running (policy-only check first, then image). Test: pm list features has no
+  bluetooth, no BT tile, kmsg line from matonos-bt-detect, no new denials.
