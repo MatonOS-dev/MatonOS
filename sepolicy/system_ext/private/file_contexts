@@ -4,3 +4,4 @@
 /system_ext/bin/matonos-slot-writer u:object_r:matonos_slot_writer_exec:s0
 /mnt/matonos(/.*)?                  u:object_r:matonos_mnt_dir:s0
 /metadata/maton(/.*)?               u:object_r:matonos_image_metadata_file:s0
+/maton_system                       u:object_r:matonos_install_mount_file:s0
