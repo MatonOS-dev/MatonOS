@@ -89,7 +89,7 @@ export function createV1Plan(
     userdataEnd - userdataStart,
   );
   const diskGuid = guid();
-  const ops = [
+  const ops: InstallerOperation[] = [
     {
       kind: "write_gpt" as const,
       declaredDiskBytes: diskBytes,
@@ -163,7 +163,7 @@ export function createV1Plan(
     },
     // Last: the NVRAM entry points at the files written above.
     { kind: "register_boot_entry" as const, esp: { partGuid: esp.partGuid } },
-  ] satisfies InstallerOperation[];
+  ];
   if (setup) {
     const populateIndex = ops.findIndex((operation) => operation.kind === "populate_images");
     ops.splice(populateIndex + 1, 0, {

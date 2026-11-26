@@ -1,4 +1,4 @@
-import { OutlinedTextField, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
+import { OutlinedTextField, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
 import {
   ActionButton,
   ModeRow,
@@ -42,9 +42,17 @@ export type SetupDraft = {
   credentialConfirm: string;
 };
 
-function TextInput({ label, value, onChange, secret = false }: { label: string; value: string; onChange: (value: string) => void; secret?: boolean }) {
+// The native field owns its text; it starts from the draft value and reports edits back.
+// Steps unmount their fields, so a cleared draft value shows again on the next visit.
+function TextInput({ label, value, onChange, secret = false, clean }: { label: string; value: string; onChange: (value: string) => void; secret?: boolean; clean?: (value: string) => string }) {
+  const state = useNativeState(value);
+  const onValueChange = (next: string) => {
+    const cleaned = clean ? clean(next) : next;
+    if (cleaned !== next) state.set(cleaned);
+    onChange(cleaned);
+  };
   return (
-    <OutlinedTextField value={value} onValueChange={onChange} singleLine visualTransformation={secret ? "password" : "none"}>
+    <OutlinedTextField value={state} onValueChange={onValueChange} singleLine visualTransformation={secret ? "password" : "none"}>
       <OutlinedTextField.Label><Text>{label}</Text></OutlinedTextField.Label>
     </OutlinedTextField>
   );
@@ -61,16 +69,22 @@ export function InstallLanguageStep({ draft, onChange, onBack, onContinue }: { d
 
 export function InstallNetworkStep({ draft, onChange, onBack, onContinue }: { draft: SetupDraft; onChange: (draft: SetupDraft) => void; onBack: () => void; onContinue: () => void }) {
   const secured = draft.security !== "open";
+  const hasNetwork = draft.ssid.trim().length > 0;
+  const passwordOk = draft.wifiPassword.length >= 8 && draft.wifiPassword.length <= 63;
+  const valid = !hasNetwork || !secured || passwordOk;
+  const passwordField = secured ? <TextInput label="Wi-Fi password" value={draft.wifiPassword} onChange={(wifiPassword) => onChange({ ...draft, wifiPassword })} secret /> : null;
+  const passwordError = valid ? null : <TextError message="WPA passwords are 8 to 63 characters." />;
   return <SettingsCard title="Wi-Fi (optional)">
     <TextInput label="Network name (SSID)" value={draft.ssid} onChange={(ssid) => onChange({ ...draft, ssid })} />
     <ModeRow title="Open" description="No password" selected={draft.security === "open"} onSelect={() => onChange({ ...draft, security: "open", wifiPassword: "" })} />
     <ModeRow title="WPA2" description="WPA2 personal" selected={draft.security === "wpa2"} onSelect={() => onChange({ ...draft, security: "wpa2" })} />
     <ModeRow title="WPA3" description="WPA3 personal" selected={draft.security === "wpa3"} onSelect={() => onChange({ ...draft, security: "wpa3" })} />
-    {secured ? <TextInput label="Wi-Fi password" value={draft.wifiPassword} onChange={(wifiPassword) => onChange({ ...draft, wifiPassword })} secret /> : null}
+    {passwordField}
+    {passwordError}
     <ToggleRow title="Hidden network" supporting="Connect to a network that does not broadcast its name." value={draft.hidden} onChange={(hidden) => onChange({ ...draft, hidden })} />
     <ActionButton label="Skip Wi-Fi" variant="text" onClick={() => { onChange({ ...draft, ssid: "", wifiPassword: "", hidden: false }); onContinue(); }} />
     <ActionButton label={copy.goBack} variant="text" onClick={onBack} />
-    <ActionButton label="Continue" onClick={onContinue} />
+    <ActionButton label="Continue" enabled={valid} onClick={onContinue} />
   </SettingsCard>;
 }
 
@@ -78,14 +92,19 @@ export function InstallUserStep({ draft, onChange, onBack, onContinue }: { draft
   const usesCredential = draft.credentialType !== "none";
   const validLength = draft.credentialType === "pin" ? /^\d{4,}$/.test(draft.credentialValue) : draft.credentialValue.length >= 4;
   const valid = !usesCredential || (validLength && draft.credentialValue === draft.credentialConfirm);
+  const isPin = draft.credentialType === "pin";
+  const clean = (value: string) => (isPin ? value.replace(/\D/g, "") : value);
+  const valueField = usesCredential ? <TextInput label={isPin ? "PIN" : "Password"} value={draft.credentialValue} onChange={(value) => onChange({ ...draft, credentialValue: value })} clean={clean} secret /> : null;
+  const confirmField = usesCredential ? <TextInput label="Confirm" value={draft.credentialConfirm} onChange={(value) => onChange({ ...draft, credentialConfirm: value })} clean={clean} secret /> : null;
+  const credentialError = valid ? null : <TextError message="Enter a valid matching credential." />;
   return <SettingsCard title="User and screen lock">
     <TextInput label="Name (optional)" value={draft.name} onChange={(name) => onChange({ ...draft, name })} />
     <ModeRow title="No lock" description="Do not set a screen lock" selected={draft.credentialType === "none"} onSelect={() => onChange({ ...draft, credentialType: "none", credentialValue: "", credentialConfirm: "" })} />
     <ModeRow title="PIN" description="At least 4 digits" selected={draft.credentialType === "pin"} onSelect={() => onChange({ ...draft, credentialType: "pin" })} />
     <ModeRow title="Password" description="At least 4 characters" selected={draft.credentialType === "password"} onSelect={() => onChange({ ...draft, credentialType: "password" })} />
-    {usesCredential ? <TextInput label={draft.credentialType === "pin" ? "PIN" : "Password"} value={draft.credentialValue} onChange={(credentialValue) => onChange({ ...draft, credentialValue: draft.credentialType === "pin" ? credentialValue.replace(/\D/g, "") : credentialValue })} secret /> : null}
-    {usesCredential ? <TextInput label="Confirm" value={draft.credentialConfirm} onChange={(credentialConfirm) => onChange({ ...draft, credentialConfirm: draft.credentialType === "pin" ? credentialConfirm.replace(/\D/g, "") : credentialConfirm })} secret /> : null}
-    {usesCredential && !valid ? <TextError message="Enter a valid matching credential." /> : null}
+    {valueField}
+    {confirmField}
+    {credentialError}
     <ActionButton label={copy.goBack} variant="text" onClick={onBack} />
     <ActionButton label="Continue" enabled={valid} onClick={onContinue} />
   </SettingsCard>;
@@ -464,8 +483,10 @@ export function InstallConfirmStep({
   onBack,
   onStart,
   formatSize,
+  setup,
 }: {
   drive: InstallDrive | null;
+  setup: SetupDraft;
   confirmed: boolean;
   preview: boolean;
   onConfirmChange: (value: boolean) => void;
@@ -478,8 +499,10 @@ export function InstallConfirmStep({
   const cardTitle = preview ? "Preview confirmation" : "Confirm installation";
   const confirmLabel = preview ? "Start preview" : copy.confirmInstall;
   const healthOk = !hasHealthErrors(drive) || healthAccepted;
+  const summary = setupSummary(setup);
   return (
     <SettingsCard title={cardTitle}>
+      <Text style={{ typography: "bodySmall" }}>{summary}</Text>
       <ConfirmBody
         drive={drive}
         preview={preview}
@@ -627,4 +650,11 @@ export function InstallErrorStep({
       <ActionButton label="Choose a drive" variant="text" onClick={onBack} />
     </SettingsCard>
   );
+}
+
+function setupSummary(draft: SetupDraft): string {
+  const wifi = draft.ssid.trim() ? draft.ssid.trim() : "not set";
+  const lockNames = { none: "none", pin: "PIN set", password: "password set" };
+  const name = draft.name.trim() ? draft.name.trim() : "not set";
+  return `Language: ${draft.locale || "not set"}\nTime zone: ${draft.timeZone || "not set"}\nWi-Fi: ${wifi}\nName: ${name}\nScreen lock: ${lockNames[draft.credentialType]}`;
 }

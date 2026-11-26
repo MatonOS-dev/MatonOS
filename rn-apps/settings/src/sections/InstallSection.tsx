@@ -81,6 +81,7 @@ function operationTitle(operation: InstallerOperation) {
     copy_partition: "Copy a system partition",
     clone_partition: "Clone a system partition",
     write_files: "Write boot and loader files",
+    write_setup: "Save language, network and user settings for first boot",
     register_boot_entry: "Add MatonOS to the firmware boot menu",
   };
   return labels[operation.kind];
@@ -367,6 +368,7 @@ export function InstallSection() {
     confirm: () => (
       <InstallConfirmStep
         drive={selected}
+        setup={setupDraft}
         confirmed={eraseConfirmed}
         preview={previewMode}
         onConfirmChange={setEraseConfirmed}
