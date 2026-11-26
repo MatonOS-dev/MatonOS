@@ -8,7 +8,7 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <selinux/selinux.h>
+#include <sys/xattr.h>
 #include <linux/fs.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -29,6 +29,14 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+
+namespace {
+// The NDK has no libselinux; the security.selinux xattr is what setfilecon writes.
+constexpr char kSelinuxXattr[] = "security.selinux";
+int lsetfilecon(const char* path, const char* context) { return lsetxattr(path, kSelinuxXattr, context, strlen(context) + 1, 0); }
+int fsetfilecon(int fd, const char* context) { return fsetxattr(fd, kSelinuxXattr, context, strlen(context) + 1, 0); }
+}  // namespace
+
 
 #define CLOSE_FD(fd_value) do { \
     const int close_fd_value = (fd_value); \

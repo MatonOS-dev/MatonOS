@@ -11,5 +11,5 @@ target_include_directories(matonos-installer-service PRIVATE "${INSTALL_SRC}" "$
 target_compile_features(matonos-installer-service PRIVATE cxx_std_17)
 target_compile_options(matonos-installer-service PRIVATE -Wall -Wextra -Werror -O2 -fPIE)
 target_link_options(matonos-installer-service PRIVATE -pie)
-target_link_libraries(matonos-installer-service PRIVATE log selinux "${MATON_IPC_LIBRARY}")
+target_link_libraries(matonos-installer-service PRIVATE log "${MATON_IPC_LIBRARY}")
 install(TARGETS matonos-installer-service RUNTIME DESTINATION .)
