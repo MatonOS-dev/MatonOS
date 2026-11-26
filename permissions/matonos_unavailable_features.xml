@@ -3,8 +3,7 @@
 
      Features AOSP's pc_core_hardware.xml declares that v1 can't back on every
      PC. SystemConfig drops <unavailable-feature>s after reading all files.
-
-     Bluetooth features stay declared because the VHCI fallback supplies a
-     controller when no physical Bluetooth hardware is present. -->
+     Bluetooth is dropped at boot only when no controller exists
+     (bluetooth/matonos-bt-detect.sh writes /oem/etc/permissions). -->
 <permissions>
 </permissions>

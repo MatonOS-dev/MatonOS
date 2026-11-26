@@ -11,6 +11,7 @@
 /mnt/matonos-install(/.*)? u:object_r:matonos_install_mount_file:s0
 /maton_system/ota-staging(/.*)? u:object_r:matonos_install_mount_file:s0
 /odm/bin/maton-audio-select\.sh u:object_r:matonos_audio_select_exec:s0
+/odm/bin/matonos-bt-detect\.sh u:object_r:matonos_bt_detect_exec:s0
 /odm/bin/pipewire u:object_r:matonos_pipewire_exec:s0
 /odm/bin/wireplumber u:object_r:matonos_wireplumber_exec:s0
 /vendor/bin/hw/matonos-audio-hal u:object_r:hal_audio_default_exec:s0

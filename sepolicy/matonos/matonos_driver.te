@@ -379,6 +379,21 @@ allow matonos_audio_select proc_asound:dir r_dir_perms;
 allow matonos_audio_select proc_asound:file r_file_perms;
 set_prop(matonos_audio_select, vendor_maton_prop)
 
+# Boot Bluetooth check (odm/bin/matonos-bt-detect.sh): lists /sys/class/bluetooth
+# and, with no controller, writes an <unavailable-feature> file into the /oem tmpfs
+# with AOSP's oemfs label, which system_server already reads.
+type matonos_bt_detect, domain;
+type matonos_bt_detect_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(matonos_bt_detect)
+allow matonos_bt_detect vendor_shell_exec:file rx_file_perms;
+allow matonos_bt_detect vendor_toolbox_exec:file rx_file_perms;
+allow matonos_bt_detect sysfs:dir r_dir_perms;
+allow matonos_bt_detect sysfs:lnk_file getattr;
+allow matonos_bt_detect tmpfs:dir { search write add_name };
+type_transition matonos_bt_detect tmpfs:dir oemfs "etc";
+allow matonos_bt_detect oemfs:dir create_dir_perms;
+allow matonos_bt_detect oemfs:file create_file_perms;
+
 # Every vendor.maton.* property has one type. The driver owns writes; platform
 # readers are explicitly listed to keep the cross-partition boundary narrow.
 set_prop(matonos_driver, vendor_maton_prop)
