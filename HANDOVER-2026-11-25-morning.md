@@ -394,3 +394,9 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - live157 + live-157.img deleted (live157 up 1 h 17 min, no self-reboot). live158 = the one image.
 - Queue: only your decisions (Bluetooth no-controller loop; CTS shim APEX) and the
   setup.json installer (low priority, not started overnight).
+
+## 06:20 final
+- live158 up 2 h 23 min, no crashes, no new denials, no self-reboot.
+- Waiting on you: (1) Bluetooth crash loop without a controller — AOSP gate in
+  BluetoothManagerService vs hiding QS/Settings toggles; (2) CTS shim APEX — drop or re-sign.
+- Next low-prio item: setup.json installer (not started). Seedvault blocked on chunker jar licence.
