@@ -14,6 +14,7 @@ import {
   type InstallDrive,
   type InstallerOperation,
   type OperationProgress,
+  type SetupV1,
 } from "../installer/InstallerApi";
 import { createV1Plan, V1_MINIMUM_DISK_BYTES } from "../installer/createV1Plan";
 import { useMatonSettings } from "../context/MatonSettingsContext";
@@ -26,6 +27,11 @@ import {
   InstallErrorStep,
   InstallProgressStep,
   InstallWelcomeStep,
+  InstallLanguageStep,
+  InstallNetworkStep,
+  InstallUserStep,
+  makeSetup,
+  type SetupDraft,
   type InstallStep,
   type OperationState,
 } from "./install/InstallSteps";
@@ -75,6 +81,7 @@ function operationTitle(operation: InstallerOperation) {
     copy_partition: "Copy a system partition",
     clone_partition: "Clone a system partition",
     write_files: "Write boot and loader files",
+    write_setup: "Save language, network and user settings for first boot",
     register_boot_entry: "Add MatonOS to the firmware boot menu",
   };
   return labels[operation.kind];
@@ -110,6 +117,12 @@ function ProgressSummary({
 export function InstallSection() {
   const { live } = useMatonSettings();
   const [step, setStep] = useState<InstallStep>("welcome");
+  const [setupDraft, setSetupDraft] = useState<SetupDraft>(() => ({
+    locale: Intl.DateTimeFormat().resolvedOptions().locale || "",
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    ssid: "", security: "wpa2", wifiPassword: "", hidden: false,
+    name: "", credentialType: "none", credentialValue: "", credentialConfirm: "",
+  }));
   const [drives, setDrives] = useState<InstallDrive[]>([]);
   const [selected, setSelected] = useState<InstallDrive | null>(null);
   const [eraseConfirmed, setEraseConfirmed] = useState(false);
@@ -123,6 +136,7 @@ export function InstallSection() {
   const [planCount, setPlanCount] = useState(0);
   const [previewMode, setPreviewMode] = useState(false);
   const previewModeRef = useRef(false);
+  const resetSetup = () => setSetupDraft({ locale: Intl.DateTimeFormat().resolvedOptions().locale || "", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "", ssid: "", security: "wpa2", wifiPassword: "", hidden: false, name: "", credentialType: "none", credentialValue: "", credentialConfirm: "" });
 
   const refreshDrives = useCallback(async () => {
     setReadiness("loading");
@@ -159,6 +173,7 @@ export function InstallSection() {
   const startInstall = async () => {
     if (!selected) return;
     if (previewMode) {
+      setSetupDraft((current) => ({ ...current, wifiPassword: "", credentialValue: "", credentialConfirm: "" }));
       const demoOperations: OperationState[] = [
         { title: "Write the target partition table", status: "complete", progress: null },
         { title: "Format target filesystems", status: "complete", progress: null },
@@ -178,6 +193,12 @@ export function InstallSection() {
       return;
     }
 
+    let setup: SetupV1;
+    try {
+      setup = makeSetup(setupDraft);
+    } finally {
+      setSetupDraft((current) => ({ ...current, wifiPassword: "", credentialValue: "", credentialConfirm: "" }));
+    }
     let operations: ReturnType<typeof createV1Plan>["operations"];
     try {
       operations = createV1Plan(
@@ -185,6 +206,7 @@ export function InstallSection() {
         selected.identity,
         selected.sizeBytes,
         selected.rotational,
+        setup,
       ).operations;
     } catch (problem) {
       setFailedOperation("Prepare the install plan");
@@ -278,6 +300,7 @@ export function InstallSection() {
     setProgress(null);
     setFailedOperation("");
     setFailureMessage("");
+    resetSetup();
     setPreviewMode(false);
     setStep("welcome");
     void refreshDrives();
@@ -289,7 +312,7 @@ export function InstallSection() {
         readiness={readiness}
         message={loadError}
         minimumSize={sizeLabel(V1_MINIMUM_DISK_BYTES)}
-        onContinue={() => setStep("drives")}
+        onContinue={() => setStep("language")}
         onRefresh={() => void refreshDrives()}
         onPreview={() => {
           previewModeRef.current = true;
@@ -323,6 +346,8 @@ export function InstallSection() {
         }}
       />
     ),
+    language: () => <InstallLanguageStep draft={setupDraft} onChange={setSetupDraft} onBack={() => { resetSetup(); setStep("welcome"); }} onContinue={() => setStep("network")} />,
+    network: () => <InstallNetworkStep draft={setupDraft} onChange={setSetupDraft} onBack={() => setStep("language")} onContinue={() => setStep("drives")} />,
     drives: () => (
       <InstallDrivesStep
         drives={drives}
@@ -333,21 +358,23 @@ export function InstallSection() {
         onSelect={(drive) => {
           setSelected(drive);
           setHealthAccepted(false);
-          setStep("confirm");
+          setStep("user");
         }}
         onRefresh={() => void refreshDrives()}
         formatSize={sizeLabel}
       />
     ),
+    user: () => <InstallUserStep draft={setupDraft} onChange={setSetupDraft} onBack={() => setStep("drives")} onContinue={() => setStep("confirm")} />,
     confirm: () => (
       <InstallConfirmStep
         drive={selected}
+        setup={setupDraft}
         confirmed={eraseConfirmed}
         preview={previewMode}
         onConfirmChange={setEraseConfirmed}
         healthAccepted={healthAccepted}
         onHealthAcceptedChange={setHealthAccepted}
-        onBack={() => setStep("drives")}
+        onBack={() => setStep("user")}
         onStart={() => void startInstall()}
         formatSize={sizeLabel}
       />
