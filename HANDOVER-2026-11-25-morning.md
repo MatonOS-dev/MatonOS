@@ -416,3 +416,14 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   back off if enabled without a controller). build-159 running (started 09:41).
 - User: CTS shim = intended exception → check-release-keys.sh reports it INTENDED;
   server run: 162 files, 0 problems, exit 0.
+
+## 11:00 update
+- build-159 (72a4d0cd) tested on live159: BOTH halves ineffective → reverted (6dcce213).
+  SystemUI rewrites sysui_qs_tiles from its in-memory list on any outside change
+  (UserTileSpecRepository.kt "Settings is not the source of truth"); `cmd statusbar
+  remove-tile` takes custom tile components only. `cmd bluetooth_manager enable` →
+  4 crashes in BLE_TURNING_ON, before ACTION_STATE_CHANGED, then the framework gave up.
+- No patch-free way to hide only the toggle. Options put to user: (a) declare
+  android.hardware.bluetooth only when a controller exists at boot (AOSP's own
+  "No Bluetooth Service (Bluetooth Hardware Not Present)" path; hides tile + Settings;
+  dongle plugged after boot needs a reboot) or (b) a SystemUI/BluetoothManagerService patch.
