@@ -476,3 +476,13 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   9c5c00a1 labels it matonos_install_mount_file. Not built yet; rides the next build.
 - Codex setup-pages (RN installer pages: language, network, user+PIN, confirm summary)
   running in ~/matonos/build/setup-apply.
+
+## 00:30 update
+- setup.json piece 3: codex setup-pages (814cc5b4) + my review fixes: native-state text fields
+  (it used plain strings), WPA 8-63 password check, confirm summary (secrets as set/not set),
+  React-rule hoisting, typed plan ops, write_setup label. tsc clean apart from the existing
+  GappsSection `selectable` error (not ours). Merged → 19f516db.
+- build-164 running (also carries the /maton_system label 9c5c00a1). Test: denial gone, open
+  Settings → Install and walk language/network/user/confirm (preview mode).
+- Left for setup.json: services step (needs schema + applier fields), MatonOS account step,
+  a real install test writing setup.json and applying it on first boot (needs a target disk VM).
