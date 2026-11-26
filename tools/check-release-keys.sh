@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Fail if any APK or APEX installed in a product out dir is signed with one of AOSP's
-# public test certificates (build/make/target/product/security/*.x509.pem).
+# public test certificates (build/make/target/product/security/*.x509.pem),
+# except the intended exceptions listed below.
 # Usage: check-release-keys.sh <aosp-root> <product-out-dir>
 set -Eeuo pipefail
 
@@ -21,6 +22,13 @@ for pem in "$AOSP"/build/make/target/product/security/*.x509.pem; do
 done
 (( ${#test_certs[@]} > 0 )) || die "no test certificates found under $AOSP/build/make/target/product/security"
 
+# Files that must keep an AOSP test key, with the reason.
+declare -A intended=(
+  # CTS installs its own shim v2/v3 updates signed with this key; AOSP's signing tools
+  # leave prebuilt APEXes PRESIGNED, so release builds ship it test-signed too.
+  [system/apex/com.android.apex.cts.shim.apex]="CTS shim APEX"
+)
+
 bad=0 checked=0
 while IFS= read -r -d '' file; do
   checked=$((checked + 1))
@@ -31,7 +39,12 @@ while IFS= read -r -d '' file; do
   fi
   while read -r digest; do
     if [[ -n ${test_certs[$digest]:-} ]]; then
-      echo "TEST-KEY ${file#"$OUT"/}: ${test_certs[$digest]}" >&2
+      rel=${file#"$OUT"/}
+      if [[ -n ${intended[$rel]:-} ]]; then
+        echo "INTENDED $rel: ${test_certs[$digest]} (${intended[$rel]})"
+        continue
+      fi
+      echo "TEST-KEY $rel: ${test_certs[$digest]}" >&2
       bad=$((bad + 1))
     fi
   done < <(sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p' <<<"$certs")
