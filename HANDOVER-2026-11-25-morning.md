@@ -446,3 +446,12 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   (low-prio backlog): codex luna `setup-apply` = first-boot applier in systembridge
   (worktree ~/matonos/build/setup-apply, branch wip/setup-apply). Installer write op and
   RN pages follow as separate narrow tasks.
+
+## 22:25 update
+- build-160 failed the policy pre-check (oemfs is contextmount_type, never writable) →
+  02c15e5e gives /oem/etc its own type matonos_oem_permissions_file. build-161 policy ok
+  21:50, image building.
+- setup.json: codex setup-apply done (139b6ee2); my review fixed the PIN wipe (truncate
+  freed old blocks unzeroed; checkpoint renames too), added .tmp recovery and file
+  rename/unlink (42076bc9). Codex setup-write (installer op write_setup) running.
+  Branch wip/setup-apply not merged yet; merge after build-161's BT test.
