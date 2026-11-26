@@ -440,3 +440,9 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - Dropped uninstalled VHCI-era bluetooth_features.xml; fixed stale rc/xml comments.
 - build-160 running (policy-only check first, then image). Test: pm list features has no
   bluetooth, no BT tile, kmsg line from matonos-bt-detect, no new denials.
+
+## 21:25 update
+- User: do the todo items. BT fix waits on build-160. Started setup.json installer
+  (low-prio backlog): codex luna `setup-apply` = first-boot applier in systembridge
+  (worktree ~/matonos/build/setup-apply, branch wip/setup-apply). Installer write op and
+  RN pages follow as separate narrow tasks.
