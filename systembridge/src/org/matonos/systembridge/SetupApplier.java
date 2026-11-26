@@ -37,6 +37,20 @@ final class SetupApplier {
 
     static void apply(Context context) {
         File file = new File(SETUP_PATH);
+        File pending = new File(SETUP_PATH + ".tmp");
+        if (pending.exists()) {
+            // A crash after a checkpoint's wipe but before its rename leaves the remaining
+            // settings only in the temporary file.
+            try {
+                new JSONObject(java.nio.file.Files.readString(pending.toPath()));
+                Os.rename(pending.getPath(), file.getPath());
+                Log.w(TAG, "Recovered interrupted setup checkpoint " + pending);
+            } catch (Exception error) {
+                Log.e(TAG, "Unusable setup checkpoint " + pending + "; using " + SETUP_PATH, error);
+                try { wipeAndDelete(pending); }
+                catch (Exception wipeError) { Log.e(TAG, "Failed to remove " + pending, wipeError); }
+            }
+        }
         if (!file.exists()) return;
         JSONObject settings;
         try {
@@ -249,13 +263,17 @@ final class SetupApplier {
             output.write(data);
             output.getFD().sync();
         }
+        // The replaced file may hold secrets; zero its blocks before the rename frees them.
+        zeroInPlace(file);
         Os.rename(temporary.getPath(), file.getPath());
     }
 
-    private static void wipeAndDelete(File file) throws Exception {
-        long length = file.length();
-        try (FileOutputStream output = new FileOutputStream(file, false)) {
+    /** Overwrites the file's existing blocks without truncating, so the old data is gone. */
+    private static void zeroInPlace(File file) throws Exception {
+        try (java.io.RandomAccessFile output = new java.io.RandomAccessFile(file, "rw")) {
+            long length = output.length();
             byte[] zeros = new byte[8192];
+            output.seek(0);
             while (length > 0) {
                 int count = (int) Math.min(length, zeros.length);
                 output.write(zeros, 0, count);
@@ -263,6 +281,10 @@ final class SetupApplier {
             }
             output.getFD().sync();
         }
+    }
+
+    private static void wipeAndDelete(File file) throws Exception {
+        zeroInPlace(file);
         if (!file.delete()) throw new java.io.IOException("delete failed for " + file);
     }
 

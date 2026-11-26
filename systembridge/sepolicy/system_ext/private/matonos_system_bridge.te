@@ -5,12 +5,8 @@ net_domain(matonos_system_bridge)
 
 # setup: first-boot setup.json lives on the mounted MatonOS image store.
 type matonos_setup_file, file_type;
-allow matonos_system_bridge matonos_setup_file:dir {
-    getattr open read search write add_name remove_name rename unlink
-};
-allow matonos_system_bridge matonos_setup_file:file {
-    create getattr open read write append setattr
-};
+allow matonos_system_bridge matonos_setup_file:dir rw_dir_perms;
+allow matonos_system_bridge matonos_setup_file:file create_file_perms;
 
 # Coarse Binder transport only; bridge methods enforce stub identity and scope.
 binder_call(untrusted_app_all, matonos_system_bridge)
