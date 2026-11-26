@@ -385,3 +385,12 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   (VENDOR_SECURITY_PATCH := PLATFORM_SECURITY_PATCH; dev-keys shown as "Private keys").
 - live156 + live-156.img deleted (live156 had been up 1 h 17 min, no self-reboot).
 - build-158 started on b1e4a672.
+
+## 04:05 update
+- build-158 (b1e4a672) passed 03:55. live158: enforcing, only known MediaProvider denials,
+  no crashes. Security page now complete: SELinux Enforcing, Encrypted (file),
+  patch 2026-06-05, vendor patch 2026-06-05, Verified boot "Locked, verified",
+  Build keys "Private keys", ADB Enabled. Security page item DONE.
+- live157 + live-157.img deleted (live157 up 1 h 17 min, no self-reboot). live158 = the one image.
+- Queue: only your decisions (Bluetooth no-controller loop; CTS shim APEX) and the
+  setup.json installer (low priority, not started overnight).
