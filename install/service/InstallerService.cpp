@@ -553,6 +553,11 @@ ValidationResult ValidateOperation(const OperationRequest& request,
                 (image.name!="vbmeta_b"&&image.live_partition_name!=image.name)||
                 (image.name=="vbmeta_b"&&image.live_partition_name!="vbmeta_a")||!names.insert(image.name).second){error="Image population contains an unsupported or duplicate image.";return false;}
             return true;
+        } else if constexpr (std::is_same_v<T, WriteSetup>) {
+            const auto system=std::find_if(it->partitions.begin(),it->partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==op.maton_system_part_guid;});
+            const auto metadata=std::find_if(it->partitions.begin(),it->partitions.end(),[](const Partition& p){return !p.logical&&p.name=="metadata";});
+            if(system==it->partitions.end()||metadata==it->partitions.end()||system->name!="maton_system"||system->mounted||metadata->mounted){error="Setup write requires the unmounted verified maton_system and metadata partitions.";return false;}
+            return true;
         } else if constexpr (std::is_same_v<T, Format>) {
             if (!CheckRef(*it, op.target) || op.label.size() > 16) { error = "Invalid format target or label."; return false; }
             return true;

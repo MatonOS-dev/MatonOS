@@ -19,6 +19,11 @@
     <!-- input: pointer settings are written for the current user (USER_CURRENT). -->
     <uses-permission android:name="android.permission.INTERACT_ACROSS_USERS_FULL" />
     <uses-permission android:name="android.permission.MANAGE_USERS" />
+    <!-- setup: first-boot locale, time zone, Wi-Fi and initial lock credential. -->
+    <uses-permission android:name="android.permission.CHANGE_CONFIGURATION" />
+    <uses-permission android:name="android.permission.SET_TIME_ZONE" />
+    <uses-permission android:name="android.permission.NETWORK_SETTINGS" />
+    <uses-permission android:name="android.permission.SET_INITIAL_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- sleep: read PowerManager's held wake locks from its privileged dump. -->

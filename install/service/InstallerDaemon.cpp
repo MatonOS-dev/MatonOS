@@ -193,11 +193,29 @@ std::string Escape(const std::string& text) {
             case '\n': out += "\\n"; break;
             case '\r': out += "\\r"; break;
             case '\t': out += "\\t"; break;
-            default: if (c >= 0x20 && c < 0x80) out.push_back(static_cast<char>(c));
-                else if (c >= 0x80) { static constexpr char hex[] = "0123456789abcdef"; out += "\\u00"; out.push_back(hex[c >> 4]); out.push_back(hex[c & 15]); }
+            default: if (c >= 0x20) out.push_back(static_cast<char>(c));
         }
     }
     return out + "\"";
+}
+std::string SerializeJson(const js::Value& value) {
+    switch (value.kind) {
+        case js::Value::Kind::kNull: return "null";
+        case js::Value::Kind::kBool: return value.scalar;
+        case js::Value::Kind::kNumber: return value.scalar;
+        case js::Value::Kind::kString: return Escape(value.scalar);
+        case js::Value::Kind::kArray: {
+            std::string out = "[";
+            for (size_t i = 0; i < value.array.size(); ++i) { if (i) out += ","; out += SerializeJson(value.array[i]); }
+            return out + "]";
+        }
+        case js::Value::Kind::kObject: {
+            std::string out = "{"; bool first = true;
+            for (const auto& entry : value.object) { if (!first) out += ","; first = false; out += Escape(entry.first) + ":" + SerializeJson(entry.second); }
+            return out + "}";
+        }
+    }
+    return "null";
 }
 const js::Value* Get(const js::Value& v, const char* key) { return v.Get(key); }
 std::string S(const js::Value& v, const char* key) { const auto* p = Get(v, key); return p ? p->String() : ""; }
@@ -221,6 +239,17 @@ bool ParseOperation(const js::Value& value, mi::Operation* out, std::string* err
         for (const auto& image : images->array)
             op.images.push_back({S(image,"name"),S(image,"livePartitionName")});
         *out=std::move(op); return true;
+    }
+    if (kind == "write_setup") {
+        const auto* setup = Get(value, "setup");
+        if (!setup || setup->kind != js::Value::Kind::kObject) { *error="Setup payload must be an object."; return false; }
+        const auto* version = Get(*setup, "version");
+        if (!version || version->kind != js::Value::Kind::kNumber || version->Number(UINT64_MAX) != 1) {
+            *error="Setup payload must have version 1."; return false;
+        }
+        std::string serialized = SerializeJson(*setup);
+        *out = mi::WriteSetup{S(value,"matonSystemPartGuid"), std::move(serialized)};
+        return true;
     }
     if (kind == "create_lp_metadata") {
         mi::CreateLpMetadata op; op.super_part_guid = S(value,"superPartGuid"); op.metadata_size_bytes = N(value,"metadataSizeBytes"); const uint64_t slots = N(value,"metadataSlots");
@@ -429,6 +458,8 @@ int Execute(const char* json, char* result, size_t capacity, void*) {
     if (error.empty()) validation=mi::ExecuteOne(request,Snapshot,mi::ExecutePrimitive,LiveMode(),Progress,[]{return g_cancel.load();});
     const bool ok=error.empty()&&validation.ok;
     const std::string message=ok?"Primitive operation completed.":(error.empty()?validation.message:error);
+    if(operation_value&&S(*operation_value,"kind")=="write_setup")
+        __android_log_print(ok?ANDROID_LOG_INFO:ANDROID_LOG_ERROR,kTag,"write_setup %s: %s",ok?"finished":"failed",ok?"setup file written":message.c_str());
     const std::string response=std::string("{\"ok\":")+(ok?"true":"false")+",\"message\":"+Escape(message)+"}";
     if(response.size()+1>capacity)return -1; std::memcpy(result,response.c_str(),response.size()+1); return 0;
 }

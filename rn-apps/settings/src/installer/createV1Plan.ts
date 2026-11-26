@@ -2,6 +2,7 @@ import type {
   GptPartition,
   InstallerOperation,
   OperationRequestV1,
+  SetupV1,
 } from "./InstallerApi";
 
 const MiB = 1024 ** 2;
@@ -43,6 +44,7 @@ export function createV1Plan(
   diskIdentity: string,
   diskBytes: number,
   rotational: boolean,
+  setup?: SetupV1,
 ): V1Plan {
   if (!diskIdentity)
     throw new Error("Refresh the drive list before confirming this target.");
@@ -162,6 +164,14 @@ export function createV1Plan(
     // Last: the NVRAM entry points at the files written above.
     { kind: "register_boot_entry" as const, esp: { partGuid: esp.partGuid } },
   ] satisfies InstallerOperation[];
+  if (setup) {
+    const populateIndex = ops.findIndex((operation) => operation.kind === "populate_images");
+    ops.splice(populateIndex + 1, 0, {
+      kind: "write_setup",
+      matonSystemPartGuid: matonSystem.partGuid,
+      setup,
+    });
+  }
   return {
     operations: ops.map((operation) => ({
       apiVersion: 1,

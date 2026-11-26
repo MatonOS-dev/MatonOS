@@ -2,11 +2,13 @@
 #include "LpMetadata.h"
 #include "FatFilesystem.h"
 #include "Props.h"
+#include "Json.h"
 
 #include <strings.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <selinux/selinux.h>
 #include <linux/fs.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -511,6 +513,35 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
             if(ok&&!RunFiemap("finalize","maton_system",0,nullptr,error))ok=false;
             std::string finish_error;
             if(!Run({"@finish-image-store",system->path,metadata->path},target.disk_sequence,&finish_error)){if(ok){*error=finish_error;ok=false;}}
+            return ok;
+        } else if constexpr(std::is_same_v<T,WriteSetup>) {
+            std::fprintf(stderr,"installer: write_setup start part=%s\n",op.maton_system_part_guid.c_str());
+            const auto system=std::find_if(target.partitions.begin(),target.partitions.end(),[&](const Partition& p){return !p.logical&&p.part_guid==op.maton_system_part_guid;});
+            const auto metadata=std::find_if(target.partitions.begin(),target.partitions.end(),[](const Partition& p){return !p.logical&&p.name=="metadata";});
+            if(system==target.partitions.end()||metadata==target.partitions.end()){*error="Setup write target image-store partitions disappeared.";return false;}
+            matonos::install::json::Value setup;
+            if(!matonos::install::json::Parse(op.setup_json,&setup)||setup.kind!=matonos::install::json::Value::Kind::kObject||!setup.Get("version")||setup.Get("version")->Number(UINT64_MAX)!=1){*error="Setup payload is not a JSON object with version 1.";return false;}
+            if(!Run({"@prepare-image-store",system->path,metadata->path},target.disk_sequence,error))return false;
+            bool ok=true; const std::string directory="/mnt/matonos-install/system/setup";
+            if(lsetfilecon("/mnt/matonos-install/system","u:object_r:matonos_install_mount_file:s0")!=0){*error="Cannot label image-store root for the installed bridge: "+std::string(strerror(errno));ok=false;}
+            std::error_code ec; if(ok)fs::create_directories(directory,ec);
+            if(ok&&ec){*error="Cannot create setup directory: "+ec.message();ok=false;}
+            // The bridge UID is assigned on first boot, so use open DAC modes and let SELinux gate access.
+            if(ok&&chmod(directory.c_str(),0777)!=0){*error="Cannot set setup directory mode: "+std::string(strerror(errno));ok=false;}
+            if(ok&&lsetfilecon(directory.c_str(),"u:object_r:matonos_setup_file:s0")!=0){*error="Cannot label setup directory: "+std::string(strerror(errno));ok=false;}
+            const std::string temporary=directory+"/setup.json.tmp", final=directory+"/setup.json";
+            int fd=-1;
+            if(ok){fd=open(temporary.c_str(),O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC|O_NOFOLLOW,0666);if(fd<0){*error="Cannot create setup temporary file: "+std::string(strerror(errno));ok=false;}}
+            if(ok&&fchmod(fd,0666)!=0){*error="Cannot set setup file mode: "+std::string(strerror(errno));ok=false;}
+            if(ok&&fsetfilecon(fd,"u:object_r:matonos_setup_file:s0")!=0){*error="Cannot label setup file: "+std::string(strerror(errno));ok=false;}
+            size_t written=0;
+            while(ok&&written<op.setup_json.size()){ssize_t n=write(fd,op.setup_json.data()+written,op.setup_json.size()-written);if(n<0&&errno==EINTR)continue;if(n<=0){*error="Cannot write setup file: "+std::string(strerror(errno));ok=false;break;}written+=static_cast<size_t>(n);}
+            if(ok&&fsync(fd)!=0){*error="Cannot sync setup file: "+std::string(strerror(errno));ok=false;}
+            if(fd>=0)CLOSE_FD(fd);
+            if(ok&&rename(temporary.c_str(),final.c_str())!=0){*error="Cannot publish setup file: "+std::string(strerror(errno));ok=false;}
+            if(ok){int dirfd=open(directory.c_str(),O_RDONLY|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);if(dirfd<0){*error="Cannot open setup directory for sync: "+std::string(strerror(errno));ok=false;}else{if(fsync(dirfd)!=0){*error="Cannot sync setup directory: "+std::string(strerror(errno));ok=false;}CLOSE_FD(dirfd);}}
+            std::string finish_error;if(!Run({"@finish-image-store",system->path,metadata->path},target.disk_sequence,&finish_error)&&ok){*error=finish_error;ok=false;}
+            std::fprintf(stderr,"installer: write_setup %s part=%s%s%s\n",ok?"finished":"failed",op.maton_system_part_guid.c_str(),ok?"":" error=",ok?"":error->c_str());
             return ok;
         } else if constexpr(std::is_same_v<T,Format>) {
             const auto path=PartitionPath(target,op.target); if(path.empty()){*error="Format target disappeared after safety validation.";return false;}
