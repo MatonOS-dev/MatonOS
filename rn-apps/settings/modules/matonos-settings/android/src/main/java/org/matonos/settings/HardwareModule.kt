@@ -120,7 +120,9 @@ class HardwareModule : Module() {
       "securityPatch" to patch,
       "buildKeys" to when {
         tags.contains("release-keys") -> "Release keys"
-        tags.contains("test-keys") || tags.contains("dev-keys") -> "Test/development keys"
+        // dev-keys = AOSP's tag for private non-test keys (MatonOS release keys, unsigned target-files).
+        tags.contains("dev-keys") -> "Private keys"
+        tags.contains("test-keys") -> "Public test keys"
         tags == "Unknown" -> tags
         else -> tags
       },

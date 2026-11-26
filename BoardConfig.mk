@@ -154,3 +154,6 @@ TARGET_FS_CONFIG_GEN += $(DEVICE_PATH)/config.fs
 BOARD_PROPERTY_OVERRIDES_SPLIT_ENABLED := true
 BOARD_MALLOC_ALIGNMENT := 16
 TARGET_USES_HWC2 := true
+
+# The vendor partition is built from this tree with the platform, so it carries the same patch level.
+VENDOR_SECURITY_PATCH := $(PLATFORM_SECURITY_PATCH)
