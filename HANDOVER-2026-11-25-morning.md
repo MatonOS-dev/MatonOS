@@ -353,3 +353,10 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   new read-only `hardware` → `security` bridge command (bridge policy: selinuxfs read +
   vendor_security_patch_level_prop); native module keeps patch level, build tags, ADB.
 - build-157 started 01:23 on fc77d9f0 — first compile of the Security page.
+
+## 02:20 update
+- build-157 (fc77d9f0, Security page) still building at 02:19, no errors so far.
+- live156 up 58 min, no self-reboot.
+- luna `seedvault-scope` (report only, low-prio backlog): Android 17 branch, licences,
+  Lineage/Calyx integration lines, storage targets, stub-app exclusion; report at
+  out/pc-logs/agents/seedvault-scope.last.md.
