@@ -375,3 +375,13 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - MatonOS-specific: thousands of Linux stub APKs would be backup-eligible → need an
   exclusion; Flatpak data lies outside app-data backup.
 - Not started; low priority, waits for the chunker licence.
+
+## 02:50 update
+- build-157 (fc77d9f0) passed 02:37. live157: enforcing, only known MediaProvider denials,
+  no crashes. Security page shows SELinux Enforcing, Encrypted (file), patch 2026-06-05,
+  Verified boot "Locked, verified", ADB Enabled — the bridge path works, no new denials.
+  Vendor patch "Unknown" (prop really unset) and build keys "Test/development keys"
+  (ro.build.tags = dev-keys, AOSP's tag for private non-test keys) → fixed in b1e4a672
+  (VENDOR_SECURITY_PATCH := PLATFORM_SECURITY_PATCH; dev-keys shown as "Private keys").
+- live156 + live-156.img deleted (live156 had been up 1 h 17 min, no self-reboot).
+- build-158 started on b1e4a672.
