@@ -409,3 +409,10 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - CTS shim: user said re-sign; I recommended keeping the AOSP key (CTS installs its own
   shim v2/v3 against it; signing tools treat prebuilt APEX as PRESIGNED) and
   allowlisting it in check-release-keys.sh. Waiting for the answer; nothing changed.
+
+## 09:55 update
+- User: hide the Bluetooth toggle → 72a4d0cd (systembridge removes `bt` from
+  sysui_qs_tiles while btd reports no controller, restores it on hot-plug; also turns BT
+  back off if enabled without a controller). build-159 running (started 09:41).
+- User: CTS shim = intended exception → check-release-keys.sh reports it INTENDED;
+  server run: 162 files, 0 problems, exit 0.
