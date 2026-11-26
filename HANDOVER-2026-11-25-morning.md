@@ -400,3 +400,12 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - Waiting on you: (1) Bluetooth crash loop without a controller — AOSP gate in
   BluetoothManagerService vs hiding QS/Settings toggles; (2) CTS shim APEX — drop or re-sign.
 - Next low-prio item: setup.json installer (not started). Seedvault blocked on chunker jar licence.
+
+## 08:20 update
+- live158 up 4 h 23 min, no crashes.
+- BT crash loop explained to user: stock btlinux HAL waits forever for an HCI index;
+  gd stack aborts after 3 s ("Can't start HAL") and only accepts SUCCESS from
+  initializationComplete. Only loops while BT is enabled. Fix choice still open.
+- CTS shim: user said re-sign; I recommended keeping the AOSP key (CTS installs its own
+  shim v2/v3 against it; signing tools treat prebuilt APEX as PRESIGNED) and
+  allowlisting it in check-release-keys.sh. Waiting for the answer; nothing changed.
