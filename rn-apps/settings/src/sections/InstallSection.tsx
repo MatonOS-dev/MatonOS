@@ -136,6 +136,7 @@ export function InstallSection() {
   const [planCount, setPlanCount] = useState(0);
   const [previewMode, setPreviewMode] = useState(false);
   const previewModeRef = useRef(false);
+  const patchSetup = (patch: Partial<SetupDraft>) => setSetupDraft((current) => ({ ...current, ...patch }));
   const resetSetup = () => setSetupDraft({ locale: Intl.DateTimeFormat().resolvedOptions().locale || "", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "", ssid: "", security: "wpa2", wifiPassword: "", hidden: false, name: "", credentialType: "none", credentialValue: "", credentialConfirm: "" });
 
   const refreshDrives = useCallback(async () => {
@@ -346,8 +347,8 @@ export function InstallSection() {
         }}
       />
     ),
-    language: () => <InstallLanguageStep draft={setupDraft} onChange={setSetupDraft} onBack={() => { resetSetup(); setStep("welcome"); }} onContinue={() => setStep("network")} />,
-    network: () => <InstallNetworkStep draft={setupDraft} onChange={setSetupDraft} onBack={() => setStep("language")} onContinue={() => setStep("drives")} />,
+    language: () => <InstallLanguageStep draft={setupDraft} onChange={patchSetup} onBack={() => { resetSetup(); setStep("welcome"); }} onContinue={() => setStep("network")} />,
+    network: () => <InstallNetworkStep draft={setupDraft} onChange={patchSetup} onBack={() => setStep("language")} onContinue={() => setStep("drives")} />,
     drives: () => (
       <InstallDrivesStep
         drives={drives}
@@ -364,7 +365,7 @@ export function InstallSection() {
         formatSize={sizeLabel}
       />
     ),
-    user: () => <InstallUserStep draft={setupDraft} onChange={setSetupDraft} onBack={() => setStep("drives")} onContinue={() => setStep("confirm")} />,
+    user: () => <InstallUserStep draft={setupDraft} onChange={patchSetup} onBack={() => setStep("drives")} onContinue={() => setStep("confirm")} />,
     confirm: () => (
       <InstallConfirmStep
         drive={selected}
