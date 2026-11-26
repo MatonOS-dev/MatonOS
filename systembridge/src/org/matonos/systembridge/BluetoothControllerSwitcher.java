@@ -1,9 +1,6 @@
 package org.matonos.systembridge;
 
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothManager;
 import android.os.SystemClock;
@@ -27,21 +24,10 @@ final class BluetoothControllerSwitcher {
     private static final String TAG = "MatonSystemBridge";
     interface ChannelProvider { IChannel channelFor(String target); }
 
-    private final Context context;
     private final BluetoothAdapter bluetooth;
     private final ChannelProvider channels;
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private volatile IChannel subscribedChannel;
-    // null until btd answers; true/false = a controller is/is not present.
-    private volatile Boolean controllerPresent;
-    private final BroadcastReceiver stateReceiver = new BroadcastReceiver() {
-        @Override public void onReceive(Context c, Intent intent) {
-            if (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_TURNING_ON
-                    && Boolean.FALSE.equals(controllerPresent)) {
-                executor.execute(() -> syncNoController(false));
-            }
-        }
-    };
     private final IChannelListener listener = new IChannelListener.Stub() {
         @Override public int getInterfaceVersion() { return IChannelListener.VERSION; }
         @Override public String getInterfaceHash() { return IChannelListener.HASH; }
@@ -53,23 +39,16 @@ final class BluetoothControllerSwitcher {
 
     BluetoothControllerSwitcher(Context context, ChannelProvider provider) {
         BluetoothManager manager = context.getSystemService(BluetoothManager.class);
-        this.context = context;
         bluetooth = manager == null ? null : manager.getAdapter();
         channels = provider;
     }
 
-    void start() {
-        context.registerReceiver(stateReceiver, new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
-                Context.RECEIVER_NOT_EXPORTED);
-        executor.scheduleWithFixedDelay(this::bindAndReconcile, 0, 3, TimeUnit.SECONDS);
-    }
+    void start() { executor.scheduleWithFixedDelay(this::bindAndReconcile, 0, 3, TimeUnit.SECONDS); }
     void stop() {
         IChannel channel = subscribedChannel;
         subscribedChannel = null;
         if (channel != null) try { channel.unsubscribe("devices_changed", listener); }
         catch (Exception e) { Log.e(TAG, "Bluetooth devices_changed unsubscribe failed", e); }
-        try { context.unregisterReceiver(stateReceiver); }
-        catch (IllegalArgumentException e) { Log.e(TAG, "Bluetooth state receiver was not registered", e); }
         executor.shutdownNow();
     }
 
@@ -138,28 +117,12 @@ final class BluetoothControllerSwitcher {
         } catch (Exception e) { subscribedChannel = null; Log.e(TAG, "Bluetooth channel subscription failed", e); }
     }
 
-    // The stock stack aborts ("Can't start HAL") when enabled without a controller and the
-    // framework restarts it five times; hide the QS toggle and keep a saved "on" from looping.
-    @SuppressWarnings("deprecation")
-    private void syncNoController(boolean present) {
-        controllerPresent = present;
-        try { QsBluetoothTile.sync(context, present); }
-        catch (Exception e) { Log.e(TAG, "QS Bluetooth tile sync failed (present=" + present + ")", e); }
-        if (present || bluetooth == null) return;
-        int s = bluetooth.getState();
-        if (s == BluetoothAdapter.STATE_ON || s == BluetoothAdapter.STATE_TURNING_ON) {
-            Log.w(TAG, "Bluetooth enabled without a controller; disabling");
-            if (!bluetooth.disable()) Log.e(TAG, "BluetoothAdapter.disable() rejected with no controller");
-        }
-    }
-
     private void reconcile() {
         try {
             IChannel channel = channels.channelFor("bluetooth"); if (channel == null) return;
             JSONObject state = new JSONObject(channel.call("get_state", "{}"));
             JSONObject snapshot = new JSONObject(channel.call("list_devices", "{}"));
             JSONArray devices = snapshot.optJSONArray("devices"); if (devices == null) throw new IllegalStateException("list_devices missing devices");
-            syncNoController(devices.length() > 0);
             String preferred = state.optString("selected", "");
             boolean present = false, needsSwitch = false;
             for (int i = 0; i < devices.length(); i++) {
