@@ -9,6 +9,9 @@
         <permission name="android.permission.MODIFY_AUDIO_ROUTING" />
         <!-- input: per-user pointer settings (USER_CURRENT). -->
         <permission name="android.permission.MANAGE_USERS" />
+        <!-- setup: locale and time-zone controls are signature|privileged. -->
+        <permission name="android.permission.CHANGE_CONFIGURATION" />
+        <permission name="android.permission.SET_TIME_ZONE" />
         <!-- btd: privileged controller enable/disable around driver selection. -->
         <permission name="android.permission.BLUETOOTH_PRIVILEGED" />
     </privapp-permissions>

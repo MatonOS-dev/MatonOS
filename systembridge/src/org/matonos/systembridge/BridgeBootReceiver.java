@@ -25,9 +25,12 @@ public final class BridgeBootReceiver extends BroadcastReceiver {
                 postSoftwareGraphicsWarning(context);
                 PendingResult pending = goAsync();
                 new Thread(() -> {
-                    try { PreinstalledMusic.install(context); }
+                    try {
+                        SetupApplier.apply(context);
+                        PreinstalledMusic.install(context);
+                    }
                     finally { pending.finish(); }
-                }, "MatonPreinstalledMusic").start();
+                }, "MatonBootSetup").start();
             }
         }
     }

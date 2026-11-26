@@ -1,1 +1,2 @@
 /dev/ntsync u:object_r:ntsync_device:s0
+/maton_system/setup(/.*)? u:object_r:matonos_setup_file:s0
