@@ -59,6 +59,7 @@ struct LogicalPartitionSpec { std::string name; uint64_t size_bytes = 0; };
 struct LogicalGroupSpec { std::string name; uint64_t maximum_size_bytes = 0; std::vector<LogicalPartitionSpec> partitions; };
 struct ImageToInstall { std::string name; std::string live_partition_name; };
 struct PopulateImages { std::string maton_system_part_guid; std::string metadata_part_guid; std::vector<ImageToInstall> images; };
+struct WriteSetup { std::string maton_system_part_guid; std::string setup_json; };
 struct CreateLpMetadata {
     std::string super_part_guid;
     uint64_t metadata_size_bytes = 0;
@@ -75,7 +76,7 @@ struct FilePayload { std::string relative_path; std::string live_payload_path; s
 struct WriteFiles { PartitionRef target; std::string relative_directory; std::vector<FilePayload> files; };
 // Adds the ESP's fallback loader to the firmware boot menu and BootOrder.
 struct RegisterBootEntry { PartitionRef esp; };
-using Operation = std::variant<WriteGpt, CreateLpMetadata, PopulateImages, Format, CopyPartition,
+using Operation = std::variant<WriteGpt, CreateLpMetadata, PopulateImages, WriteSetup, Format, CopyPartition,
                                ClonePartition, WriteFiles, RegisterBootEntry>;
 struct OperationRequest {
     uint32_t api_version = kOperationApiVersion;

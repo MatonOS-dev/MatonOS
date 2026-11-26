@@ -82,8 +82,14 @@ type_transition matonos_driver_helper matonos_install_mount_file:file matonos_in
 # OTA staging/request files are shared with the init-started system_ext writer.
 allow matonos_driver matonos_install_mount_file:dir { search getattr write add_name remove_name create_dir_perms };
 allow matonos_driver matonos_install_mount_file:file { create open read write getattr setattr unlink rename map };
+allow matonos_driver matonos_install_mount_file:dir { relabelfrom relabelto };
 type_transition matonos_driver matonos_install_mount_file:dir matonos_install_mount_file;
 type_transition matonos_driver matonos_install_mount_file:file matonos_install_mount_file;
+# Installer creates setup.json on the mounted target image store. The type is
+# system_ext-public so this vendor domain may relabel to it.
+allow matonos_driver matonos_setup_file:dir { search open read write getattr add_name remove_name create setattr relabelfrom relabelto };
+allow matonos_driver matonos_setup_file:file { create open read write getattr setattr unlink rename relabelfrom relabelto };
+allow matonos_setup_file labeledfs:filesystem associate;
 allow matonos_install_mount_file labeledfs:filesystem associate;
 allow init matonos_install_mount_file:dir { create_dir_perms relabelto mounton search };
 allow init matonos_install_mount_file:dir { search open read getattr };

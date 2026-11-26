@@ -9,6 +9,13 @@ export type DrivePartition = {
 };
 
 export type DriveHealthFinding = { level: "error" | "warning"; message: string };
+export type SetupV1 = {
+  version: 1;
+  locale?: string;
+  timeZone?: string;
+  wifi?: { ssid: string; security: "open" | "wpa2" | "wpa3"; password?: string; hidden?: boolean }[];
+  user?: { name?: string; credential?: { type: "pin" | "password"; value: string } };
+};
 // SMART findings from the installer service; never a reason to refuse.
 export type DriveHealth = { known: boolean; source: string; findings: DriveHealthFinding[] };
 export type InstallDrive = {
@@ -55,6 +62,7 @@ export type InstallerOperation =
       metadataPartGuid: string;
       images: { name: string; livePartitionName: string }[];
     }
+  | { kind: "write_setup"; matonSystemPartGuid: string; setup: SetupV1 }
   | {
       kind: "create_lp_metadata";
       superPartGuid: string;
