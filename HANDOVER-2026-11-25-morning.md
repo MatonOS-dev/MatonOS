@@ -455,3 +455,13 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   freed old blocks unzeroed; checkpoint renames too), added .tmp recovery and file
   rename/unlink (42076bc9). Codex setup-write (installer op write_setup) running.
   Branch wip/setup-apply not merged yet; merge after build-161's BT test.
+
+## 22:50 update
+- live161 BT test: file written + labelled, but init's umask 077 made /oem/etc 0700, so
+  system_server could not read it and Bluetooth stayed declared. Manual chmod + framework
+  restart on live161 confirmed the read path: no bluetooth features, "No Bluetooth Service",
+  bluetooth_manager absent, no BT tile, no crashes. Fix f9ac3a42 (umask 022 + kmsg_debug write).
+- codex setup-write done (789987c1): write_setup op (TS + executor), matonos_setup_file moved
+  to system_ext public, installer relabel rules, bridge search on the store root. Reviewed.
+- Merged wip/setup-apply → 7e5b0db6. build-162 running (BT fix + setup.json, first compile of
+  both). Next: VM test, then delete live159; then RN installer pages (piece 3).
