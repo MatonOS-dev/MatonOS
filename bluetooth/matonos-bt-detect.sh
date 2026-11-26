@@ -12,6 +12,9 @@
 # which is before this; firmware loads later, on first open. A controller added
 # after boot needs a reboot.
 
+# init starts services with umask 077; system_server (uid system) must read the file.
+umask 022
+
 for hci in /sys/class/bluetooth/hci*; do
     if [ -L "$hci" ]; then
         echo "matonos-bt-detect: controller ${hci##*/} present, Bluetooth stays declared"

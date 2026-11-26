@@ -389,6 +389,8 @@ init_daemon_domain(matonos_bt_detect)
 allow matonos_bt_detect vendor_shell_exec:file rx_file_perms;
 allow matonos_bt_detect vendor_toolbox_exec:file rx_file_perms;
 allow matonos_bt_detect sysfs:dir r_dir_perms;
+# stdio_to_kmsg: init hands the service its /dev/kmsg_debug fd for the result line.
+allow matonos_bt_detect kmsg_debug_device:chr_file { write getattr ioctl };
 allow matonos_bt_detect sysfs:lnk_file getattr;
 allow matonos_bt_detect tmpfs:dir { search write add_name };
 type matonos_oem_permissions_file, file_type;
