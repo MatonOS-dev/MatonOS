@@ -465,3 +465,14 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   to system_ext public, installer relabel rules, bridge search on the store root. Reviewed.
 - Merged wip/setup-apply → 7e5b0db6. build-162 running (BT fix + setup.json, first compile of
   both). Next: VM test, then delete live159; then RN installer pages (piece 3).
+
+## 00:20 update
+- build-162 failed: installer service (NDK CMake) has no libselinux. b65a3dfa labels via
+  security.selinux xattr instead. build-163 OK 00:12.
+- live163 (now the only kept image): Bluetooth hidden with no manual step — no bluetooth
+  features, "No Bluetooth Service", no bluetooth_manager, kmsg line logged, 0 crashes.
+  BT backlog item DONE.
+- One new denial: bridge search on unlabeled /maton_system (live image root folder) →
+  9c5c00a1 labels it matonos_install_mount_file. Not built yet; rides the next build.
+- Codex setup-pages (RN installer pages: language, network, user+PIN, confirm summary)
+  running in ~/matonos/build/setup-apply.
