@@ -360,3 +360,18 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - luna `seedvault-scope` (report only, low-prio backlog): Android 17 branch, licences,
   Lineage/Calyx integration lines, storage targets, stub-app exclusion; report at
   out/pc-logs/agents/seedvault-scope.last.md.
+
+## 02:35 update — Seedvault scope (luna report: out/pc-logs/agents/seedvault-scope.last.md)
+- Use the `android17` branch (pinned 9d450d28); it has an in-tree Soong `android_app`
+  (system_ext, privileged, `certificate: "platform"` = our platform release key, so luna's
+  "signing blocker" is not one) + 3 XMLs (privapp perms, default perms, sysconfig) and
+  a required `LocalContactsBackup` module.
+- Licences (I checked): all 531 SPDX headers Apache-2.0; vendored jars Apache/MIT/BSD/
+  MPL-2.0 (dav4jvm)/logback (EPL-1.0 or LGPL-2.1). GPL-3.0/AGPL-3.0 texts in LICENSES/
+  are referenced by no file. **Open:** `libs/seedvault-chunker-0.1.jar` (CalyxOS,
+  org.calyxos.seedvault.chunker) has no licence info → must be confirmed before adoption.
+- Default transport: set `def_backup_transport` with a product RRO on SettingsProvider
+  (no AOSP patch).
+- MatonOS-specific: thousands of Linux stub APKs would be backup-eligible → need an
+  exclusion; Flatpak data lies outside app-data backup.
+- Not started; low priority, waits for the chunker licence.
