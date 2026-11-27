@@ -17,6 +17,7 @@ export type InstallStep =
   | "network"
   | "drives"
   | "user"
+  | "services"
   | "confirm"
   | "progress"
   | "done"
@@ -41,6 +42,7 @@ export type SetupDraft = {
   credentialType: "none" | "pin" | "password";
   credentialValue: string;
   credentialConfirm: string;
+  linux: boolean;
 };
 
 // Text lives only in native state, as on the Account page: typing must not re-render React,
@@ -153,7 +155,19 @@ export function makeSetup(draft: SetupDraft): SetupV1 {
   if (draft.name.trim()) user.name = draft.name.trim();
   if (draft.credentialType !== "none" && draft.credentialValue) user.credential = { type: draft.credentialType, value: draft.credentialValue };
   if (user.name || user.credential) setup.user = user;
+  setup.services = { linux: draft.linux };
   return setup;
+}
+
+export function InstallServicesStep({ draft, onChange, onBack, onContinue }: { draft: SetupDraft; onChange: (patch: Partial<SetupDraft>) => void; onBack: () => void; onContinue: () => void }) {
+  const save = () => onChange({ linux: draft.linux });
+  const next = () => { save(); onContinue(); };
+  const back = () => { save(); onBack(); };
+  return <SettingsCard title="Preinstalled services">
+    <ToggleRow title="Linux subsystem" supporting="Run Linux desktop apps. You can turn this off later." value={draft.linux} onChange={(linux) => onChange({ linux })} />
+    <ActionButton label={copy.goBack} variant="text" onClick={back} />
+    <ActionButton label="Continue" onClick={next} />
+  </SettingsCard>;
 }
 
 function DriveCard({
@@ -685,5 +699,5 @@ function setupSummary(draft: SetupDraft): string {
   const wifi = draft.ssid.trim() ? draft.ssid.trim() : "not set";
   const lockNames = { none: "none", pin: "PIN set", password: "password set" };
   const name = draft.name.trim() ? draft.name.trim() : "not set";
-  return `Language: ${draft.locale || "not set"}\nTime zone: ${draft.timeZone || "not set"}\nWi-Fi: ${wifi}\nName: ${name}\nScreen lock: ${lockNames[draft.credentialType]}`;
+  return `Language: ${draft.locale || "not set"}\nTime zone: ${draft.timeZone || "not set"}\nWi-Fi: ${wifi}\nName: ${name}\nScreen lock: ${lockNames[draft.credentialType]}\nLinux subsystem: ${draft.linux ? "on" : "off"}`;
 }

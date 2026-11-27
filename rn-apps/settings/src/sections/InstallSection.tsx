@@ -30,6 +30,7 @@ import {
   InstallLanguageStep,
   InstallNetworkStep,
   InstallUserStep,
+  InstallServicesStep,
   makeSetup,
   type SetupDraft,
   type InstallStep,
@@ -121,7 +122,7 @@ export function InstallSection() {
     locale: Intl.DateTimeFormat().resolvedOptions().locale || "",
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
     ssid: "", security: "wpa2", wifiPassword: "", hidden: false,
-    name: "", credentialType: "none", credentialValue: "", credentialConfirm: "",
+    name: "", credentialType: "none", credentialValue: "", credentialConfirm: "", linux: true,
   }));
   const [drives, setDrives] = useState<InstallDrive[]>([]);
   const [selected, setSelected] = useState<InstallDrive | null>(null);
@@ -137,7 +138,7 @@ export function InstallSection() {
   const [previewMode, setPreviewMode] = useState(false);
   const previewModeRef = useRef(false);
   const patchSetup = (patch: Partial<SetupDraft>) => setSetupDraft((current) => ({ ...current, ...patch }));
-  const resetSetup = () => setSetupDraft({ locale: Intl.DateTimeFormat().resolvedOptions().locale || "", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "", ssid: "", security: "wpa2", wifiPassword: "", hidden: false, name: "", credentialType: "none", credentialValue: "", credentialConfirm: "" });
+  const resetSetup = () => setSetupDraft({ locale: Intl.DateTimeFormat().resolvedOptions().locale || "", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "", ssid: "", security: "wpa2", wifiPassword: "", hidden: false, name: "", credentialType: "none", credentialValue: "", credentialConfirm: "", linux: true });
 
   const refreshDrives = useCallback(async () => {
     setReadiness("loading");
@@ -365,7 +366,8 @@ export function InstallSection() {
         formatSize={sizeLabel}
       />
     ),
-    user: () => <InstallUserStep draft={setupDraft} onChange={patchSetup} onBack={() => setStep("drives")} onContinue={() => setStep("confirm")} />,
+    user: () => <InstallUserStep draft={setupDraft} onChange={patchSetup} onBack={() => setStep("drives")} onContinue={() => setStep("services")} />,
+    services: () => <InstallServicesStep draft={setupDraft} onChange={patchSetup} onBack={() => setStep("user")} onContinue={() => setStep("confirm")} />,
     confirm: () => (
       <InstallConfirmStep
         drive={selected}
@@ -375,7 +377,7 @@ export function InstallSection() {
         onConfirmChange={setEraseConfirmed}
         healthAccepted={healthAccepted}
         onHealthAcceptedChange={setHealthAccepted}
-        onBack={() => setStep("user")}
+        onBack={() => setStep("services")}
         onStart={() => void startInstall()}
         formatSize={sizeLabel}
       />

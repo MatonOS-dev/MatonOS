@@ -25,6 +25,7 @@
     <uses-permission android:name="android.permission.ACCESS_KEYGUARD_SECURE_STORAGE" />
     <uses-permission android:name="android.permission.NETWORK_SETTINGS" />
     <uses-permission android:name="android.permission.SET_INITIAL_LOCK" />
+    <uses-permission android:name="android.permission.CHANGE_COMPONENT_ENABLED_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- sleep: read PowerManager's held wake locks from its privileged dump. -->
