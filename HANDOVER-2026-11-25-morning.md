@@ -522,3 +522,8 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   is in every image, F-Droid source plugin is a product package. Chosen (night rule, smallest + offline):
   services step = one "Linux subsystem" switch (default on); off ⇒ first boot disables org.matonos.linux
   for user 0. Luna task `setup-services` implementing it on wip/setup-apply.
+
+## 01:20 — setup.json end to end WORKS (build-166, live166)
+- Fresh install (Wi-Fi TestNet+password, name Hans, PIN 1234) → installed disk boots → first boot applied
+  name, Wi-Fi and PIN (`lock_settings verify` OK); /maton_system/setup is empty (setup.json deleted), no
+  MatonSetup errors, no bridge denials. live165 + server live-165.img deleted; live166 = kept image.
