@@ -498,3 +498,9 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - NOT yet tested: user/lock step and confirm summary — the drives step only lists the boot drive, so the
   VM needs a second blank disk; then a real install to check setup.json is written and applied on first boot.
 - Remaining setup.json items: services step (schema + applier), MatonOS account step.
+
+## 11:25 — stopped (user)
+- Hourly watchdog 03:19–11:19: idle throughout (no builds, no codex jobs, live164 booted). No new work started.
+- State: dt wip/audio-apex da279b02 + this entry; live164 = only kept image (live163 deleted).
+- Next: VM run with a second blank disk → test user/lock step, confirm summary, then a real install
+  (check setup.json written + applied on first boot). After that: services step, MatonOS account step.
