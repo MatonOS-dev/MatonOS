@@ -504,3 +504,14 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - State: dt wip/audio-apex da279b02 + this entry; live164 = only kept image (live163 deleted).
 - Next: VM run with a second blank disk → test user/lock step, confirm summary, then a real install
   (check setup.json written + applied on first boot). After that: services step, MatonOS account step.
+
+## 23:45 — night mode; first real install with setup.json
+- build-165 (dt 298bce03): fix for write_setup re-running mke2fs (it wiped /images; build-164 installs
+  boot-looped to the bootloader). Install on live165 + blank 32G NVMe: images kept, setup.json written,
+  installed disk boots. Installer UI: user step keeps text across Go back; summary shows secrets as "set".
+- First boot applied name ("Hans") and Wi-Fi (TestNet). Two bugs, fixed in b3506cd7 (build-166 running):
+  setup.json checkpoint EACCES (MLS: bridge has per-app categories → `matonos_setup_file` mlstrustedobject),
+  PIN not set (lock_settings find denied → NPE; allow + ACCESS_KEYGUARD_SECURE_STORAGE).
+  Until then the PIN/Wi-Fi password stay in setup.json on that test disk.
+- live164 + server live-164.img deleted; live165 kept.
+- Services step: luna scope running (out/pc-logs/agents/setup-services-scope.last.md).
