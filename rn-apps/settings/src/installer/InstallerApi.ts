@@ -15,6 +15,7 @@ export type SetupV1 = {
   timeZone?: string;
   wifi?: { ssid: string; security: "open" | "wpa2" | "wpa3"; password?: string; hidden?: boolean }[];
   user?: { name?: string; credential?: { type: "pin" | "password"; value: string } };
+  services?: { linux: boolean };
 };
 // SMART findings from the installer service; never a reason to refuse.
 export type DriveHealth = { known: boolean; source: string; findings: DriveHealthFinding[] };

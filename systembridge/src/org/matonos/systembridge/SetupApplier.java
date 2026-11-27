@@ -6,6 +6,8 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.pm.PackageManager;
+import android.os.UserHandle;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiManager;
 import android.os.UserManager;
@@ -64,9 +66,10 @@ final class SetupApplier {
                     + " in " + SETUP_PATH + "; retaining file");
             return;
         }
+        // SetupV1 schema: version, locale, timeZone, wifi[], user{}, and services{linux:boolean}.
         for (String key : settings.keySet()) {
             if (!"version".equals(key) && !"locale".equals(key) && !"timeZone".equals(key)
-                    && !"wifi".equals(key) && !"user".equals(key)) {
+                    && !"wifi".equals(key) && !"user".equals(key) && !"services".equals(key)) {
                 Log.e(TAG, "Unknown setup field " + key + " in " + SETUP_PATH + "; retaining file");
                 return;
             }
@@ -78,6 +81,9 @@ final class SetupApplier {
                 if (user.has("credential")) {
                     requireKeys(user.getJSONObject("credential"), "user.credential", "type", "value");
                 }
+            }
+            if (settings.has("services")) {
+                requireKeys(settings.getJSONObject("services"), "services", "linux");
             }
             if (settings.has("wifi")) {
                 JSONArray networks = settings.getJSONArray("wifi");
@@ -140,6 +146,18 @@ final class SetupApplier {
             }
         });
         applyUser(context, file, settings, failed);
+        applyTopLevel(context, file, settings, "services", failed, () -> {
+            JSONObject services = settings.getJSONObject("services");
+            if (!services.has("linux")) throw new JSONException("services.linux is required");
+            if (!services.getBoolean("linux")) {
+                Context userContext = context.createContextAsUser(UserHandle.SYSTEM, 0);
+                PackageManager manager = userContext.getPackageManager();
+                if (manager == null) throw new IllegalStateException("PackageManager unavailable for user 0");
+                manager.setApplicationEnabledSetting("org.matonos.linux",
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER, 0);
+                Log.i(TAG, "Disabled org.matonos.linux for user 0 from setup.services.linux");
+            }
+        });
 
         if (settings.length() == 1) {
             try {
