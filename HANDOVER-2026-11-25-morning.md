@@ -515,3 +515,10 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   Until then the PIN/Wi-Fi password stay in setup.json on that test disk.
 - live164 + server live-164.img deleted; live165 kept.
 - Services step: luna scope running (out/pc-logs/agents/setup-services-scope.last.md).
+
+## 00:30 — services step started
+- build-166 policy ok 23:55, image building.
+- Scope (setup-services-scope.last.md): no subsystem add-on image exists; bootstrap `org.matonos.linux`
+  is in every image, F-Droid source plugin is a product package. Chosen (night rule, smallest + offline):
+  services step = one "Linux subsystem" switch (default on); off ⇒ first boot disables org.matonos.linux
+  for user 0. Luna task `setup-services` implementing it on wip/setup-apply.
