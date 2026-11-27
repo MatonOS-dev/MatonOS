@@ -66,9 +66,9 @@ bool Run(const std::vector<std::string>& arguments, uint64_t disk_sequence, std:
             if (arguments.size() != 3) _exit(125);
             helper_args.push_back("--boot-entry");helper_args.push_back(std::to_string(disk_sequence));
             helper_args.push_back(arguments[1]);helper_args.push_back(arguments[2]);
-        } else if (arguments[0] == "@prepare-image-store" || arguments[0] == "@finish-image-store") {
+        } else if (arguments[0] == "@prepare-image-store" || arguments[0] == "@mount-image-store" || arguments[0] == "@finish-image-store") {
             if (arguments.size() != 3) _exit(125);
-            helper_args.push_back(arguments[0] == "@prepare-image-store" ? "--prepare-image-store" : "--finish-image-store");
+            helper_args.push_back("--" + arguments[0].substr(1));
             helper_args.push_back(std::to_string(disk_sequence));
             helper_args.push_back(arguments[1]);
             helper_args.push_back(arguments[2]);
@@ -529,7 +529,8 @@ bool ExecutePrimitive(const Operation& operation,const Drive& target,ProgressCal
             if(system==target.partitions.end()||metadata==target.partitions.end()){*error="Setup write target image-store partitions disappeared.";return false;}
             matonos::install::json::Value setup;
             if(!matonos::install::json::Parse(op.setup_json,&setup)||setup.kind!=matonos::install::json::Value::Kind::kObject||!setup.Get("version")||setup.Get("version")->Number(UINT64_MAX)!=1){*error="Setup payload is not a JSON object with version 1.";return false;}
-            if(!Run({"@prepare-image-store",system->path,metadata->path},target.disk_sequence,error))return false;
+            // Mount only: populate_images already formatted and filled this store.
+            if(!Run({"@mount-image-store",system->path,metadata->path},target.disk_sequence,error))return false;
             bool ok=true; const std::string directory="/mnt/matonos-install/system/setup";
             if(lsetfilecon("/mnt/matonos-install/system","u:object_r:matonos_install_mount_file:s0")!=0){*error="Cannot label image-store root for the installed bridge: "+std::string(strerror(errno));ok=false;}
             std::error_code ec; if(ok)fs::create_directories(directory,ec);
