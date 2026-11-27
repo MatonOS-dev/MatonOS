@@ -22,6 +22,7 @@
 
 #include <aidl/android/hardware/camera/common/Status.h>
 #include <convert.h>
+#include <cutils/properties.h>
 #include <linux/videodev2.h>
 #include <regex>
 #include <set>
@@ -399,7 +400,12 @@ status_t ExternalCameraDevice::initDefaultCharsKeys(
     const uint8_t opticalStabilizationMode = ANDROID_LENS_OPTICAL_STABILIZATION_MODE_OFF;
     UPDATE(ANDROID_LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION, &opticalStabilizationMode, 1);
 
-    const uint8_t facing = ANDROID_LENS_FACING_EXTERNAL;
+    char front[PROPERTY_VALUE_MAX] = {};
+    char back[PROPERTY_VALUE_MAX] = {};
+    property_get("persist.matonos.camera.front", front, "");
+    property_get("persist.matonos.camera.back", back, "");
+    const uint8_t facing = mCameraId == front ? ANDROID_LENS_FACING_FRONT
+            : mCameraId == back ? ANDROID_LENS_FACING_BACK : ANDROID_LENS_FACING_EXTERNAL;
     UPDATE(ANDROID_LENS_FACING, &facing, 1);
 
     // android.noiseReduction

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Column, Slider, Text, useMaterialColors } from "@expo/ui/jetpack-compose";
 import { fillMaxWidth } from "@expo/ui/jetpack-compose/modifiers";
 import { Hardware, type HardwareState } from "../hardware/Hardware";
@@ -25,13 +25,13 @@ type RadioDevice = {
   name?: string;
   bus?: string;
 };
-
 export function HardwareSection() {
   const colors = useMaterialColors();
   const [hardware, setHardware] = useState<HardwareState | null>(null);
   const [audioDevices, setAudioDevices] = useState<Array<{ id: string; name: string; multiplier: number }>>([]);
   const [wifiDevices, setWifiDevices] = useState<RadioDevice[] | null>(null);
   const [bluetoothDevices, setBluetoothDevices] = useState<RadioDevice[] | null>(null);
+  const router = useRouter();
   const refreshHardware = useCallback(async () => {
     try {
       setHardware(await Hardware.getState());
@@ -230,6 +230,7 @@ export function HardwareSection() {
         </SettingsCard>
         <SettingsCard title={copy.camera}>
           <StatusRow label={copy.connectedCameras} value={cameraCount} />
+          <ActionButton label="Configure cameras" variant="text" onClick={() => router.push("/cameras")} />
         </SettingsCard>
         <ActionButton
           label={copy.refreshHardware}

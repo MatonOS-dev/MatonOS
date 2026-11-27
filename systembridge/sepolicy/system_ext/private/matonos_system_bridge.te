@@ -14,6 +14,7 @@ binder_call(untrusted_app_all, matonos_system_bridge)
 # Binder access is restricted to the stable vendor channel; target and app
 # authorization is enforced by SystemBridgeService before each method call.
 allow matonos_system_bridge input_service:service_manager find;
+set_prop(matonos_system_bridge, matonos_camera_role_prop)
 # Framework service lookups used by the bridge's system-state queries.
 allow matonos_system_bridge { activity_service audio_service content_capture_service gpu_service netstats_service wifi_service }:service_manager find;
 # sleep: inspect the stock PowerManager dump for active wake locks.

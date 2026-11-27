@@ -94,6 +94,7 @@ class ExternalCameraProvider : public BnCameraProvider {
 
     std::unordered_set<std::string> mKnownDevices;
     std::unordered_map<std::string, uint32_t> mGenerations;
+    std::unordered_map<std::string, int> mFacingByDevice;
     Mutex mLock;
     std::shared_ptr<ICameraProviderCallback> mCallback = nullptr;
     std::unordered_map<std::string, CameraDeviceStatus> mCameraStatusMap;  // camera id -> status

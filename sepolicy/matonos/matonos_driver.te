@@ -536,3 +536,5 @@ allow hal_camera_default vendor_file:dir r_dir_perms;
 allow hal_camera_default vendor_file:file { getattr map open read };
 allow hal_camera_default vendor_configs_file:dir r_dir_perms;
 allow hal_camera_default vendor_configs_file:file r_file_perms;
+# Camera2 role values are system-public; the external camera HAL only reads them.
+get_prop(hal_camera_default, matonos_camera_role_prop)

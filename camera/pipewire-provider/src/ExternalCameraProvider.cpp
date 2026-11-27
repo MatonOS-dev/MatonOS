@@ -26,6 +26,7 @@
 #include <linux/videodev2.h>
 #include <log/log.h>
 #include <sys/inotify.h>
+#include <sys/system_properties.h>
 #include <regex>
 
 namespace android {
@@ -198,7 +199,7 @@ void ExternalCameraProvider::deviceRemoved(const char* devName) {
     std::string name = std::string("device@") + ExternalCameraDevice::kDeviceVersion + "/external/" +
         std::to_string(mCfg.cameraIdOffset + std::atoi(devName + kDevicePrefixLen));
     std::shared_ptr<ICameraProviderCallback> callback;
-    { Mutex::Autolock lock(mLock); if (!mCameraStatusMap.erase(name)) return; callback = mCallback; }
+    { Mutex::Autolock lock(mLock); if (!mCameraStatusMap.erase(name)) return; mFacingByDevice.erase(devName); callback = mCallback; }
     if (callback) {
         auto status = callback->cameraDeviceStatusChange(name, CameraDeviceStatus::NOT_PRESENT);
         if (!status.isOk()) ALOGE("camera removal callback failed: %s", status.getDescription().c_str());
@@ -223,12 +224,37 @@ void ExternalCameraProvider::updateAttachedCameras() {
         deviceRemoved(path.c_str()); mGenerations.erase(path);
     }
     std::unordered_set<std::string> initialized;
+    char front[PROPERTY_VALUE_MAX] = {};
+    char back[PROPERTY_VALUE_MAX] = {};
+    property_get("persist.matonos.camera.front", front, "");
+    property_get("persist.matonos.camera.back", back, "");
     { Mutex::Autolock lock(mLock);
       for (const auto& path : present) {
+          const std::string id = std::to_string(mCfg.cameraIdOffset +
+                  std::atoi(path.c_str() + kDevicePrefixLen));
+          const int facing = id == front ? 1 : id == back ? 2 : 0;
           std::string name = std::string("device@") + ExternalCameraDevice::kDeviceVersion + "/external/" +
-              std::to_string(mCfg.cameraIdOffset + std::atoi(path.c_str() + kDevicePrefixLen));
-          if (mCameraStatusMap.count(name)) initialized.insert(path);
+              id;
+          if (mCameraStatusMap.count(name)) {
+              initialized.insert(path);
+              auto previous = mFacingByDevice.find(path);
+              if (previous == mFacingByDevice.end()) {
+                  mFacingByDevice[path] = facing;
+              }
+          }
       }
+    }
+    // A role change is represented as a normal hotplug so Camera2 re-queries characteristics.
+    for (const auto& path : present) {
+        const std::string id = std::to_string(mCfg.cameraIdOffset +
+                std::atoi(path.c_str() + kDevicePrefixLen));
+        const int facing = id == front ? 1 : id == back ? 2 : 0;
+        auto previous = mFacingByDevice.find(path);
+        if (previous != mFacingByDevice.end() && previous->second != facing) {
+            deviceRemoved(path.c_str());
+            deviceAdded(path.c_str());
+            mFacingByDevice[path] = facing;
+        }
     }
     mKnownDevices = std::move(initialized);
 }
@@ -238,7 +264,11 @@ ExternalCameraProvider::HotplugThread::~HotplugThread() = default;
 bool ExternalCameraProvider::HotplugThread::initialize() { return pwcam_start() == 0; }
 bool ExternalCameraProvider::HotplugThread::threadLoop() {
     mParent->updateAttachedCameras();
-    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    static uint32_t propertySerial = 0;
+    const timespec timeout = {.tv_sec = 0, .tv_nsec = 250000000};
+    uint32_t nextSerial = propertySerial;
+    __system_property_wait(nullptr, propertySerial, &nextSerial, &timeout);
+    propertySerial = nextSerial;
     return true;
 }
 
