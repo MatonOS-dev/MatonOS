@@ -527,3 +527,11 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - Fresh install (Wi-Fi TestNet+password, name Hans, PIN 1234) → installed disk boots → first boot applied
   name, Wi-Fi and PIN (`lock_settings verify` OK); /maton_system/setup is empty (setup.json deleted), no
   MatonSetup errors, no bridge denials. live165 + server live-165.img deleted; live166 = kept image.
+
+## 01:35 — services step merged (7995d079), build-167 running
+- Luna ef829e25 reviewed: "Preinstalled services" step (Linux subsystem switch, default on), summary line,
+  applier `services.linux=false` ⇒ setApplicationEnabledSetting(org.matonos.linux, DISABLED_USER, user 0).
+  tsc clean (only the known GappsSection error). Test on build-167: install with the switch off.
+- SHELVED for user: MatonOS account step — open decision whether an account token may sit in setup.json
+  (plaintext on ext4 until first boot, like PIN/Wi-Fi password today).
+- Media APEX refinement started: luna `camera-roles-scope` (front/back assignment page + HAL facing).
