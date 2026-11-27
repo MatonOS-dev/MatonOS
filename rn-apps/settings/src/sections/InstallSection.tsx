@@ -431,7 +431,9 @@ export function InstallSection() {
       />
     ),
   };
-  const StepContent = steps[step];
+  // Called, not rendered as <StepContent />: the arrow is new every render, so React would see a new
+  // component type and remount the step (native text fields lose focus and text mid-typing).
+  const stepContent = steps[step]();
 
   if (!live) {
     return (
@@ -458,7 +460,7 @@ export function InstallSection() {
         verticalArrangement={{ spacedBy: 16 }}
         horizontalAlignment="start"
       >
-        <StepContent />
+        {stepContent}
         <ProgressSummary step={step} progress={progress} />
       </Column>
     </>
