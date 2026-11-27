@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { OutlinedTextField, Text, useMaterialColors, useNativeState } from "@expo/ui/jetpack-compose";
+import { useState } from "react";
+import { OutlinedTextField, Text, useMaterialColors, useNativeState, type ObservableState } from "@expo/ui/jetpack-compose";
 import {
   ActionButton,
   ModeRow,
@@ -43,19 +43,11 @@ export type SetupDraft = {
   credentialConfirm: string;
 };
 
-// The native field owns its text; it starts from the draft value and reports edits back.
-// It must not re-render per keystroke: a re-rendered password field drops focus after one
-// character (seen on live164), so it only updates when its label or masking changes.
-// Steps unmount their fields, so a cleared draft value shows again on the next visit.
-const TextInput = memo(TextInputField, (a, b) => a.label === b.label && a.secret === b.secret);
-
-function TextInputField({ label, value, onChange, secret = false, clean }: { label: string; value: string; onChange: (value: string) => void; secret?: boolean; clean?: (value: string) => string }) {
-  const state = useNativeState(value);
-  const onValueChange = (next: string) => {
-    const cleaned = clean ? clean(next) : next;
-    if (cleaned !== next) state.set(cleaned);
-    onChange(cleaned);
-  };
+// Text lives only in native state, as on the Account page: typing must not re-render React,
+// because a re-rendered field drops focus mid-word (seen on live164). Steps read the text and
+// validate it when the user leaves the step.
+function TextInput({ state, label, secret = false, clean }: { state: ObservableState<string>; label: string; secret?: boolean; clean?: (value: string) => string }) {
+  const onValueChange = (next: string) => state.set(clean ? clean(next) : next);
   return (
     <OutlinedTextField value={state} onValueChange={onValueChange} singleLine visualTransformation={secret ? "password" : "none"}>
       <OutlinedTextField.Label><Text>{label}</Text></OutlinedTextField.Label>
@@ -64,54 +56,86 @@ function TextInputField({ label, value, onChange, secret = false, clean }: { lab
 }
 
 export function InstallLanguageStep({ draft, onChange, onBack, onContinue }: { draft: SetupDraft; onChange: (patch: Partial<SetupDraft>) => void; onBack: () => void; onContinue: () => void }) {
+  const locale = useNativeState(draft.locale);
+  const timeZone = useNativeState(draft.timeZone);
+  const next = () => { onChange({ locale: locale.get(), timeZone: timeZone.get() }); onContinue(); };
   return <SettingsCard title="Language and time">
-    <TextInput label="Locale" value={draft.locale} onChange={(locale) => onChange({ locale })} />
-    <TextInput label="Time zone" value={draft.timeZone} onChange={(timeZone) => onChange({ timeZone })} />
+    <TextInput label="Locale" state={locale} />
+    <TextInput label="Time zone" state={timeZone} />
     <ActionButton label={copy.goBack} variant="text" onClick={onBack} />
-    <ActionButton label="Continue" onClick={onContinue} />
+    <ActionButton label="Continue" onClick={next} />
   </SettingsCard>;
 }
 
 export function InstallNetworkStep({ draft, onChange, onBack, onContinue }: { draft: SetupDraft; onChange: (patch: Partial<SetupDraft>) => void; onBack: () => void; onContinue: () => void }) {
+  const ssid = useNativeState(draft.ssid);
+  const password = useNativeState(draft.wifiPassword);
+  const [invalid, setInvalid] = useState(false);
   const secured = draft.security !== "open";
-  const hasNetwork = draft.ssid.trim().length > 0;
-  const passwordOk = draft.wifiPassword.length >= 8 && draft.wifiPassword.length <= 63;
-  const valid = !hasNetwork || !secured || passwordOk;
-  const passwordField = secured ? <TextInput label="Wi-Fi password" value={draft.wifiPassword} onChange={(wifiPassword) => onChange({ wifiPassword })} secret /> : null;
-  const passwordError = valid ? null : <TextError message="WPA passwords are 8 to 63 characters." />;
+  const save = () => onChange({ ssid: ssid.get(), wifiPassword: secured ? password.get() : "" });
+  const next = () => {
+    const pass = password.get();
+    const ok = !ssid.get().trim() || !secured || (pass.length >= 8 && pass.length <= 63);
+    setInvalid(!ok);
+    if (!ok) return;
+    save();
+    onContinue();
+  };
+  const skip = () => { onChange({ ssid: "", wifiPassword: "", hidden: false }); onContinue(); };
+  const selectOpen = () => { password.set(""); onChange({ security: "open" }); };
+  const passwordField = secured ? <TextInput label="Wi-Fi password" state={password} secret /> : null;
+  const passwordError = invalid ? <TextError message="WPA passwords are 8 to 63 characters." /> : null;
   return <SettingsCard title="Wi-Fi (optional)">
-    <TextInput label="Network name (SSID)" value={draft.ssid} onChange={(ssid) => onChange({ ssid })} />
-    <ModeRow title="Open" description="No password" selected={draft.security === "open"} onSelect={() => onChange({ security: "open", wifiPassword: "" })} />
+    <TextInput label="Network name (SSID)" state={ssid} />
+    <ModeRow title="Open" description="No password" selected={draft.security === "open"} onSelect={selectOpen} />
     <ModeRow title="WPA2" description="WPA2 personal" selected={draft.security === "wpa2"} onSelect={() => onChange({ security: "wpa2" })} />
     <ModeRow title="WPA3" description="WPA3 personal" selected={draft.security === "wpa3"} onSelect={() => onChange({ security: "wpa3" })} />
     {passwordField}
     {passwordError}
     <ToggleRow title="Hidden network" supporting="Connect to a network that does not broadcast its name." value={draft.hidden} onChange={(hidden) => onChange({ hidden })} />
-    <ActionButton label="Skip Wi-Fi" variant="text" onClick={() => { onChange({ ssid: "", wifiPassword: "", hidden: false }); onContinue(); }} />
-    <ActionButton label={copy.goBack} variant="text" onClick={onBack} />
-    <ActionButton label="Continue" enabled={valid} onClick={onContinue} />
+    <ActionButton label="Skip Wi-Fi" variant="text" onClick={skip} />
+    <ActionButton label={copy.goBack} variant="text" onClick={() => { save(); onBack(); }} />
+    <ActionButton label="Continue" onClick={next} />
   </SettingsCard>;
 }
 
 export function InstallUserStep({ draft, onChange, onBack, onContinue }: { draft: SetupDraft; onChange: (patch: Partial<SetupDraft>) => void; onBack: () => void; onContinue: () => void }) {
+  const name = useNativeState(draft.name);
+  const value = useNativeState(draft.credentialValue);
+  const confirm = useNativeState(draft.credentialConfirm);
+  const [invalid, setInvalid] = useState(false);
   const usesCredential = draft.credentialType !== "none";
-  const validLength = draft.credentialType === "pin" ? /^\d{4,}$/.test(draft.credentialValue) : draft.credentialValue.length >= 4;
-  const valid = !usesCredential || (validLength && draft.credentialValue === draft.credentialConfirm);
   const isPin = draft.credentialType === "pin";
-  const clean = (value: string) => (isPin ? value.replace(/\D/g, "") : value);
-  const valueField = usesCredential ? <TextInput label={isPin ? "PIN" : "Password"} value={draft.credentialValue} onChange={(value) => onChange({ credentialValue: value })} clean={clean} secret /> : null;
-  const confirmField = usesCredential ? <TextInput label="Confirm" value={draft.credentialConfirm} onChange={(value) => onChange({ credentialConfirm: value })} clean={clean} secret /> : null;
-  const credentialError = valid ? null : <TextError message="Enter a valid matching credential." />;
+  const clean = (text: string) => (isPin ? text.replace(/\D/g, "") : text);
+  const save = () => onChange({ name: name.get(), credentialValue: value.get(), credentialConfirm: confirm.get() });
+  const next = () => {
+    const secret = value.get();
+    const validLength = isPin ? /^\d{4,}$/.test(secret) : secret.length >= 4;
+    const ok = !usesCredential || (validLength && secret === confirm.get());
+    setInvalid(!ok);
+    if (!ok) return;
+    save();
+    onContinue();
+  };
+  const select = (credentialType: SetupDraft["credentialType"]) => {
+    value.set("");
+    confirm.set("");
+    setInvalid(false);
+    onChange({ credentialType, credentialValue: "", credentialConfirm: "" });
+  };
+  const valueField = usesCredential ? <TextInput label={isPin ? "PIN" : "Password"} state={value} clean={clean} secret /> : null;
+  const confirmField = usesCredential ? <TextInput label="Confirm" state={confirm} clean={clean} secret /> : null;
+  const credentialError = invalid ? <TextError message="Enter a valid matching credential." /> : null;
   return <SettingsCard title="User and screen lock">
-    <TextInput label="Name (optional)" value={draft.name} onChange={(name) => onChange({ name })} />
-    <ModeRow title="No lock" description="Do not set a screen lock" selected={draft.credentialType === "none"} onSelect={() => onChange({ credentialType: "none", credentialValue: "", credentialConfirm: "" })} />
-    <ModeRow title="PIN" description="At least 4 digits" selected={draft.credentialType === "pin"} onSelect={() => onChange({ credentialType: "pin" })} />
-    <ModeRow title="Password" description="At least 4 characters" selected={draft.credentialType === "password"} onSelect={() => onChange({ credentialType: "password" })} />
+    <TextInput label="Name (optional)" state={name} />
+    <ModeRow title="No lock" description="Do not set a screen lock" selected={draft.credentialType === "none"} onSelect={() => select("none")} />
+    <ModeRow title="PIN" description="At least 4 digits" selected={isPin} onSelect={() => select("pin")} />
+    <ModeRow title="Password" description="At least 4 characters" selected={draft.credentialType === "password"} onSelect={() => select("password")} />
     {valueField}
     {confirmField}
     {credentialError}
-    <ActionButton label={copy.goBack} variant="text" onClick={onBack} />
-    <ActionButton label="Continue" enabled={valid} onClick={onContinue} />
+    <ActionButton label={copy.goBack} variant="text" onClick={() => { save(); onBack(); }} />
+    <ActionButton label="Continue" onClick={next} />
   </SettingsCard>;
 }
 
