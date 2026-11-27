@@ -154,13 +154,15 @@ bool CreateLinearDm(int fd,const char* name,std::string* path,std::string* error
     return true;
 }
 
-int PrepareImageStore(uint64_t expected,const char* system_path,const char* metadata_path) {
+// format=false only mounts an existing store (write_setup runs after populate_images; formatting
+// again would wipe the images it just wrote).
+int PrepareImageStore(uint64_t expected,const char* system_path,const char* metadata_path,bool format) {
     std::string error;int system_fd=-1,metadata_fd=-1;
     if(!VerifyPartitionFd(system_path,expected,&system_fd,&error))return HelperFail("prepare image store",error.c_str(),errno);
     if(!VerifyPartitionFd(metadata_path,expected,&metadata_fd,&error)){CLOSE_FD(system_fd);return HelperFail("prepare image store",error.c_str(),errno);}
     std::string mapped;
     if(!CreateLinearDm(system_fd,kSystemMapper,&mapped,&error)){CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("create linear image-store device",error.c_str(),errno);}
-    if(!RunMke2fs("/proc/self/fd/"+std::to_string(metadata_fd),"metadata",&error)||!RunMke2fs(mapped,"maton_system",&error)){RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("format image store",error.c_str(),errno);}
+    if(format&&(!RunMke2fs("/proc/self/fd/"+std::to_string(metadata_fd),"metadata",&error)||!RunMke2fs(mapped,"maton_system",&error))){RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("format image store",error.c_str(),errno);}
     std::error_code dir_error;
     std::filesystem::create_directories(std::string(kImageStoreRoot)+"/metadata",dir_error);
     if(dir_error){RemoveDmDevice(kSystemMapper);CLOSE_FD(system_fd);CLOSE_FD(metadata_fd);return HelperFail("create metadata mount directory",dir_error.message().c_str(),dir_error.value());}
@@ -587,9 +589,9 @@ bool WaitForPartitionNodes(const char* disk_path) {
 }  // namespace
 
 int HelperMain(int argc,char** argv) {
-    if(argc==5&&std::strcmp(argv[1],"--prepare-image-store")==0) {
+    if(argc==5&&(std::strcmp(argv[1],"--prepare-image-store")==0||std::strcmp(argv[1],"--mount-image-store")==0)) {
         const uint64_t expected=std::strtoull(argv[2],nullptr,10);
-        return PrepareImageStore(expected,argv[3],argv[4]);
+        return PrepareImageStore(expected,argv[3],argv[4],std::strcmp(argv[1],"--prepare-image-store")==0);
     }
     if(argc==5&&std::strcmp(argv[1],"--finish-image-store")==0)
         return FinishImageStore();
