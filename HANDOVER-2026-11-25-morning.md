@@ -486,3 +486,15 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   Settings → Install and walk language/network/user/confirm (preview mode).
 - Left for setup.json: services step (needs schema + applier fields), MatonOS account step,
   a real install test writing setup.json and applying it on first boot (needs a target disk VM).
+
+## 02:15 — build-164 tested on live164; installer text fields fixed (app-only rebuilds)
+- build-164 (dt 19f516db): `/maton_system` label correct, no bridge denial, Bluetooth still hidden, no crashes.
+- Installer pages render: language prefilled (en-US, GMT), Wi-Fi page with WPA check.
+- Bug: text fields lost focus while typing (Wi-Fi password kept 1 char per burst; SSID stopped after 3
+  slow chars). Fix 1 (memoized field, f23d1b0a) not enough. Fix 2 (7d95d99f, Settings-only build 45,
+  installed on live164): text lives only in native state like the Account page; steps read and
+  validate on Continue/Back. Verified: slow-typed SSID (10 chars) + Wi-Fi password (9 chars) kept,
+  Continue reaches the drives step. No new denials (mediaprovider `shell_data_file` tmp search is old noise).
+- NOT yet tested: user/lock step and confirm summary — the drives step only lists the boot drive, so the
+  VM needs a second blank disk; then a real install to check setup.json is written and applied on first boot.
+- Remaining setup.json items: services step (schema + applier), MatonOS account step.
