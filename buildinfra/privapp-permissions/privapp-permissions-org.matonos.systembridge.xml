@@ -12,6 +12,7 @@
         <!-- setup: locale and time-zone controls are signature|privileged. -->
         <permission name="android.permission.CHANGE_CONFIGURATION" />
         <permission name="android.permission.SET_TIME_ZONE" />
+        <permission name="android.permission.CHANGE_COMPONENT_ENABLED_STATE" />
         <!-- btd: privileged controller enable/disable around driver selection. -->
         <permission name="android.permission.BLUETOOTH_PRIVILEGED" />
     </privapp-permissions>
