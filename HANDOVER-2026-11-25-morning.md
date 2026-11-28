@@ -595,3 +595,9 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   `account {username, refreshToken, machineId}`, first boot → signature-protected Settings receiver →
   AccountManager. Dropped luna's ANDROID_ID comparison (per-app/per-install, always failed).
 - Image trim CLOSED (user): keep all kernel modules — Ubuntu ships the same groups.
+
+- 11:20 Camera roles on live172: set_role works (prop front=100) but Camera2
+  stays EXTERNAL. Cause: the image runs the STOCK external provider
+  (MATON_PIPEWIRE_CAMERA defaulted false; the PipeWire fork was never
+  enabled). d43e3a85 makes the PipeWire provider the default. build-174
+  (queued after 173) is its first real link + webcam test.
