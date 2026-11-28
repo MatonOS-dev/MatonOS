@@ -601,3 +601,12 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   (MATON_PIPEWIRE_CAMERA defaulted false; the PipeWire fork was never
   enabled). d43e3a85 makes the PipeWire provider the default. build-174
   (queued after 173) is its first real link + webcam test.
+
+- 13:35 build-174 (PipeWire camera provider on) boots. Two bugs found:
+  1. Provider (user cameraserver) got EHOSTDOWN: PipeWire sockets are 0700
+     audio. With the socket opened by hand the webcam shows up and
+     persist.matonos.camera.front/back switch FRONT/BACK/EXTERNAL live.
+     Fix: rc runs the provider as audio (merged, in build-175).
+  2. OPEN: camera hotplug. A webcam attached after boot is not seen until
+     pipewire+wireplumber restart (libudev-zero monitor gets no events).
+     Device name shows "Unknown device" (no udev db props). Next item.
