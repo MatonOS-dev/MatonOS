@@ -3,7 +3,7 @@
 # ours (BoardConfig.mk, since DEVICE_MANIFEST_FILE is a board variable).
 # Coordinator opt-in only after the complete provider link has succeeded.
 # Both providers implement external/0; never install/start both.
-MATON_PIPEWIRE_CAMERA ?= false
+MATON_PIPEWIRE_CAMERA ?= true
 ifeq ($(MATON_PIPEWIRE_CAMERA),true)
 PRODUCT_PACKAGES += matonos-camera-provider
 else

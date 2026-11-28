@@ -73,7 +73,7 @@ for rel, source in [
 PY
 # The default remains the stock external provider until the coordinator has
 # linked the fork. Enable together with camera.mk's MATON_PIPEWIRE_CAMERA=true.
-if [[ ${MATON_PIPEWIRE_CAMERA:-false} == true ]]; then
+if [[ ${MATON_PIPEWIRE_CAMERA:-true} == true ]]; then
   [[ -s $PRODUCT_OUT/vendor/bin/hw/matonos-camera-provider ]] || die "PipeWire camera provider binary missing"
   install -m 0755 "$PRODUCT_OUT/vendor/bin/hw/matonos-camera-provider" "$INPUT/bin/hw/"
   install -m 0644 "$DEVICE_DIR/camera/pipewire-provider/matonos-camera-provider.rc" "$INPUT/etc/"
