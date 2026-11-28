@@ -628,3 +628,6 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   watch can't be placed. apex_media 6832884 (patch 0008) watches /dev for
   IN_CREATE and rechecks; dt fa4960d5 bumps audio + adds watch rules.
   build-177 tests it.
+- 17:25 build-177: patch 0008 in, but avc denied { read } device:dir for
+  wireplumber (inotify_add_watch needs read+watch), so no /dev watch.
+  Fixed in policy; build-178 retests hotplug.
