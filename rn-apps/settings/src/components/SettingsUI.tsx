@@ -327,7 +327,7 @@ export function ModeRow({
   const colors = useMaterialColors();
   return (
     <Row
-      modifiers={[fillMaxWidth(), paddingAll(4)]}
+      modifiers={[fillMaxWidth(), paddingAll(4), clickable(onSelect)]}
       verticalAlignment="center"
       horizontalArrangement="start"
     >

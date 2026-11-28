@@ -9,3 +9,4 @@ display org.matonos.settings
 trust org.matonos.settings
 hardware org.matonos.settings
 bluetooth org.matonos.settings
+camera org.matonos.settings
