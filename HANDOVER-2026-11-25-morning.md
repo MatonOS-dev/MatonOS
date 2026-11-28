@@ -543,3 +543,10 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - Luna `camera-roles` implementing on wip/camera-roles (worktree ~/matonos/build/camera-roles): props
   persist.matonos.camera.{front,back} = Camera2 ID (system_public_prop), HAL facing + re-announce,
   bridge setRole/getRoles, Settings "Cameras" page under Hardware.
+
+## 02:50 — camera roles merged (aae95fe7), untested
+- Luna ea154f86 reviewed: HAL facing from persist.matonos.camera.{front,back} (Camera2 ID = hash of PipeWire
+  node name), property-wait thread re-announces NOT_PRESENT→PRESENT on change, bridge camera set_role/
+  get_roles, Settings Hardware → Cameras page (Front/Back/External per camera). My fix 3c…: taking a role
+  clears it from the other. tsc clean. Not built yet: goes into build-169 after build-168's services test.
+  Test plan: pass the host Logitech C310 (046d:081b) to the VM via usb-host.
