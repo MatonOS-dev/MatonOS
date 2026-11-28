@@ -117,6 +117,35 @@ static void remove_node(uint32_t global) {
     }
 }
 static void global_remove(void *unused, uint32_t id) { (void)unused; remove_node(id); }
+/* Read one sysfs attribute, newline stripped; empty on failure. */
+static void read_attr(const char *dir, const char *name, char *out, size_t size) {
+    char path[512]; out[0] = '\0';
+    snprintf(path, sizeof(path), "%s/%s", dir, name);
+    FILE *f = fopen(path, "re");
+    if (!f) return;
+    if (!fgets(out, (int)size, f)) out[0] = '\0';
+    fclose(f);
+    out[strcspn(out, "\n")] = '\0';
+}
+/* Stable identity across replug and reboot: USB vendor:product:serial plus
+ * interface and V4L2 index. PipeWire's node name embeds videoN and the port
+ * path, which both change. NULL when the device reports no serial. */
+static char *usb_identity(const char *object_path) {
+    if (!object_path || strncmp(object_path, "v4l2:/dev/", 10)) return NULL;
+    char node[64]; snprintf(node, sizeof(node), "%s", object_path + 10);
+    node[strcspn(node, ":")] = '\0';
+    char cls[128], vid[16], pid[16], serial[256], ifnum[16], index[16];
+    snprintf(cls, sizeof(cls), "/sys/class/video4linux/%s", node);
+    read_attr(cls, "device/../idVendor", vid, sizeof(vid));
+    read_attr(cls, "device/../idProduct", pid, sizeof(pid));
+    read_attr(cls, "device/../serial", serial, sizeof(serial));
+    read_attr(cls, "device/bInterfaceNumber", ifnum, sizeof(ifnum));
+    read_attr(cls, "index", index, sizeof(index));
+    if (!vid[0] || !pid[0] || !serial[0]) return NULL;
+    char *out = NULL;
+    if (asprintf(&out, "usb:%s:%s:%s:%s:%s", vid, pid, serial, ifnum, index) < 0) return NULL;
+    return out;
+}
 static void global(void *unused, uint32_t id, uint32_t permissions, const char *type, uint32_t version, const struct spa_dict *props) {
     (void)unused; (void)permissions; (void)version;
     if (!props || strcmp(type, PW_TYPE_INTERFACE_Node)) return;
@@ -128,12 +157,14 @@ static void global(void *unused, uint32_t id, uint32_t permissions, const char *
                        strcasestr(description, "metadata"))) return;
     struct node *n = calloc(1, sizeof(*n));
     if (!n) { ERROR("node allocation global=%u errno=%d", id, errno); return; }
-    n->global = id; n->identity = strdup(identity);
+    n->global = id; n->identity = usb_identity(spa_dict_lookup(props, PW_KEY_OBJECT_PATH));
+    if (!n->identity) n->identity = strdup(identity);
+    if (!n->identity) { ERROR("identity allocation global=%u", id); free(n); return; }
     uint32_t hash = 2166136261u;
-    for (const unsigned char *p = (const unsigned char *)identity; *p; p++) hash = (hash ^ *p) * 16777619u;
+    for (const unsigned char *p = (const unsigned char *)n->identity; *p; p++) hash = (hash ^ *p) * 16777619u;
     n->id = hash & 0x3fffffff; // Leave signed Camera2 offset headroom; not a device count limit.
     for (struct node *other = nodes; other; other = other->next) if (other->id == n->id) {
-        ERROR("stable camera identity collision name=%s existing=%s", identity, other->identity);
+        ERROR("stable camera identity collision name=%s existing=%s", n->identity, other->identity);
         free(n->identity); free(n); return;
     }
     n->proxy = pw_registry_bind(registry, id, PW_TYPE_INTERFACE_Node, PW_VERSION_NODE, 0);

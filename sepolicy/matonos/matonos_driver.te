@@ -532,6 +532,10 @@ allow { matonos_pipewire matonos_wireplumber } video_device:chr_file rw_file_per
 allow hal_camera_default matonos_driver_data_file:dir search;
 allow hal_camera_default matonos_driver_data_file:sock_file write;
 allow hal_camera_default self:unix_stream_socket create_stream_socket_perms;
+# Stable camera identity: USB idVendor/idProduct/serial via /sys/class/video4linux.
+allow hal_camera_default sysfs:dir r_dir_perms;
+allow hal_camera_default sysfs:file r_file_perms;
+allow hal_camera_default sysfs:lnk_file read;
 allow hal_camera_default matonos_pipewire:unix_stream_socket connectto;
 allow hal_camera_default matonos_pipewire:fd use;
 allow hal_camera_default matonos_pipewire:memfd_file { getattr map read write };
