@@ -622,3 +622,9 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   them; SPA v4l2 inotify retries if ueventd chmods later). Covers USB
   audio hotplug too. In build-176 (queued after 175). Test: boot, attach
   webcam via QEMU monitor, expect Camera2 device without restarts.
+- 16:10 build-176: provider (user audio) connects to PipeWire; WirePlumber
+  is on uevent group 1. Hotplugged webcam still missing: the kernel event
+  beats ueventd's mknod, SPA's access() fails and its per-node inotify
+  watch can't be placed. apex_media 6832884 (patch 0008) watches /dev for
+  IN_CREATE and rechecks; dt fa4960d5 bumps audio + adds watch rules.
+  build-177 tests it.
