@@ -41,7 +41,7 @@ export function CameraRolesSection() {
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
   const rows = cameras.map((camera) => {
     const facing = roles.front === camera.id ? "front" : roles.back === camera.id ? "back" : "external";
-    const details = `${camera.facing} · JPEG ${camera.jpeg} · YUV ${camera.yuv}`;
+    const details = `JPEG ${camera.jpeg} · YUV ${camera.yuv}`;
     return (
       <Column key={`camera-${camera.id}`} modifiers={[fillMaxWidth()]} verticalArrangement={{ spacedBy: 4 }}>
         <Text style={{ typography: "titleSmall" }} color={colors.onSurface}>{camera.id} · {details}</Text>
