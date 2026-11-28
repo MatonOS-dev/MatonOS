@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission android:name="org.matonos.permission.APPLY_SETUP_ACCOUNT" android:protectionLevel="signature|privileged" />
     <uses-permission android:name="org.matonos.permission.BIND_EMBEDDED_SETTINGS" />
     <uses-permission android:name="org.matonos.permission.BIND_CAPTION_PROVIDER" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
@@ -19,6 +20,9 @@
     <uses-permission android:name="android.permission.INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.DELETE_PACKAGES" />
     <application>
+        <receiver android:name="org.matonos.settings.nativebridge.SetupAccountReceiver" android:exported="true" android:permission="org.matonos.permission.APPLY_SETUP_ACCOUNT">
+            <intent-filter><action android:name="org.matonos.settings.APPLY_SETUP_ACCOUNT" /></intent-filter>
+        </receiver>
         <activity android:name="org.matonos.settings.gapps.GappsPickerActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <receiver android:name="org.matonos.settings.gapps.GappsInstallResultReceiver" android:exported="false" />
         <activity

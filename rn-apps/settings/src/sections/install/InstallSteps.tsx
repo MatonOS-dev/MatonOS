@@ -10,6 +10,7 @@ import {
 import type { DriveHealth, InstallDrive, OperationProgress, SetupV1 } from "../../installer/InstallerApi";
 import { createV1Plan } from "../../installer/createV1Plan";
 import { copy } from "../../strings";
+import { MatonOS } from "../../bridge/MatonOS";
 
 export type InstallStep =
   | "welcome"
@@ -18,6 +19,7 @@ export type InstallStep =
   | "drives"
   | "user"
   | "services"
+  | "account"
   | "confirm"
   | "progress"
   | "done"
@@ -43,6 +45,7 @@ export type SetupDraft = {
   credentialValue: string;
   credentialConfirm: string;
   linux: boolean;
+  account?: { username: string; refreshToken: string; machineId: string };
 };
 
 // Text lives only in native state, as on the Account page: typing must not re-render React,
@@ -156,7 +159,45 @@ export function makeSetup(draft: SetupDraft): SetupV1 {
   if (draft.credentialType !== "none" && draft.credentialValue) user.credential = { type: draft.credentialType, value: draft.credentialValue };
   if (user.name || user.credential) setup.user = user;
   setup.services = { linux: draft.linux };
+  if (draft.account) setup.account = draft.account;
   return setup;
+}
+
+export function InstallAccountStep({ draft, onChange, onBack, onContinue }: { draft: SetupDraft; onChange: (patch: Partial<SetupDraft>) => void; onBack: () => void; onContinue: () => void }) {
+  const username = useNativeState("");
+  const password = useNativeState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const skip = () => { onChange({ account: undefined }); onContinue(); };
+  const signIn = async () => {
+    setBusy(true); setMessage("");
+    try {
+      const info = await MatonOS.accountMachineInfo();
+      const response = await fetch("https://maton.hanro50.net.za/api/account/login", {
+        method: "POST",
+        headers: { "content-type": "application/json", "X-Maton-Machine-Id": info.machineId },
+        body: JSON.stringify({ username: username.get(), password: password.get(), machine_id: info.machineId, device_name: info.deviceName }),
+      });
+      const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+      if (!response.ok) throw new Error(typeof result.message === "string" ? result.message : `Sign-in failed (${response.status})`);
+      if (typeof result.username !== "string" || typeof result.refresh_token !== "string") throw new Error("The account service returned no refresh token.");
+      onChange({ account: { username: result.username, refreshToken: result.refresh_token, machineId: info.machineId } });
+      password.set("");
+      onContinue();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "The account request failed."); }
+    finally { setBusy(false); }
+  };
+  const saved = draft.account ? <Text>Signed in as {draft.account.username}.</Text> : null;
+  return <SettingsCard title="MatonOS account">
+    <Text>Optional. Sign in to add this PC to your MatonOS account. Internet access is required.</Text>
+    {saved}
+    <TextInput label="Username" state={username} />
+    <TextInput label="Password" state={password} secret />
+    {message ? <TextError message={message} /> : null}
+    <ActionButton label={copy.goBack} variant="text" onClick={onBack} />
+    <ActionButton label="Skip" variant="text" onClick={skip} />
+    <ActionButton label={busy ? "Signing in…" : "Sign in and continue"} enabled={!busy} onClick={() => void signIn()} />
+  </SettingsCard>;
 }
 
 export function InstallServicesStep({ draft, onChange, onBack, onContinue }: { draft: SetupDraft; onChange: (patch: Partial<SetupDraft>) => void; onBack: () => void; onContinue: () => void }) {

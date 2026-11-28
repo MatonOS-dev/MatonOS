@@ -31,6 +31,7 @@ import {
   InstallNetworkStep,
   InstallUserStep,
   InstallServicesStep,
+  InstallAccountStep,
   makeSetup,
   type SetupDraft,
   type InstallStep,
@@ -367,7 +368,8 @@ export function InstallSection() {
       />
     ),
     user: () => <InstallUserStep draft={setupDraft} onChange={patchSetup} onBack={() => setStep("drives")} onContinue={() => setStep("services")} />,
-    services: () => <InstallServicesStep draft={setupDraft} onChange={patchSetup} onBack={() => setStep("user")} onContinue={() => setStep("confirm")} />,
+    services: () => <InstallServicesStep draft={setupDraft} onChange={patchSetup} onBack={() => setStep("user")} onContinue={() => setStep("account")} />,
+    account: () => <InstallAccountStep draft={setupDraft} onChange={patchSetup} onBack={() => setStep("services")} onContinue={() => setStep("confirm")} />,
     confirm: () => (
       <InstallConfirmStep
         drive={selected}
@@ -377,7 +379,7 @@ export function InstallSection() {
         onConfirmChange={setEraseConfirmed}
         healthAccepted={healthAccepted}
         onHealthAcceptedChange={setHealthAccepted}
-        onBack={() => setStep("services")}
+        onBack={() => setStep("account")}
         onStart={() => void startInstall()}
         formatSize={sizeLabel}
       />

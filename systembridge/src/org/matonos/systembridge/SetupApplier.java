@@ -6,6 +6,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.UserHandle;
 import android.net.wifi.WifiConfiguration;
@@ -69,7 +70,8 @@ final class SetupApplier {
         // SetupV1 schema: version, locale, timeZone, wifi[], user{}, and services{linux:boolean}.
         for (String key : settings.keySet()) {
             if (!"version".equals(key) && !"locale".equals(key) && !"timeZone".equals(key)
-                    && !"wifi".equals(key) && !"user".equals(key) && !"services".equals(key)) {
+                    && !"wifi".equals(key) && !"user".equals(key) && !"services".equals(key)
+                    && !"account".equals(key)) {
                 Log.e(TAG, "Unknown setup field " + key + " in " + SETUP_PATH + "; retaining file");
                 return;
             }
@@ -84,6 +86,9 @@ final class SetupApplier {
             }
             if (settings.has("services")) {
                 requireKeys(settings.getJSONObject("services"), "services", "linux");
+            }
+            if (settings.has("account")) {
+                requireKeys(settings.getJSONObject("account"), "account", "username", "refreshToken", "machineId");
             }
             if (settings.has("wifi")) {
                 JSONArray networks = settings.getJSONArray("wifi");
@@ -146,6 +151,7 @@ final class SetupApplier {
             }
         });
         applyUser(context, file, settings, failed);
+        applyAccount(context, file, settings, failed);
         applyTopLevel(context, file, settings, "services", failed, () -> {
             JSONObject services = settings.getJSONObject("services");
             if (!services.has("linux")) throw new JSONException("services.linux is required");
@@ -171,6 +177,43 @@ final class SetupApplier {
     }
 
     private interface FieldAction { void run() throws Exception; }
+
+    private static void applyAccount(Context context, File file, JSONObject settings,
+            List<String> failed) {
+        if (!settings.has("account")) return;
+        JSONObject account = settings.optJSONObject("account");
+        try {
+            if (account == null) throw new JSONException("account must be an object");
+            String username = account.getString("username");
+            String refreshToken = account.getString("refreshToken");
+            String installerMachineId = account.getString("machineId");
+            String installedMachineId = android.provider.Settings.Secure.getString(
+                    context.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+            if (username.isBlank() || refreshToken.isBlank() || installerMachineId.isBlank())
+                throw new IllegalArgumentException("account fields must not be blank");
+            if (!installerMachineId.equals(installedMachineId))
+                throw new IllegalStateException("installer machine id does not match installed system; account not added");
+            Intent intent = new Intent("org.matonos.settings.APPLY_SETUP_ACCOUNT")
+                    .setPackage("org.matonos.settings")
+                    .putExtra("username", username)
+                    .putExtra("refresh_token", refreshToken)
+                    .putExtra("machine_id", installerMachineId);
+            context.sendBroadcastAsUser(intent, UserHandle.SYSTEM,
+                    "org.matonos.permission.APPLY_SETUP_ACCOUNT");
+        } catch (Exception error) {
+            failed.add("account");
+            Log.e(TAG, "Failed to apply first-boot MatonOS account; account data will be discarded", error);
+        }
+        // Credentials are deliberately one-shot. Even a failed account apply must not leave
+        // a refresh token in setup.json for an unattended retry.
+        settings.remove("account");
+        try {
+            checkpoint(file, settings);
+        } catch (Exception error) {
+            failed.add("account.cleanup");
+            Log.e(TAG, "Failed to remove first-boot account data from " + SETUP_PATH, error);
+        }
+    }
 
     private static void requireKeys(JSONObject object, String field, String... allowed)
             throws JSONException {

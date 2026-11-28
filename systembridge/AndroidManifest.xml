@@ -11,6 +11,7 @@
         android:description="@string/game_controllers_description"
         android:protectionLevel="normal" />
     <uses-permission android:name="org.matonos.permission.SYSTEM_BRIDGE" />
+    <uses-permission android:name="org.matonos.permission.APPLY_SETUP_ACCOUNT" />
     <uses-permission android:name="android.permission.GRANT_RUNTIME_PERMISSIONS" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
