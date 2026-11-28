@@ -145,6 +145,10 @@ public final class SystemBridgeService extends Service {
                         throw new IllegalArgumentException("camera role must be front or back");
                     if (!id.isEmpty() && !id.matches("[0-9]+"))
                         throw new IllegalArgumentException("camera id must contain digits or be empty");
+                    // One camera holds at most one role: taking a role clears it from the other.
+                    String other = "front".equals(role) ? "back" : "front";
+                    if (!id.isEmpty() && id.equals(SystemProperties.get("persist.matonos.camera." + other, "")))
+                        SystemProperties.set("persist.matonos.camera." + other, "");
                     SystemProperties.set("persist.matonos.camera." + role, id);
                     JSONObject result = new JSONObject();
                     result.put("front", SystemProperties.get("persist.matonos.camera.front", ""));
