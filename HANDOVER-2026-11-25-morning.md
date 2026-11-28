@@ -616,3 +616,9 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   disk boots alone, setup applied (user Hans). Only denials: known
   MediaProvider /oem/media. Signed-in path untested (needs a test account).
   Cleaned live171/172 (VM dirs + server imgs); live174 kept.
+- 14:00 Hotplug cause: libudev-zero's "udev" monitor binds netlink group 4
+  (udevd rebroadcast); Android has no udevd. 572f7a2c builds it with
+  -DUDEV_MONITOR_NLGRP=0x1 (raw kernel uevents; parser already handles
+  them; SPA v4l2 inotify retries if ueventd chmods later). Covers USB
+  audio hotplug too. In build-176 (queued after 175). Test: boot, attach
+  webcam via QEMU monitor, expect Camera2 device without restarts.
