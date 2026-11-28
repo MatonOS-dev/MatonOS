@@ -558,3 +558,11 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - New/open denials on the installed system: vold `read` on `/maton_system` root
   (matonos_install_mount_file, dir) at boot; mediaprovider getattr `/oem/media` (old noise). Not fixed yet.
 - build-169 started (camera roles aae95fe7). Luna `image-trim` running (wip/image-trim).
+
+## 04:30 — image trim: nothing cheap left (luna image-trim, not merged)
+- EROFS is already lz4hc (AOSP default); luna's explicit BOARD_EROFS_COMPRESSOR commit was a no-op → dropped.
+- Sizes (build-168): system 735 / system_ext 286 / product 619 / vendor 692 / odm 13 MiB raw EROFS.
+  vendor holds 6,243 .ko = 526 MiB uncompressed but already fs-compressed inside the 692 MiB image, so
+  zstd .ko would gain little and needs an AOSP libmodprobe patch (only `.ko` suffix handled) → not worth it.
+- Mesa .so already stripped (108 MiB x86_64, 95 MiB i386, parity kept).
+- Only real lever left: ship fewer kernel modules (PC hardware list) — needs your call.
