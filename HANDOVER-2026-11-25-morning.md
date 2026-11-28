@@ -566,3 +566,12 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   zstd .ko would gain little and needs an AOSP libmodprobe patch (only `.ko` suffix handled) → not worth it.
 - Mesa .so already stripped (108 MiB x86_64, 95 MiB i386, parity kept).
 - Only real lever left: ship fewer kernel modules (PC hardware list) — needs your call.
+
+## 05:20 — camera roles smoke (build-169, live169; live168 deleted)
+- Provider HAL up (ICameraProvider/external/0, 0 devices), cameraserver up, no new denials.
+- Settings → Hardware → Cameras renders ("Camera roles", "No cameras found"), no crash.
+- Setting persist.matonos.camera.front at runtime: provider survives (no crash buffer entries).
+- Not tested: a real camera (QEMU has no UVC device; host C310 passthrough needs
+  `sudo chmod 666 /dev/bus/usb/001/002` or a udev rule from you).
+- Audio on live168: HAL + PipeWire running, only 3× refinePosition -5 at stream start; denials only
+  the known MediaProvider /oem/media (private type, can't be allowed from vendor policy).
