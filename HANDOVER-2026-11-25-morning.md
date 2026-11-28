@@ -586,3 +586,12 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - sepolicy/matonos/vold.te: vold may open/read/ioctl the image-store root → idle-maint now trims
   /maton_system (14 GB on first pass). Installed system boots with zero denials besides the known
   MediaProvider /oem/media ones. Full install path re-run OK (services off, PIN, Wi-Fi).
+
+## 10:25 — user answers (yes ×3) and follow-ups
+- Webcam: C310 passed to live171 → Android lists camera 100 (EXTERNAL). Role change from Settings failed:
+  bridge refused Settings on `camera` (BRIDGE_APP_NOT_TRUSTED) + radio label not tappable → fixed dff648ad,
+  build-172 running (policy ok 09:43). Retest Front/Back facing after it.
+- Account step (luna a61e04bc + my fix 5c43642f, merged, NOT in build-172): optional installer sign-in, setup.json
+  `account {username, refreshToken, machineId}`, first boot → signature-protected Settings receiver →
+  AccountManager. Dropped luna's ANDROID_ID comparison (per-app/per-install, always failed).
+- Image trim CLOSED (user): keep all kernel modules — Ubuntu ships the same groups.
