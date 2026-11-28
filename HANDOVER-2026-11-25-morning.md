@@ -535,3 +535,11 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - SHELVED for user: MatonOS account step — open decision whether an account token may sit in setup.json
   (plaintext on ext4 until first boot, like PIN/Wi-Fi password today).
 - Media APEX refinement started: luna `camera-roles-scope` (front/back assignment page + HAL facing).
+
+## 02:45 — build-167 boot-looped; fixed, build-168 running
+- build-167 system_server aborted at boot: "Signature|privileged permissions not in privileged permission
+  allowlist" — the services step added CHANGE_COMPONENT_ENABLED_STATE without a privapp entry (missed in my
+  review). Fix fae4197f (buildinfra/privapp-permissions/…systembridge.xml). live167 deleted; live166 kept.
+- Luna `camera-roles` implementing on wip/camera-roles (worktree ~/matonos/build/camera-roles): props
+  persist.matonos.camera.{front,back} = Camera2 ID (system_public_prop), HAL facing + re-announce,
+  bridge setRole/getRoles, Settings "Cameras" page under Hardware.
