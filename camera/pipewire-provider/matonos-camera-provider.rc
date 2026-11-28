@@ -1,9 +1,10 @@
 # No dependency on camera devices, discovery, or PipeWire connectivity.
+# Runs as audio: PipeWire sockets are 0700 audio, and the runtime dir is audio-owned.
 service vendor.camera.provider-ext /apex/com.matonos.hardware.media/bin/hw/matonos-camera-provider
     interface aidl android.hardware.camera.provider.ICameraProvider/external/0
     class hal
-    user cameraserver
-    group audio camera input drmrpc usb
+    user audio
+    group camera input drmrpc usb
     setenv HOME /data/vendor/maton-audio
     setenv XDG_RUNTIME_DIR /data/vendor/maton-audio
     setenv PIPEWIRE_RUNTIME_DIR /data/vendor/maton-audio
