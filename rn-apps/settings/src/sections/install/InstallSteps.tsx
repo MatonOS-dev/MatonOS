@@ -740,5 +740,5 @@ function setupSummary(draft: SetupDraft): string {
   const wifi = draft.ssid.trim() ? draft.ssid.trim() : "not set";
   const lockNames = { none: "none", pin: "PIN set", password: "password set" };
   const name = draft.name.trim() ? draft.name.trim() : "not set";
-  return `Language: ${draft.locale || "not set"}\nTime zone: ${draft.timeZone || "not set"}\nWi-Fi: ${wifi}\nName: ${name}\nScreen lock: ${lockNames[draft.credentialType]}\nLinux subsystem: ${draft.linux ? "on" : "off"}`;
+  return `Language: ${draft.locale || "not set"}\nTime zone: ${draft.timeZone || "not set"}\nWi-Fi: ${wifi}\nName: ${name}\nScreen lock: ${lockNames[draft.credentialType]}\nLinux subsystem: ${draft.linux ? "on" : "off"}\nMatonOS account: ${draft.account?.username ?? "none"}`;
 }

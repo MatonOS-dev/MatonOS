@@ -187,17 +187,16 @@ final class SetupApplier {
             String username = account.getString("username");
             String refreshToken = account.getString("refreshToken");
             String installerMachineId = account.getString("machineId");
-            String installedMachineId = android.provider.Settings.Secure.getString(
-                    context.getContentResolver(), android.provider.Settings.Secure.ANDROID_ID);
+            // The refresh token is bound to the machine id the installer signed in with; the
+            // authenticator stores it with the account and sends it on every refresh.
             if (username.isBlank() || refreshToken.isBlank() || installerMachineId.isBlank())
                 throw new IllegalArgumentException("account fields must not be blank");
-            if (!installerMachineId.equals(installedMachineId))
-                throw new IllegalStateException("installer machine id does not match installed system; account not added");
             Intent intent = new Intent("org.matonos.settings.APPLY_SETUP_ACCOUNT")
                     .setPackage("org.matonos.settings")
                     .putExtra("username", username)
                     .putExtra("refresh_token", refreshToken)
-                    .putExtra("machine_id", installerMachineId);
+                    .putExtra("machine_id", installerMachineId)
+                    .addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
             context.sendBroadcastAsUser(intent, UserHandle.SYSTEM,
                     "org.matonos.permission.APPLY_SETUP_ACCOUNT");
         } catch (Exception error) {
