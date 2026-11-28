@@ -1,0 +1,4 @@
+# vold's idle maintenance opens every fstab mount point and issues FITRIM.
+# /maton_system (image store, labelled by the installer) is one of them.
+# FITRIM itself is already allowed for all file types by AOSP's vold.te.
+allow vold matonos_install_mount_file:dir { open read ioctl };
