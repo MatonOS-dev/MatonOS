@@ -142,7 +142,7 @@ dontaudit matonos_wireplumber sysfs_type:dir search;
 dontaudit matonos_wireplumber sysfs_type:file r_file_perms;
 allow { matonos_pipewire matonos_wireplumber } self:netlink_kobject_uevent_socket create_socket_perms_no_ioctl;
 # v4l2 hotplug: nodes appear after the kernel uevent (no udevd); watch /dev, then the node.
-allow matonos_wireplumber device:dir watch;
+allow matonos_wireplumber device:dir { read watch };
 allow matonos_wireplumber video_device:chr_file watch;
 allow { matonos_pipewire matonos_wireplumber } vendor_file:dir r_dir_perms;
 allow { matonos_pipewire matonos_wireplumber } vendor_file:file { getattr map open read };
