@@ -638,3 +638,7 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   "UVC Camera (046d:081b)" instead of "Unknown device") is in build-179.
   Open: role identity = PipeWire node name hash, may change on replug
   into another port (scope report camera-roles-scope.last.md).
+- 19:10 Replug on build-178 changed the camera ID and lost the role.
+  Provider now keys IDs on usb:VID:PID:SERIAL:IF:INDEX from sysfs (node
+  name fallback without serial) + hal_camera_default sysfs read rules.
+  Untested; build-180 (after 179). Test: set Front, replug, still FRONT.
