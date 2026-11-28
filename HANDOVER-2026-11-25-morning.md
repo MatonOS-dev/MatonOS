@@ -575,3 +575,9 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   `sudo chmod 666 /dev/bus/usb/001/002` or a udev rule from you).
 - Audio on live168: HAL + PipeWire running, only 3× refinePosition -5 at stream start; denials only
   the known MediaProvider /oem/media (private type, can't be allowed from vendor policy).
+
+## 06:55 — toggle-row fix verified (build-170 dt 1eb4176e, live170; live169 deleted)
+- Tapping a ToggleRow title now flips the switch (installer services step summary → "Linux subsystem: off").
+- Night queue state: all items done except MatonOS account step (needs your decision: may an account
+  token sit in setup.json?), real-camera test (needs USB permission for the C310), and image trim's only
+  remaining lever (fewer kernel modules — your call).
