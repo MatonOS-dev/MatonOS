@@ -550,3 +550,11 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   get_roles, Settings Hardware → Cameras page (Front/Back/External per camera). My fix 3c…: taking a role
   clears it from the other. tsc clean. Not built yet: goes into build-169 after build-168's services test.
   Test plan: pass the host Logitech C310 (046d:081b) to the VM via usb-host.
+
+## 04:10 — services step VERIFIED (build-168, live168)
+- Install with "Linux subsystem: off" → first boot: `org.matonos.linux` enabled=3 (DISABLED_USER),
+  "Disabled org.matonos.linux for user 0" logged, PIN set, setup.json deleted. live166 deleted; live168 kept.
+- Note: tapping the toggle row's title does not flip the switch (only the switch itself) — small UI nit.
+- New/open denials on the installed system: vold `read` on `/maton_system` root
+  (matonos_install_mount_file, dir) at boot; mediaprovider getattr `/oem/media` (old noise). Not fixed yet.
+- build-169 started (camera roles aae95fe7). Luna `image-trim` running (wip/image-trim).
