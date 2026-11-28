@@ -18,6 +18,19 @@ Node generations detect unplug/replacement even when a polling interval
 contains both removal and re-addition. A provider worker publishes status
 changes outside PipeWire locks and retries incomplete initialization.
 
+Camera roles use the numeric Camera2 ID (the hash of PipeWire's node name).
+PipeWire's V4L2 node names derive from the udev port path, so a role follows
+the camera attached to that port across reconnects; moving it to another port
+can give it a different ID.
+
+The `persist.matonos.camera.front` and `.back` properties select FRONT/BACK
+metadata; other cameras remain EXTERNAL. A property change makes the provider
+announce NOT_PRESENT then PRESENT so Camera2 reloads characteristics. Settings
+changes go through the System Bridge `camera` operation. The property is a
+system-public SELinux type: only the bridge sets it, while `hal_camera_default`
+reads it. Stock app-domain property-set neverallows remain intact. This path
+has not been built or runtime-tested in this scoped change.
+
 Each session negotiates a source stream, copies the latest frame into owned
 CPU storage and immediately queues its SPA buffer back. YUYV and single- or
 two-plane NV12 are packed with source stride/offset/size checks before the

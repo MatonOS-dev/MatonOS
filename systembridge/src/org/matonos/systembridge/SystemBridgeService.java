@@ -18,6 +18,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
+import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.Looper;
 import android.provider.Settings;
@@ -136,6 +137,29 @@ public final class SystemBridgeService extends Service {
                     WifiCardSwitcher switcher = wifiCardSwitcher;
                     if (switcher == null) throw new IllegalStateException("Wi-Fi card switcher unavailable");
                     return switcher.switchTo(args.optString("device", ""), args.optBoolean("persist", true));
+                }
+                if ("camera".equals(target) && "set_role".equals(command)) {
+                    String role = args.optString("role", "");
+                    String id = args.optString("id", "");
+                    if (!("front".equals(role) || "back".equals(role)))
+                        throw new IllegalArgumentException("camera role must be front or back");
+                    if (!id.isEmpty() && !id.matches("[0-9]+"))
+                        throw new IllegalArgumentException("camera id must contain digits or be empty");
+                    // One camera holds at most one role: taking a role clears it from the other.
+                    String other = "front".equals(role) ? "back" : "front";
+                    if (!id.isEmpty() && id.equals(SystemProperties.get("persist.matonos.camera." + other, "")))
+                        SystemProperties.set("persist.matonos.camera." + other, "");
+                    SystemProperties.set("persist.matonos.camera." + role, id);
+                    JSONObject result = new JSONObject();
+                    result.put("front", SystemProperties.get("persist.matonos.camera.front", ""));
+                    result.put("back", SystemProperties.get("persist.matonos.camera.back", ""));
+                    return result.toString();
+                }
+                if ("camera".equals(target) && "get_roles".equals(command)) {
+                    JSONObject result = new JSONObject();
+                    result.put("front", SystemProperties.get("persist.matonos.camera.front", ""));
+                    result.put("back", SystemProperties.get("persist.matonos.camera.back", ""));
+                    return result.toString();
                 }
                 IChannel channel = channelFor(target);
                 if (channel == null) throw new IllegalStateException("channel instance unavailable: " + target);

@@ -13,6 +13,7 @@ export type HardwareState = {
 
 type HardwareModule = {
   getHardwareState(): Promise<HardwareState>;
+  getCameras(): Promise<Array<{id: string; facing: string; jpeg: string; yuv: string}>>;
   addListener(name: 'hardwareChanged', listener: (state: HardwareState) => void): EventSubscription;
 };
 const NativeHardware = requireNativeModule<HardwareModule>('MatonHardware');
@@ -33,6 +34,8 @@ async function withBridgeSummary(state: HardwareState): Promise<HardwareState> {
 export const Hardware = {
   getState: async (): Promise<HardwareState> =>
     withBridgeSummary(await NativeHardware.getHardwareState()),
+  getCameras: (): Promise<Array<{id: string; facing: string; jpeg: string; yuv: string}>> =>
+    NativeHardware.getCameras(),
   /** Battery/charging changes, Wi-Fi/Bluetooth state changes. */
   onChange: (listener: (state: HardwareState) => void): EventSubscription =>
     NativeHardware.addListener('hardwareChanged', state => {

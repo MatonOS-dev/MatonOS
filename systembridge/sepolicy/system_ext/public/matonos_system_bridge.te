@@ -2,6 +2,7 @@
 # app_domain() emits type transitions, which public policy may not contain;
 # it lives in ../private/matonos_system_bridge.te.
 type matonos_system_bridge, domain;
+system_public_prop(matonos_camera_role_prop)
 # mlstrustedobject: the bridge runs with per-app MLS categories (levelFrom=all) and must
 # rewrite setup.json, which the installer creates at s0.
 type matonos_setup_file, file_type, mlstrustedobject;

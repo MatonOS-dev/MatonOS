@@ -1,0 +1,2 @@
+persist.matonos.camera.front u:object_r:matonos_camera_role_prop:s0 exact string
+persist.matonos.camera.back u:object_r:matonos_camera_role_prop:s0 exact string

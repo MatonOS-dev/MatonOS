@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.params.StreamConfigurationMap
+import android.graphics.ImageFormat
 import android.net.wifi.WifiManager
 import android.os.BatteryManager
 import android.os.Build
@@ -30,6 +32,7 @@ class HardwareModule : Module() {
     Events("hardwareChanged")
 
     AsyncFunction("getHardwareState") { state(requireNotNull(appContext.reactContext)) }
+    AsyncFunction("getCameras") { cameras(requireNotNull(appContext.reactContext)) }
     AsyncFunction("getSecurityStatus") { securityStatus(requireNotNull(appContext.reactContext)) }
     AsyncFunction("getEmbeddedSettings") {
       EmbeddedSettingsDiscovery.list(requireNotNull(appContext.reactContext))
@@ -89,6 +92,36 @@ class HardwareModule : Module() {
       "gpu" to mapOf("present" to null, "software" to null),
       "camera" to mapOf("count" to cameras),
     )
+  }
+
+  private fun cameras(context: Context): List<Map<String, String>> {
+    val manager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+    return manager.cameraIdList.mapNotNull { id ->
+      try {
+        val characteristics = manager.getCameraCharacteristics(id)
+        val facing = when (characteristics.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)) {
+          android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT -> "Front"
+          android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK -> "Back"
+          else -> "External"
+        }
+        val config = characteristics.get(android.hardware.camera2.CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+        mapOf(
+          "id" to id,
+          "facing" to facing,
+          "jpeg" to largestSize(config, ImageFormat.JPEG),
+          "yuv" to largestSize(config, ImageFormat.YUV_420_888),
+        )
+      } catch (error: Exception) {
+        Log.e("MatonOSSettings", "camera characteristics read failed id=$id", error)
+        null
+      }
+    }
+  }
+
+  private fun largestSize(config: StreamConfigurationMap?, format: Int): String {
+    val sizes = config?.getOutputSizes(format) ?: return "Unknown"
+    val largest = sizes.maxByOrNull { it.width.toLong() * it.height } ?: return "Unknown"
+    return "${largest.width}×${largest.height}"
   }
 
   /** Public-API security values only. SELinux, encryption, vendor patch level and verified
