@@ -610,3 +610,9 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
   2. OPEN: camera hotplug. A webcam attached after boot is not seen until
      pipewire+wireplumber restart (libudev-zero monitor gets no events).
      Device name shows "Unknown device" (no udev db props). Next item.
+
+- 13:50 build-174 install test PASS: account step shown after services;
+  Skip → summary "MatonOS account: none"; install complete; installed
+  disk boots alone, setup applied (user Hans). Only denials: known
+  MediaProvider /oem/media. Signed-in path untested (needs a test account).
+  Cleaned live171/172 (VM dirs + server imgs); live174 kept.
