@@ -631,3 +631,10 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - 17:25 build-177: patch 0008 in, but avc denied { read } device:dir for
   wireplumber (inotify_add_watch needs read+watch), so no /dev watch.
   Fixed in policy; build-178 retests hotplug.
+- 18:50 build-178 PASS camera: webcam hotplugged after boot shows up in
+  Camera2 without restarts; Settings → Cameras radio Front/Back/External
+  switches Camera2 facing live (verified via dumpsys each tap). Fixed the
+  stale facing text on the row. Name fallback (apex_media 56f8383,
+  "UVC Camera (046d:081b)" instead of "Unknown device") is in build-179.
+  Open: role identity = PipeWire node name hash, may change on replug
+  into another port (scope report camera-roles-scope.last.md).
