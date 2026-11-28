@@ -581,3 +581,8 @@ happened on live133. Instead, on live136 I reloaded hwsim by hand with
 - Night queue state: all items done except MatonOS account step (needs your decision: may an account
   token sit in setup.json?), real-camera test (needs USB permission for the C310), and image trim's only
   remaining lever (fewer kernel modules — your call).
+
+## 08:55 — vold trims /maton_system (build-171 dt d6a52718, live171; live170 deleted)
+- sepolicy/matonos/vold.te: vold may open/read/ioctl the image-store root → idle-maint now trims
+  /maton_system (14 GB on first pass). Installed system boots with zero denials besides the known
+  MediaProvider /oem/media ones. Full install path re-run OK (services off, PIN, Wi-Fi).
