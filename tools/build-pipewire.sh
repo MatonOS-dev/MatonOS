@@ -166,8 +166,9 @@ DESTDIR="$DEST" ninja -C "$OUT/libffi" install
 
 info "Building daemonless libudev compatibility for PipeWire hotplug"
 make -C "$SRC/libudev-zero" clean
+# No udevd on Android: listen to kernel uevents (group 1), not udevd's group 4.
 make -C "$SRC/libudev-zero" -j"$JOBS" CC="$CC" AR="$AR" \
-  CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS" PREFIX="$PREFIX" \
+  CFLAGS="$CFLAGS -DUDEV_MONITOR_NLGRP=0x1" LDFLAGS="$LDFLAGS" PREFIX="$PREFIX" \
   LIBDIR="$PREFIX/lib64" INCLUDEDIR="$PREFIX/include" DESTDIR="$DEST" \
   USB_IDS_PATH=$PREFIX/etc/usb.ids install-shared
 
