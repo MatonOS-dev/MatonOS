@@ -19,6 +19,7 @@ import {
 } from "@expo/ui/jetpack-compose";
 import {
   fillMaxHeight,
+  clickable,
   fillMaxWidth,
   paddingAll,
   weight,
@@ -369,8 +370,9 @@ export function ToggleRow({
   onChange: (value: boolean) => void;
 }) {
   const colors = useMaterialColors();
+  const toggle = () => onChange(!value);
   return (
-    <ListItem modifiers={[fillMaxWidth()]}>
+    <ListItem modifiers={[fillMaxWidth(), clickable(toggle)]}>
       <ListItem.HeadlineContent>
         <Text style={{ typography: "bodyLarge" }} color={colors.onSurface}>
           {title}
